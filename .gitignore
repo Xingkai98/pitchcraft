@@ -1,0 +1,7 @@
+# Rust 构建产物
+engine/target/
+# WASM 产物（由 cargo build 生成）
+viewer/engine.wasm
+# 编辑器
+.DS_Store
+*.swp

@@ -1,0 +1,12 @@
+[package]
+name = "fm-engine"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+# 零依赖：确定性 RNG 自研（rng.rs），事件序列化手写。
+# WASM 导出通过 #[no_mangle] 外部函数（P0 不引 wasm-bindgen，保持从零写）。
+# 若要简化 WASM 绑定，后续可加 wasm-bindgen。

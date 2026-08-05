@@ -1,0 +1,124 @@
+// 画面渲染层：Canvas 绘制球场、球员、球
+// 暴露 renderFrame 测试钩子（tasks 6.2 像素断言用）与调试日志（6.3）。
+
+import { config } from './config.js';
+import { normalizedToPixels, pitchLines } from './geometry.js';
+
+// 用离屏 canvas 渲染一帧，返回 { canvas, ctx, imageData }
+// 输入：pitch 当前状态（球员位置 + 球位置），canvas 尺寸取自 config
+export function createRenderer() {
+  const { width, height } = config.canvas;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  return { canvas, ctx };
+}
+
+// 绘制球场（草地 + 白线）
+export function drawPitch(ctx, width, height) {
+  const margin = config.pitchMargin;
+  const r = config.render;
+
+  // 草地
+  ctx.fillStyle = r.pitchBg;
+  ctx.fillRect(0, 0, width, height);
+
+  // 白线
+  ctx.strokeStyle = r.pitchLine;
+  ctx.lineWidth = 2;
+  const lines = pitchLines();
+  for (const l of lines) {
+    if (l.type === 'line') {
+      const p1 = normalizedToPixels(l.x1, l.y1, width, height, margin);
+      const p2 = normalizedToPixels(l.x2, l.y2, width, height, margin);
+      ctx.beginPath();
+      ctx.moveTo(p1.px, p1.py);
+      ctx.lineTo(p2.px, p2.py);
+      ctx.stroke();
+    } else if (l.type === 'circle') {
+      const c = normalizedToPixels(l.cx, l.cy, width, height, margin);
+      const rPx = l.r * Math.min(width - 2 * margin, height - 2 * margin);
+      ctx.beginPath();
+      ctx.arc(c.px, c.py, rPx / 2, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (l.type === 'point') {
+      const p = normalizedToPixels(l.x, l.y, width, height, margin);
+      ctx.beginPath();
+      ctx.arc(p.px, p.py, 3, 0, Math.PI * 2);
+      ctx.fill();
+    } else if (l.type === 'goal') {
+      // 球门：画在门线上、向球场外伸出的矩形框（左门朝左外、右门朝右外）
+      const yPx = normalizedToPixels(l.x, l.y, width, height, margin).py;
+      // 深度与半高换算成像素（基于画布较短边）
+      const ref = Math.min(width - 2 * margin, height - 2 * margin);
+      const depthPx = l.w * ref;
+      const halfHPx = l.h * ref;
+      // 门线在 x=0（左门）或 x=1（右门），矩形向外（门线之外）凸出
+      const x0 = l.x === 0 ? 0 : width; // 左门从画布左边、右门从画布右边
+      const goalLinePx = normalizedToPixels(l.x, l.y, width, height, margin).px;
+      // 左门：从门线往左画 depth；右门：从门线往右画 depth（超出画布，画在边线外侧）
+      const gx = l.x === 0 ? goalLinePx - depthPx : goalLinePx;
+      ctx.strokeStyle = r.pitchLine;
+      ctx.lineWidth = 3;
+      ctx.strokeRect(gx, yPx - halfHPx, depthPx, halfHPx * 2);
+    }
+  }
+}
+
+// 绘制球员圆点（主客队颜色；id 0-10 home，11-21 away）
+// 放大圆点并在内部写球衣号码（便于精确定位/描述球员）
+export function drawPlayer(ctx, x, y, id, width, height) {
+  const margin = config.pitchMargin;
+  const r = config.render;
+  const p = normalizedToPixels(x, y, width, height, margin);
+  const isHome = id >= 0 && id <= 10;
+  const radius = (id === 0 || id === 21) ? r.keeperRadius : r.playerRadius;
+
+  // 圆点
+  ctx.fillStyle = isHome ? r.homeColor : r.awayColor;
+  ctx.beginPath();
+  ctx.arc(p.px, p.py, radius, 0, Math.PI * 2);
+  ctx.fill();
+  // 白描边
+  ctx.strokeStyle = '#ffffff';
+  ctx.lineWidth = 1.5;
+  ctx.stroke();
+  // 球衣号码（白色，居中）
+  ctx.fillStyle = '#ffffff';
+  ctx.font = `bold ${Math.round(radius * 1.1)}px sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(id), p.px, p.py);
+}
+
+// 绘制球
+export function drawBall(ctx, x, y, width, height) {
+  const margin = config.pitchMargin;
+  const r = config.render;
+  const p = normalizedToPixels(x, y, width, height, margin);
+  ctx.fillStyle = r.ballColor;
+  ctx.beginPath();
+  ctx.arc(p.px, p.py, r.ballRadius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+}
+
+// 渲染一帧：给定当前状态（22 球员位置 + 球位置），绘制到 ctx
+// 返回 imageData（供测试断言）
+export function renderFrame(ctx, state, width, height) {
+  drawPitch(ctx, width, height);
+  for (const p of state.players) {
+    drawPlayer(ctx, p.x, p.y, p.id, width, height);
+  }
+  if (state.ball) drawBall(ctx, state.ball.x, state.ball.y, width, height);
+  // 调试日志：输出已渲染的球屏幕坐标（tasks 6.3 文本核对）。
+  // 由 config.debug.logRender 控制（默认 false，避免每帧 60 行刷屏；测试时开）。
+  if (config.debug.enabled && config.debug.logRender) {
+    const s = normalizedToPixels(state.ball.x, state.ball.y, width, height, config.pitchMargin);
+    console.log(`[render] 球 screen=(${s.px.toFixed(1)},${s.py.toFixed(1)}) norm=(${state.ball.x.toFixed(4)},${state.ball.y.toFixed(4)})`);
+  }
+  return ctx.getImageData(0, 0, width, height);
+}
