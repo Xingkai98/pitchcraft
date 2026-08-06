@@ -2,7 +2,7 @@
 // 引擎产出 JSON 事件流 → 解析成 JS 事件对象。
 // 协议字段与 id 方案遵循 openspec/changes/p0-event-to-pitch/specs/event-stream-protocol/spec.md。
 
-// 事件类型枚举（9 类：8 类动作 + lineup 初始站位；goal 由 shot.result=goal 表达，非独立类型）
+// 事件类型枚举（10 类：9 类动作 + lineup 初始站位；goal 由 shot.result=goal 表达，非独立类型）
 export const EVENT_TYPES = [
   'lineup',
   'kickoff',
@@ -13,6 +13,7 @@ export const EVENT_TYPES = [
   'tackle',
   'interception',
   'substitution',
+  'off_ball_run',
 ];
 
 // 球员 id 方案：0-10 = 主队(home)，11-21 = 客队(away)
@@ -37,7 +38,7 @@ function validateBaseEvent(e) {
   }
   // 归一化坐标必须在 [0,1]（含 Phase B 新增的 tackle 坐标字段）。
   // 用 typeof === 'number' 判断：null/字符串/null 不得绕过范围校验。
-  for (const c of ['x', 'y', 'x2', 'y2', 'loose_x', 'loose_y', 'carrier_from_x', 'carrier_from_y', 'receiver_x', 'receiver_y']) {
+  for (const c of ['x', 'y', 'x2', 'y2', 'loose_x', 'loose_y', 'carrier_from_x', 'carrier_from_y', 'receiver_x', 'receiver_y', 'keeper_x', 'keeper_y']) {
     if (e[c] !== undefined && e[c] !== null) {
       if (typeof e[c] !== 'number' || !Number.isFinite(e[c])) {
         throw new Error(`event coordinate ${c} must be a finite number: ${String(e[c])}`);

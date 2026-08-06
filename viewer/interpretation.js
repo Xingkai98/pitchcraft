@@ -95,10 +95,11 @@ function interpretShot(e, out) {
   out.push({ t: t0 + flightDur, kind: 'ball', x: ballEndX, y: ballEndY });
   // 射手（subject）：原地（摆腿）
   out.push({ t: t0, kind: 'player', id: e.subject, x: e.x, y: e.y });
-  // 门将：从己方门线中点向射门方向扑
+  // 门将：从当前实际位置（引擎给 keeper_x/y，可能因带球离门）向射门方向扑；缺失时 fallback 门线中点。
+  // 连续播放里门将 x/y 可能在别处，从实位扑救避免瞬移（审阅 major）。
   const keeperId = e.subjectTeam === 'home' ? 21 : 0; // 对侧门将
-  const keeperStartX = keeperId === 21 ? 0.98 : 0.02;
-  const keeperStartY = 0.5;
+  const keeperStartX = (Number.isFinite(e.keeper_x)) ? e.keeper_x : (keeperId === 21 ? 0.98 : 0.02);
+  const keeperStartY = (Number.isFinite(e.keeper_y)) ? e.keeper_y : 0.5;
   const keeperTargetY = e.y2 !== undefined ? e.y2 : 0.5;
   // 门将扑救终点：
   //   - saved：扑到球路线上（= 球终点），挡住球
@@ -113,7 +114,9 @@ function interpretShot(e, out) {
 // 被铲者从 carrier_from_x/y（引擎给带球起点）带球到接触点（x2/y2），防守者同时逼近；
 // 碰撞后球弹开（优先引擎 loose_x/y，缺失则自算垂线弹开点）；按 result 决定谁捡球。
 // result=success（或缺省）→ 防守者拿球；result=fail → 原持球人拿回。
-function interpretTackle(e, out) {
+// dropCarryBeat（连续模式）：若被铲者上一事件刚带球到接触点，丢弃 carry-beat 起点（从接触点开始），
+// 避免连续播放里"重放刚播过的带球段"（design D4，grill Q6）。
+function interpretTackle(e, out, dropCarryBeat = false) {
   const t0 = e.t;
   const tackler = e.subject;
   const sx = e.x;
@@ -133,11 +136,11 @@ function interpretTackle(e, out) {
   const deflect = config.interpretation.tackle;
   // 带球起点：引擎给 carrier_from 时被铲者从那里带球到接触点；缺失则原地持球（fallback）
   const hasCarrierFrom = Number.isFinite(e.carrier_from_x) && Number.isFinite(e.carrier_from_y);
-  const cfx = hasCarrierFrom ? e.carrier_from_x : vx;
-  const cfy = hasCarrierFrom ? e.carrier_from_y : vy;
+  const cfx = dropCarryBeat ? vx : (hasCarrierFrom ? e.carrier_from_x : vx);
+  const cfy = dropCarryBeat ? vy : (hasCarrierFrom ? e.carrier_from_y : vy);
 
   // 1) 带球逼近：被铲者从 carrier_from 带球到接触点（球在他脚下），防守者从起点逼近
-  const carrierMoveDur = durationFromSpeed(distanceMeters(cfx, cfy, vx, vy), config.defaults.dribbleSpeed);
+  const carrierMoveDur = dropCarryBeat ? 0 : durationFromSpeed(distanceMeters(cfx, cfy, vx, vy), config.defaults.dribbleSpeed);
   const approachDur = durationFromSpeed(distanceMeters(sx, sy, vx, vy), config.defaults.runSpeed);
   // 带球段与逼近段同时发生，接触时刻取两者较长者（双方都在动）
   const tContact = t0 + Math.max(carrierMoveDur, approachDur);
@@ -204,9 +207,23 @@ function deflectPoint(sx, sy, vx, vy, dist, tackler, victim) {
   };
 }
 
+// ---- 无球跑位：短距离碎步移动（人移动，球不动）----
+// off_ball_run 事件带 subject/x/y/x2/y2/speed。时长 = 距离 ÷ 跑速。
+function interpretOffBallRun(e, out) {
+  // 缺终点（x2/y2 非有限）时不产出锚点，避免 NaN 污染时间线
+  if (!Number.isFinite(e.x2) || !Number.isFinite(e.y2)) return;
+  const t0 = e.t;
+  const meters = distanceMeters(e.x, e.y, e.x2, e.y2);
+  const speed = e.speed ?? config.defaults.runSpeed;
+  const dur = durationFromSpeed(meters, speed);
+  out.push({ t: t0, kind: 'player', id: e.subject, x: e.x, y: e.y });
+  out.push({ t: t0 + dur, kind: 'player', id: e.subject, x: e.x2, y: e.y2 });
+}
+
 // ---- 主入口：把一条事件演绎成锚点序列 ----
 // 返回 [{t, kind, id?, x, y}]，锚点已按 t 排序
-export function interpretEvent(e) {
+// dropCarryBeat：仅连续模式 tackle 丢弃 carry-beat 起点用（见 buildTimeline）
+export function interpretEvent(e, dropCarryBeat = false) {
   const out = [];
   switch (e.type) {
     case 'kickoff':
@@ -234,7 +251,10 @@ export function interpretEvent(e) {
       break;
     case 'tackle':
     case 'interception':
-      interpretTackle(e, out);
+      interpretTackle(e, out, dropCarryBeat);
+      break;
+    case 'off_ball_run':
+      interpretOffBallRun(e, out);
       break;
     case 'substitution':
       // 换人：简单占位，P0 不做动画
@@ -249,10 +269,48 @@ export function interpretEvent(e) {
 
 // 便捷：把整场事件流展开成锚点时间线（供画面层一次性取用）
 // 每个锚点打上来源事件索引 evt，供插值器判断"是否跨事件边界"（事件间隙应保持原位，不滑动）
-export function buildTimeline(events) {
+// mode='continuous'：连续模式启用 tackle carry-beat 丢弃——若当前 tackle 前（跳过 off_ball_run
+// 填满的事件）是同一被铲者的 dribble（且落点即接触点），则不重现带球段（避免连续播放里重放刚播过的带球）。
+export function buildTimeline(events, mode = 'clip') {
   const anchors = [];
   for (let i = 0; i < events.length; i++) {
-    for (const a of interpretEvent(events[i])) {
+    const e = events[i];
+    let dropCarryBeat = false;
+    if (mode === 'continuous' && e.type === 'tackle') {
+      // 向前跳过 off_ball_run（引擎在每个有球事件后都插了无球跑位填满），
+      // 找到最后一个非 off_ball_run 的"动作"事件；若是同一被铲者的 dribble 且落点即接触点，丢弃 carry-beat。
+      let j = i - 1;
+      while (j >= 0 && events[j].type === 'off_ball_run') j--;
+      const prev = j >= 0 ? events[j] : null;
+      if (
+        prev &&
+        prev.type === 'dribble' &&
+        prev.subject === e.to &&
+        prev.x2 !== undefined &&
+        Math.abs(prev.x2 - e.x2) < 1e-6 &&
+        Math.abs(prev.y2 - e.y2) < 1e-6
+      ) {
+        dropCarryBeat = true;
+      }
+    }
+    // 连续模式：进球后重新开球，球从门内"滚回"中圈（避免球从门内瞬移到中圈）。
+    // 检测 shot(goal) → whistle → kickoff 序列，在 kickoff 起点前插入门内→中圈的过渡球锚点。
+    if (mode === 'continuous' && e.type === 'kickoff') {
+      // 向前找最近的 shot goal（跳过 whistle）
+      let j = i - 1;
+      while (j >= 0 && (events[j].type === 'whistle' || events[j].type === 'off_ball_run')) j--;
+      const prevShot = j >= 0 ? events[j] : null;
+      if (prevShot && prevShot.type === 'shot' && prevShot.result === 'goal') {
+        // 球从门内（shot 终点 x2 侧）滚回中圈：在 kickoff 起点之前 0.5s 处放门内锚点，中圈锚点在 kickoff 起点
+        const goalSide = prevShot.x2 >= 0.5 ? 1 : -1;
+        const inGoal = { x: 0.5 + goalSide * 0.52, y: prevShot.y2 ?? 0.5 }; // 门内（略过门线）
+        const tPrev = e.t - 2.0; // 过渡窗口 2s：球从门内平滑滚回中圈（避免瞬移）
+        anchors.push({ t: tPrev, kind: 'ball', x: inGoal.x, y: inGoal.y, evt: i });
+        // kickoff 起点球在中圈（interpretEvent 会加），这里补一个过渡起点保证插值从门内滑到中圈
+        anchors.push({ t: e.t, kind: 'ball', x: 0.5, y: 0.5, evt: i });
+      }
+    }
+    for (const a of interpretEvent(e, dropCarryBeat)) {
       anchors.push({ ...a, evt: i });
     }
   }

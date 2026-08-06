@@ -56,6 +56,25 @@
       font-weight: 600;
       margin: 4px 0;
     }
+    #progress-wrap {
+      margin-top: 8px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 700px;
+      max-width: 100%;
+    }
+    #progress-bar {
+      flex: 1;
+      accent-color: #3498db;
+    }
+    #progress-time {
+      font-size: 0.8rem;
+      color: #aaa;
+      font-family: monospace;
+      min-width: 110px;
+      text-align: right;
+    }
     #event-nav {
       margin-top: 8px;
       display: flex;
@@ -97,6 +116,10 @@
   <h1>Football Manager Clone — P0</h1>
   <div id="score">0 - 0</div>
   <div id="canvas-wrap"><canvas id="pitch" width="700" height="450"></canvas></div>
+  <div id="progress-wrap">
+    <input id="progress-bar" type="range" min="0" max="100" value="0" step="0.1" />
+    <span id="progress-time">0.0s / 0.0s</span>
+  </div>
   <div id="controls">
     <button id="btn-toggle">⏯ 播放/暂停</button>
     <button id="btn-speed">速度 1x</button>
@@ -115,6 +138,6 @@
   <div id="status">加载中…</div>
 
   <!-- 版本号强制刷新 JS 模块缓存：改代码后改这里或清浏览器缓存 -->
-  <script type="module" src="./app.js?v=20260806-2"></script>
+  <script type="module" src="./app.js?v=20260806-8"></script>
 </body>
 </html>

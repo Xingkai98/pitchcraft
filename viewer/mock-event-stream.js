@@ -34,13 +34,17 @@ export function mockEventStream() {
     { t: 18, type: 'kickoff', subject: 12, x: 0.5, y: 0.5 },
     { t: 21, type: 'pass', subject: 12, from: 12, to: 16, x: 0.5, y: 0.5, x2: 0.55, y2: 0.5, speed: 8, lead: 0.1, result: 'success' },
     { t: 24, type: 'dribble', subject: 16, x: 0.55, y: 0.5, x2: 0.45, y2: 0.55, speed: 3, touch_freq: 1, result: 'success' },
+    // 无球跑位（连续播放用）：有球动作间队友碎步调整
+    { t: 27.5, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, x2: 0.42, y2: 0.27, speed: 3, result: 'success' },
+    { t: 28.5, type: 'off_ball_run', subject: 7, x: 0.62, y: 0.15, x2: 0.63, y2: 0.17, speed: 3, result: 'success' },
+    { t: 29.5, type: 'off_ball_run', subject: 14, x: 0.38, y: 0.15, x2: 0.39, y2: 0.16, speed: 3, result: 'success' },
     // 抢断（成功）：home 10 逼近 away 16（持球），捅开球并把球拿下（演绎约到 t≈30.4，下一条放在之后）。
     // 16 从 (0.55,0.5) 带球到 (0.45,0.55) 途中被抢；loose 按 deflectPoint 规则。
-    { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55,
+    { t: 30, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55,
       carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.4277, loose_y: 0.5053, result: 'success' },
     // 抢断（失败）：away 11 逼近 home 10，捅开球但 home 10（原持球人）重新拿回
-    { t: 32, type: 'tackle', subject: 11, x: 0.45, y: 0.5, to: 10, x2: 0.43, y2: 0.51,
+    { t: 35, type: 'tackle', subject: 11, x: 0.45, y: 0.5, to: 10, x2: 0.43, y2: 0.51,
       carrier_from_x: 0.4277, carrier_from_y: 0.5053, loose_x: 0.4523, loose_y: 0.5547, result: 'fail' },
-    { t: 34, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0', detail: 'half_time' },
+    { t: 37, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0', detail: 'half_time' },
   ];
 }

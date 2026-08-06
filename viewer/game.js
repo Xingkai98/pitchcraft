@@ -1,9 +1,11 @@
 // 游戏循环：消费事件流 + 锚点时间线，推进播放时刻，计算每帧的球员/球位置
 // 输入：事件流（含 lineup），输出：每帧 { players, ball }（归一化坐标）
 //
-// 解耦模式（当前用途）：每个事件是一个"独立片段"，默认不自动播放。
-// 选中事件 → 显示该事件初始状态（球员/球在该事件起点，无过渡）。
-// 点播放 → 只在该事件的时间窗口内推进（从事件 t 到该事件结束时间），播完停。
+// 两种播放模式：
+//   continuous（默认）：整场连续播放。playTime 从事件流开头走到结尾，播完当前事件
+//     自动切下一个；事件之间由 off_ball_run（无球跑位）锚点填满，画面持续有动作。
+//   clip：每个事件是"独立片段"，选中事件 → 显示初始状态，点播放 → 只在该事件窗口推进，播完停。
+//     （保留为调试/单事件点播工具。）
 
 import { config } from './config.js';
 import { buildTimeline } from './interpretation.js';
@@ -11,20 +13,25 @@ import { parseEventStream } from './protocol.js';
 
 // 播放器状态机
 export class Game {
-  constructor(events, lineup) {
+  constructor(events, lineup, mode = 'continuous') {
     this.events = events;
     this.lineup = lineup; // 初始站位 [{id, team, x, y}]
+    this.mode = mode === 'clip' ? 'clip' : 'continuous';
     // 当前每帧状态：球员位置（含初始站位）+ 球位置
     this.players = (lineup || []).map((p) => ({ id: p.id, team: p.team, x: p.x, y: p.y }));
     this.ball = { x: 0.5, y: 0.5 };
     // 播放控制
-    this.playing = false; // 默认不自动播放（解耦模式）
+    this.playing = false; // 默认不自动播放
     this.speedIndex = 0; // 0 -> 1x, 1 -> 2x, 2 -> 4x
     this.playTime = 0; // 当前播放的比赛秒
-    this.timeline = buildTimeline(events); // 锚点时间线
-    this._currentIndex = 0; // 当前选中事件索引
-    // 每个事件的结束时间：该事件最后一个锚点的 t + 余量，作为独立片段时长
+    this.timeline = buildTimeline(events, this.mode); // 锚点时间线（continuous 启用 carry-beat 丢弃）
+    this._clipIndex = 0; // clip 模式：当前选中事件索引
+    // 每个事件的结束时间：该事件最后一个锚点的 t + 余量，作为独立片段时长（clip 用）
     this._eventEnds = this._computeEventEnds(events);
+    // 比赛总时长（continuous 播到这就结束）：取最后锚点 t（保证尾部动画不被截断）
+    this._matchEnd = this.timeline.length > 0
+      ? Math.max(events[events.length - 1]?.t ?? 0, this.timeline[this.timeline.length - 1].t)
+      : 0;
     // 初始化到第一个事件的初始状态
     this._initToEvent(0);
     this._prevPlayerPos = new Map(); // 调试：球员上一帧位置快照
@@ -52,7 +59,7 @@ export class Game {
   // 初始化/切换到某事件的初始状态：playTime = 事件 t，球员/球回到该事件起点锚点
   _initToEvent(index) {
     if (index < 0 || index >= this.events.length) return false;
-    this._currentIndex = index;
+    this._clipIndex = index;
     this.playTime = this.events[index].t;
     this.playing = false;
     this._lastLoggedEventIdx = -1; // 切换事件后，下次 step 会打 [EVENT] 日志
@@ -60,25 +67,34 @@ export class Game {
     return true;
   }
 
-  // 推进播放：dt 为真实秒。只在当前事件片段内推进，播完自动停。
+  // 推进播放：dt 为真实秒。
+  // continuous：整场推进，跨事件、事件间 off_ball_run 填满，播到比赛结束自动停。
+  // clip：只在当前事件片段内推进，播完自动停。
   step(dt) {
     if (!this.playing) return;
     const speed = config.playback.speeds[this.speedIndex] || 1;
-    const endT = this._eventEnds[this._currentIndex] ?? this.events[this._currentIndex]?.t ?? 0;
-    // 推进，但不超过当前事件结束时间（独立片段，不进入下一个动作）
-    this.playTime = Math.min(this.playTime + dt * speed, endT + 0.1); // +0.1 余量确保播完
+    if (this.mode === 'continuous') {
+      this.playTime += dt * speed;
+      if (this.playTime >= this._matchEnd) {
+        this.playTime = this._matchEnd;
+        this.playing = false;
+      }
+    } else {
+      const endT = this._eventEnds[this._clipIndex] ?? this.events[this._clipIndex]?.t ?? 0;
+      this.playTime = Math.min(this.playTime + dt * speed, endT + 0.1); // +0.1 余量确保播完
+      if (this.playTime >= endT) {
+        this.playing = false;
+      }
+    }
     // 根据锚点时间线更新球员/球位置（插值）
     this._updateFromTimeline();
-    // 若到达片段末尾，停止播放
-    if (this.playTime >= endT) {
-      this.playing = false;
-    }
     // 调试日志：事件切换时打 [EVENT]，周期性打球/球员位置
     if (config.debug.enabled) {
       this._frameCount = (this._frameCount || 0) + 1;
-      if (this._lastLoggedEventIdx !== this._currentIndex) {
-        this._logEvent(this._currentIndex);
-        this._lastLoggedEventIdx = this._currentIndex;
+      const idx = this.currentEventIndex();
+      if (this._lastLoggedEventIdx !== idx) {
+        this._logEvent(idx);
+        this._lastLoggedEventIdx = idx;
       }
       if (this._frameCount % config.debug.logEveryNFrames === 0) {
         this._logFrame();
@@ -145,18 +161,38 @@ export class Game {
   }
 
   _interpolateAnchors(kind, t, id) {
-    // 找到 kind 匹配、id 匹配（可选）的相邻锚点。
-    // 优先用【当前事件】的锚点插值（prevCur/next 都限当前事件），保证片段时间窗口内
-    // 不被更早/更晚事件的锚点干扰（事件窗口重叠时，旧事件锚点不得把球/人拖离当前位置）。
-    // 当前事件未锚定该实体时，用更早事件留下的位置兜底（hold，事件之间不滑动）。
-    const idx = this._currentIndex;
-    let prevCur = null; // 当前事件内最近锚点（a.evt === idx, a.t <= t）
-    let prevAny = null; // 更早事件的兜底锚点（仅当前事件无锚点时使用）
-    let next = null;    // 当前事件内下一锚点（a.evt === idx, a.t > t）
+    // 找到 kind 匹配、id 匹配（可选）的相邻锚点，按 t 插值。
+    // continuous 模式：沿整场时间线取最近锚点插值——事件密集，prev/next 相邻即自然衔接。
+    //   clip 模式：只用【当前事件】锚点（prevCur/next 限当前事件），避免跨事件泄漏；
+    //   当前事件未锚定该实体时，用更早事件兜底（hold）。
+    if (this.mode === 'continuous') {
+      let prev = null;
+      let next = null;
+      for (const a of this.timeline) {
+        if (a.kind !== kind) continue;
+        if (id !== undefined && a.id !== id) continue;
+        if (a.t <= t) prev = a;
+        else if (next === null) next = a;
+      }
+      if (!prev) return null;
+      if (!next) return { x: prev.x, y: prev.y }; // 末尾，停在最后锚点
+      // 事件间隙（不同 evt 的相邻锚点，中间无锚点）：hold 在 prev（事件之间不滑动）
+      if (prev.evt !== undefined && next.evt !== undefined && prev.evt !== next.evt) {
+        return { x: prev.x, y: prev.y };
+      }
+      const span = Math.max(next.t - prev.t, 1e-6);
+      const u = Math.min(Math.max((t - prev.t) / span, 0), 1);
+      return { x: prev.x + (next.x - prev.x) * u, y: prev.y + (next.y - prev.y) * u };
+    }
+    // clip 模式
+    const idx = this._clipIndex;
+    let prevCur = null;
+    let prevAny = null;
+    let next = null;
     for (const a of this.timeline) {
       if (a.kind !== kind) continue;
       if (id !== undefined && a.id !== id) continue;
-      if (a.evt > idx) continue; // 后续事件锚点不参与
+      if (a.evt > idx) continue;
       if (a.t <= t) {
         if (a.evt === idx) prevCur = a;
         prevAny = a;
@@ -165,54 +201,93 @@ export class Game {
       }
     }
     if (prevCur) {
-      // 当前事件内插值：人/球按事件内锚点移动；事件末尾无下一锚点时停在最后锚点
       if (!next) return { x: prevCur.x, y: prevCur.y };
       const span = Math.max(next.t - prevCur.t, 1e-6);
       const u = Math.min(Math.max((t - prevCur.t) / span, 0), 1);
-      return {
-        x: prevCur.x + (next.x - prevCur.x) * u,
-        y: prevCur.y + (next.y - prevCur.y) * u,
-      };
+      return { x: prevCur.x + (next.x - prevCur.x) * u, y: prevCur.y + (next.y - prevCur.y) * u };
     }
     if (prevAny) return { x: prevAny.x, y: prevAny.y };
     return null;
   }
 
   togglePlay() {
-    // 若已播完（playTime >= 事件结束），再点播放 → 重启当前片段
-    if (!this.playing && this.playTime >= this._eventEnds[this._currentIndex]) {
-      this._initToEvent(this._currentIndex);
+    if (this.mode === 'continuous') {
+      // 若已播到比赛结束，再点播放 → 整场重播
+      if (!this.playing && this.playTime >= this._matchEnd) {
+        this.playTime = 0;
+        this._updateFromTimeline();
+      }
+    } else {
+      // clip 模式：若已播完，再点播放 → 重启当前片段
+      if (!this.playing && this.playTime >= this._eventEnds[this._clipIndex]) {
+        this._initToEvent(this._clipIndex);
+      }
     }
     this.playing = !this.playing;
   }
 
-  // 重播当前动作：回到当前事件起点并开始播放
+  // 重播：continuous 从整场开头播放；clip 从当前事件起点播放
   replayCurrent() {
-    if (this._initToEvent(this._currentIndex)) {
+    if (this.mode === 'continuous') {
+      this.playTime = 0;
+      this._updateFromTimeline();
+      this.playing = true;
+    } else if (this._initToEvent(this._clipIndex)) {
       this.playing = true;
     }
     return this.playing;
   }
 
-  // 事件 id = 数组索引。当前选中事件（解耦模式下由 _currentIndex 维护，不从 playTime 反推）
+  // 当前事件 id：continuous 从 playTime 反推（处于哪个事件的时间窗）；clip 用显式索引
   currentEventIndex() {
-    return this._currentIndex;
+    if (this.mode === 'continuous') {
+      return this._indexAtTime(this.playTime);
+    }
+    return this._clipIndex;
+  }
+
+  // 给定比赛时刻，返回该时刻处于的事件索引（最后一个 t <= playTime 的事件；开始前 → 0）
+  _indexAtTime(t) {
+    let idx = 0;
+    for (let i = 0; i < this.events.length; i++) {
+      if (this.events[i].t <= t + 1e-6) idx = i;
+      else break;
+    }
+    return idx;
   }
 
   get eventCount() {
     return this.events.length;
   }
 
-  // 跳到指定事件（id = 索引）：切换到该事件的初始状态（无过渡，直接刷新），并暂停
+  // 跳到指定事件：continuous 把 playTime 设到该事件 t（从该事件继续连续播放）；clip 切到该事件初始状态。
+  // 两种模式都暂停（与控件 notice 一致），播放状态由用户点"播放"恢复。
   jumpToEvent(index) {
+    if (index < 0 || index >= this.events.length) return false;
+    if (this.mode === 'continuous') {
+      this._clipIndex = index;
+      this.playTime = this.events[index].t;
+      this.playing = false;
+      this._lastLoggedEventIdx = -1;
+      this._updateFromTimeline();
+      return true;
+    }
     return this._initToEvent(index);
   }
 
-  // 上一/下一个事件（基于显式维护的索引）
+  // 上一/下一个事件
   stepEvent(delta) {
-    const cur = this._currentIndex !== undefined ? this._currentIndex : 0;
+    const cur = this.currentEventIndex();
     const next = Math.max(0, Math.min(this.events.length - 1, cur + delta));
-    return this._initToEvent(next);
+    return this.jumpToEvent(next);
+  }
+
+  // 跳到指定比赛时刻（进度条拖动用）：更新 playTime 并刷新画面，暂停。
+  seekTo(t) {
+    this.playTime = Math.max(0, Math.min(t, this._matchEnd));
+    this.playing = false;
+    this._lastLoggedEventIdx = -1;
+    this._updateFromTimeline();
   }
 
   cycleSpeed() {
@@ -224,9 +299,18 @@ export class Game {
     return config.playback.speeds[this.speedIndex];
   }
 
+  // 比赛总时长（秒）：进度条分母/seek 上限用
+  get matchEnd() {
+    return this._matchEnd;
+  }
+
   getProgress() {
-    // 当前事件片段内的进度（0~1）
-    const idx = this._currentIndex;
+    // continuous：整场进度（0~1）；clip：当前事件片段内进度（0~1）
+    if (this.mode === 'continuous') {
+      if (this._matchEnd <= 0) return 0;
+      return Math.min(Math.max(this.playTime / this._matchEnd, 0), 1);
+    }
+    const idx = this._clipIndex;
     if (idx < 0 || idx >= this.events.length) return 0;
     const startT = this.events[idx].t;
     const endT = this._eventEnds[idx] ?? startT;

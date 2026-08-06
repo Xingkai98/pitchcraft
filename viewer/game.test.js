@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import { Game } from './game.js';
 import { interpretEvent } from './interpretation.js';
 
+// clip 模式测试：每个事件独立片段，默认不播放，点播才播
 function makeGame() {
   const events = [
     { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
@@ -12,7 +13,7 @@ function makeGame() {
     { t: 20, type: 'shot', subject: 9, x: 0.6, y: 0.5, x2: 0.95, y2: 0.5, speed: 25, result: 'goal' },
     { t: 20, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0' },
   ];
-  return new Game(events, []);
+  return new Game(events, [], 'clip');
 }
 
 test('默认不自动播放', () => {
@@ -146,7 +147,7 @@ const TACKLE_LINEUP = [
 ];
 
 test('step: tackle 事件播完，防守者与球在弹开点重合（拿到球）', () => {
-  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP);
+  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP, 'clip');
   // 弹开点 = 球最后锚点位置（从演绎层推导，而非硬编码）
   const anchors = interpretEvent(TACKLE_EVENT);
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
@@ -161,7 +162,7 @@ test('step: tackle 事件播完，防守者与球在弹开点重合（拿到球�
 });
 
 test('step: tackle 中间态——球先到弹开点，捡球人还在路上', () => {
-  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP);
+  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP, 'clip');
   const anchors = interpretEvent(TACKLE_EVENT);
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
   const loose = balls[balls.length - 1];
@@ -188,7 +189,7 @@ test('step: tackle fail——原持球人拿回球，防守者停在接触点', 
     { id: 10, team: 'home', x: 0.43, y: 0.51 },
     { id: 11, team: 'away', x: 0.45, y: 0.5 },
   ];
-  const g = new Game([evt], lineup);
+  const g = new Game([evt], lineup, 'clip');
   g.jumpToEvent(0);
   g.playing = true;
   for (let i = 0; i < 300; i++) g.step(0.1);
@@ -199,4 +200,68 @@ test('step: tackle fail——原持球人拿回球，防守者停在接触点', 
   // 防守者(11)停在接触点，没拿到球
   const tackler = g.players.find((p) => p.id === 11);
   assert.ok(Math.abs(tackler.x - g.ball.x) > 0.01 || Math.abs(tackler.y - g.ball.y) > 0.01, '失败时防守者不应拿到球');
+});
+
+// ---- 连续模式（continuous）：整场推进、跨事件、off_ball_run 填满 ----
+function makeContinuousGame() {
+  const events = [
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 2, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, x2: 0.42, y2: 0.27, speed: 3, result: 'success' },
+    { t: 4, type: 'pass', subject: 9, from: 9, to: 5, x: 0.5, y: 0.5, x2: 0.4, y2: 0.5, speed: 10, result: 'success' },
+    { t: 6, type: 'off_ball_run', subject: 7, x: 0.62, y: 0.15, x2: 0.63, y2: 0.17, speed: 3, result: 'success' },
+    { t: 8, type: 'dribble', subject: 5, x: 0.4, y: 0.5, x2: 0.5, y2: 0.45, speed: 6, touch_freq: 1, result: 'success' },
+    { t: 10, type: 'shot', subject: 5, x: 0.5, y: 0.45, x2: 0.95, y2: 0.5, speed: 25, result: 'goal' },
+    { t: 12, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0' },
+  ];
+  const lineup = [
+    { id: 4, team: 'home', x: 0.40, y: 0.25 },
+    { id: 7, team: 'home', x: 0.62, y: 0.15 },
+  ];
+  return new Game(events, lineup, 'continuous');
+}
+
+test('continuous: 默认模式是 continuous，playTime 从 0 到 matchEnd', () => {
+  const g = makeContinuousGame();
+  assert.equal(g.mode, 'continuous');
+  assert.equal(g.playTime, 0);
+  g.playing = true;
+  for (let i = 0; i < 500; i++) g.step(0.1);
+  assert.equal(g.playing, false, '播到比赛结束应自动停');
+  assert.ok(g.playTime >= 11.99, `应播到比赛结束，实际 ${g.playTime}`);
+});
+
+test('continuous: 跨事件推进（不 clamp 到单个事件）', () => {
+  const g = makeContinuousGame();
+  g.jumpToEvent(2); // pass t=4
+  g.playing = true;
+  for (let i = 0; i < 200; i++) g.step(0.1);
+  // 应越过 pass 事件进入后续事件
+  assert.ok(g.playTime > 8, `应跨过多个事件，实际 ${g.playTime}`);
+  assert.ok(g.currentEventIndex() > 2, '应已进入后续事件');
+});
+
+test('continuous: off_ball_run 事件让球员碎步移动（球不动）', () => {
+  const g = makeContinuousGame();
+  // 跳到 off_ball_run 事件（idx 1, t=2），播完
+  g.jumpToEvent(1);
+  g.playing = true;
+  for (let i = 0; i < 100; i++) g.step(0.1);
+  const p4 = g.players.find((p) => p.id === 4);
+  // 4 号应已从 (0.40,0.25) 移动到 (0.42,0.27)
+  assert.ok(Math.abs(p4.x - 0.42) < 0.02, `4 号应移动到 (0.42,0.27)，实际 ${p4.x}`);
+});
+
+test('continuous: 事件边界无 snap（球位置平滑）', () => {
+  const g = makeContinuousGame();
+  g.playing = true;
+  let prevBall = { ...g.ball };
+  let maxJump = 0;
+  for (let i = 0; i < 300; i++) {
+    g.step(0.1);
+    const jump = Math.hypot(g.ball.x - prevBall.x, g.ball.y - prevBall.y);
+    maxJump = Math.max(maxJump, jump);
+    prevBall = { ...g.ball };
+  }
+  // 事件边界位移不应超过正常事件内位移（阈值 ~0.1 归一化）
+  assert.ok(maxJump < 0.5, `事件边界球位移过大，maxJump=${maxJump}`);
 });

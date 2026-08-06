@@ -15,7 +15,7 @@ mod wasm;
 
 pub use rng::SeededRng;
 
-/// 事件类型枚举（9 类：8 类动作 + lineup 初始站位；goal 由 shot.result=goal 表达）
+/// 事件类型枚举（10 类：9 类动作 + lineup 初始站位；goal 由 shot.result=goal 表达）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventType {
     Lineup,
@@ -27,6 +27,7 @@ pub enum EventType {
     Tackle,
     Interception,
     Substitution,
+    OffBallRun,
 }
 
 impl EventType {
@@ -41,6 +42,7 @@ impl EventType {
             EventType::Tackle => "tackle",
             EventType::Interception => "interception",
             EventType::Substitution => "substitution",
+            EventType::OffBallRun => "off_ball_run",
         }
     }
 }
@@ -68,6 +70,8 @@ pub struct Event {
     pub loose_y: Option<f64>,    // 抢断弹开点 y
     pub carrier_from_x: Option<f64>, // 被铲者带球起点 x（tackle 用，画面演"带球中被抢"）
     pub carrier_from_y: Option<f64>, // 被铲者带球起点 y
+    pub keeper_x: Option<f64>,   // 门将当前位置 x（shot 用，画面让门将从实位扑救，不瞬移）
+    pub keeper_y: Option<f64>,   // 门将当前位置 y
     pub score: Option<String>, // 比分（whistle/goal 时）
     pub detail: Option<String>, // 附加说明
     pub players: Option<Vec<(i32, f64, f64)>>, // lineup 事件的 22 球员站位 (id, x, y)
@@ -97,6 +101,8 @@ impl Event {
         if let Some(y) = self.loose_y { parts.push(format!("\"loose_y\":{:.4}", y)); }
         if let Some(x) = self.carrier_from_x { parts.push(format!("\"carrier_from_x\":{:.4}", x)); }
         if let Some(y) = self.carrier_from_y { parts.push(format!("\"carrier_from_y\":{:.4}", y)); }
+        if let Some(x) = self.keeper_x { parts.push(format!("\"keeper_x\":{:.4}", x)); }
+        if let Some(y) = self.keeper_y { parts.push(format!("\"keeper_y\":{:.4}", y)); }
         if let Some(s) = &self.score { parts.push(format!("\"score\":\"{}\"", s)); }
         if let Some(d) = &self.detail { parts.push(format!("\"detail\":\"{}\"", d)); }
         if let Some(players) = &self.players {
@@ -138,6 +144,15 @@ pub const TACKLE_EAGERNESS: f64 = 0.09;
 pub const TACKLE_SUCCESS_RATE: f64 = 0.5;
 /// 弹开距离（归一化，与 viewer config.interpretation.tackle.deflectDistance 对齐）。
 pub const TACKLE_DEFLECT_DISTANCE: f64 = 0.05;
+
+// ---- 事件驱动时间推进参数（grill Q11b 确认）----
+/// 有球动作之间的"控球/决策间隔"（秒）：持球者控球观察、队友跑位的时间。
+pub const POSSESSION_HOLD_MIN: f64 = 8.0;
+pub const POSSESSION_HOLD_MAX: f64 = 15.0;
+/// 无球跑位：事件间最大节奏停顿（秒），实际 clamp 到 0.1-0.4s——跑位背靠背产出，画面持续有动作。
+pub const OFF_BALL_RUN_INTERVAL: f64 = 1.2;
+/// 无球跑位距离范围（归一化，每事件 1-2m 对应约 0.01-0.02）。
+pub const OFF_BALL_RUN_DIST: f64 = 0.02;
 
 /// 球员初始站位（固定默认站位，Q8b：无阵型系统，开球时 22 人站合理位置）。
 struct LineupPlayer {
@@ -199,6 +214,7 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
         loose_y: None,
         carrier_from_x: None,
         carrier_from_y: None,
+        keeper_x: None, keeper_y: None,
         score: None,
         detail: None,
         players: Some(lineup.iter().map(|p| (p.id, p.x, p.y)).collect()),
@@ -235,12 +251,13 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
         loose_y: None,
         carrier_from_x: None,
         carrier_from_y: None,
+        keeper_x: None, keeper_y: None,
         score: None, detail: None,
         players: None,
     });
 
-    // 简单事件序列：每隔 ~12-20 秒产出一个事件（Q10：45 分钟约 100-200 条）
-    let mut t = 3.0;
+    // 简单事件序列（Phase C：事件驱动时间，动作时长推进 + 无球跑位填满）
+    let mut t = 0.5; // kickoff 拨球动画 ~0.5s 结束
     let mut home_score = 0;
     let mut away_score = 0;
     // 当前持球方（0=home，1=away）。初始 kickoff 事件固定为 home 9 拨给 10（见上），
@@ -253,18 +270,21 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     for p in &lineup {
         pos[p.id as usize] = (p.x, p.y);
     }
-    // kickoff 落点 (0.55,0.5)：接球者 10 到那里，带球起点 = 落点
+    // 开球者 9 在中圈、接球者 10 到落点（与 kickoff 事件一致，避免开场瞬移）
+    pos[9 as usize] = (0.5, 0.5);
     pos[10 as usize] = (0.55, 0.5);
     let mut carrier_from = (0.55, 0.5);
     // 上次抢断的 (防守者, 被铲者) 对：避免同对连续 re-tackle 乒乓（审阅 major）
     let mut last_tackle_pair: Option<(i32, i32)> = None;
+    // 上一个"有球动作"事件（跳过 off_ball_run 填满）：用于 tackle 判断被铲者的带球段是否已由前一 dribble 演过
+    let mut prev_action: Option<(EventType, i32, f64, f64)> = None; // (type, subject, end_x, end_y)
+
+    // 开场准备期：开球后到第一个动作前，用无球跑位填满（避免开场定格）
+    let open_span = 2.5f64.min(dur - t);
+    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, open_span, carrier, -1);
 
     while t < dur {
-        let dt = 12.0 + (rng.next_u64() % 9) as f64; // 12-20s
-        t += dt;
-        if t >= dur { break; }
-
-        // 随机事件类型：传球/带球/射门/抢断
+        // 随机事件类型：传球/带球/射门/抢断（每个事件驱动自己的时长）
         let roll = rng.next_u64() % 100;
         let team_home = possession == 0;
 
@@ -285,6 +305,14 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 def_pos.0, def_pos.1, victim_pos.0, victim_pos.1,
                 TACKLE_DEFLECT_DISTANCE, def_id, victim,
             );
+            // 连续模式 dropCarryBeat 两端一致：若前一有球动作是同一被铲者的 dribble（落点==接触点），
+            // viewer 丢弃 carry-beat（不重放带球段），引擎必须把 carrier_move 归零、carrier_from 设接触点。
+            let prev_was_dribble_to_contact = match prev_action {
+                Some((EventType::Dribble, subject, ex, ey)) if subject == victim
+                    && (ex - victim_pos.0).abs() < 1e-6 && (ey - victim_pos.1).abs() < 1e-6 => true,
+                _ => false,
+            };
+            let event_carrier_from = if prev_was_dribble_to_contact { victim_pos } else { carrier_from };
             events.push(Event {
                 t, type_: EventType::Tackle,
                 subject: def_id, from: None, to: Some(victim),
@@ -293,9 +321,17 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 lead: None, score: None, detail: None,
                 receiver_x: None, receiver_y: None,
                 loose_x: Some(loose_x), loose_y: Some(loose_y),
-                carrier_from_x: Some(carrier_from.0), carrier_from_y: Some(carrier_from.1),
+                carrier_from_x: Some(event_carrier_from.0), carrier_from_y: Some(event_carrier_from.1),
+                keeper_x: None, keeper_y: None,
                 players: None,
             });
+            // tackle 时长 = viewer 演绎完整时长（事件驱动，Q11b；两端一致避免连续播放时间错位）
+            let carrier_move = if prev_was_dribble_to_contact { 0.0 } else { distance_meters(carrier_from, victim_pos) / 3.0 };
+            let approach = distance_meters(def_pos, victim_pos) / 6.0;
+            let t_contact = carrier_move.max(approach);
+            let deflect = distance_meters(victim_pos, (loose_x, loose_y)) / 5.0;
+            let chase = distance_meters(victim_pos, (loose_x, loose_y)) / 6.0;
+            let dur_sec = t_contact + deflect + 0.15 + chase;
             if success {
                 // 球权换到防守方，防守者到弹开点（下一事件从 loose 出发，不 snap）
                 possession = if def_home { 0 } else { 1 };
@@ -310,6 +346,13 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 pos[def_id as usize] = victim_pos;
             }
             last_tackle_pair = Some((def_id, victim));
+            prev_action = Some((EventType::Tackle, if success { def_id } else { victim }, loose_x, loose_y));
+            t += dur_sec;
+            // 持球者控球观察间隔，无球跑位填满
+            let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
+            let span = hold.min(dur - t);
+            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+            if t >= dur { break; }
             continue;
         }
 
@@ -317,7 +360,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
             // pass（朝队友）：从当前持球者出发，接球者选离持球者最近的队友
             let from = carrier;
             let from_pos = pos[from as usize];
-            let (to, to_pos) = nearest_teammate(&lineup, from_pos, team_home, from);
+            let (to, to_pos) = nearest_teammate(&pos, from_pos, team_home, from);
             // 接球者当前位置（供画面让接球者从这跑到落点，不瞬移）
             let rx = pos[to as usize].0;
             let ry = pos[to as usize].1;
@@ -333,13 +376,21 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 receiver_x: Some(rx), receiver_y: Some(ry),
                 touch_freq: None, score: None, detail: None,
                 loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+                keeper_x: None, keeper_y: None,
                 players: None,
             });
+            // 传球时长 = 球飞行距离 ÷ 球速（事件驱动，Q11b）
+            let dur_sec = distance_meters(from_pos, (x2, y2)) / speed;
             // 球权移到接球者
             pos[to as usize] = (x2, y2);
             carrier = to;
             carrier_from = (x2, y2); // 接球者带球起点 = 接球落点
             last_tackle_pair = None; // 实际产出了事件 → 清除冷却（同对可再抢）
+            prev_action = Some((EventType::Pass, to, x2, y2));
+            t += dur_sec;
+            let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
+            let span = hold.min(dur - t);
+            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
         } else if roll < 70 {
             // dribble（从持球者出发，朝对方球门推进）
             let p = carrier;
@@ -355,11 +406,19 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 lead: None, score: None, detail: None,
                 receiver_x: None, receiver_y: None,
                 loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+                keeper_x: None, keeper_y: None,
                 players: None,
             });
+            // 带球时长 = 带球距离 ÷ 带球速度（事件驱动，Q11b）
+            let dur_sec = distance_meters(pos_p, (x2, y2)) / speed;
             pos[p as usize] = (x2, y2);
             carrier_from = pos_p; // 带球起点 = 本段带球起点
             last_tackle_pair = None; // 实际产出了事件 → 清除冷却
+            prev_action = Some((EventType::Dribble, p, x2, y2));
+            t += dur_sec;
+            let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
+            let span = hold.min(dur - t);
+            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
         } else {
             // shot（射门，在对方半场）
             let p = carrier;
@@ -378,6 +437,9 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 if scored {
                     if team_home { home_score += 1; } else { away_score += 1; }
                 }
+                // 门将当前位置（画面让门将从实位扑救，不瞬移）
+                let gk_id = if team_home { 21 } else { 0 };
+                let gk_pos = pos[gk_id as usize];
                 events.push(Event {
                     t, type_: EventType::Shot,
                     subject: p, from: None, to: None,
@@ -386,14 +448,29 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                     touch_freq: None, lead: None, score: None, detail: None,
                     receiver_x: None, receiver_y: None,
                     loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+                    keeper_x: Some(gk_pos.0), keeper_y: Some(gk_pos.1),
                     players: None,
                 });
-                // 射门后持球者停在射门点（非进球时球权/位置不变），carrier_from 更新为射门点，
-                // 避免后续 tackle 带着过时的带球起点（审阅 minor：non-goal shot 后 carrier_from stale）。
-                carrier_from = pos_p;
+                // 射门时长 = 球飞行距离 ÷ 球速（事件驱动，Q11b）
+                let dur_sec = distance_meters(pos_p, (x2, y2)) / speed;
                 last_tackle_pair = None; // 实际产出了射门事件 → 清除冷却
+                prev_action = Some((EventType::Shot, p, x2, y2));
                 if scored {
-                    // 进球后重新开球（whistle + kickoff）
+                    // 进球后重新开球：球先飞进球门（dur_sec），哨响 +2s，开球 +5s（grill Q5）。
+                    // 事件顺序 = t 顺序：shot → 庆祝 fill → whistle → 准备 fill → 开球者走回中圈 → kickoff(拨球)。
+                    // 丢球方前锋开球：home 进球→away 12；away 进球→home 9。
+                    let kickoff_id = if team_home { 12 } else { 9 };
+                    t += dur_sec; // 球进网
+                    // 进球后门将扑到射门方向（y2），同步引擎 pos（避免下次射门 keeper_y 陈旧 → 门将瞬移，审阅 major）
+                    pos[gk_id as usize] = (gk_pos.0, y2);
+                    // 终场前进球：若剩余时间不足完整开球序列（~6s），跳过 kickoff（半场哨在 dur 处理），
+                    // 避免 kickoff t > dur 导致 t 非单调（审阅 major，~1% seed 触发）。
+                    if t + 6.0 >= dur {
+                        break; // 结束比赛（半场哨在后面统一推）
+                    }
+                    // 庆祝期（~2s），无球跑位填满（排除开球者）
+                    let span1 = 2.0f64.min(dur - t);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span1, carrier, kickoff_id);
                     events.push(Event {
                         t, type_: EventType::Whistle,
                         subject: 0, from: None, to: None,
@@ -401,26 +478,85 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                         result: None, speed: None, touch_freq: None, lead: None,
                         receiver_x: None, receiver_y: None,
                         loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+                        keeper_x: None, keeper_y: None,
                         score: Some(format!("{}-{}", home_score, away_score)),
                         detail: Some("kickoff_again".to_string()),
                         players: None,
                     });
-                    // 丢球方前锋开球：home 前锋 id=9，away 前锋 id=12（审阅 minor-4：20 是后卫）
-                    let kickoff_id = if team_home { 12 } else { 9 };
+                    // 准备期（~3s），无球跑位填满（排除开球者）
+                    let span2 = 3.0f64.min(dur - t);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span2, carrier, kickoff_id);
+                    // 开球者走回中圈（视觉过渡，避免 kickoff 硬编码中圈导致瞬移）
+                    let kick_pos = pos[kickoff_id as usize];
+                    if (kick_pos.0 - 0.5).abs() > 1e-6 || (kick_pos.1 - 0.5).abs() > 1e-6 {
+                        let walk_speed = 3.0;
+                        let dur_walk = distance_meters(kick_pos, (0.5, 0.5)) / walk_speed;
+                        events.push(Event {
+                            t, type_: EventType::OffBallRun,
+                            subject: kickoff_id, from: None, to: None,
+                            x: kick_pos.0, y: kick_pos.1, x2: Some(0.5), y2: Some(0.5),
+                            result: Some("success".to_string()), speed: Some(walk_speed), touch_freq: None,
+                            lead: None, score: None, detail: None,
+                            receiver_x: None, receiver_y: None,
+                            loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+                            keeper_x: None, keeper_y: None,
+                            players: None,
+                        });
+                        t += dur_walk;
+                        pos[kickoff_id as usize] = (0.5, 0.5);
+                        t += 0.1; // 走位终点 < kickoff 起点（避免同刻锚点排序问题）
+                    }
+                    // walk-back 可能让 t 超 dur（开球者远距离走回中圈）：超时则跳过 kickoff（半场哨在 dur 处理）
+                    if t >= dur {
+                        break;
+                    }
+                    // 开球一拨：球从中圈拨给开球者的同队附近球员（对齐 demo 开球，球不瞬移回中圈）。
+                    // 落点按接球者当前位（lead_point 中圈→接球者），避免接球者被迫冲刺超远（审阅 major）。
+                    let kickoff_receiver = if team_home { 11 } else { 10 }; // 同队附近球员
+                    let receiver_pos = pos[kickoff_receiver as usize];
+                    let (kickoff_x2, kickoff_y2) = lead_point((0.5, 0.5), receiver_pos, 0.1);
                     events.push(Event {
                         t, type_: EventType::Kickoff,
-                        subject: kickoff_id, from: None, to: None,
-                        x: 0.5, y: 0.5, x2: None, y2: None,
-                        result: None, speed: None, touch_freq: None, lead: None,
-                        receiver_x: None, receiver_y: None,
+                        subject: kickoff_id, from: Some(kickoff_id), to: Some(kickoff_receiver),
+                        x: 0.5, y: 0.5, x2: Some(kickoff_x2), y2: Some(kickoff_y2),
+                        result: Some("success".to_string()), speed: Some(12.0),
+                        touch_freq: None, lead: Some(0.1),
+                        receiver_x: Some(receiver_pos.0),
+                        receiver_y: Some(receiver_pos.1),
                         loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+                        keeper_x: None, keeper_y: None,
                         score: None, detail: None, players: None,
                     });
                     possession = if team_home { 1 } else { 0 };
-                    carrier = kickoff_id;
-                    pos[kickoff_id as usize] = (0.5, 0.5);
-                    carrier_from = (0.5, 0.5);
+                    carrier = kickoff_receiver;
+                    pos[kickoff_receiver as usize] = (kickoff_x2, kickoff_y2);
+                    carrier_from = (kickoff_x2, kickoff_y2);
+                    prev_action = Some((EventType::Kickoff, kickoff_receiver, kickoff_x2, kickoff_y2));
+                    // 控球观察间隔，无球跑位填满
+                    let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
+                    let span = hold.min(dur - t);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+                } else {
+                    // 非进球（被扑/偏出）：球在门线 (x2, y2)，对方门将拿到球重新组织。
+                    // 球权转给对方，持球者 = 对方门将，pos = 球落点（门线 x 侧, y2）——与 viewer 门将扑救终点一致。
+                    possession = if team_home { 1 } else { 0 };
+                    let gk = if team_home { 21 } else { 0 };
+                    let gk_x = if team_home { 0.98 } else { 0.02 };
+                    carrier = gk;
+                    pos[gk as usize] = (gk_x, y2);
+                    carrier_from = (gk_x, y2);
+                    t += dur_sec;
+                    let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
+                    let span = hold.min(dur - t);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
                 }
+            } else {
+                // 静默迭代：持球者不在进攻半场（shot guard 不满足），不产射门事件。
+                // carrier_from 对称刷新（grill Q8），时间推进控球观察间隔。
+                carrier_from = pos_p;
+                let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
+                let span = hold.min(dur - t);
+                fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
             }
         }
     }
@@ -437,6 +573,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
         loose_y: None,
         carrier_from_x: None,
         carrier_from_y: None,
+        keeper_x: None, keeper_y: None,
         score: Some(format!("{}-{}", home_score, away_score)),
         detail: Some("half_time".to_string()),
         players: None,
@@ -466,7 +603,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
           lead: Option<f64>, rx: Option<f64>, ry: Option<f64>,
           score: Option<String>, detail: Option<String>,
           players: Option<Vec<(i32, f64, f64)>>) -> Event {
-        Event { t, type_, subject, x, y, from, to, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, score, detail, players }
+        Event { t, type_, subject, x, y, from, to, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None, score, detail, players }
     }
 
     // 初始站位（唯一一次 lineup）
@@ -522,6 +659,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         receiver_x: None, receiver_y: None,
         loose_x: Some(loose_x), loose_y: Some(loose_y),
         carrier_from_x: Some(0.42), carrier_from_y: Some(0.42),
+        keeper_x: None, keeper_y: None,
         players: None,
     });
 
@@ -575,6 +713,55 @@ fn should_tackle(rng: &mut SeededRng) -> bool {
     (rng.next_u64() % 100) < (TACKLE_EAGERNESS * 100.0) as u64
 }
 
+/// 无球跑位目标：从当前位置随机方向碎步移动 OFF_BALL_RUN_DIST（1-2m），越界钳制。
+fn off_ball_target(rng: &mut SeededRng, p: (f64, f64)) -> (f64, f64) {
+    let dir = ((rng.next_u64() % 100) as f64 / 50.0) - 1.0;
+    let perp = ((rng.next_u64() % 100) as f64 / 50.0) - 1.0;
+    let x = p.0 + dir * OFF_BALL_RUN_DIST;
+    let y = p.1 + perp * OFF_BALL_RUN_DIST;
+    (clamp01(x), clamp01(y))
+}
+
+/// 产出一条无球跑位事件：选一个非持球者随机碎步移动，并更新引擎 pos。
+/// `exclude` = 额外排除的球员 id（-1 不排除；进球后重新开球前排除开球者）。
+/// 返回事件时长（距离÷跑速）。
+fn emit_off_ball_run(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: f64, carrier: i32, exclude: i32) -> f64 {
+    let mut idx = (rng.next_u64() % 22) as usize;
+    while idx as i32 == carrier || idx == 0 || idx == 21 || idx as i32 == exclude {
+        idx = (rng.next_u64() % 22) as usize;
+    }
+    let p = pos[idx];
+    let (x2, y2) = off_ball_target(rng, p);
+    let speed = 2.0 + (rng.next_u64() % 20) as f64 / 10.0; // 2-4 m/s 跑速（无球碎步）
+    let dur = distance_meters(p, (x2, y2)) / speed;
+    events.push(Event {
+        t, type_: EventType::OffBallRun,
+        subject: idx as i32, from: None, to: None,
+        x: p.0, y: p.1, x2: Some(x2), y2: Some(y2),
+        result: Some("success".to_string()), speed: Some(speed), touch_freq: None,
+        lead: None, score: None, detail: None,
+        receiver_x: None, receiver_y: None,
+        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+        keeper_x: None, keeper_y: None, players: None,
+    });
+    pos[idx] = (x2, y2); // 同步引擎位置（off_ball_run 让球员实际移动了）
+    dur
+}
+
+/// 用无球跑位事件填满 [t, t+span] 时间段，推进 t。事件按各自时长背靠背产出，
+/// 中间留极小节奏停顿（0.1-0.4s），画面持续有动作。
+fn fill_with_off_ball(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: &mut f64, span: f64, carrier: i32, exclude: i32) {
+    let mut elapsed = 0.0;
+    while elapsed < span {
+        let dur = emit_off_ball_run(events, rng, pos, *t, carrier, exclude);
+        *t += dur;
+        elapsed += dur;
+        let pause = (OFF_BALL_RUN_INTERVAL - dur).min(0.4).max(0.1);
+        *t += pause;
+        elapsed += pause;
+    }
+}
+
 /// 弹开点：被铲者位置 + 逼近方向垂线 × 距离。确定性选边，优先场内，越界钳制，零距离退化。
 /// 与 viewer deflectPoint 同规则（保证两端一致）。
 fn deflect_point(sx: f64, sy: f64, vx: f64, vy: f64, dist: f64, tackler: i32, victim: i32) -> (f64, f64) {
@@ -601,17 +788,19 @@ fn deflect_point(sx: f64, sy: f64, vx: f64, vy: f64, dist: f64, tackler: i32, vi
 }
 
 /// 找离位置 pos 最近的队友（pass 用：传球者把球传给附近的人，避免乱传给远端的"看起来像对手"的位置）
-/// from_id = 传球者，排除自己（pos 可能是传球者移动后的当前位置，静态站位里最近的可能是自己）
-fn nearest_teammate(lineup: &[LineupPlayer], pos: (f64, f64), home: bool, from_id: i32) -> (i32, (f64, f64)) {
+/// from_id = 传球者，排除自己。用**当前** pos[]（实时位置）选人，
+/// 而非静态站位——Phase C 的 off_ball_run 让球员漂移，若用静态站位选人，
+/// 接球者会在极短球飞行时间内被迫冲刺超远距离（审阅 major：receiver sprint）。
+fn nearest_teammate(pos: &[(f64, f64)], from_pos: (f64, f64), home: bool, from_id: i32) -> (i32, (f64, f64)) {
     let mut best = None;
     let mut best_dist = f64::MAX;
-    for p in lineup {
-        let is_teammate = if home { p.id <= 10 } else { p.id >= 11 };
-        if !is_teammate || p.id == from_id { continue; }
-        let d = (p.x - pos.0).powi(2) + (p.y - pos.1).powi(2);
+    for (id, &p) in pos.iter().enumerate() {
+        let is_teammate = if home { id <= 10 } else { id >= 11 };
+        if !is_teammate || id as i32 == from_id { continue; }
+        let d = (p.0 - from_pos.0).powi(2) + (p.1 - from_pos.1).powi(2);
         if d < best_dist {
             best_dist = d;
-            best = Some((p.id, (p.x, p.y)));
+            best = Some((id as i32, p));
         }
     }
     best.unwrap()

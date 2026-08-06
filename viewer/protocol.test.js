@@ -5,9 +5,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseEvent, parseEventStream, playerTeam, isGoal, EVENT_TYPES } from './protocol.js';
 
-test('EVENT_TYPES 包含 9 类事件', () => {
+test('EVENT_TYPES 包含 10 类事件', () => {
   assert.deepEqual([...EVENT_TYPES].sort(), [
-    'dribble', 'interception', 'kickoff', 'lineup', 'pass', 'shot', 'substitution', 'tackle', 'whistle',
+    'dribble', 'interception', 'kickoff', 'lineup', 'off_ball_run', 'pass', 'shot', 'substitution', 'tackle', 'whistle',
   ]);
 });
 

@@ -245,3 +245,56 @@ test('tackle 五段式: carrier_from 缺失时被铲者原地持球（fallback�
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
   assert.equal(balls[0].x, 0.45);
 });
+
+// ---- Phase C：off_ball_run 与 dropCarryBeat ----
+test('off_ball_run: 短距离碎步移动（人移动，球不动）', () => {
+  const e = { t: 10, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, x2: 0.42, y2: 0.27, speed: 3, result: 'success' };
+  const anchors = interpretEvent(e);
+  // 只有球员锚点，无球锚点
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.equal(balls.length, 0, 'off_ball_run 不应有球锚点');
+  const players = anchors.filter((a) => a.kind === 'player');
+  assert.equal(players.length, 2);
+  assert.equal(players[0].id, 4);
+  assert.equal(players[0].x, 0.40);
+  assert.equal(players[1].x, 0.42);
+  // 时长 = 距离 ÷ 速度（事件驱动）
+  const dur = players[1].t - players[0].t;
+  assert.ok(dur > 0, `off_ball_run 应有移动时长，实际 ${dur}`);
+});
+
+test('off_ball_run: 缺 x2/y2 时不产出 NaN 锚点', () => {
+  const e = { t: 10, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, result: 'success' };
+  const anchors = interpretEvent(e);
+  assert.equal(anchors.length, 0, '缺终点应跳过');
+});
+
+test('tackle dropCarryBeat: 被铲者从接触点开始（不重放带球段）', () => {
+  const e = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55,
+    carrier_from_x: 0.60, carrier_from_y: 0.50, loose_x: 0.4277, loose_y: 0.5053, result: 'success' };
+  const anchors = interpretEvent(e, true); // dropCarryBeat=true
+  const victimAnchors = anchors.filter((a) => a.kind === 'player' && a.id === 16).sort((a, b) => a.t - b.t);
+  // 起点 = 接触点（丢弃带球段）
+  assert.equal(victimAnchors[0].x, 0.45);
+  assert.equal(victimAnchors[0].y, 0.55);
+  // 球起点也在接触点
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  assert.equal(balls[0].x, 0.45);
+});
+
+test('buildTimeline continuous: tackle 前跳过 off_ball_run 找到同被铲者 dribble → dropCarryBeat', () => {
+  const events = [
+    { t: 20, type: 'dribble', subject: 16, x: 0.55, y: 0.5, x2: 0.45, y2: 0.55, speed: 3, result: 'success' },
+    { t: 21, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, x2: 0.42, y2: 0.27, speed: 3, result: 'success' },
+    { t: 22, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55, carrier_from_x: 0.55, carrier_from_y: 0.5, result: 'success' },
+  ];
+  // continuous 模式：tackle 前跳过 off_ball_run，找到 dribble(16)→tackle(16)，dropCarryBeat 生效
+  const tlContinuous = buildTimeline(events, 'continuous');
+  const tackleIdx = 2;
+  const victimAnchors = tlContinuous.filter((a) => a.kind === 'player' && a.id === 16 && a.evt === tackleIdx).sort((a, b) => a.t - b.t);
+  assert.equal(victimAnchors[0].x, 0.45, 'continuous 模式应丢弃 carry-beat（起点=接触点）');
+  // clip 模式：不丢（保留带球段）
+  const tlClip = buildTimeline(events, 'clip');
+  const victimAnchorsClip = tlClip.filter((a) => a.kind === 'player' && a.id === 16 && a.evt === tackleIdx).sort((a, b) => a.t - b.t);
+  assert.equal(victimAnchorsClip[0].x, 0.55, 'clip 模式保留 carry-beat（起点=carrier_from）');
+});
