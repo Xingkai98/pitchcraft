@@ -147,6 +147,7 @@ pub const TACKLE_DEFLECT_DISTANCE: f64 = 0.05;
 
 // ---- 事件驱动时间推进参数（grill Q11b 确认）----
 /// 有球动作之间的"控球/决策间隔"（秒）：持球者控球观察、队友跑位的时间。
+/// "卡住"由 fill 里的 carrier dribble 解决（持球者盘带不静止），hold 保持 8-15s 维持 tackle 频率目标。
 pub const POSSESSION_HOLD_MIN: f64 = 8.0;
 pub const POSSESSION_HOLD_MAX: f64 = 15.0;
 /// 无球跑位：事件间最大节奏停顿（秒），实际 clamp 到 0.1-0.4s——跑位背靠背产出，画面持续有动作。
@@ -281,7 +282,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
 
     // 开场准备期：开球后到第一个动作前，用无球跑位填满（避免开场定格）
     let open_span = 2.5f64.min(dur - t);
-    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, open_span, carrier, -1);
+    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, open_span, carrier, -1, true);
 
     while t < dur {
         // 随机事件类型：传球/带球/射门/抢断（每个事件驱动自己的时长）
@@ -351,7 +352,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
             // 持球者控球观察间隔，无球跑位填满
             let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
             let span = hold.min(dur - t);
-            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
             if t >= dur { break; }
             continue;
         }
@@ -390,7 +391,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
             t += dur_sec;
             let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
             let span = hold.min(dur - t);
-            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
         } else if roll < 70 {
             // dribble（从持球者出发，朝对方球门推进）
             let p = carrier;
@@ -418,7 +419,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
             t += dur_sec;
             let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
             let span = hold.min(dur - t);
-            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
         } else {
             // shot（射门，在对方半场）
             let p = carrier;
@@ -470,7 +471,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                     }
                     // 庆祝期（~2s），无球跑位填满（排除开球者）
                     let span1 = 2.0f64.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span1, carrier, kickoff_id);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span1, carrier, kickoff_id, false);
                     events.push(Event {
                         t, type_: EventType::Whistle,
                         subject: 0, from: None, to: None,
@@ -485,7 +486,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                     });
                     // 准备期（~3s），无球跑位填满（排除开球者）
                     let span2 = 3.0f64.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span2, carrier, kickoff_id);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span2, carrier, kickoff_id, false);
                     // 开球者走回中圈（视觉过渡，避免 kickoff 硬编码中圈导致瞬移）
                     let kick_pos = pos[kickoff_id as usize];
                     if (kick_pos.0 - 0.5).abs() > 1e-6 || (kick_pos.1 - 0.5).abs() > 1e-6 {
@@ -535,7 +536,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                     // 控球观察间隔，无球跑位填满
                     let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
                     let span = hold.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
                 } else {
                     // 非进球（被扑/偏出）：球在门线 (x2, y2)，对方门将拿到球重新组织。
                     // 球权转给对方，持球者 = 对方门将，pos = 球落点（门线 x 侧, y2）——与 viewer 门将扑救终点一致。
@@ -548,7 +549,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                     t += dur_sec;
                     let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
                     let span = hold.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
                 }
             } else {
                 // 静默迭代：持球者不在进攻半场（shot guard 不满足），不产射门事件。
@@ -556,7 +557,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 carrier_from = pos_p;
                 let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
                 let span = hold.min(dur - t);
-                fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1);
+                fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
             }
         }
     }
@@ -748,17 +749,47 @@ fn emit_off_ball_run(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f
     dur
 }
 
+/// 持球者短带球（人球同步）：控球间隔内给持球者小幅盘带，避免其长时间静止
+/// （用户报告"dribble 卡住不动"）。返回事件时长。
+fn emit_carrier_dribble(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: f64, carrier: i32) -> f64 {
+    let p = pos[carrier as usize];
+    let (x2, y2) = off_ball_target(rng, p);
+    let speed = 3.0 + (rng.next_u64() % 20) as f64 / 10.0; // 3-5 m/s 带球
+    let dur = distance_meters(p, (x2, y2)) / speed;
+    events.push(Event {
+        t, type_: EventType::Dribble,
+        subject: carrier, from: None, to: None,
+        x: p.0, y: p.1, x2: Some(x2), y2: Some(y2),
+        result: Some("success".to_string()), speed: Some(speed), touch_freq: Some(1.0),
+        lead: None, score: None, detail: None,
+        receiver_x: None, receiver_y: None,
+        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
+        keeper_x: None, keeper_y: None, players: None,
+    });
+    pos[carrier as usize] = (x2, y2); // 同步引擎位置（持球者盘带移动了）
+    dur
+}
+
 /// 用无球跑位事件填满 [t, t+span] 时间段，推进 t。事件按各自时长背靠背产出，
 /// 中间留极小节奏停顿（0.1-0.4s），画面持续有动作。
-fn fill_with_off_ball(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: &mut f64, span: f64, carrier: i32, exclude: i32) {
+/// `carrier_active` = true 时每 3 个队友跑位给持球者 1 个短带球（人球同步，持球者不静止）。
+/// 进球后庆祝/准备期传 false（球在门内，持球者带球会瞬移球）。
+fn fill_with_off_ball(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: &mut f64, span: f64, carrier: i32, exclude: i32, carrier_active: bool) {
     let mut elapsed = 0.0;
+    let mut n = 0u64;
     while elapsed < span {
-        let dur = emit_off_ball_run(events, rng, pos, *t, carrier, exclude);
+        let dur = if carrier_active && n % 3 == 2 && carrier != exclude && carrier != 0 && carrier != 21 {
+            // 持球者短带球（人球同步）；进球开球前 exclude 持球者时不产；门将不盘带离门（避免射门后门将瞬移）
+            emit_carrier_dribble(events, rng, pos, *t, carrier)
+        } else {
+            emit_off_ball_run(events, rng, pos, *t, carrier, exclude)
+        };
         *t += dur;
         elapsed += dur;
         let pause = (OFF_BALL_RUN_INTERVAL - dur).min(0.4).max(0.1);
         *t += pause;
         elapsed += pause;
+        n += 1;
     }
 }
 

@@ -226,6 +226,15 @@ function interpretOffBallRun(e, out) {
 export function interpretEvent(e, dropCarryBeat = false) {
   const out = [];
   switch (e.type) {
+    case 'lineup':
+      // 初始站位：产 22 个球员锚点（t=事件 t），保证时间线在开场有所有球员的初始位置。
+      // 否则 replay/seek 到 t=0 时插值器找不到锚点，球员停在末态位置（审阅/用户报告：重播不回初始）。
+      if (Array.isArray(e.players)) {
+        for (const p of e.players) {
+          out.push({ t: e.t, kind: 'player', id: p.id, x: p.x, y: p.y });
+        }
+      }
+      break;
     case 'kickoff':
       // 中圈开球：开球球员在中点，随后一拨（有 from/to/x2/y2 时按短传演绎）
       out.push({ t: e.t, kind: 'player', id: e.subject, x: 0.5, y: 0.5 });
