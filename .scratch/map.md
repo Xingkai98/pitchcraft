@@ -37,16 +37,19 @@
 
 ## Tickets（决策票据）
 
-见 `.scratch/issues/`：
-- `01` **引擎核心语言**（Rust）✅ 已解决
-- `02` **事件流协议**（待讨论，先做最小原型验证接缝）
-- `03` 时间推进模型、`04` 球场模型、`05` 能力值模型、`06` 确定性与回放
-- `07` **画面层双端渲染**（JS + Canvas，桌面 Tauri 套壳）✅ 已解决
-- `08` **运行时拓扑**（B 内嵌引擎：桌面 Tauri 内嵌 + 网页 WASM）✅ 已解决
-- `09` **事件演绎层**（人球解耦与动画节奏）✅ 已解决
-- `02` **事件流协议**（字段/枚举/坐标/格式）✅ 已解决（P0 验证后定稿，见 protocol-validation-notes）
+> **2026-08-06 起，票据迁移到 GitHub issues 管理**：`github.com/Xingkai98/pitchcraft/issues`，编号保留（title 带 `[wayfinder #0X]`）。`.scratch/issues/` 保留为本地存档；新决策/票据在 GitHub issues 开。下方状态为迁移时快照。
 
-> 语言选型已定（Rust 引擎 + JS Canvas 画面）。下一个关键决策是 `08`：引擎和画面在"网页版"和"Windows 桌面版"里到底怎么协同运行——这决定 WASM 工程成本和 P0 路径。
+- `01` **引擎核心语言**（Rust）✅ 已解决（GH issue closed）
+- `02` **事件流协议** ✅ 已解决（P0 定稿；P2 Phase B 补 tackle 字段定稿）
+- `03` 时间推进模型 ⏳ open（P2 Phase C 落地"事件驱动连续推进"的画面消费端）
+- `04` 球场模型 ⏳ open（引擎 AI 阶段）
+- `05` 能力值模型 ⏳ open（引擎 AI 阶段，research 待跑）
+- `06` 确定性与回放 ⏳ open（P2 Phase C 连续流+固定种子=回放数据；带标签 RNG/定点数仍开放）
+- `07` **画面层双端渲染**（JS + Canvas）✅ 已解决（GH issue closed）
+- `08` **运行时拓扑**（B 内嵌引擎）✅ 已解决（GH issue closed）
+- `09` **事件演绎层**（人球解耦与动画节奏）✅ 已解决（GH issue closed）
+
+> 当前实施路线：P1（tackle 四段式）已完成；**P2 连续比赛播放**（`openspec/changes/p2-continuous-match-playback/`）分 Phase B（引擎 tackle 语义补全 + 协议定稿）+ Phase C（viewer 连续播放），做完 = 完整播放的比赛画面。
 
 ## 已确认的方向（Design 讨论，2026-08-04）
 

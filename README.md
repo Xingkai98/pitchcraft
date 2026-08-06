@@ -1,6 +1,16 @@
-# Football Manager Clone — P0
+# Football Manager Clone — P1
 
-从零开始写的足球经理 2D 复刻（**不依赖现成的 FM 类实现**）。当前是 P0：打通"Rust 引擎 → 事件流 → JS 画面"链路。
+从零开始写的足球经理 2D 复刻（**不依赖现成的 FM 类实现**）。P0 打通"Rust 引擎 → 事件流 → JS 画面"链路；P1 完成抢断四段式演绎。
+
+## 当前进度
+
+| 阶段 | 内容 | 状态 |
+|------|------|------|
+| P0 `p0-event-to-pitch` | 引擎 → 事件流 → 画面链路 | ✅ |
+| P1 `p1-tackle-drama` | 抢断四段式演绎（持球→逼近→碰撞→弹开+捡球） | ✅ |
+| P2 `p2-continuous-match-playback` | Phase B 引擎 tackle 语义补全 + Phase C viewer 连续播放 | 📋 已规划待实施 |
+
+P2 做完 = **完整播放的比赛画面**（整场 kickoff→whistle 连续流转）。规划见 `openspec/changes/p2-continuous-match-playback/`。
 
 ## 技术栈
 
@@ -15,8 +25,12 @@
 engine/    Rust 事件引擎（零依赖，确定性种子 RNG）
 viewer/    JS 画面层（Canvas 圆点球场 + 事件演绎）
 openspec/  OpenSpec 规格（change 记录）
-.scratch/  wayfinder 决策地图 + 设计文档
+.scratch/  wayfinder 决策地图 + 设计文档（票据已迁移 GitHub issues）
 ```
+
+## 决策票据
+
+wayfinder 决策票据迁移到 **GitHub issues**（`github.com/Xingkai98/pitchcraft/issues`，标签 `wayfinder`，编号 `[wayfinder #0X]`）。`.scratch/issues/` 保留为本地存档。开发流程（OpenSpec + wayfinder）见 `CLAUDE.md`。
 
 ## 怎么跑
 
@@ -41,7 +55,7 @@ python3 serve.py 8000
 ## 怎么验证
 
 ```bash
-./verify.sh   # 一键跑全部测试（引擎 9 + viewer 29 + WASM 端到端）
+./verify.sh   # 一键跑全部测试（引擎 9 + viewer 52 + WASM 端到端）
 ```
 
 分层验证（无视觉依赖）：
