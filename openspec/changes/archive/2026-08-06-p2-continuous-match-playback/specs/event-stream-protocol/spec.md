@@ -1,6 +1,6 @@
 # Spec: event-stream-protocol
 
-## MODIFIED Requirements
+## ADDED Requirements
 
 ### Requirement: tackle 字段定稿（必填 to/x2/y2 + 新增可选字段）
 

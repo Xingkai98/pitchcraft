@@ -1,16 +1,17 @@
 # Football Manager Clone — P1
 
-从零开始写的足球经理 2D 复刻（**不依赖现成的 FM 类实现**）。P0 打通"Rust 引擎 → 事件流 → JS 画面"链路；P1 完成抢断四段式演绎。
+从零开始写的足球经理 2D 复刻（**不依赖现成的 FM 类实现**）。P0 打通"Rust 引擎 → 事件流 → JS 画面"链路；P1 完成抢断四段式演绎；P2 完成引擎 tackle 语义补全。
 
 ## 当前进度
 
 | 阶段 | 内容 | 状态 |
 |------|------|------|
-| P0 `p0-event-to-pitch` | 引擎 → 事件流 → 画面链路 | ✅ |
+| P0 `p0-event-to-pitch` | 引擎 → 事件流 → 画面链路 | ✅ 已归档 |
 | P1 `p1-tackle-drama` | 抢断四段式演绎（持球→逼近→碰撞→弹开+捡球） | ✅ |
-| P2 `p2-continuous-match-playback` | Phase B 引擎 tackle 语义补全 + Phase C viewer 连续播放 | 📋 已规划待实施 |
+| P2 `p2-continuous-match-playback` | 引擎 tackle 语义补全（就近防守/可失败/带球中被抢） | ✅ 已归档 |
+| P3 `p3-continuous-playback` | viewer 连续播放（整场 kickoff→whistle 连续流转） | 📋 已规划待实施 |
 
-P2 做完 = **完整播放的比赛画面**（整场 kickoff→whistle 连续流转）。规划见 `openspec/changes/p2-continuous-match-playback/`。
+P3 做完 = **完整播放的比赛画面**。规划见 `openspec/changes/p3-continuous-playback/`。
 
 ## 技术栈
 
