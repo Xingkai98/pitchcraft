@@ -35,10 +35,16 @@ function validateBaseEvent(e) {
   if (typeof e.x !== 'number' || typeof e.y !== 'number') {
     throw new Error(`event missing x/y: ${JSON.stringify(e)}`);
   }
-  // 归一化坐标必须在 [0,1]
-  for (const c of ['x', 'y', 'x2', 'y2']) {
-    if (e[c] !== undefined && (e[c] < 0 || e[c] > 1)) {
-      throw new Error(`event coordinate ${c}=${e[c]} out of [0,1]`);
+  // 归一化坐标必须在 [0,1]（含 Phase B 新增的 tackle 坐标字段）。
+  // 用 typeof === 'number' 判断：null/字符串/null 不得绕过范围校验。
+  for (const c of ['x', 'y', 'x2', 'y2', 'loose_x', 'loose_y', 'carrier_from_x', 'carrier_from_y', 'receiver_x', 'receiver_y']) {
+    if (e[c] !== undefined && e[c] !== null) {
+      if (typeof e[c] !== 'number' || !Number.isFinite(e[c])) {
+        throw new Error(`event coordinate ${c} must be a finite number: ${String(e[c])}`);
+      }
+      if (e[c] < 0 || e[c] > 1) {
+        throw new Error(`event coordinate ${c}=${e[c]} out of [0,1]`);
+      }
     }
   }
   // 类型相关必填：pass 必须有 from/to（传球语义核心）
@@ -57,6 +63,16 @@ function validateBaseEvent(e) {
   if (e.type === 'dribble') {
     if (typeof e.x2 !== 'number' || typeof e.y2 !== 'number') {
       throw new Error(`dribble event requires x2/y2: ${JSON.stringify(e)}`);
+    }
+  }
+  // tackle 定稿（票据02）：必须有被铲者 to（0-21 数字）与接触点 x2/y2（Phase B）。
+  // 仅 tackle 必填（有生产者）；interception 尚无生产者、语义不同（截传球无持球人），不强制。
+  if (e.type === 'tackle') {
+    if (typeof e.to !== 'number' || !Number.isInteger(e.to) || e.to < 0 || e.to > 21) {
+      throw new Error(`tackle event requires integer to (0-21): ${JSON.stringify(e.to)}`);
+    }
+    if (typeof e.x2 !== 'number' || typeof e.y2 !== 'number') {
+      throw new Error(`tackle event requires x2/y2: ${JSON.stringify(e)}`);
     }
   }
 }

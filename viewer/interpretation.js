@@ -109,18 +109,19 @@ function interpretShot(e, out) {
   out.push({ t: t0 + flightDur, kind: 'player', id: keeperId, x: keeperStartX, y: keeperEndY });
 }
 
-// ---- 抢断/拦截：持球 → 逼近 → 碰撞捅开 → 弹开 + 捡球 ----
-// 球权归属由 result 驱动：success（或缺省）→ 防守者拿球；fail → 原持球人拿回。
-// 弹开方向 = 逼近方向（被铲者 − 防守者）的垂线，确定性选择，优先弹向场内。
+// ---- 抢断/拦截：带球中被抢 → 逼近 → 碰撞捅开 → 弹开 + 捡球 ----
+// 被铲者从 carrier_from_x/y（引擎给带球起点）带球到接触点（x2/y2），防守者同时逼近；
+// 碰撞后球弹开（优先引擎 loose_x/y，缺失则自算垂线弹开点）；按 result 决定谁捡球。
+// result=success（或缺省）→ 防守者拿球；result=fail → 原持球人拿回。
 function interpretTackle(e, out) {
   const t0 = e.t;
   const tackler = e.subject;
   const sx = e.x;
   const sy = e.y;
   const victim = e.to;
-  // 防守者/被铲者任一方位置缺失或非法（undefined/NaN）时无法定位双方：退化为最小演绎，
+  // 防守者/被铲者任一方位置缺失或非法（undefined/null/NaN）时无法定位双方：退化为最小演绎，
   // 不伪造球/人位置。补一个 0.3s 静止锚点，让退化片段也有可播放时长。
-  if (!Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.x2) || !Number.isFinite(e.y2) || victim === undefined) {
+  if (!Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.x2) || !Number.isFinite(e.y2) || victim === undefined || victim === null) {
     if (Number.isFinite(e.x) && Number.isFinite(e.y)) {
       out.push({ t: t0, kind: 'player', id: tackler, x: e.x, y: e.y });
       out.push({ t: t0 + 0.3, kind: 'player', id: tackler, x: e.x, y: e.y });
@@ -130,25 +131,33 @@ function interpretTackle(e, out) {
   const vx = e.x2;
   const vy = e.y2;
   const deflect = config.interpretation.tackle;
+  // 带球起点：引擎给 carrier_from 时被铲者从那里带球到接触点；缺失则原地持球（fallback）
+  const hasCarrierFrom = Number.isFinite(e.carrier_from_x) && Number.isFinite(e.carrier_from_y);
+  const cfx = hasCarrierFrom ? e.carrier_from_x : vx;
+  const cfy = hasCarrierFrom ? e.carrier_from_y : vy;
 
-  // 1) 持球：球先到被铲者脚下（修掉"球不在持球者脚下"），被铲者原地持球
-  out.push({ t: t0, kind: 'ball', x: vx, y: vy });
-  out.push({ t: t0, kind: 'player', id: victim, x: vx, y: vy });
-
-  // 2) 逼近：防守者从起点跑向接触点（被铲者位置），球仍在其脚下
+  // 1) 带球逼近：被铲者从 carrier_from 带球到接触点（球在他脚下），防守者从起点逼近
+  const carrierMoveDur = durationFromSpeed(distanceMeters(cfx, cfy, vx, vy), config.defaults.dribbleSpeed);
   const approachDur = durationFromSpeed(distanceMeters(sx, sy, vx, vy), config.defaults.runSpeed);
-  const tContact = t0 + approachDur;
+  // 带球段与逼近段同时发生，接触时刻取两者较长者（双方都在动）
+  const tContact = t0 + Math.max(carrierMoveDur, approachDur);
+  out.push({ t: t0, kind: 'player', id: victim, x: cfx, y: cfy });
+  out.push({ t: tContact, kind: 'player', id: victim, x: vx, y: vy });
   out.push({ t: t0, kind: 'player', id: tackler, x: sx, y: sy });
   out.push({ t: tContact, kind: 'player', id: tackler, x: vx, y: vy });
-  out.push({ t: tContact, kind: 'ball', x: vx, y: vy }); // 碰撞瞬间：人与球在接触点重合
+  // 球随被铲者移动（人球同步，简化）；接触时球在接触点
+  out.push({ t: t0, kind: 'ball', x: cfx, y: cfy });
+  out.push({ t: tContact, kind: 'ball', x: vx, y: vy });
 
-  // 3) 碰撞捅开：球向逼近方向的垂线弹开
-  const loose = deflectPoint(sx, sy, vx, vy, deflect.deflectDistance, tackler, victim);
+  // 2) 碰撞捅开：球弹开。优先引擎 loose_x/y（语义结果），缺失则自算垂线弹开点
+  const loose = (Number.isFinite(e.loose_x) && Number.isFinite(e.loose_y))
+    ? { x: e.loose_x, y: e.loose_y }
+    : deflectPoint(sx, sy, vx, vy, deflect.deflectDistance, tackler, victim);
   const deflectDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), deflect.deflectSpeed);
   const tLoose = tContact + deflectDur;
   out.push({ t: tLoose, kind: 'ball', x: loose.x, y: loose.y });
 
-  // 4) 捡球：球先到位，捡球人反应一拍（collectDelay），再以跑速追到弹开点，人球汇合 = 拾取。
+  // 3) 捡球：球先到位，捡球人反应一拍（collectDelay），再以跑速追到弹开点，人球汇合 = 拾取。
   //    success → 防守者拿球；fail → 原持球人拿回（被铲者在接触点等到球被捅开再动）。
   const collectPause = tLoose + deflect.collectDelay;
   const chaseDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), config.defaults.runSpeed);

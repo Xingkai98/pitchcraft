@@ -64,6 +64,10 @@ pub struct Event {
     pub lead: Option<f64>,  // 传球提前量
     pub receiver_x: Option<f64>, // 接球者当前位置 x（pass 用，画面让接球者从这跑到落点，不瞬移）
     pub receiver_y: Option<f64>, // 接球者当前位置 y
+    pub loose_x: Option<f64>,    // 抢断弹开点 x（tackle 用，球被捅开后滚向的位置）
+    pub loose_y: Option<f64>,    // 抢断弹开点 y
+    pub carrier_from_x: Option<f64>, // 被铲者带球起点 x（tackle 用，画面演"带球中被抢"）
+    pub carrier_from_y: Option<f64>, // 被铲者带球起点 y
     pub score: Option<String>, // 比分（whistle/goal 时）
     pub detail: Option<String>, // 附加说明
     pub players: Option<Vec<(i32, f64, f64)>>, // lineup 事件的 22 球员站位 (id, x, y)
@@ -89,6 +93,10 @@ impl Event {
         if let Some(l) = self.lead { parts.push(format!("\"lead\":{:.2}", l)); }
         if let Some(rx) = self.receiver_x { parts.push(format!("\"receiver_x\":{:.4}", rx)); }
         if let Some(ry) = self.receiver_y { parts.push(format!("\"receiver_y\":{:.4}", ry)); }
+        if let Some(x) = self.loose_x { parts.push(format!("\"loose_x\":{:.4}", x)); }
+        if let Some(y) = self.loose_y { parts.push(format!("\"loose_y\":{:.4}", y)); }
+        if let Some(x) = self.carrier_from_x { parts.push(format!("\"carrier_from_x\":{:.4}", x)); }
+        if let Some(y) = self.carrier_from_y { parts.push(format!("\"carrier_from_y\":{:.4}", y)); }
         if let Some(s) = &self.score { parts.push(format!("\"score\":\"{}\"", s)); }
         if let Some(d) = &self.detail { parts.push(format!("\"detail\":\"{}\"", d)); }
         if let Some(players) = &self.players {
@@ -115,6 +123,21 @@ impl MatchConfig {
         MatchConfig { match_duration_seconds: 2700.0, demo_mode: false }
     }
 }
+
+/// 球场真实尺寸（米）：归一化距离换算真实距离用。
+pub const PITCH_LENGTH_M: f64 = 105.0;
+pub const PITCH_WIDTH_M: f64 = 68.0;
+
+// ---- 抢断参数（Phase B 常量；将来接战术票据04 / 属性票据05，替换为计算值）----
+/// 就近阈值（米）：距持球者最近的防守者超过此距离则不产 tackle（避免跨半场逼抢）。
+pub const TACKLE_DISTANCE_THRESHOLD_METERS: f64 = 10.0;
+/// 抢断积极性：贴防时"真的去抢"的概率（低概率，只有少量机会去抢）。
+/// 标定：~169 事件/场 × P(贴防≈0.7) × eagerness ≈ 目标 8-15 次/场 → 取 0.09。
+pub const TACKLE_EAGERNESS: f64 = 0.09;
+/// 抢断成功率（success/fail 各半，用户确认 50/50）。
+pub const TACKLE_SUCCESS_RATE: f64 = 0.5;
+/// 弹开距离（归一化，与 viewer config.interpretation.tackle.deflectDistance 对齐）。
+pub const TACKLE_DEFLECT_DISTANCE: f64 = 0.05;
 
 /// 球员初始站位（固定默认站位，Q8b：无阵型系统，开球时 22 人站合理位置）。
 struct LineupPlayer {
@@ -172,6 +195,10 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
         lead: None,
         receiver_x: None,
         receiver_y: None,
+        loose_x: None,
+        loose_y: None,
+        carrier_from_x: None,
+        carrier_from_y: None,
         score: None,
         detail: None,
         players: Some(lineup.iter().map(|p| (p.id, p.x, p.y)).collect()),
@@ -201,8 +228,13 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
         x2: Some(0.55), y2: Some(0.5),
         result: Some("success".to_string()),
         speed: Some(14.0), touch_freq: None, lead: Some(0.1),
-        receiver_x: None,
-        receiver_y: None,
+        // 接球者 10 从站位 (0.62,0.65) 跑向落点 (0.55,0.5)，避免瞬移（审阅 minor-3）
+        receiver_x: Some(0.62),
+        receiver_y: Some(0.65),
+        loose_x: None,
+        loose_y: None,
+        carrier_from_x: None,
+        carrier_from_y: None,
         score: None, detail: None,
         players: None,
     });
@@ -211,16 +243,21 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     let mut t = 3.0;
     let mut home_score = 0;
     let mut away_score = 0;
-    // 当前持球方（0=home，1=away）
-    let mut possession: u32 = rng.next_u32() % 2;
-    // 当前持球者 id（初始：开球者）。事件从持球者出发，保证球权连贯。
-    let mut carrier: i32 = if possession == 0 { 9 } else { 20 };
+    // 当前持球方（0=home，1=away）。初始 kickoff 事件固定为 home 9 拨给 10（见上），
+    // 所以初始持球方 = home，carrier = 接球者 10（与 kickoff 事件状态自洽，避免 carrier_from 过期）。
+    let mut possession: u32 = 0;
+    let mut carrier: i32 = 10;
     // 每个球员的当前坐标，按 id 索引（pos[id] = 位置）。lineup 的 away 顺序是 21-i（镜像），
     // 所以不能直接 collect——要按 id 填入，保证 pos[id as usize] 正确。
     let mut pos: Vec<(f64, f64)> = vec![(0.0, 0.0); 22];
     for p in &lineup {
         pos[p.id as usize] = (p.x, p.y);
     }
+    // kickoff 落点 (0.55,0.5)：接球者 10 到那里，带球起点 = 落点
+    pos[10 as usize] = (0.55, 0.5);
+    let mut carrier_from = (0.55, 0.5);
+    // 上次抢断的 (防守者, 被铲者) 对：避免同对连续 re-tackle 乒乓（审阅 major）
+    let mut last_tackle_pair: Option<(i32, i32)> = None;
 
     while t < dur {
         let dt = 12.0 + (rng.next_u64() % 9) as f64; // 12-20s
@@ -230,6 +267,51 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
         // 随机事件类型：传球/带球/射门/抢断
         let roll = rng.next_u64() % 100;
         let team_home = possession == 0;
+
+        // 抢断决策（Phase B，Q13/D4）：每个事件点检查防守者距离 + 抢断积极性。
+        // 防守者贴防（≤阈值）且积极（should_tackle）才产 tackle，否则落回进攻事件。
+        // 冷却：与上次抢断同一对 (防守者,被铲者) 时不立即再抢（避免乒乓）。
+        let victim = carrier;
+        let victim_pos = pos[victim as usize];
+        let def_home = !team_home;
+        let (def_id, def_pos, def_dist) = nearest_defender(&pos, victim_pos, def_home);
+        let same_pair = last_tackle_pair == Some((def_id, victim));
+        if !same_pair && def_dist <= TACKLE_DISTANCE_THRESHOLD_METERS && should_tackle(&mut rng) {
+            // 抢断结果（50/50）
+            let success = (rng.next_u64() % 100) < (TACKLE_SUCCESS_RATE * 100.0) as u64;
+            let result = if success { "success" } else { "fail" };
+            // 弹开点：确定性规则（与 viewer deflectPoint 同规则）
+            let (loose_x, loose_y) = deflect_point(
+                def_pos.0, def_pos.1, victim_pos.0, victim_pos.1,
+                TACKLE_DEFLECT_DISTANCE, def_id, victim,
+            );
+            events.push(Event {
+                t, type_: EventType::Tackle,
+                subject: def_id, from: None, to: Some(victim),
+                x: def_pos.0, y: def_pos.1, x2: Some(victim_pos.0), y2: Some(victim_pos.1),
+                result: Some(result.to_string()), speed: None, touch_freq: None,
+                lead: None, score: None, detail: None,
+                receiver_x: None, receiver_y: None,
+                loose_x: Some(loose_x), loose_y: Some(loose_y),
+                carrier_from_x: Some(carrier_from.0), carrier_from_y: Some(carrier_from.1),
+                players: None,
+            });
+            if success {
+                // 球权换到防守方，防守者到弹开点（下一事件从 loose 出发，不 snap）
+                possession = if def_home { 0 } else { 1 };
+                carrier = def_id;
+                pos[def_id as usize] = (loose_x, loose_y);
+                carrier_from = (loose_x, loose_y);
+            } else {
+                // fail：球权保留原持球者；被铲者追到弹开点拿回（pos 到 loose，与 viewer fail 演绎终态一致），
+                // 防守者停在接触点（与 viewer fail 演绎一致）——保证下一事件从这些位置出发，不 snap。
+                pos[victim as usize] = (loose_x, loose_y);
+                carrier_from = (loose_x, loose_y);
+                pos[def_id as usize] = victim_pos;
+            }
+            last_tackle_pair = Some((def_id, victim));
+            continue;
+        }
 
         if roll < 45 {
             // pass（朝队友）：从当前持球者出发，接球者选离持球者最近的队友
@@ -250,11 +332,14 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
                 receiver_x: Some(rx), receiver_y: Some(ry),
                 touch_freq: None, score: None, detail: None,
+                loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
                 players: None,
             });
             // 球权移到接球者
             pos[to as usize] = (x2, y2);
             carrier = to;
+            carrier_from = (x2, y2); // 接球者带球起点 = 接球落点
+            last_tackle_pair = None; // 实际产出了事件 → 清除冷却（同对可再抢）
         } else if roll < 70 {
             // dribble（从持球者出发，朝对方球门推进）
             let p = carrier;
@@ -269,10 +354,13 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                 result: Some("success".to_string()), speed: Some(speed), touch_freq: Some(tf),
                 lead: None, score: None, detail: None,
                 receiver_x: None, receiver_y: None,
+                loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
                 players: None,
             });
             pos[p as usize] = (x2, y2);
-        } else if roll < 88 {
+            carrier_from = pos_p; // 带球起点 = 本段带球起点
+            last_tackle_pair = None; // 实际产出了事件 → 清除冷却
+        } else {
             // shot（射门，在对方半场）
             let p = carrier;
             let pos_p = pos[p as usize];
@@ -297,8 +385,13 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                     result: Some(result.to_string()), speed: Some(speed),
                     touch_freq: None, lead: None, score: None, detail: None,
                     receiver_x: None, receiver_y: None,
+                    loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
                     players: None,
                 });
+                // 射门后持球者停在射门点（非进球时球权/位置不变），carrier_from 更新为射门点，
+                // 避免后续 tackle 带着过时的带球起点（审阅 minor：non-goal shot 后 carrier_from stale）。
+                carrier_from = pos_p;
+                last_tackle_pair = None; // 实际产出了射门事件 → 清除冷却
                 if scored {
                     // 进球后重新开球（whistle + kickoff）
                     events.push(Event {
@@ -307,45 +400,28 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
                         x: 0.5, y: 0.5, x2: None, y2: None,
                         result: None, speed: None, touch_freq: None, lead: None,
                         receiver_x: None, receiver_y: None,
+                        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
                         score: Some(format!("{}-{}", home_score, away_score)),
                         detail: Some("kickoff_again".to_string()),
                         players: None,
                     });
-                    // 丢球方前锋开球：home 前锋 id=9，away 前锋 id=20
-                    let kickoff_id = if team_home { 20 } else { 9 };
+                    // 丢球方前锋开球：home 前锋 id=9，away 前锋 id=12（审阅 minor-4：20 是后卫）
+                    let kickoff_id = if team_home { 12 } else { 9 };
                     events.push(Event {
                         t, type_: EventType::Kickoff,
                         subject: kickoff_id, from: None, to: None,
                         x: 0.5, y: 0.5, x2: None, y2: None,
                         result: None, speed: None, touch_freq: None, lead: None,
                         receiver_x: None, receiver_y: None,
+                        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
                         score: None, detail: None, players: None,
                     });
                     possession = if team_home { 1 } else { 0 };
                     carrier = kickoff_id;
                     pos[kickoff_id as usize] = (0.5, 0.5);
+                    carrier_from = (0.5, 0.5);
                 }
             }
-        } else {
-            // tackle / interception（防守方动作）：防守者抢当前持球者 carrier
-            let def_home = !team_home;
-            let (p, pos_p) = random_player(&mut rng, &lineup, def_home);
-            // 被铲者 = 当前持球者 carrier（只有持球人才会被 tackle）
-            let victim = carrier;
-            let victim_pos = pos[victim as usize];
-            events.push(Event {
-                t, type_: EventType::Tackle,
-                subject: p, from: None, to: Some(victim),
-                x: pos_p.0, y: pos_p.1, x2: Some(victim_pos.0), y2: Some(victim_pos.1),
-                result: Some("success".to_string()), speed: None, touch_freq: None,
-                lead: None, score: None, detail: None,
-                receiver_x: None, receiver_y: None,
-                players: None,
-            });
-            // 抢断成功 → 球权换到防守方，持球者变防守者
-            possession = if def_home { 0 } else { 1 };
-            carrier = p;
-            pos[p as usize] = victim_pos;
         }
     }
 
@@ -357,6 +433,10 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
         result: None, speed: None, touch_freq: None, lead: None,
         receiver_x: None,
         receiver_y: None,
+        loose_x: None,
+        loose_y: None,
+        carrier_from_x: None,
+        carrier_from_y: None,
         score: Some(format!("{}-{}", home_score, away_score)),
         detail: Some("half_time".to_string()),
         players: None,
@@ -371,7 +451,7 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
 /// 每组事件前用 lineup 复位球员站位 + 一个 kickoff 把球放中圈，保证每组独立。
 /// 序列：kickoff → pass → dribble → shot(goal)+whistle+kickoff → tackle → shot(saved) → whistle
 fn simulate_demo(seed: u64, config: MatchConfig) -> String {
-    let mut rng = SeededRng::new(seed);
+    let _seed = seed;
     let lineup = default_lineup();
     let mut events = Vec::new();
     let mut t = 0.0;
@@ -379,13 +459,14 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
 
     // 用 helper 简化构造；支持 receiver_x/receiver_y（接球者当前位置）
     // 参数：(t, type, subject, x, y, from, to, x2, y2, result, speed, touch_freq, lead, rx, ry, score, detail, players)
+    // 新字段（loose_x/y、carrier_from_x/y）默认 None；tackle 展示段手动补。
     fn ev(t: f64, type_: EventType, subject: i32, x: f64, y: f64,
           from: Option<i32>, to: Option<i32>, x2: Option<f64>, y2: Option<f64>,
           result: Option<String>, speed: Option<f64>, touch_freq: Option<f64>,
           lead: Option<f64>, rx: Option<f64>, ry: Option<f64>,
           score: Option<String>, detail: Option<String>,
           players: Option<Vec<(i32, f64, f64)>>) -> Event {
-        Event { t, type_, subject, x, y, from, to, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, score, detail, players }
+        Event { t, type_, subject, x, y, from, to, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, score, detail, players }
     }
 
     // 初始站位（唯一一次 lineup）
@@ -428,11 +509,21 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         Some("success".into()), Some(14.0), None, Some(0.1),
         Some(0.58), Some(0.40), None, None, None));
 
-    // 5. tackle：away 中场 15（站位 0.58,0.40）逼近持球者 6（home，0.44,0.42）抢断
+    // 5. tackle：away 中场 15（站位 0.58,0.40）逼近持球者 6（home，0.44,0.42）抢断。
+    //    6 正在带球（carrier_from=0.42,0.42），弹开点按 deflect_point 规则算。
     t += GAP;
-    events.push(ev(t, EventType::Tackle, 15, 0.58, 0.40, None, Some(6), Some(0.44), Some(0.42),
-        Some("success".into()), None, None, None,
-        None, None, None, None, None));
+    let (loose_x, loose_y) = deflect_point(0.58, 0.40, 0.44, 0.42, TACKLE_DEFLECT_DISTANCE, 15, 6);
+    events.push(Event {
+        t, type_: EventType::Tackle,
+        subject: 15, from: None, to: Some(6),
+        x: 0.58, y: 0.40, x2: Some(0.44), y2: Some(0.42),
+        result: Some("success".to_string()), speed: None, touch_freq: None,
+        lead: None, score: None, detail: None,
+        receiver_x: None, receiver_y: None,
+        loose_x: Some(loose_x), loose_y: Some(loose_y),
+        carrier_from_x: Some(0.42), carrier_from_y: Some(0.42),
+        players: None,
+    });
 
     // 6. shot（saved）：6 从 (0.60,0.40) 射向球门内偏左（y2=0.47，门将扑向该侧救下），被扑
     t += GAP;
@@ -450,31 +541,63 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
     format!("[{}]", json.join(","))
 }
 
-/// 随机选一个球员（主队或客队），返回 (id, 位置)
-fn random_player(rng: &mut SeededRng, lineup: &[LineupPlayer], home: bool) -> (i32, (f64, f64)) {
-    let idx = (rng.next_u64() % 11) as usize;
-    // 选一个主队(0-10)或客队(11-21)的 id；客队 id 不连续（21-i），直接取 range
-    let id = if home { idx as i32 } else { 11 + idx as i32 };
-    // lineup 里找该 id（lineup 按 21-i 镜像排列，不能用下标）
-    let p = lineup.iter().find(|p| p.id == id).expect("player in lineup");
-    (id, (p.x, p.y))
+/// 归一化距离 → 真实米（考虑球场长宽比）
+fn distance_meters(a: (f64, f64), b: (f64, f64)) -> f64 {
+    let dx = (a.0 - b.0) * PITCH_LENGTH_M;
+    let dy = (a.1 - b.1) * PITCH_WIDTH_M;
+    (dx * dx + dy * dy).sqrt()
 }
 
-/// 找离位置 pos 最近的对方球员（tackle 用：防守者只抢附近的人，避免跨半场狂奔）。
-/// `attacking_home` = 持球方是否 home；被铲者是持球方球员，所以找持球方的人。
-fn nearest_opponent(lineup: &[LineupPlayer], pos: (f64, f64), attacking_home: bool) -> (i32, (f64, f64)) {
+/// 找离位置 pos 最近的防守方球员（tackle 用：防守者只抢附近的人，避免跨半场狂奔）。
+/// 用实时 pos[]（非静态站位）。`def_home` = 防守方是否 home。
+/// 排除门将（home GK id=0，away GK id=21）——门将不参与抢断。
+/// 返回 (id, 位置, 距离米)。
+fn nearest_defender(pos: &[(f64, f64)], target: (f64, f64), def_home: bool) -> (i32, (f64, f64), f64) {
     let mut best = None;
     let mut best_dist = f64::MAX;
-    for p in lineup {
-        let is_attacker = if attacking_home { p.id <= 10 } else { p.id >= 11 };
-        if !is_attacker { continue; }
-        let d = (p.x - pos.0).powi(2) + (p.y - pos.1).powi(2);
+    for (id, &p) in pos.iter().enumerate() {
+        let is_def = if def_home { id <= 10 } else { id >= 11 };
+        if !is_def { continue; }
+        // 门将不参与抢断（避免门将跑出禁区铲人）
+        if id == 0 || id == 21 { continue; }
+        let d = distance_meters(p, target);
         if d < best_dist {
             best_dist = d;
-            best = Some((p.id, (p.x, p.y)));
+            best = Some((id as i32, p));
         }
     }
-    best.unwrap()
+    let (id, p) = best.unwrap();
+    (id, p, best_dist)
+}
+
+/// 决策：防守者是否真的去抢（抢断积极性）。将来接战术（票据04）/属性（票据05）。
+fn should_tackle(rng: &mut SeededRng) -> bool {
+    (rng.next_u64() % 100) < (TACKLE_EAGERNESS * 100.0) as u64
+}
+
+/// 弹开点：被铲者位置 + 逼近方向垂线 × 距离。确定性选边，优先场内，越界钳制，零距离退化。
+/// 与 viewer deflectPoint 同规则（保证两端一致）。
+fn deflect_point(sx: f64, sy: f64, vx: f64, vy: f64, dist: f64, tackler: i32, victim: i32) -> (f64, f64) {
+    let dx = vx - sx;
+    let dy = vy - sy;
+    let len = dx.hypot(dy);
+    // 零距离（防守者已在被铲者脚下）时退化：视作从左侧逼近 → 弹开沿垂直方向，保证有方向
+    let (ux, uy) = if len == 0.0 { (1.0, 0.0) } else { (dx / len, dy / len) };
+    let cand1 = (vx - uy * dist, vy + ux * dist);
+    let cand2 = (vx + uy * dist, vy - ux * dist);
+    let in1 = cand1.0 >= 0.0 && cand1.0 <= 1.0 && cand1.1 >= 0.0 && cand1.1 <= 1.0;
+    let in2 = cand2.0 >= 0.0 && cand2.0 <= 1.0 && cand2.1 >= 0.0 && cand2.1 <= 1.0;
+    let loose = if in1 && !in2 {
+        cand1
+    } else if in2 && !in1 {
+        cand2
+    } else if in1 && in2 {
+        // 都在场内：按球员 id 确定性选边（与 viewer deflectPoint 的 (tackler*7+victim*3)%2 一致）
+        if (tackler * 7 + victim * 3) % 2 == 1 { cand2 } else { cand1 }
+    } else {
+        cand1
+    };
+    (loose.0.clamp(0.0, 1.0), loose.1.clamp(0.0, 1.0))
 }
 
 /// 找离位置 pos 最近的队友（pass 用：传球者把球传给附近的人，避免乱传给远端的"看起来像对手"的位置）
@@ -607,5 +730,180 @@ mod tests {
         let json = default_lineup_json();
         let count = json.matches("\"id\"").count();
         assert_eq!(count, 22);
+    }
+
+    // ---- Phase B：tackle 语义补全 ----
+
+    fn has_tackle_with_new_fields(s: &str) -> bool {
+        let events = json_events(s);
+        events.iter().any(|e| {
+            e.contains("\"type\":\"tackle\"")
+                && e.contains("\"loose_x\":")
+                && e.contains("\"loose_y\":")
+                && e.contains("\"carrier_from_x\":")
+                && e.contains("\"carrier_from_y\":")
+        })
+    }
+
+    #[test]
+    fn tackle_events_carry_loose_and_carrier_from() {
+        // 多 seed 扫：tackle 是每事件点按距离阈值 + TACKLE_EAGERNESS 决策，不保证每个 seed 都有 tackle，
+        // 故多 seed 扫描确保至少有一个带新字段。
+        for seed in 1..30u64 {
+            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
+            let s = simulate(seed, cfg);
+            if has_tackle_with_new_fields(&s) {
+                return;
+            }
+        }
+        panic!("没有任何 seed 产出带 loose/carrier_from 的 tackle 事件");
+    }
+
+    #[test]
+    fn tackle_new_fields_coordinates_in_range() {
+        for seed in 1..20u64 {
+            let cfg = MatchConfig::default_();
+            let s = simulate(seed, cfg);
+            for cap in ["loose_x", "loose_y", "carrier_from_x", "carrier_from_y"].iter() {
+                let needle = format!("\"{}\":", cap);
+                let mut idx = 0;
+                while let Some(pos) = s[idx..].find(&needle) {
+                    let start = idx + pos + needle.len();
+                    let end = s[start..].find(|c: char| !(c.is_ascii_digit() || c == '.' || c == '-')).unwrap_or(s[start..].len());
+                    let val: f64 = s[start..start + end].parse().unwrap();
+                    assert!(val >= 0.0 && val <= 1.0, "coord {}={} out of range", cap, val);
+                    idx = start + end;
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn tackle_success_and_fail_both_reachable() {
+        // 50/50：多 seed 扫，断言 success 与 fail 都能出现（用户确认 50/50）
+        let mut saw_success = false;
+        let mut saw_fail = false;
+        for seed in 1..60u64 {
+            let cfg = MatchConfig::default_();
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                if e.contains("\"type\":\"tackle\"") {
+                    if e.contains("\"result\":\"success\"") { saw_success = true; }
+                    if e.contains("\"result\":\"fail\"") { saw_fail = true; }
+                }
+            }
+            if saw_success && saw_fail { break; }
+        }
+        assert!(saw_success, "应有 success 抢断");
+        assert!(saw_fail, "应有 fail 抢断");
+    }
+
+    #[test]
+    fn tackle_deterministic_with_new_fields() {
+        // 同 seed → 新字段也一致
+        let cfg = MatchConfig::default_();
+        let a = simulate(42, cfg);
+        let b = simulate(42, cfg);
+        assert_eq!(a, b);
+        // 至少一个 tackle 带 loose（不再用 || 逃生门）
+        assert!(has_tackle_with_new_fields(&a), "seed 42 应产出带 loose/carrier_from 的 tackle");
+    }
+
+    #[test]
+    fn demo_tackle_has_carrier_from_and_loose() {
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true };
+        let s = simulate(42, cfg);
+        let events = json_events(&s);
+        let tackle = events.iter().find(|e| e.contains("\"type\":\"tackle\"")).expect("demo 应有 tackle");
+        assert!(tackle.contains("\"carrier_from_x\":"));
+        assert!(tackle.contains("\"loose_x\":"));
+    }
+
+    #[test]
+    fn tackle_frequency_in_target_range() {
+        // 用户确认目标：每场约 8-15 次 tackle（Q14）。多 seed 平均应落在 5-20（宽松边界，避免 flaky）。
+        let mut total = 0u64;
+        let n = 20u64;
+        for seed in 1..=n {
+            let cfg = MatchConfig::default_();
+            let s = simulate(seed, cfg);
+            total += json_events(&s).iter().filter(|e| e.contains("\"type\":\"tackle\"")).count() as u64;
+        }
+        let avg = total as f64 / n as f64;
+        assert!(avg >= 5.0, "tackle 频率过低（平均 {:.1}/场），应落在目标 8-15 附近", avg);
+        assert!(avg <= 20.0, "tackle 频率过高（平均 {:.1}/场），应落在目标 8-15 附近", avg);
+    }
+
+    /// 从单条事件 JSON 片段取指定字段（number/string）
+    fn json_field(e: &str, name: &str) -> Option<String> {
+        let needle = format!("\"{}\":", name);
+        let idx = e.find(&needle)?;
+        let rest = &e[idx + needle.len()..];
+        let end = rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len());
+        Some(rest[..end].trim().to_string())
+    }
+
+    fn json_num(e: &str, name: &str) -> Option<f64> {
+        json_field(e, name)?.parse().ok()
+    }
+
+    /// 是否指定 type（去掉 JSON 字符串引号比较）
+    fn is_type(e: &str, t: &str) -> bool {
+        match json_field(e, "type") {
+            Some(v) => v.trim_matches('"') == t,
+            None => false,
+        }
+    }
+
+    #[test]
+    fn tackle_fail_syncs_positions_for_continuity() {
+        // 审阅 major：fail 后引擎 pos 必须与 viewer fail 演绎终态一致（被铲者到 loose、防守者停接触点），
+        // 否则下一事件 snap。逐 seed 找 fail tackle，断言其后续动作事件的 subject 位置从一致位置出发。
+        let mut checked = 0;
+        for seed in 1..40u64 {
+            let cfg = MatchConfig::default_();
+            let s = simulate(seed, cfg);
+            let evts = json_events(&s);
+            // 过滤真正的"事件"：lineup 的 players 数组被 `},{` 拆成碎片，跳过无 "type" 的
+            let evts: Vec<&str> = evts.iter().filter(|e| e.contains("\"type\":")).map(|e| e.as_str()).collect();
+            for (i, e) in evts.iter().enumerate() {
+                let is_fail = match json_field(e, "result") {
+                    Some(v) => v.trim_matches('"') == "fail",
+                    None => false,
+                };
+                if !is_type(e, "tackle") || !is_fail {
+                    continue;
+                }
+                let victim = json_num(e, "to").expect("fail tackle 应有 to") as i32;
+                let def = json_num(e, "subject").expect("fail tackle 应有 subject") as i32;
+                let loose_x = json_num(e, "loose_x").expect("fail tackle 应有 loose_x");
+                let loose_y = json_num(e, "loose_y").expect("fail tackle 应有 loose_y");
+                let contact_x = json_num(e, "x2").expect("fail tackle 应有 x2");
+                let contact_y = json_num(e, "y2").expect("fail tackle 应有 y2");
+                // 找下一个非 lineup/whistle/kickoff 事件（动作事件）
+                let mut next = None;
+                for n in evts.iter().skip(i + 1) {
+                    if is_type(n, "lineup") || is_type(n, "whistle") || is_type(n, "kickoff") { continue; }
+                    next = Some(n);
+                    break;
+                }
+                let n = next.expect("fail tackle 后应有动作事件");
+                let n_subject = json_num(n, "subject").expect("下一事件应有 subject") as i32;
+                let n_x = json_num(n, "x").expect("下一事件应有 x");
+                let n_y = json_num(n, "y").expect("下一事件应有 y");
+                if n_subject == victim {
+                    // fail 后原持球者拿回球 → 下一事件从被铲者（victim）出发，位置 = loose
+                    let d = distance_meters((n_x, n_y), (loose_x, loose_y));
+                    assert!(d < 3.0, "fail 后下一事件应从 loose 出发（victim {}，距 loose {:.1}m）", victim, d);
+                } else if n_subject == def {
+                    // 防守者留在接触点 → 若下一事件是防守者，位置 = contact
+                    let d = distance_meters((n_x, n_y), (contact_x, contact_y));
+                    assert!(d < 3.0, "fail 后防守者下一事件应从 contact 出发（def {}，距 contact {:.1}m）", def, d);
+                }
+                checked += 1;
+                if checked >= 20 { return; } // 足够样本
+            }
+        }
+        assert!(checked > 0, "应有 fail tackle 被检查");
     }
 }

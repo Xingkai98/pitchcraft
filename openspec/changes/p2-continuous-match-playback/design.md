@@ -32,20 +32,31 @@ P1 之后单事件演绎成形，但画面是"解耦点播"：每事件独立片
 
 ### D2: `loose_x/y` 由引擎算，规则与 viewer `deflectPoint` 对齐
 - 引擎确定性地算弹开点：逼近方向垂线 × 距离（归一化），优先场内、越界钳制、零距离退化——与 P1 viewer 的 `deflectPoint` 同规则。
+- **success 与 fail 都发 `loose_x/y`**（fail 的 loose 点按同规则算，viewer 演"原持球人追到弹开点拿回"）。
 - viewer 优先采用引擎的 `loose_x/y`；缺失时 fallback 现有 `deflectPoint`。
 - **为什么**：引擎说了算（语义），viewer 兜底（兼容旧数据）。两端同规则保证一致。
 
 ### D3: `carrier_from_x/y` = 被铲者带球起点（上一事件持球者位置）
-- 引擎在 `pos[]` 里维护持球者位置，tackle 事件发 `carrier_from` = 持球者上一位置，`x2/y2` = 接触点。
+- 引擎在 `pos[]` 里维护持球者位置，tackle 事件发 `carrier_from` = 持球者**带球起点**（上一次 dribble/pass 起点，或射门点），`x2/y2` = 接触点。
 - viewer 在一个片段内演"被铲者从 `carrier_from` 带球到接触点"，防守者同时逼近 → 移动中的持球者被抢。
+- **carrier_from 缺失时**（旧数据/兼容）：viewer 保持 P1 行为——被铲者原地带球（球直接出现在脚下），不做额外移动。
+- **连续模式的重复段（已知边界，Phase C 处理）**：clip 模式（当前）每个事件自包含，tackle 自带"带球中被抢"完整演绎（符合用户核心诉求）；连续模式（Phase C）里若 tackle 前正好是同一被铲者的 dribble，viewer 会丢弃 carry-beat 起点、hold 到接触时刻，避免重复前段——在 Phase C 的 viewer 侧处理，不改变 `carrier_from` 的"带球起点"语义。
 - **为什么**：真实语义——tackle 针对移动中持球人；引擎数据现成，成本极低；单事件自包含（不依赖事件流上下文）。
 
-### D4: tackle 就近 + 距离阈值 + fail 概率
-- `nearest_opponent` 替换 `random_player`；防守者距持球者 > 阈值（~10m）时不产 tackle，落回其他事件类型。
-- tackle 结果按概率：success ~70% / fail ~30%。状态更新分两支：
-  - success：球权归防守者，防守者到 `loose` 点。
-  - fail：球权保留原持球者，持球者留在接触点附近（`pos` 微调或不移）。
-- **为什么**：消除"跨半场狂奔逼抢"的荒谬；fail 让"原持球人拿回"的演绎真实出现。
+### D4: tackle 触发决策模型（距离感知 + 抢断积极性）
+- 引擎**不再固定概率进 tackle 分支必抢**，而是：每个事件点，找离持球者最近的对方球员（用 `pos[]` 实时位置，非静态站位；**排除门将**）；
+  - 最近距离 > `tackle_distance_threshold`（约 10m）→ 不产 tackle，落回 pass/dribble/shot（当作普通进攻事件）。
+  - 最近距离 ≤ 阈值 → 以 `tackle_eagerness`（抢断积极性概率，标定约 **0.09**，对应每场 8-15 次）决定是否真的去抢；概率不中 → 继续进攻。
+  - **同对冷却**：与上次抢断同一对 (防守者,被铲者) 时不立即再抢，避免乒乓。
+- 三个参数组织成**引擎内常量 + 清晰决策函数** `should_tackle()`，注释标明将来接战术（票据 04）/属性（票据 05）。
+- **为什么**：实现"防守者自行判断、只有少量机会真抢"（用户 2026-08-06 补充）；参数化挂载点是战术/属性系统的入口。目标频率每场约 8-15 次（实测 0.09 → 平均约 10 次/场）。
+
+### D4b: 抢断结果 success/fail 概率 50/50 + 状态双分支
+- 抢断结果按概率：success 50% / fail 50%（用户确认，非初稿 70/30）。
+- 状态更新分两支（两端状态一致，下一事件不 snap）：
+  - **success**：球权归防守者，防守者位置更新到 `(loose_x, loose_y)`（与 viewer 演绎"追到弹开点捡球"终态一致，下一事件从 loose 出发不 snap）。
+  - **fail**：球权保留原持球者；**被铲者追到弹开点拿回**（pos 到 loose，与 viewer fail 演绎终态一致），防守者停在接触点。
+- **为什么**：success 落 loose 点是"不 snap"的核心（Q5）；fail 让被铲者到 loose 拿回 + 防守者停接触点，是 viewer fail 演绎的终态（审阅确认两端一致，而非初稿"防守者归位"）。
 
 ### D5: 连续播放 = Game 新增模式，默认连续；解耦模式保留
 - Game 增加 `mode: 'continuous' | 'clip'`（默认 continuous）。continuous：跨事件推进、事件间 hold、播完不自动停（whistle 结束）；clip：现有点播行为（调试保留）。
@@ -78,3 +89,8 @@ P1 之后单事件演绎成形，但画面是"解耦点播"：每事件独立片
 
 - 事件间是否补低频 `off_ball_run` 事件让比赛"活"起来？——建议 Phase C 之后单独 change，本 change 先 hold。
 - 连续播放的进度 UI（整场时间轴 vs 事件列表）？——先用整场时间显示 + 现有控件适配，观感验收后再调。
+
+## Phase C 前置事项（终审记录，2026-08-06，不阻塞 Phase B）
+
+- **进球事件同刻**：非 demo 路径进球后 shot/whistle/kickoff 共用同一 `t`（demo 用 +2s/+3s 拉开）。连续播放落地时球会在射门飞行中被瞬移回中圈——Phase C 前需给 whistle/kickoff 加时间偏移（对齐 demo）。
+- **静默迭代后 carrier_from 过期**：shot 分支"持球者不在进攻半场"时静默迭代（不产事件）不刷新 `carrier_from`，连续模式下会"重放旧带球段再被抢"——Phase C 的 viewer 连续模式按 D3 丢弃 carry-beat 起点可缓解，或引擎在静默分支对称刷新 `carrier_from = pos_p`。

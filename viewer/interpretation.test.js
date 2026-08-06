@@ -201,3 +201,47 @@ test('tackle: 防守者位置非法（NaN）时退化为最小演绎（不产生
       `锚点应有限（无 NaN），实际 ${JSON.stringify(a)}`);
   }
 });
+
+// ---- Phase B：五段式（带球中被抢）----
+const TACKLE_CARRIER = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55, carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.4277, loose_y: 0.5053, result: 'success' };
+
+test('tackle 五段式: 被铲者从 carrier_from 带球到接触点', () => {
+  const anchors = interpretEvent(TACKLE_CARRIER);
+  // 被铲者(to) 锚点：起点 = carrier_from，终点 = 接触点(x2/y2)
+  const victimAnchors = anchors.filter((a) => a.kind === 'player' && a.id === TACKLE_CARRIER.to).sort((a, b) => a.t - b.t);
+  assert.equal(victimAnchors[0].x, TACKLE_CARRIER.carrier_from_x);
+  assert.equal(victimAnchors[0].y, TACKLE_CARRIER.carrier_from_y);
+  assert.equal(victimAnchors[1].x, TACKLE_CARRIER.x2);
+  assert.equal(victimAnchors[1].y, TACKLE_CARRIER.y2);
+  // 带球移动是有时长的：起点 t < 接触 t
+  assert.ok(victimAnchors[1].t > victimAnchors[0].t, '被铲者应有带球移动时长');
+});
+
+test('tackle 五段式: 引擎 loose_x/y 优先（球弹到引擎给定弹开点）', () => {
+  const anchors = interpretEvent(TACKLE_CARRIER);
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  const loose = balls[balls.length - 1];
+  assert.equal(loose.x, TACKLE_CARRIER.loose_x);
+  assert.equal(loose.y, TACKLE_CARRIER.loose_y);
+});
+
+test('tackle 五段式: 防守者与球在弹开点重合（success 拿球）', () => {
+  const anchors = interpretEvent(TACKLE_CARRIER);
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  const loose = balls[balls.length - 1];
+  const tacklerEnd = anchors.filter((a) => a.kind === 'player' && a.id === TACKLE_CARRIER.subject).sort((a, b) => b.t - a.t)[0];
+  assert.ok(Math.abs(tacklerEnd.x - loose.x) < 1e-6 && Math.abs(tacklerEnd.y - loose.y) < 1e-6);
+});
+
+test('tackle 五段式: carrier_from 缺失时被铲者原地持球（fallback）', () => {
+  // 无 carrier_from（legacy）：被铲者在接触点原地，球从接触点开始
+  const e = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55, result: 'success' };
+  const anchors = interpretEvent(e);
+  const victimAnchors = anchors.filter((a) => a.kind === 'player' && a.id === 16).sort((a, b) => a.t - b.t);
+  // 起点 = 接触点（fallback 原地）
+  assert.equal(victimAnchors[0].x, 0.45);
+  assert.equal(victimAnchors[0].y, 0.55);
+  // 球起点也在接触点
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  assert.equal(balls[0].x, 0.45);
+});
