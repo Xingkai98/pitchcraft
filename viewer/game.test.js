@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from './game.js';
+import { interpretEvent } from './interpretation.js';
 
 function makeGame() {
   const events = [
@@ -135,4 +136,67 @@ test('togglePlay: 播完后再次点击 → 重启片段', () => {
   g.togglePlay();
   assert.equal(g.playing, true);
   assert.ok(g.playTime <= endT + 0.01, `应回到片段内，实际 ${g.playTime}`);
+});
+
+// ---- 抢断片段：球从接触点弹到弹开点（经插值路径）----
+const TACKLE_EVENT = { t: 5, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55, result: 'success' };
+const TACKLE_LINEUP = [
+  { id: 10, team: 'home', x: 0.55, y: 0.5 },
+  { id: 16, team: 'away', x: 0.45, y: 0.55 },
+];
+
+test('step: tackle 事件播完，防守者与球在弹开点重合（拿到球）', () => {
+  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP);
+  // 弹开点 = 球最后锚点位置（从演绎层推导，而非硬编码）
+  const anchors = interpretEvent(TACKLE_EVENT);
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  const loose = balls[balls.length - 1];
+  g.jumpToEvent(0);
+  g.playing = true;
+  for (let i = 0; i < 300; i++) g.step(0.1);
+  assert.equal(g.playing, false, 'tackle 播完应自动停');
+  assert.ok(Math.abs(g.ball.x - loose.x) < 0.001 && Math.abs(g.ball.y - loose.y) < 0.001, '球应停在弹开点');
+  const tackler = g.players.find((p) => p.id === TACKLE_EVENT.subject);
+  assert.ok(Math.abs(tackler.x - g.ball.x) < 0.001 && Math.abs(tackler.y - g.ball.y) < 0.001, '防守者应拿到球');
+});
+
+test('step: tackle 中间态——球先到弹开点，捡球人还在路上', () => {
+  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP);
+  const anchors = interpretEvent(TACKLE_EVENT);
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  const loose = balls[balls.length - 1];
+  const tLoose = loose.t;
+  const tacklerEnd = anchors.filter((a) => a.kind === 'player' && a.id === TACKLE_EVENT.subject).sort((a, b) => b.t - a.t)[0];
+  const tPickup = tacklerEnd.t;
+  const midT = (tLoose + tPickup) / 2;
+  g.jumpToEvent(0);
+  g.playing = true;
+  let guard = 0;
+  while (g.playTime < midT && guard < 50000) { g.step(0.0005); guard++; }
+  assert.ok(g.playTime >= midT, `应推进到 ${midT}，实际 ${g.playTime}`);
+  // 球先到弹开点（球在 tLoose 已到位，之后停在那里等捡球人）
+  assert.ok(Math.abs(g.ball.x - loose.x) < 0.001 && Math.abs(g.ball.y - loose.y) < 0.001, '球应先到弹开点');
+  // 捡球人（防守者）还在追球路上，未到弹开点
+  const tackler = g.players.find((p) => p.id === TACKLE_EVENT.subject);
+  const dist = Math.hypot(tackler.x - loose.x, tackler.y - loose.y);
+  assert.ok(dist > 0.01, `捡球人应还在路上，实际距弹开点 ${dist}`);
+});
+
+test('step: tackle fail——原持球人拿回球，防守者停在接触点', () => {
+  const evt = { t: 5, type: 'tackle', subject: 11, x: 0.45, y: 0.5, to: 10, x2: 0.43, y2: 0.51, result: 'fail' };
+  const lineup = [
+    { id: 10, team: 'home', x: 0.43, y: 0.51 },
+    { id: 11, team: 'away', x: 0.45, y: 0.5 },
+  ];
+  const g = new Game([evt], lineup);
+  g.jumpToEvent(0);
+  g.playing = true;
+  for (let i = 0; i < 300; i++) g.step(0.1);
+  assert.equal(g.playing, false, 'tackle fail 播完应自动停');
+  // 原持球人(10)与球重合（拿回）
+  const carrier = g.players.find((p) => p.id === 10);
+  assert.ok(Math.abs(carrier.x - g.ball.x) < 0.01 && Math.abs(carrier.y - g.ball.y) < 0.01, '原持球人应拿回球');
+  // 防守者(11)停在接触点，没拿到球
+  const tackler = g.players.find((p) => p.id === 11);
+  assert.ok(Math.abs(tackler.x - g.ball.x) > 0.01 || Math.abs(tackler.y - g.ball.y) > 0.01, '失败时防守者不应拿到球');
 });

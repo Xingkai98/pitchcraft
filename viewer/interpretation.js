@@ -109,26 +109,90 @@ function interpretShot(e, out) {
   out.push({ t: t0 + flightDur, kind: 'player', id: keeperId, x: keeperStartX, y: keeperEndY });
 }
 
-// ---- 抢断/拦截：防守者逼近持球者 + 球权切换 ----
-// 逼近时长 = 防守者到持球者的距离 ÷ 跑速。
+// ---- 抢断/拦截：持球 → 逼近 → 碰撞捅开 → 弹开 + 捡球 ----
+// 球权归属由 result 驱动：success（或缺省）→ 防守者拿球；fail → 原持球人拿回。
+// 弹开方向 = 逼近方向（被铲者 − 防守者）的垂线，确定性选择，优先弹向场内。
 function interpretTackle(e, out) {
   const t0 = e.t;
+  const tackler = e.subject;
+  const sx = e.x;
+  const sy = e.y;
   const victim = e.to;
-  const victimX = e.x2 !== undefined ? e.x2 : e.x; // 被铲者位置（引擎给 x2/y2）
-  const victimY = e.y2 !== undefined ? e.y2 : e.y;
-  const meters = distanceMeters(e.x, e.y, victimX, victimY);
-  const approachDur = durationFromSpeed(meters, config.defaults.runSpeed);
-  out.push({ t: t0, kind: 'player', id: e.subject, x: e.x, y: e.y });
-  // 防守者向持球者位置移动（逼近）
-  out.push({
-    t: t0 + approachDur,
-    kind: 'player', id: e.subject,
-    x: victimX, y: victimY,
-  });
-  // 被铲者（to）在 x2/y2 位置（原地，若事件带 to）
-  if (victim !== undefined) {
-    out.push({ t: t0, kind: 'player', id: victim, x: victimX, y: victimY });
+  // 防守者/被铲者任一方位置缺失或非法（undefined/NaN）时无法定位双方：退化为最小演绎，
+  // 不伪造球/人位置。补一个 0.3s 静止锚点，让退化片段也有可播放时长。
+  if (!Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.x2) || !Number.isFinite(e.y2) || victim === undefined) {
+    if (Number.isFinite(e.x) && Number.isFinite(e.y)) {
+      out.push({ t: t0, kind: 'player', id: tackler, x: e.x, y: e.y });
+      out.push({ t: t0 + 0.3, kind: 'player', id: tackler, x: e.x, y: e.y });
+    }
+    return;
   }
+  const vx = e.x2;
+  const vy = e.y2;
+  const deflect = config.interpretation.tackle;
+
+  // 1) 持球：球先到被铲者脚下（修掉"球不在持球者脚下"），被铲者原地持球
+  out.push({ t: t0, kind: 'ball', x: vx, y: vy });
+  out.push({ t: t0, kind: 'player', id: victim, x: vx, y: vy });
+
+  // 2) 逼近：防守者从起点跑向接触点（被铲者位置），球仍在其脚下
+  const approachDur = durationFromSpeed(distanceMeters(sx, sy, vx, vy), config.defaults.runSpeed);
+  const tContact = t0 + approachDur;
+  out.push({ t: t0, kind: 'player', id: tackler, x: sx, y: sy });
+  out.push({ t: tContact, kind: 'player', id: tackler, x: vx, y: vy });
+  out.push({ t: tContact, kind: 'ball', x: vx, y: vy }); // 碰撞瞬间：人与球在接触点重合
+
+  // 3) 碰撞捅开：球向逼近方向的垂线弹开
+  const loose = deflectPoint(sx, sy, vx, vy, deflect.deflectDistance, tackler, victim);
+  const deflectDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), deflect.deflectSpeed);
+  const tLoose = tContact + deflectDur;
+  out.push({ t: tLoose, kind: 'ball', x: loose.x, y: loose.y });
+
+  // 4) 捡球：球先到位，捡球人反应一拍（collectDelay），再以跑速追到弹开点，人球汇合 = 拾取。
+  //    success → 防守者拿球；fail → 原持球人拿回（被铲者在接触点等到球被捅开再动）。
+  const collectPause = tLoose + deflect.collectDelay;
+  const chaseDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), config.defaults.runSpeed);
+  const tPickup = collectPause + chaseDur;
+  if (e.result !== 'fail') {
+    out.push({ t: collectPause, kind: 'player', id: tackler, x: vx, y: vy });
+    out.push({ t: tPickup, kind: 'player', id: tackler, x: loose.x, y: loose.y });
+    out.push({ t: tPickup, kind: 'player', id: victim, x: vx, y: vy });
+  } else {
+    out.push({ t: collectPause, kind: 'player', id: victim, x: vx, y: vy });
+    out.push({ t: tPickup, kind: 'player', id: victim, x: loose.x, y: loose.y });
+  }
+}
+
+// 弹开点：被铲者位置 + 逼近方向垂线 × 距离。确定性选边（避开 RNG），优先弹向场内，越界钳制。
+function deflectPoint(sx, sy, vx, vy, dist, tackler, victim) {
+  const dx = vx - sx;
+  const dy = vy - sy;
+  const len = Math.hypot(dx, dy);
+  // 零距离（防守者已在被铲者脚下）时退化：视作从左侧逼近 → 弹开沿垂直方向，保证有方向
+  const ux = len === 0 ? 1 : dx / len;
+  const uy = len === 0 ? 0 : dy / len;
+  // 逼近方向的两个垂线候选
+  const cand1 = { x: vx - uy * dist, y: vy + ux * dist };
+  const cand2 = { x: vx + uy * dist, y: vy - ux * dist };
+  const in1 = cand1.x >= 0 && cand1.x <= 1 && cand1.y >= 0 && cand1.y <= 1;
+  const in2 = cand2.x >= 0 && cand2.x <= 1 && cand2.y >= 0 && cand2.y <= 1;
+  let loose;
+  if (in1 && !in2) {
+    loose = cand1;
+  } else if (in2 && !in1) {
+    loose = cand2;
+  } else if (in1 && in2) {
+    // 都在场内：按球员 id 确定性选边
+    const victimId = victim !== undefined ? victim : 0;
+    loose = ((tackler * 7 + victimId * 3) % 2) === 1 ? cand2 : cand1;
+  } else {
+    // 都在场外（贴角球）：钳制第一个候选
+    loose = cand1;
+  }
+  return {
+    x: Math.min(Math.max(loose.x, 0), 1),
+    y: Math.min(Math.max(loose.y, 0), 1),
+  };
 }
 
 // ---- 主入口：把一条事件演绎成锚点序列 ----

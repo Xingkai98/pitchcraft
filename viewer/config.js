@@ -53,6 +53,12 @@ export const config = {
       flightDuration: 0.6, // 球飞行时长
       keeperReactDelay: 0.1, // 门将反应延迟（先动）
     },
+    // 抢断：持球 → 逼近 → 碰撞捅开 → 弹开 + 捡球
+    tackle: {
+      deflectDistance: 0.05, // 归一化：球被捅开滚出的距离（约 5m）
+      deflectSpeed: 5, // m/s：球被捅开后的速度
+      collectDelay: 0.15, // 捡球人反应停顿（s）：球到弹开点后，人先停一拍再以跑速追球
+    },
     // 通用
     turnDuration: 0.25, // 球员转向时长
   },

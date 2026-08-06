@@ -145,29 +145,37 @@ export class Game {
   }
 
   _interpolateAnchors(kind, t, id) {
-    // 找到 kind 匹配、id 匹配（可选）的相邻锚点
-    let prev = null;
-    let next = null;
+    // 找到 kind 匹配、id 匹配（可选）的相邻锚点。
+    // 优先用【当前事件】的锚点插值（prevCur/next 都限当前事件），保证片段时间窗口内
+    // 不被更早/更晚事件的锚点干扰（事件窗口重叠时，旧事件锚点不得把球/人拖离当前位置）。
+    // 当前事件未锚定该实体时，用更早事件留下的位置兜底（hold，事件之间不滑动）。
+    const idx = this._currentIndex;
+    let prevCur = null; // 当前事件内最近锚点（a.evt === idx, a.t <= t）
+    let prevAny = null; // 更早事件的兜底锚点（仅当前事件无锚点时使用）
+    let next = null;    // 当前事件内下一锚点（a.evt === idx, a.t > t）
     for (const a of this.timeline) {
       if (a.kind !== kind) continue;
       if (id !== undefined && a.id !== id) continue;
-      if (a.t <= t) prev = a;
-      else if (next === null) next = a;
+      if (a.evt > idx) continue; // 后续事件锚点不参与
+      if (a.t <= t) {
+        if (a.evt === idx) prevCur = a;
+        prevAny = a;
+      } else if (a.evt === idx && next === null) {
+        next = a;
+      }
     }
-    if (!prev) return null;
-    if (!next) return { x: prev.x, y: prev.y };
-    // 事件间隙：prev/next 属于不同事件 → 停在 prev 位置，事件之间不滑动。
-    // （同一事件内连续运动仍插值：带球、射门飞行、抢断逼近）
-    if (prev.evt !== undefined && next.evt !== undefined && prev.evt !== next.evt) {
-      return { x: prev.x, y: prev.y };
+    if (prevCur) {
+      // 当前事件内插值：人/球按事件内锚点移动；事件末尾无下一锚点时停在最后锚点
+      if (!next) return { x: prevCur.x, y: prevCur.y };
+      const span = Math.max(next.t - prevCur.t, 1e-6);
+      const u = Math.min(Math.max((t - prevCur.t) / span, 0), 1);
+      return {
+        x: prevCur.x + (next.x - prevCur.x) * u,
+        y: prevCur.y + (next.y - prevCur.y) * u,
+      };
     }
-    // 线性插值（第一版简单）
-    const span = Math.max(next.t - prev.t, 1e-6);
-    const u = Math.min(Math.max((t - prev.t) / span, 0), 1);
-    return {
-      x: prev.x + (next.x - prev.x) * u,
-      y: prev.y + (next.y - prev.y) * u,
-    };
+    if (prevAny) return { x: prevAny.x, y: prevAny.y };
+    return null;
   }
 
   togglePlay() {
