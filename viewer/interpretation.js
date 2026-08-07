@@ -101,13 +101,11 @@ function interpretShot(e, out) {
   const keeperStartX = (Number.isFinite(e.keeper_x)) ? e.keeper_x : (keeperId === 21 ? 0.98 : 0.02);
   const keeperStartY = (Number.isFinite(e.keeper_y)) ? e.keeper_y : 0.5;
   const keeperTargetY = e.y2 !== undefined ? e.y2 : 0.5;
-  // 门将扑救终点：
-  //   - saved：扑到球路线上（= 球终点），挡住球
-  //   - goal：门将扑向射门侧，但球已越过（门将 y 比球略偏，表示没够到）
-  const keeperEndY = isGoal ? (keeperTargetY + (keeperTargetY >= 0.5 ? 0.02 : -0.02)) : keeperTargetY;
+  // 门将扑救终点 = 引擎高亮结束位置（shot.x2/y2，球到达门线处）——保证高亮结束回归 movers 不 snap。
+  // 门将从实位（keeper_x/y）扑向球门（x2/y2）；saved 挡在球路线上，goal 未够到（球越过门线）。
   out.push({ t: t0, kind: 'player', id: keeperId, x: keeperStartX, y: keeperStartY });
   out.push({ t: t0 + s.keeperReactDelay, kind: 'player', id: keeperId, x: keeperStartX, y: keeperStartY });
-  out.push({ t: t0 + flightDur, kind: 'player', id: keeperId, x: keeperStartX, y: keeperEndY });
+  out.push({ t: t0 + flightDur, kind: 'player', id: keeperId, x: e.x2, y: keeperTargetY });
 }
 
 // ---- 抢断/拦截：带球中被抢 → 逼近 → 碰撞捅开 → 弹开 + 捡球 ----
@@ -116,12 +114,15 @@ function interpretShot(e, out) {
 // result=success（或缺省）→ 防守者拿球；result=fail → 原持球人拿回。
 // dropCarryBeat（连续模式）：若被铲者上一事件刚带球到接触点，丢弃 carry-beat 起点（从接触点开始），
 // 避免连续播放里"重放刚播过的带球段"（design D4，grill Q6）。
+// v2（carrier 存在）：高亮时长固定 1 tick（引擎 t_end=t+1）；approach 压缩到 1s 内，
+//   球员终态 = 接触点（引擎 participants 结束位置），球终态 = loose（与下一 beat.ball 起点连续）；
+//   collect（捡球）不在此演绎——由后续 beat.ball + chase movers 表达。
 function interpretTackle(e, out, dropCarryBeat = false) {
   const t0 = e.t;
   const tackler = e.subject;
   const sx = e.x;
   const sy = e.y;
-  const victim = e.to;
+  const victim = e.carrier ?? e.to; // v2 用 carrier（被铲者 id），v1 用 to
   // 防守者/被铲者任一方位置缺失或非法（undefined/null/NaN）时无法定位双方：退化为最小演绎，
   // 不伪造球/人位置。补一个 0.3s 静止锚点，让退化片段也有可播放时长。
   if (!Number.isFinite(e.x) || !Number.isFinite(e.y) || !Number.isFinite(e.x2) || !Number.isFinite(e.y2) || victim === undefined || victim === null) {
@@ -134,6 +135,7 @@ function interpretTackle(e, out, dropCarryBeat = false) {
   const vx = e.x2;
   const vy = e.y2;
   const deflect = config.interpretation.tackle;
+  const isV2 = e.carrier !== undefined;
   // 带球起点：引擎给 carrier_from 时被铲者从那里带球到接触点；缺失则原地持球（fallback）
   const hasCarrierFrom = Number.isFinite(e.carrier_from_x) && Number.isFinite(e.carrier_from_y);
   const cfx = dropCarryBeat ? vx : (hasCarrierFrom ? e.carrier_from_x : vx);
@@ -141,7 +143,10 @@ function interpretTackle(e, out, dropCarryBeat = false) {
 
   // 1) 带球逼近：被铲者从 carrier_from 带球到接触点（球在他脚下），防守者从起点逼近
   const carrierMoveDur = dropCarryBeat ? 0 : durationFromSpeed(distanceMeters(cfx, cfy, vx, vy), config.defaults.dribbleSpeed);
-  const approachDur = durationFromSpeed(distanceMeters(sx, sy, vx, vy), config.defaults.runSpeed);
+  let approachDur = durationFromSpeed(distanceMeters(sx, sy, vx, vy), config.defaults.runSpeed);
+  if (isV2) {
+    approachDur = Math.min(approachDur, 0.6); // v2 高亮 1 tick：逼近压缩到 0.6s（避免 >1s 破坏时序）
+  }
   // 带球段与逼近段同时发生，接触时刻取两者较长者（双方都在动）
   const tContact = t0 + Math.max(carrierMoveDur, approachDur);
   out.push({ t: t0, kind: 'player', id: victim, x: cfx, y: cfy });
@@ -157,11 +162,25 @@ function interpretTackle(e, out, dropCarryBeat = false) {
     ? { x: e.loose_x, y: e.loose_y }
     : deflectPoint(sx, sy, vx, vy, deflect.deflectDistance, tackler, victim);
   const deflectDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), deflect.deflectSpeed);
+
+  if (isV2) {
+    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 接触点（引擎对账），球终态 = loose（与 beat.ball 起点连续）。
+    // collect 交给后续 beat.ball + chase，不在此演绎。
+    const end = t0 + 1;
+    const tLoose = Math.min(tContact + deflectDur, end - 0.05);
+    out.push({ t: tLoose, kind: 'ball', x: loose.x, y: loose.y });
+    if (tLoose < end - 0.01) {
+      out.push({ t: end, kind: 'ball', x: loose.x, y: loose.y }); // 球停在 loose 到高亮结束
+    }
+    out.push({ t: end, kind: 'player', id: victim, x: vx, y: vy });
+    out.push({ t: end, kind: 'player', id: tackler, x: vx, y: vy });
+    return;
+  }
+
+  // 3) v1 捡球：球先到位，捡球人反应一拍（collectDelay），再以跑速追到弹开点，人球汇合 = 拾取。
+  //    success → 防守者拿球；fail → 原持球人拿回（被铲者在接触点等到球被捅开再动）。
   const tLoose = tContact + deflectDur;
   out.push({ t: tLoose, kind: 'ball', x: loose.x, y: loose.y });
-
-  // 3) 捡球：球先到位，捡球人反应一拍（collectDelay），再以跑速追到弹开点，人球汇合 = 拾取。
-  //    success → 防守者拿球；fail → 原持球人拿回（被铲者在接触点等到球被捅开再动）。
   const collectPause = tLoose + deflect.collectDelay;
   const chaseDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), config.defaults.runSpeed);
   const tPickup = collectPause + chaseDur;
@@ -220,6 +239,64 @@ function interpretOffBallRun(e, out) {
   out.push({ t: t0 + dur, kind: 'player', id: e.subject, x: e.x2, y: e.y2 });
 }
 
+// ---- v2：beat 节拍演绎（并行节拍）----
+// beat = 固定 1s tick 的并行动作：main（carrier 带球）+ movers（并行跑位）+ ball（松散球）。
+// 所有动画铺满整拍 [t, t+1]（缓动到位，非"距离÷速度"——保证 22 人并行同时动）。
+// 高亮参与者由 buildTimeline 在 beat 展开前排除（两层合成，spec 要求 viewer 侧防御）。
+function interpretBeat(e, out, excluded = null) {
+  const t0 = e.t;
+  const t1 = t0 + 1; // 铺满整拍
+  // main：carrier 带球（人球解耦，球略领先）
+  if (e.main) {
+    const m = e.main;
+    const dist = Math.hypot(m.x2 - m.x, m.y2 - m.y);
+    const sep = config.interpretation.dribble.separation;
+    const dirX = dist === 0 ? 0 : (m.x2 - m.x) / dist;
+    const dirY = dist === 0 ? 0 : (m.y2 - m.y) / dist;
+    out.push({ t: t0, kind: 'player', id: m.subject, x: m.x, y: m.y });
+    out.push({ t: t0, kind: 'ball', x: m.x + dirX * sep, y: m.y + dirY * sep });
+    out.push({ t: t1, kind: 'player', id: m.subject, x: m.x2, y: m.y2 });
+    out.push({ t: t1, kind: 'ball', x: m.x2 + dirX * sep, y: m.y2 + dirY * sep });
+  }
+  // movers：并行跑位（增量，静止球员不发），排除高亮参与者（两层合成）
+  if (Array.isArray(e.movers)) {
+    for (const mv of e.movers) {
+      if (excluded && excluded.has(mv.id)) continue;
+      out.push({ t: t0, kind: 'player', id: mv.id, x: mv.from_x, y: mv.from_y });
+      out.push({ t: t1, kind: 'player', id: mv.id, x: mv.to_x, y: mv.to_y });
+    }
+  }
+  // ball：松散球滚动轨迹
+  if (e.ball) {
+    const b = e.ball;
+    out.push({ t: t0, kind: 'ball', x: b.x, y: b.y });
+    out.push({ t: t1, kind: 'ball', x: b.x2, y: b.y2 });
+  }
+}
+
+// 高亮事件的参与者集合（两层合成排除用）
+function highlightParticipants(e) {
+  if (e.type === 'pass') return new Set([e.from, e.to]);
+  if (e.type === 'shot') {
+    const keeperId = (typeof e.subject === 'number' && e.subject <= 10) ? 21 : 0;
+    return new Set([e.subject, keeperId]);
+  }
+  if (e.type === 'tackle') return new Set([e.subject, e.carrier ?? e.to]);
+  return new Set();
+}
+
+// 高亮事件的自然飞行终点（pass/shot 按距离÷球速；tackle 固定 1 tick）
+function highlightEndTime(e) {
+  if (e.type === 'tackle') return e.t + 1;
+  const meters = distanceMeters(e.x, e.y, e.x2, e.y2);
+  const speed = e.speed ?? (e.type === 'pass' ? config.defaults.passSpeed : config.defaults.shotSpeed);
+  return e.t + durationFromSpeed(meters, speed);
+}
+
+function isHighlightType(e) {
+  return e.type === 'pass' || e.type === 'shot' || e.type === 'tackle';
+}
+
 // ---- 主入口：把一条事件演绎成锚点序列 ----
 // 返回 [{t, kind, id?, x, y}]，锚点已按 t 排序
 // dropCarryBeat：仅连续模式 tackle 丢弃 carry-beat 起点用（见 buildTimeline）
@@ -265,6 +342,9 @@ export function interpretEvent(e, dropCarryBeat = false) {
     case 'off_ball_run':
       interpretOffBallRun(e, out);
       break;
+    case 'beat':
+      interpretBeat(e, out);
+      break;
     case 'substitution':
       // 换人：简单占位，P0 不做动画
       break;
@@ -282,8 +362,17 @@ export function interpretEvent(e, dropCarryBeat = false) {
 // 填满的事件）是同一被铲者的 dribble（且落点即接触点），则不重现带球段（避免连续播放里重放刚播过的带球）。
 export function buildTimeline(events, mode = 'clip') {
   const anchors = [];
+  // 飞行中高亮注册表（两层合成）：高亮覆盖区间内，其参与者从重叠 beat movers 排除
+  const activeHighlights = []; // {tStart, tEnd, participants:Set}
   for (let i = 0; i < events.length; i++) {
     const e = events[i];
+    // 清理已结束高亮（覆盖区间 [tStart, tEnd)，tEnd 起不再影响 beat）
+    for (let j = activeHighlights.length - 1; j >= 0; j--) {
+      if (activeHighlights[j].tEnd <= e.t) activeHighlights.splice(j, 1);
+    }
+    if (isHighlightType(e)) {
+      activeHighlights.push({ tStart: e.t, tEnd: highlightEndTime(e), participants: highlightParticipants(e) });
+    }
     let dropCarryBeat = false;
     if (mode === 'continuous' && e.type === 'tackle') {
       // 向前跳过 off_ball_run（引擎在每个有球事件后都插了无球跑位填满），
@@ -307,7 +396,7 @@ export function buildTimeline(events, mode = 'clip') {
     if (mode === 'continuous' && e.type === 'kickoff') {
       // 向前找最近的 shot goal（跳过 whistle）
       let j = i - 1;
-      while (j >= 0 && (events[j].type === 'whistle' || events[j].type === 'off_ball_run')) j--;
+      while (j >= 0 && (events[j].type === 'whistle' || events[j].type === 'off_ball_run' || events[j].type === 'beat')) j--;
       const prevShot = j >= 0 ? events[j] : null;
       if (prevShot && prevShot.type === 'shot' && prevShot.result === 'goal') {
         // 球从门内（shot 终点 x2 侧）滚回中圈：在 kickoff 起点之前 0.5s 处放门内锚点，中圈锚点在 kickoff 起点
@@ -319,8 +408,23 @@ export function buildTimeline(events, mode = 'clip') {
         anchors.push({ t: e.t, kind: 'ball', x: 0.5, y: 0.5, evt: i });
       }
     }
-    for (const a of interpretEvent(e, dropCarryBeat)) {
-      anchors.push({ ...a, evt: i });
+    if (e.type === 'beat') {
+      // 两层合成：排除覆盖区间内的高亮参与者（引擎已排除，viewer 防御性排除 + 可单测）
+      const excluded = new Set();
+      for (const h of activeHighlights) {
+        if (e.t >= h.tStart && e.t < h.tEnd) {
+          for (const p of h.participants) excluded.add(p);
+        }
+      }
+      const beatAnchors = [];
+      interpretBeat(e, beatAnchors, excluded);
+      for (const a of beatAnchors) {
+        anchors.push({ ...a, evt: i });
+      }
+    } else {
+      for (const a of interpretEvent(e, dropCarryBeat)) {
+        anchors.push({ ...a, evt: i });
+      }
     }
   }
   anchors.sort((a, b) => a.t - b.t);

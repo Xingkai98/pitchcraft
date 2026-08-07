@@ -265,3 +265,56 @@ test('continuous: 事件边界无 snap（球位置平滑）', () => {
   // 事件边界位移不应超过正常事件内位移（阈值 ~0.1 归一化）
   assert.ok(maxJump < 0.5, `事件边界球位移过大，maxJump=${maxJump}`);
 });
+
+// ---- v2：beat 节拍连续播放 ----
+
+function makeV2Game() {
+  // lineup 位置与首个 beat movers/main 起点一致（引擎 pos 连续，避免开场滑移干扰测试）
+  const lineup = Array.from({ length: 22 }, (_, i) => ({
+    id: i, team: i <= 10 ? 'home' : 'away', x: 0.5, y: 0.5,
+  }));
+  lineup[5] = { id: 5, team: 'home', x: 0.4, y: 0.42 };
+  lineup[10] = { id: 10, team: 'home', x: 0.55, y: 0.5 };
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup.map((p) => ({ ...p })) },
+    { t: 1, type: 'beat', movers: [{ id: 5, from_x: 0.4, from_y: 0.42, to_x: 0.42, to_y: 0.42, speed: 4, action: 'run' }], main: { type: 'dribble', subject: 10, x: 0.55, y: 0.5, x2: 0.58, y2: 0.5, speed: 5, touch_freq: 1.5 } },
+    { t: 2, type: 'beat', movers: [{ id: 5, from_x: 0.42, from_y: 0.42, to_x: 0.45, to_y: 0.43, speed: 4, action: 'run' }], main: { type: 'dribble', subject: 10, x: 0.58, y: 0.5, x2: 0.6, y2: 0.51, speed: 5, touch_freq: 1.5 } },
+    { t: 3, type: 'beat', movers: [{ id: 5, from_x: 0.45, from_y: 0.43, to_x: 0.47, to_y: 0.43, speed: 4, action: 'run' }], main: { type: 'dribble', subject: 10, x: 0.6, y: 0.51, x2: 0.62, y2: 0.51, speed: 5, touch_freq: 1.5 } },
+    { t: 4, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '0-0' },
+  ];
+  return new Game(events, lineup, 'continuous');
+}
+
+test('v2 continuous: beat 跨拍推进，球员与球并行移动', () => {
+  const g = makeV2Game();
+  g.playing = true;
+  const p5 = g.players.find((p) => p.id === 5);
+  const startX = p5.x;
+  for (let i = 0; i < 100; i++) g.step(0.1);
+  assert.ok(g.playTime >= g.matchEnd - 0.1, `应播到比赛结束，实际 ${g.playTime}/${g.matchEnd}`);
+  assert.ok(Math.abs(p5.x - startX) > 0.01, `5 号应跨拍移动，实际 Δ=${Math.abs(p5.x - startX)}`);
+  // 球随 main 移动（carrier 10 带球）
+  assert.ok(g.ball.x >= 0.55, `球应随 main 前进，实际 x=${g.ball.x}`);
+});
+
+test('v2 continuous: beat 事件边界无 snap（球 + 球员位置连续）', () => {
+  const g = makeV2Game();
+  g.playing = true;
+  let prevBall = { ...g.ball };
+  let prevP5 = { ...g.players.find((p) => p.id === 5) };
+  let maxBallJump = 0;
+  let maxPlayerJump = 0;
+  for (let i = 0; i < 200; i++) {
+    g.step(0.1);
+    const bj = Math.hypot(g.ball.x - prevBall.x, g.ball.y - prevBall.y);
+    maxBallJump = Math.max(maxBallJump, bj);
+    const p = g.players.find((p) => p.id === 5);
+    const pj = Math.hypot(p.x - prevP5.x, p.y - prevP5.y);
+    maxPlayerJump = Math.max(maxPlayerJump, pj);
+    prevBall = { ...g.ball };
+    prevP5 = { ...p };
+  }
+  // 跨拍连续：from(N+1)==to(N)，位移平滑（阈值宽松：单拍位移 ~0.02 归一化）
+  assert.ok(maxBallJump < 0.1, `球事件边界跳变过大 maxBallJump=${maxBallJump}`);
+  assert.ok(maxPlayerJump < 0.1, `球员事件边界跳变过大 maxPlayerJump=${maxPlayerJump}`);
+});

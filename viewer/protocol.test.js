@@ -5,9 +5,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseEvent, parseEventStream, playerTeam, isGoal, EVENT_TYPES } from './protocol.js';
 
-test('EVENT_TYPES 包含 10 类事件', () => {
+test('EVENT_TYPES 包含 11 类事件（v1 + v2 beat）', () => {
   assert.deepEqual([...EVENT_TYPES].sort(), [
-    'dribble', 'interception', 'kickoff', 'lineup', 'off_ball_run', 'pass', 'shot', 'substitution', 'tackle', 'whistle',
+    'beat', 'dribble', 'interception', 'kickoff', 'lineup', 'off_ball_run', 'pass', 'shot', 'substitution', 'tackle', 'whistle',
   ]);
 });
 
@@ -91,4 +91,72 @@ test('tackle: to 非数字（字符串/NaN/越界）抛错', () => {
 test('tackle: 新坐标字段越界抛错', () => {
   assert.throws(() => parseEvent({ t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55, loose_x: 1.5, loose_y: 0.5, result: 'success' }));
   assert.throws(() => parseEvent({ t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55, carrier_from_x: -0.1, result: 'success' }));
+});
+
+// ---- v2：beat 协议 ----
+
+test('beat: 无顶层 subject/x/y 可解析（含 movers/main/ball）', () => {
+  const e = parseEvent({
+    t: 1, type: 'beat',
+    movers: [{ id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.31, to_y: 0.39, speed: 4, action: 'run' }],
+    main: { type: 'dribble', subject: 10, x: 0.55, y: 0.5, x2: 0.56, y2: 0.5, speed: 5, touch_freq: 1.5 },
+  });
+  assert.equal(e.type, 'beat');
+  assert.equal(e.movers.length, 1);
+  assert.equal(e.main.subject, 10);
+});
+
+test('beat: movers id 重复抛错', () => {
+  assert.throws(() => parseEvent({
+    t: 1, type: 'beat',
+    movers: [
+      { id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.31, to_y: 0.39, speed: 4, action: 'run' },
+      { id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.31, to_y: 0.39, speed: 4, action: 'run' },
+    ],
+  }));
+});
+
+test('beat: movers 坐标越界抛错', () => {
+  assert.throws(() => parseEvent({
+    t: 1, type: 'beat',
+    movers: [{ id: 5, from_x: 1.5, from_y: 0.4, to_x: 0.31, to_y: 0.39, speed: 4, action: 'run' }],
+  }));
+});
+
+test('beat: 同时含 main 和 ball 抛错（唯一驱动者）', () => {
+  assert.throws(() => parseEvent({
+    t: 1, type: 'beat',
+    main: { type: 'dribble', subject: 10, x: 0.5, y: 0.5, x2: 0.51, y2: 0.5, speed: 5, touch_freq: 1 },
+    ball: { x: 0.3, y: 0.4, x2: 0.31, y2: 0.4, speed: 3, loose: true },
+  }));
+});
+
+test('beat: 松散球 ball 必须 loose:true', () => {
+  const e = parseEvent({
+    t: 1, type: 'beat',
+    ball: { x: 0.3, y: 0.4, x2: 0.31, y2: 0.4, speed: 3, loose: true },
+  });
+  assert.equal(e.ball.loose, true);
+  assert.throws(() => parseEvent({
+    t: 1, type: 'beat',
+    ball: { x: 0.3, y: 0.4, x2: 0.31, y2: 0.4, speed: 3, loose: false },
+  }));
+});
+
+test('beat: main 缺必填字段抛错', () => {
+  assert.throws(() => parseEvent({ t: 1, type: 'beat', main: { type: 'dribble', subject: 10 } }));
+});
+
+// ---- v2：tackle 用 carrier（被铲者 id）替代 to ----
+
+test('tackle: v2 用 carrier（无 to）合法', () => {
+  const e = parseEvent({
+    t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, carrier: 16,
+    x2: 0.45, y2: 0.55, loose_x: 0.42, loose_y: 0.5, carrier_from_x: 0.45, carrier_from_y: 0.55, result: 'fail',
+  });
+  assert.equal(e.carrier, 16);
+});
+
+test('tackle: 缺 to 且缺 carrier 抛错', () => {
+  assert.throws(() => parseEvent({ t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, x2: 0.45, y2: 0.55, result: 'success' }));
 });

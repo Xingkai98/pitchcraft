@@ -25,6 +25,7 @@ export class Game {
     this.speedIndex = 0; // 0 -> 1x, 1 -> 2x, 2 -> 4x
     this.playTime = 0; // 当前播放的比赛秒
     this.timeline = buildTimeline(events, this.mode); // 锚点时间线（continuous 启用 carry-beat 丢弃）
+    this._buildAnchorIndex(); // 按实体分组的时间索引（P3.5：~2900 事件数万锚点，线性扫描会卡）
     this._clipIndex = 0; // clip 模式：当前选中事件索引
     // 每个事件的结束时间：该事件最后一个锚点的 t + 余量，作为独立片段时长（clip 用）
     this._eventEnds = this._computeEventEnds(events);
@@ -145,6 +146,20 @@ export class Game {
     }
   }
 
+  // 按实体构建时间索引：球一组、每球员一组（timeline 已按 t 排序，分组后仍有序）
+  _buildAnchorIndex() {
+    this._ballAnchors = [];
+    this._playerAnchors = new Map();
+    for (const a of this.timeline) {
+      if (a.kind === 'ball') {
+        this._ballAnchors.push(a);
+      } else if (a.kind === 'player' && a.id !== undefined) {
+        if (!this._playerAnchors.has(a.id)) this._playerAnchors.set(a.id, []);
+        this._playerAnchors.get(a.id).push(a);
+      }
+    }
+  }
+
   // 由锚点插值出当前球员/球位置
   _updateFromTimeline() {
     const t = this.playTime;
@@ -161,22 +176,32 @@ export class Game {
   }
 
   _interpolateAnchors(kind, t, id) {
-    // 找到 kind 匹配、id 匹配（可选）的相邻锚点，按 t 插值。
+    // 找到 kind 匹配、id 匹配（可选）的相邻锚点，按 t 插值（二分，O(log n)）。
     // continuous 模式：沿整场时间线取最近锚点插值——事件密集，prev/next 相邻即自然衔接。
     //   clip 模式：只用【当前事件】锚点（prevCur/next 限当前事件），避免跨事件泄漏；
     //   当前事件未锚定该实体时，用更早事件兜底（hold）。
     if (this.mode === 'continuous') {
-      let prev = null;
-      let next = null;
-      for (const a of this.timeline) {
-        if (a.kind !== kind) continue;
-        if (id !== undefined && a.id !== id) continue;
-        if (a.t <= t) prev = a;
-        else if (next === null) next = a;
+      const arr = kind === 'ball' ? this._ballAnchors : this._playerAnchors.get(id);
+      if (!arr || arr.length === 0) return null;
+      // 二分：最后一个 t <= 目标的锚点
+      let lo = 0;
+      let hi = arr.length - 1;
+      let pos = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (arr[mid].t <= t) {
+          pos = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
       }
-      if (!prev) return null;
+      if (pos === -1) return null;
+      const prev = arr[pos];
+      const next = pos + 1 < arr.length ? arr[pos + 1] : null;
       if (!next) return { x: prev.x, y: prev.y }; // 末尾，停在最后锚点
       // 事件间隙（不同 evt 的相邻锚点，中间无锚点）：hold 在 prev（事件之间不滑动）
+      // v2：跨拍连续由引擎保证 from(N+1)==to(N)，hold 在相同位置无视觉跳变
       if (prev.evt !== undefined && next.evt !== undefined && prev.evt !== next.evt) {
         return { x: prev.x, y: prev.y };
       }
@@ -186,12 +211,12 @@ export class Game {
     }
     // clip 模式
     const idx = this._clipIndex;
+    const arr = kind === 'ball' ? this._ballAnchors : this._playerAnchors.get(id);
+    if (!arr || arr.length === 0) return null;
     let prevCur = null;
     let prevAny = null;
     let next = null;
-    for (const a of this.timeline) {
-      if (a.kind !== kind) continue;
-      if (id !== undefined && a.id !== id) continue;
+    for (const a of arr) {
       if (a.evt > idx) continue;
       if (a.t <= t) {
         if (a.evt === idx) prevCur = a;
