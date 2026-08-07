@@ -30,13 +30,45 @@
 - **GIVEN** 门将偏离门线
 - **THEN** beat 的 movers 含门将向门线回位的移动
 
-### Requirement: 角色基准点
+### Requirement: 球相关队形目标
 
-引擎 SHALL 为每名球员定义角色站位基准（GK/DF/MF/FW 的 home 位置），无球跑位向基准点附近调整，偏离时回位。
+引擎 SHALL 为每名球员计算目标位置 = 角色站位基准 + 队形偏移（随球位置、控球阶段、球侧变化），使球队呈现整体伸缩/平移而非独立人偶回位。
 
-#### Scenario: 无球跑位有方向
-- **WHEN** 一名无球球员需要调整位置
-- **THEN** 其移动目标由角色基准点决定（回位/拉开/压上），而非随机小幅移动
+#### Scenario: 防线随球前压/回撤
+- **GIVEN** 球推进到前场
+- **THEN** 防守线目标位置随球前压（push up）；球回撤到后场时防线回收（drop back）
+
+#### Scenario: 全队随球侧平移
+- **GIVEN** 球在球场左半
+- **THEN** 全队目标位置向左偏移（ball-side shift），保持球侧紧凑
+
+#### Scenario: 控球阶段压上
+- **GIVEN** 己方持球
+- **THEN** 全队目标位置前压；对方持球时回收
+
+### Requirement: 控球阶段与攻防转换
+
+引擎 SHALL 维护每队 phase（attack/defend/transition）；球权易主（抢断成功/拦截/扑救）时触发短 transition 窗口，新进攻方持球者前插、全队前压，新防守方回撤并就近收缩。
+
+#### Scenario: 抢断成功触发反击
+- **GIVEN** 一次抢断成功（球权易主）
+- **THEN** 触发 transition：新持球者目标前移（高速推进），新进攻方队形前压，新防守方整体回撤并就近 1-2 人向持球者收缩
+
+### Requirement: 球所有权与合成规则
+
+引擎 SHALL 保证每个开放比赛时刻球有且只有一个驱动者：节拍 stretch 由 main 带球驱动，高亮期间由高亮事件驱动，松散球由 beat 携带 ball 坐标。高亮事件期间其参与者（接球者/门将/防守者）从 beat movers 排除。
+
+#### Scenario: 节拍带球驱动
+- **GIVEN** 持球者带球（无高亮事件）
+- **THEN** beat 的 main 携带球轨迹（x/y→x2/y2+speed），球由 main 驱动
+
+#### Scenario: 高亮期间排除参与者
+- **GIVEN** 一条 pass 高亮事件进行中
+- **THEN** 接球者/传球者在该高亮时序内不在 beat movers（或与高亮精确一致）；引擎 pos[] 对账到高亮结束位置
+
+#### Scenario: 松散球
+- **GIVEN** 无持球者（抢断弹开等）
+- **THEN** beat 携带 ball 坐标（loose:true），viewer 可读松散球追逐
 
 ### Requirement: 确定性
 
