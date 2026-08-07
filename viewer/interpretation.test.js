@@ -318,14 +318,15 @@ test('beat: movers 铺满整拍 [t, t+1]，main 人球解耦，ball 滚动', () 
   assert.equal(m5[0].x, 0.3);
   assert.equal(m5[m5.length - 1].t, 11);
   assert.equal(m5[m5.length - 1].x, 0.35);
-  // main 人球解耦：同一 t 球领先 carrier
+  // main：球随 carrier（拍边界连续，不做 sep 领先偏移——避免方向变化导致拍边界球跳）
   const carrier = anchors.filter((a) => a.kind === 'player' && a.id === 10).sort((a, b) => a.t - b.t);
   const ball = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
   assert.ok(carrier.length >= 2 && ball.length >= 2);
   assert.equal(carrier[0].t, 10);
   assert.equal(ball[0].t, 10);
-  // 球领先：t=10 时球 x > carrier x（向右带球）
-  assert.ok(ball[0].x > carrier[0].x, 'beat.main 球应领先 carrier');
+  // 球位置 = carrier 位置（起点/终点对齐）
+  assert.equal(ball[0].x, carrier[0].x, 'beat.main 球起点随 carrier');
+  assert.equal(ball[ball.length - 1].x, carrier[carrier.length - 1].x, 'beat.main 球终点随 carrier');
 });
 
 test('beat: 松散球 ball 铺满整拍', () => {

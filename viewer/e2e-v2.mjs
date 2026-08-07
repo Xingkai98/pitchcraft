@@ -60,18 +60,23 @@ const last60 = e60[e60.length - 1].t;
 const last2700 = events[events.length - 1].t;
 if (last60 > 61 || last2700 < 2699) throw new Error(`config 时长未生效: t=${last60}/${last2700}`);
 
-// ---- viewer 端到端：连续播放无 snap ----
+// ---- viewer 端到端：连续播放无 snap（覆盖高亮边界）----
+// 步进 300s（18000 帧）：覆盖首 pass(~23s)、首 tackle(~98s)、首 shot(~291s seed42)——高亮边界是 snap 高发区
 const { events: parsed, lineup } = parseEventStream(events);
 const game = new Game(parsed, lineup, 'continuous');
 game.playing = true;
 let prevBall = { ...game.ball };
 let maxBallJump = 0;
+let maxBallJumpT = 0;
 const prevPlayers = new Map(game.players.map((p) => [p.id, { x: p.x, y: p.y }]));
 let maxPlayerJump = 0;
-for (let i = 0; i < 600; i++) {
+for (let i = 0; i < 18000; i++) {
   game.step(1 / 60);
   const bj = Math.hypot(game.ball.x - prevBall.x, game.ball.y - prevBall.y);
-  if (bj > maxBallJump) maxBallJump = bj;
+  if (bj > maxBallJump) {
+    maxBallJump = bj;
+    maxBallJumpT = game.playTime;
+  }
   prevBall = { ...game.ball };
   for (const p of game.players) {
     const prev = prevPlayers.get(p.id);
@@ -81,7 +86,7 @@ for (let i = 0; i < 600; i++) {
     prev.y = p.y;
   }
 }
-if (maxBallJump > 0.05) throw new Error(`球事件边界跳变过大 maxBallJump=${maxBallJump}`);
+if (maxBallJump > 0.05) throw new Error(`球事件边界跳变过大 maxBallJump=${maxBallJump} at t=${maxBallJumpT.toFixed(1)}`);
 if (maxPlayerJump > 0.05) throw new Error(`球员事件边界跳变过大 maxPlayerJump=${maxPlayerJump}`);
 
 const stats = {

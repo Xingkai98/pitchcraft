@@ -46,12 +46,12 @@ function validateBeat(e) {
       }
     }
   }
-  // main 与 ball 互斥（唯一驱动者）
-  if (e.main !== undefined && e.ball !== undefined) {
+  // main 与 ball 互斥（唯一驱动者）；null/undefined 视为缺失
+  if (e.main != null && e.ball != null) {
     throw new Error(`beat cannot have both main and ball: ${JSON.stringify(e)}`);
   }
   // main：carrier 带球/控球（main-only）
-  if (e.main !== undefined) {
+  if (e.main != null) {
     if (e.main.type !== 'dribble') throw new Error(`beat.main type must be dribble: ${e.main.type}`);
     if (typeof e.main.subject !== 'number' || e.main.subject < 0 || e.main.subject > 21) {
       throw new Error(`beat.main subject invalid: ${e.main.subject}`);
@@ -63,7 +63,7 @@ function validateBeat(e) {
     }
   }
   // ball：松散球（含滚动轨迹）
-  if (e.ball !== undefined) {
+  if (e.ball != null) {
     if (e.ball.loose !== true) throw new Error(`beat.ball.loose must be true: ${JSON.stringify(e.ball)}`);
     for (const c of ['x', 'y', 'x2', 'y2']) {
       if (typeof e.ball[c] !== 'number' || !Number.isFinite(e.ball[c]) || e.ball[c] < 0 || e.ball[c] > 1) {

@@ -62,12 +62,13 @@ function interpretPass(e, out) {
   // 球：起点 → 终点（直线）
   out.push({ t: t0, kind: 'ball', x: e.x, y: e.y });
   out.push({ t: t0 + ballDur, kind: 'ball', x: e.x2, y: e.y2 });
-  // 接球者（to）：从当前位置(receiver_x/y)跑向落点（不瞬移，比球稍晚到位）
+  // 接球者（to）：从当前位置(receiver_x/y)跑向落点。终点锚点 = t0+ballDur（引擎高亮结束位置 = 落点），
+  // 保证 beat-main（接球者持球）在首个 tick 边界从落点继续，无 freeze/teleport（审阅 blocker）。
   if (e.to !== undefined) {
     const startX = e.receiver_x !== undefined ? e.receiver_x : e.x2;
     const startY = e.receiver_y !== undefined ? e.receiver_y : e.y2;
     out.push({ t: t0, kind: 'player', id: e.to, x: startX, y: startY });
-    out.push({ t: t0 + ballDur + p.receiverBrakeDuration, kind: 'player', id: e.to, x: e.x2, y: e.y2 });
+    out.push({ t: t0 + ballDur, kind: 'player', id: e.to, x: e.x2, y: e.y2 });
   }
   // 传球者（from）：原地不动（简化）
   if (e.from !== undefined) {
@@ -164,9 +165,17 @@ function interpretTackle(e, out, dropCarryBeat = false) {
   const deflectDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), deflect.deflectSpeed);
 
   if (isV2) {
-    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 接触点（引擎对账），球终态 = loose（与 beat.ball 起点连续）。
+    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 接触点（引擎对账），球终态按 result：
+    //   success → 弹到 loose（进入松散球，与 beat.ball 起点连续）
+    //   fail    → 停在接触点（被铲者保持，main 从接触点恢复，无松散球）
     // collect 交给后续 beat.ball + chase，不在此演绎。
     const end = t0 + 1;
+    if (e.result === 'fail') {
+      out.push({ t: end, kind: 'ball', x: vx, y: vy });
+      out.push({ t: end, kind: 'player', id: victim, x: vx, y: vy });
+      out.push({ t: end, kind: 'player', id: tackler, x: vx, y: vy });
+      return;
+    }
     const tLoose = Math.min(tContact + deflectDur, end - 0.05);
     out.push({ t: tLoose, kind: 'ball', x: loose.x, y: loose.y });
     if (tLoose < end - 0.01) {
@@ -246,17 +255,13 @@ function interpretOffBallRun(e, out) {
 function interpretBeat(e, out, excluded = null) {
   const t0 = e.t;
   const t1 = t0 + 1; // 铺满整拍
-  // main：carrier 带球（人球解耦，球略领先）
+  // main：carrier 带球。球位置 = carrier（拍边界连续；不做 sep 领先偏移——方向变化会导致拍边界球跳，审阅 minor）
   if (e.main) {
     const m = e.main;
-    const dist = Math.hypot(m.x2 - m.x, m.y2 - m.y);
-    const sep = config.interpretation.dribble.separation;
-    const dirX = dist === 0 ? 0 : (m.x2 - m.x) / dist;
-    const dirY = dist === 0 ? 0 : (m.y2 - m.y) / dist;
     out.push({ t: t0, kind: 'player', id: m.subject, x: m.x, y: m.y });
-    out.push({ t: t0, kind: 'ball', x: m.x + dirX * sep, y: m.y + dirY * sep });
+    out.push({ t: t0, kind: 'ball', x: m.x, y: m.y });
     out.push({ t: t1, kind: 'player', id: m.subject, x: m.x2, y: m.y2 });
-    out.push({ t: t1, kind: 'ball', x: m.x2 + dirX * sep, y: m.y2 + dirY * sep });
+    out.push({ t: t1, kind: 'ball', x: m.x2, y: m.y2 });
   }
   // movers：并行跑位（增量，静止球员不发），排除高亮参与者（两层合成）
   if (Array.isArray(e.movers)) {
@@ -398,13 +403,15 @@ export function buildTimeline(events, mode = 'clip') {
       let j = i - 1;
       while (j >= 0 && (events[j].type === 'whistle' || events[j].type === 'off_ball_run' || events[j].type === 'beat')) j--;
       const prevShot = j >= 0 ? events[j] : null;
-      if (prevShot && prevShot.type === 'shot' && prevShot.result === 'goal') {
-        // 球从门内（shot 终点 x2 侧）滚回中圈：在 kickoff 起点之前 0.5s 处放门内锚点，中圈锚点在 kickoff 起点
+      if (prevShot && prevShot.type === 'shot' && (prevShot.result === 'goal' || prevShot.result === 'off_target')) {
+        // 死球后 kickoff：球从终点（goal=门内 / off_target=边线）滚回中圈，避免瞬移。
+        // goal：球在门内（越过门线）；off_target：球停在边线（x2 钳制）。
         const goalSide = prevShot.x2 >= 0.5 ? 1 : -1;
-        const inGoal = { x: 0.5 + goalSide * 0.52, y: prevShot.y2 ?? 0.5 }; // 门内（略过门线）
-        const tPrev = e.t - 2.0; // 过渡窗口 2s：球从门内平滑滚回中圈（避免瞬移）
+        const ballEndX = prevShot.result === 'goal' ? 0.5 + goalSide * 0.52 : prevShot.x2;
+        const inGoal = { x: ballEndX, y: prevShot.y2 ?? 0.5 };
+        const tPrev = e.t - 2.0; // 过渡窗口 2s：球从终点平滑滚回中圈（避免瞬移）
         anchors.push({ t: tPrev, kind: 'ball', x: inGoal.x, y: inGoal.y, evt: i });
-        // kickoff 起点球在中圈（interpretEvent 会加），这里补一个过渡起点保证插值从门内滑到中圈
+        // kickoff 起点球在中圈（interpretEvent 会加），这里补一个过渡起点保证插值从终点滑到中圈
         anchors.push({ t: e.t, kind: 'ball', x: 0.5, y: 0.5, evt: i });
       }
     }

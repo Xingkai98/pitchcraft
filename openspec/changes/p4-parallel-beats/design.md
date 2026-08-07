@@ -67,7 +67,7 @@ P3 之后连续播放成立，但事件流是"串行"的：每条事件只描述
 ### D7: 全员状态逐 tick 更新（Q7）+ 高亮触发节拍门控（审阅 H1）
 - 引擎维护 `pos[22]`，每 tick 为每个球员决策目标：持球者带球、队友跑位（本轮用现有角色锚点 + 小幅调整，队形公式进 p5）、门将回位。更新 pos[]，产节拍。
 - **高亮触发门控（H1）**：持球 hold 以 tick 计（8-15 tick），hold 内每 tick 发 main（carrier 带球）+ movers；hold 归零时在**整数 tick** 掷高亮类型（pass/shot/tackle，含 tackle 距离/积极性检查）。**不是每 tick 都掷高亮**（否则 2700 个），也**不是从不掷**（否则零高亮）。
-- **高亮门控 fallback（审阅 p4-103）**：hold 归零**必定**产出一条高亮；掷出 tackle 但距离/积极性检查失败 → 改掷 pass/shot（v2 无 'dribble' 落点，不落回 dribble）。tackle 频率目标保持主 spec 8-15/场，由检查阈值（距离 ~10m、积极性 ~0.09）维持。
+- **高亮门控 fallback（审阅 p4-103）**：hold 归零**必定**产出一条高亮；掷出 tackle 但距离/积极性检查失败 → 改掷 pass/shot（v2 无 'dribble' 落点，不落回 dribble；85% pass / 15% shot，shot 有半场 guard）。tackle 频率目标保持主 spec 8-15/场，由检查阈值（**v2 标定距离 12m、积极性 0.15**——v2 高亮模型贴防率低于 v1 逐事件模型）维持。
 - **main 每拍推进上限（审阅 M3）**：main 的每拍推进 ≤ speed×1s（约 5-7m）；持球者多数 tick 为零位移控球（球在脚下小幅调整）或短带球，避免 8-15 tick 内横穿球场。
 - **为什么**：FM slice 模型；高亮门控决定流形状（约 200 次/场），main 步进上限防止 carrier 超速。
 
