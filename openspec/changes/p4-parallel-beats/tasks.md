@@ -8,10 +8,14 @@
 - [ ] P1.2 维护 `pos[22]` 实时位置，每 tick 为每球员决策目标（持球带球/队友跑位/门将回位；本轮用现有角色锚点 + 小幅调整）
 - [ ] P1.3 **dribble 从高亮移入 main**：v2 全场比赛带球 = beat.main，pass/shot/tackle 仍为高亮
 - [ ] P1.4 **每个持球 tick 都发 main**（含零位移控球，球在脚下）——保证球可见、唯一驱动者
-- [ ] P1.5 **高亮锚点整数 tick 对齐**：pass/shot/tackle 的 t 量化到 1s 边界
-- [ ] P1.6 **飞行中高亮注册表**：维护被高亮控制的球员（到何时、结束位置），每 tick 执行排除 + pos[] 对账
-- [ ] P1.7 **高亮事件携带参与者精确起点**（pass: passer+receiver；shot: shooter+keeper；tackle: carrier_from+tackler）
-- [ ] P1.8 确定性：同 seed 同 config → 同节拍流 + 高亮事件
+- [ ] P1.4b **main 每拍推进 ≤ speed×1s（约 5-7m）** + 零位移控球占比——避免 carrier 横穿球场（校准）
+- [ ] P1.5 **高亮触发节拍门控**：持球 hold 以 tick 计（8-15 tick），hold 归零时在整数 tick 掷高亮类型（pass/shot/tackle），非每 tick 掷
+- [ ] P1.6 **高亮锚点整数 tick 对齐**：pass/shot/tackle 的 t 量化到 1s 边界
+- [ ] P1.7 **飞行中高亮注册表**：维护被高亮控制的球员（到何时、结束位置），每 tick 执行排除 + pos[] 对账
+- [ ] P1.8 **高亮事件携带参与者精确起点**（pass: passer+receiver；shot: shooter+keeper；tackle: carrier_from+tackler；**tackle carrier_from = 接触点，carry-beat 归零**）
+- [ ] P1.9 **movers 连续性**：引擎维护 last-emitted-pos，保证球员重新出现时 from = 上次 viewer 所见（跨缺席精确衔接）
+- [ ] P1.10 **carrier 不进 movers**（main-only）：持球者移动只由 main 表达
+- [ ] P1.11 确定性：同 seed 同 config → 同节拍流 + 高亮事件
 
 ## P2. 协议：beat 节拍 + 球所有权
 
@@ -19,9 +23,9 @@
 - [ ] P2.2 movers 增量（只含移动球员，位移阈值 ~0.5m）；to = tick 步进终点
 - [ ] P2.3 **main = 带球/控球 only**（pass/shot/tackle 只走高亮，避免双播）
 - [ ] P2.4 **球所有权三分**：main 带球 / 高亮 / beat.ball 松散球；movers/main/ball 互斥（不同时含 main 和 ball）
-- [ ] P2.5 movers action 枚举（run/return/close_down/dribble/keeper_return）
+- [ ] P2.5 movers action 枚举（run/return/close_down/keeper_return；**无 dribble**——carrier 不进 movers）
 - [ ] P2.6 向后兼容：v1 事件（pass/shot/tackle 等）保留，viewer 兼容两者；demo_mode 保持 v1 事件驱动
-- [ ] P2.7 protocol 校验支持 beat + movers/main/ball 互斥 + id 唯一 + 坐标范围
+- [ ] P2.7 protocol 校验支持 beat（**特判 beat 无顶层 subject/x/y**）+ movers/main/ball 互斥 + id 唯一 + 坐标范围
 
 ## P3. viewer：beat 演绎 + 两层合成
 
@@ -33,10 +37,11 @@
 
 ## P4. 验证与收尾
 
-- [ ] P4.1 引擎测试：节拍确定性、球所有权（唯一驱动）、高亮参与者排除、tick 单调
+- [ ] P4.1 引擎测试：节拍确定性、球所有权（唯一驱动）、高亮参与者排除、tick 单调、高亮门控
 - [ ] P4.2 viewer 测试：beat 批量插值、两层合成、球可见性、跨拍连续、无 snap
-- [ ] P4.3 **现有测试迁移**：16 引擎测试断言 v1 结构（dribble 事件、tackle 频率），beat 重写会破坏，需迁移/更新
-- [ ] P4.4 端到端：整场连续播放，多人同时动，关键时刻有戏，无 snap
-- [ ] P4.5 版本号更新（index.html/app.js）
-- [ ] P4.6 跑 verify.sh
-- [ ] P4.7 代码审阅闭环
+- [ ] P4.3 **现有测试迁移 + 重标定**：13 个引擎测试断言 v1 结构（dribble 事件、tackle 频率），beat 重写会破坏，需迁移；tackle 频率测试（8-15/场）按高亮门控重标定
+- [ ] P4.4 **更新 verify.sh 断言**：v2 非 demo 流不再含顶层 dribble 事件（变 beat.main），verify.sh 需断言 beat 事件 + main 带球
+- [ ] P4.5 端到端：整场连续播放，多人同时动，关键时刻有戏，无 snap
+- [ ] P4.6 版本号更新（index.html/app.js）
+- [ ] P4.7 跑 verify.sh
+- [ ] P4.8 代码审阅闭环

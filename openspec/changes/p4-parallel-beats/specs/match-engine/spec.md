@@ -24,7 +24,15 @@
 
 #### Scenario: 队友跑位
 - **GIVEN** 一名无球球员需要调整位置
-- **THEN** beat 的 movers 含该球员向目标位置的移动（本轮为角色锚点 + 小幅调整）
+- **THEN** beat 的 movers 含该球员向目标位置的移动（本轮为角色锚点 + 小幅调整）；位移超过阈值（~0.5m）才列入 movers
+
+#### Scenario: 高亮触发节拍门控
+- **GIVEN** 持球 hold（8-15 tick）
+- **THEN** hold 内每 tick 发 main（carrier 带球）+ movers；hold 归零时在整数 tick 掷高亮类型（pass/shot/tackle）；非每 tick 掷高亮
+
+#### Scenario: carrier 不进 movers
+- **GIVEN** 持球者在带球/控球
+- **THEN** 持球者不出现在 movers（其移动只由 main 表达）
 
 ### Requirement: 球所有权唯一驱动者
 
@@ -56,7 +64,7 @@
 
 #### Scenario: 高亮携带参与者起点
 - **GIVEN** 一条 pass/shot/tackle 高亮事件
-- **THEN** 携带参与者精确起点（pass: passer_x/y+receiver_x/y；shot: shooter_x/y+keeper_x/y；tackle: carrier_from+tackler_x/y），无 fallback
+- **THEN** 携带参与者精确起点（pass: passer_x/y+receiver_x/y；shot: shooter_x/y+keeper_x/y；tackle: carrier_from+tackler_x/y），无 fallback；tackle 的 carrier_from = 被铲者在 tackle tick 的位置（接触点，carry-beat 归零——v2 中带球逼近已由 main 表达）
 
 ### Requirement: 确定性
 

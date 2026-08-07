@@ -51,19 +51,23 @@ P3 之后连续播放成立，但事件流是"串行"的：每条事件只描述
 - 球优先级链：**高亮 > main(带球) > beat.ball(松散) > hold(死球)**。
 - **为什么**：消除"球无人驾驶"缺陷（审阅标为 FUNDAMENTAL）。
 
-### D5: 新 type 'beat'（Q5）
+### D5: 新 type 'beat'（Q5）+ 位移阈值与连续性（审阅 M1）+ main-only（审阅 M2）
 - 每拍 `{t, type:'beat', movers:[{id, from_x, from_y, to_x, to_y, speed, action}], main?:{...}, ball?:{x, y, loose}}`。
 - **movers 的 to = tick 步进终点**（pos after ≤1s movement at speed），非角色锚点——保证跨拍 from(N+1)==to(N)。
-- **为什么**：语义清晰，协议版本化易区分；不 hack off_ball_run。
+- **位移阈值 vs 连续性（M1）**：movers 位移阈值（~0.5m）与"跨拍精确衔接"共存——引擎维护 **last-emitted-pos**（每个球员上次在 movers 里的 to），保证球员重新出现时 from = 上次 viewer 见到的位置（跨缺席也精确衔接）。无 snap 容差内不跳变。
+- **main-only（M2）**：**carrier 不进 movers**——持球者的移动只由 main 表达，movers 只含无球跑位球员。movers 的 action 枚举删 'dribble'（carrier 的带球在 main）。避免 main 轨迹 + movers 位移双重渲染。
+- **为什么**：语义清晰；位移阈值不破坏跨拍连续；main-only 消除 carrier 双渲染。
 
 ### D6: main = 带球/控球 only，每持球 tick 都发（Q6 升级）
 - **main 只在持球者带球/控球时出现**；pass/shot/tackle **绝不进入 main**（只走高亮事件，避免双播）。
 - **每个持球 tick 都必须发 main**（含零位移控球：球在脚下，main 带球轨迹可为微小位移）——保证球可见、唯一驱动者成立（审阅 blocker：carrier-hold 时球不能冻结）。
 - **为什么**：消除"同一动作定义两次"（dribble 双重广播）与"carrier-hold 球无人驾驶"两个缺陷。
 
-### D7: 全员状态逐 tick 更新（Q7）
+### D7: 全员状态逐 tick 更新（Q7）+ 高亮触发节拍门控（审阅 H1）
 - 引擎维护 `pos[22]`，每 tick 为每个球员决策目标：持球者带球、队友跑位（本轮用现有角色锚点 + 小幅调整，队形公式进 p5）、门将回位。更新 pos[]，产节拍。
-- **为什么**：FM slice 模型，真正的"全员每刻决策"。
+- **高亮触发门控（H1）**：持球 hold 以 tick 计（8-15 tick），hold 内每 tick 发 main（carrier 带球）+ movers；hold 归零时在**整数 tick** 掷高亮类型（pass/shot/tackle，含 tackle 距离/积极性检查）。**不是每 tick 都掷高亮**（否则 2700 个），也**不是从不掷**（否则零高亮）。
+- **main 每拍推进上限（审阅 M3）**：main 的每拍推进 ≤ speed×1s（约 5-7m）；持球者多数 tick 为零位移控球（球在脚下小幅调整）或短带球，避免 8-15 tick 内横穿球场。
+- **为什么**：FM slice 模型；高亮门控决定流形状（约 200 次/场），main 步进上限防止 carrier 超速。
 
 ### D8: 高亮参与者排除 + 高亮锚点整数 tick 对齐（D12 的核心，升级定死）
 - **高亮期间参与者从 beat movers 排除**：pass 的传球者/接球者、shot 的射手/门将、tackle 的双方，在其高亮时序内不在 beat movers。这是**唯一规范**（无"或与高亮精确一致"逃生门）。
@@ -72,9 +76,10 @@ P3 之后连续播放成立，但事件流是"串行"的：每条事件只描述
 - 引擎维护**飞行中高亮注册表**（哪些球员被高亮控制、到何时、结束位置），每 tick 查询以执行排除 + pos[] 对账到高亮结束位置。
 - **为什么**：消除"同一球员双重移动"，是最大技术风险（审阅标为 blocker）。
 
-### D9: 关键时刻保持当前节奏（Q9 升级）
+### D9: 关键时刻保持当前节奏（Q9 升级）+ tackle carry-beat 归零（审阅 H2）
 - **v2 全场比赛：dribble 不再是独立高亮**——带球 = beat.main。pass/shot/tackle 仍为高亮事件（约 150-200 次/场）。
-- **为什么**：消除 dribble 双重广播（D6 决定）；pass/shot/tackle 是高光，带球是节拍流动。
+- **tackle carry-beat 归零（H2）**：v2 中被铲者在 tackle 前的若干 tick 已通过 main 演过带球逼近，故 **tackle 高亮的 carrier_from = 被铲者在 tackle tick 的位置（接触点）**，carry-beat 归零（不再从带球段起点重放）。viewer 不再需要基于 v1 dribble 事件的 dropCarryBeat 扫描（该机制在 v2 失效）。
+- **为什么**：消除 dribble 双重广播；v2 中带球逼近已由 main 表达，tackle 高亮不重放带球段。
 
 ### D10: 协议 v2 新增 beat，向后兼容（Q10）
 - 保留 v1 事件（pass/shot/tackle 等），新增 beat 节拍。viewer 兼容两者。

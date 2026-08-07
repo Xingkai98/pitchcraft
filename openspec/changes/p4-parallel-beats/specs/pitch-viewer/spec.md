@@ -9,11 +9,11 @@
 #### Scenario: 多球员并行移动
 - **GIVEN** 一条 beat 事件，movers 含多个球员
 - **WHEN** 画面层演绎该事件
-- **THEN** 所有 movers 中的球员同时移动（并行），静止球员 hold
+- **THEN** 所有 movers 中的球员同时移动（并行），静止球员 hold；movers 动画铺满整拍（缓动到位，非动 0.3s 停 0.7s）
 
 #### Scenario: 跨 beat 连续
-- **GIVEN** 一名球员连续多拍移动
-- **THEN** 后拍 from == 前拍 to（精确衔接），无 hold-then-jump
+- **GIVEN** 一名球员连续多拍移动（或中途缺席后重新出现）
+- **THEN** 后拍 from == 前拍 to（引擎 last-emitted-pos 保证，跨缺席也精确衔接），无 hold-then-jump
 
 ### Requirement: 两层合成（高亮覆盖 beat）
 

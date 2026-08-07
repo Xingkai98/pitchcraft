@@ -14,7 +14,12 @@
 #### Scenario: 节拍含带球 main
 - **GIVEN** 持球者在带球/控球（无高亮事件）
 - **WHEN** 引擎产出一条 beat 事件
-- **THEN** 携带 `main`（如 `{type:'dribble', subject, x, y, x2, y2, speed}`），球轨迹由 main 驱动；每个持球 tick 都发 main（含零位移控球）
+- **THEN** 携带 `main`（如 `{type:'dribble', subject, x, y, x2, y2, speed}`），球轨迹由 main 驱动；每个持球 tick 都发 main（含零位移控球）；main 每拍推进 ≤ speed×1s（约 5-7m）
+
+#### Scenario: carrier 不进 movers（main-only）
+- **GIVEN** 持球者在带球/控球
+- **WHEN** 引擎产出一条 beat 事件
+- **THEN** 持球者不出现在 movers 中（其移动只由 main 表达）；movers 只含无球跑位球员
 
 #### Scenario: 松散球
 - **GIVEN** 无持球者（抢断弹开等）
