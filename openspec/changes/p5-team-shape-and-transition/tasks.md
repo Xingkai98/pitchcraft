@@ -15,17 +15,19 @@
 ## S2. 引擎：控球阶段 + 攻防转换
 
 - [ ] S2.1 每队 phase 状态机（attack/defend/transition）
-- [ ] S2.2 transition 触发：球权易主（tackle 成功/扑救/拦截）→ transition 窗口（3-5 tick，≥1s）
+- [ ] S2.2 transition 触发：球权易主（tackle 成功 + 射门被扑救；拦截后续加入）→ transition 窗口（固定 `TRANSITION_TICKS = 4`）
+- [ ] S2.2b transition 窗口起算：tackle 成功 tick 武装 transition（全队前压/回撤立即生效），持球者前插目标等松散球被拾取后激活
+- [ ] S2.2c transition 与高亮门控合成：transition 期间 hold 门控暂停，tackle 成功后 N tick 内不再掷新高亮
 - [ ] S2.3 transition 行为：新进攻方持球者前插 + 全队前压；新防守方回撤 + 就近 2 名外场防守者 close_down
-- [ ] S2.4 transition 窗口结束 → 回 attack/defend
-- [ ] S2.5 引擎测试：tackle 成功触发反击、窗口结束恢复、确定性
+- [ ] S2.4 transition 窗口（4 tick）结束 → 回 attack/defend
+- [ ] S2.5 引擎测试：tackle 成功触发反击、窗口结束恢复、反击期间无新高亮、确定性
 
 ## S3. viewer：micro-motion
 
 - [ ] S3.1 渲染层 micro-motion：静止球员小幅重心调整（振幅 < 0.002，逻辑位置不变）
-- [ ] S3.2 确定性微动：`hash(id, floor(t))` 决定偏移，非每帧随机
-- [ ] S3.3 移动中抑制微动（movers/高亮参与者不微动）
-- [ ] S3.4 viewer 测试：逻辑位置不变、确定性、无 snap 不破坏
+- [ ] S3.2 确定性且连续微动：hash 作种子 + 连续波形（`A·sin(2π(t−t0)+φ)`），tick 边界无跳变
+- [ ] S3.3 移动中抑制微动（movers/高亮参与者/main 持球者不微动）
+- [ ] S3.4 viewer 测试：逻辑位置不变、确定性、tick 边界连续、无 snap 不破坏
 
 ## S4. 验证与收尾
 

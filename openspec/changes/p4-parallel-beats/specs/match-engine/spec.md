@@ -20,11 +20,15 @@
 
 #### Scenario: 持球者带球
 - **GIVEN** 持球者在带球
-- **THEN** beat 的 main 描述带球（球轨迹由 main 驱动），movers 含持球者当前位置更新
+- **THEN** beat 的 main 描述带球（球轨迹由 main 驱动），**main 含持球者当前位置更新**（持球者不进 movers，见"carrier 不进 movers"场景）
 
 #### Scenario: 队友跑位
 - **GIVEN** 一名无球球员需要调整位置
 - **THEN** beat 的 movers 含该球员向目标位置的移动（本轮为角色锚点 + 小幅调整）；位移超过阈值（~0.5m）才列入 movers
+
+#### Scenario: last-emitted-pos 跨缺席连续
+- **GIVEN** 一名球员在 movers 中缺席若干 tick 后重新出现
+- **THEN** 其 from = 上次出现在 movers 的 to（last-emitted-pos），跨缺席精确衔接（无跳变）
 
 #### Scenario: 高亮触发节拍门控
 - **GIVEN** 持球 hold（8-15 tick）
@@ -40,7 +44,7 @@
 
 #### Scenario: 节拍带球驱动
 - **GIVEN** 持球者带球（无高亮事件）
-- **THEN** beat 的 main 携带球轨迹（x/y→x2/y2+speed），球由 main 驱动；每个持球 tick 都发 main（含零位移控球）
+- **THEN** beat 的 main 携带球轨迹（x/y→x2/y2+speed），球由 main 驱动；每个持球 tick 都发 main（含零位移控球）；main 每拍推进 ≤ speed×1s（约 5-7m），持球者多数 tick 为零位移控球或短带球
 
 #### Scenario: 高亮驱动球
 - **GIVEN** 一条 pass 高亮事件进行中
