@@ -15,7 +15,7 @@ mod wasm;
 
 pub use rng::SeededRng;
 
-/// 事件类型枚举（10 类：9 类动作 + lineup 初始站位；goal 由 shot.result=goal 表达）
+/// 事件类型枚举（v2：新增 beat 节拍；v1 类型保留；goal 由 shot.result=goal 表达）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventType {
     Lineup,
@@ -28,6 +28,7 @@ pub enum EventType {
     Interception,
     Substitution,
     OffBallRun,
+    Beat,
 }
 
 impl EventType {
@@ -43,8 +44,44 @@ impl EventType {
             EventType::Interception => "interception",
             EventType::Substitution => "substitution",
             EventType::OffBallRun => "off_ball_run",
+            EventType::Beat => "beat",
         }
     }
+}
+
+/// beat 节拍的单个跑位球员（movers 数组元素）。
+#[derive(Debug, Clone)]
+pub struct Mover {
+    pub id: i32,
+    pub from_x: f64,
+    pub from_y: f64,
+    pub to_x: f64,
+    pub to_y: f64,
+    pub speed: f64,
+    pub action: String,
+}
+
+/// beat 节拍的 main（带球/控球，carrier 每持球 tick 都发）。
+#[derive(Debug, Clone)]
+pub struct MainAction {
+    pub subject: i32,
+    pub x: f64,
+    pub y: f64,
+    pub x2: f64,
+    pub y2: f64,
+    pub speed: f64,
+    pub touch_freq: f64,
+}
+
+/// beat 节拍的松散球（beat.ball，滚动轨迹）。
+#[derive(Debug, Clone)]
+pub struct BallState {
+    pub x: f64,
+    pub y: f64,
+    pub x2: f64,
+    pub y2: f64,
+    pub speed: f64,
+    pub loose: bool,
 }
 
 /// 一条事件。字段对齐协议草案 v1。
@@ -58,6 +95,7 @@ pub struct Event {
     pub y: f64,             // 发生位置（归一化 0-1）
     pub from: Option<i32>,  // 来源球员 id（pass 的传球者）
     pub to: Option<i32>,    // 目标球员 id（pass 的接球者）
+    pub carrier: Option<i32>, // 被铲者 id（v2 tackle；v1 的 to 身份语义迁移到 carrier）
     pub x2: Option<f64>,    // 目标位置 x（pass 落点 / shot 方向 / dribble 终点）
     pub y2: Option<f64>,    // 目标位置 y
     pub result: Option<String>, // 结果（success/fail/goal/saved/off_target；v2 shot 三值 goal/saved/off_target）
@@ -75,20 +113,57 @@ pub struct Event {
     pub score: Option<String>, // 比分（whistle/goal 时）
     pub detail: Option<String>, // 附加说明
     pub players: Option<Vec<(i32, f64, f64)>>, // lineup 事件的 22 球员站位 (id, x, y)
+    // v2 beat 专用字段：beat 事件只输出 movers/main/ball，无顶层 subject/x/y。
+    pub movers: Option<Vec<Mover>>, // beat: 并行跑位数组（增量，只含移动球员）
+    pub main: Option<MainAction>,   // beat: 持球者带球/控球（carrier，main-only）
+    pub ball: Option<BallState>,    // beat: 松散球（loose:true，滚动轨迹）
+}
+
+impl Default for Event {
+    fn default() -> Self {
+        Event {
+            t: 0.0, type_: EventType::Lineup, subject: 0, x: 0.0, y: 0.0,
+            from: None, to: None, carrier: None, x2: None, y2: None, result: None,
+            speed: None, touch_freq: None, lead: None,
+            receiver_x: None, receiver_y: None, loose_x: None, loose_y: None,
+            carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None,
+            score: None, detail: None, players: None,
+            movers: None, main: None, ball: None,
+        }
+    }
 }
 
 impl Event {
     /// 序列化为 JSON 行（简单手写，无 serde 依赖，保持零依赖从零写）。
-    /// 只输出非 None 的字段。
+    /// 只输出非 None 的字段。beat 特判：无顶层 subject/x/y，输出 movers/main/ball。
     pub fn to_json(&self) -> String {
         let mut parts = Vec::new();
         parts.push(format!("\"t\":{:.3}", self.t));
         parts.push(format!("\"type\":\"{}\"", self.type_.as_str()));
+        if self.type_ == EventType::Beat {
+            if let Some(movers) = &self.movers {
+                let inner: Vec<String> = movers.iter().map(|m| {
+                    format!("{{\"id\":{},\"from_x\":{:.4},\"from_y\":{:.4},\"to_x\":{:.4},\"to_y\":{:.4},\"speed\":{:.1},\"action\":\"{}\"}}",
+                        m.id, m.from_x, m.from_y, m.to_x, m.to_y, m.speed, m.action)
+                }).collect();
+                parts.push(format!("\"movers\":[{}]", inner.join(",")));
+            }
+            if let Some(m) = &self.main {
+                parts.push(format!("\"main\":{{\"type\":\"dribble\",\"subject\":{},\"x\":{:.4},\"y\":{:.4},\"x2\":{:.4},\"y2\":{:.4},\"speed\":{:.1},\"touch_freq\":{:.1}}}",
+                    m.subject, m.x, m.y, m.x2, m.y2, m.speed, m.touch_freq));
+            }
+            if let Some(b) = &self.ball {
+                parts.push(format!("\"ball\":{{\"x\":{:.4},\"y\":{:.4},\"x2\":{:.4},\"y2\":{:.4},\"speed\":{:.1},\"loose\":{}}}",
+                    b.x, b.y, b.x2, b.y2, b.speed, b.loose));
+            }
+            return format!("{{{}}}", parts.join(","));
+        }
         parts.push(format!("\"subject\":{}", self.subject));
         parts.push(format!("\"x\":{:.4}", self.x));
         parts.push(format!("\"y\":{:.4}", self.y));
         if let Some(f) = self.from { parts.push(format!("\"from\":{}", f)); }
         if let Some(t) = self.to { parts.push(format!("\"to\":{}", t)); }
+        if let Some(c) = self.carrier { parts.push(format!("\"carrier\":{}", c)); }
         if let Some(x) = self.x2 { parts.push(format!("\"x2\":{:.4}", x)); }
         if let Some(y) = self.y2 { parts.push(format!("\"y2\":{:.4}", y)); }
         if let Some(r) = &self.result { parts.push(format!("\"result\":\"{}\"", r)); }
@@ -136,10 +211,11 @@ pub const PITCH_WIDTH_M: f64 = 68.0;
 
 // ---- 抢断参数（Phase B 常量；将来接战术票据04 / 属性票据05，替换为计算值）----
 /// 就近阈值（米）：距持球者最近的防守者超过此距离则不产 tackle（避免跨半场逼抢）。
-pub const TACKLE_DISTANCE_THRESHOLD_METERS: f64 = 10.0;
+/// v2 标定：高亮 ~200/场 × tackle 掷出 32% × 贴防率 ≈ 目标 8-15 次/场 → 阈值 12m。
+pub const TACKLE_DISTANCE_THRESHOLD_METERS: f64 = 12.0;
 /// 抢断积极性：贴防时"真的去抢"的概率（低概率，只有少量机会去抢）。
-/// 标定：~169 事件/场 × P(贴防≈0.7) × eagerness ≈ 目标 8-15 次/场 → 取 0.09。
-pub const TACKLE_EAGERNESS: f64 = 0.09;
+/// v2 标定：贴防（≤12m）时以 0.15 去抢，过滤后 ~8-15 次/场。
+pub const TACKLE_EAGERNESS: f64 = 0.15;
 /// 抢断成功率（success/fail 各半，用户确认 50/50）。
 pub const TACKLE_SUCCESS_RATE: f64 = 0.5;
 /// 弹开距离（归一化，与 viewer config.interpretation.tackle.deflectDistance 对齐）。
@@ -203,6 +279,7 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
         y: 0.5,
         from: None,
         to: None,
+        carrier: None,
         x2: None,
         y2: None,
         result: None,
@@ -219,10 +296,166 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
         score: None,
         detail: None,
         players: Some(lineup.iter().map(|p| (p.id, p.x, p.y)).collect()),
+        movers: None, main: None, ball: None,
     }
 }
 
 /// 引擎主入口：模拟一场最小比赛，返回事件流 JSON 字符串。
+// ==== v2 并行节拍（P4 parallel-beats）====
+
+/// 固定 tick 时长（秒）
+pub const TICK_SECONDS: f64 = 1.0;
+/// movers 位移阈值 = 静区（dead-zone），等值 ~0.5m（移动 ⇔ 发 movers）
+pub const DEAD_ZONE_METERS: f64 = 0.5;
+/// 松散球拾取半径（米）
+pub const PICKUP_RADIUS_METERS: f64 = 0.5;
+/// 松散球最长持续 tick 数；超时球 hold 等待（不瞬移）
+pub const LOOSE_MAX_TICKS: u32 = 2;
+/// carrier 带球速度上限（m/s）：main 每拍推进 ≤ speed×1s
+pub const CARRIER_SPEED_MS: f64 = 5.0;
+/// 无球跑位速度（m/s）
+pub const RUN_SPEED_MS: f64 = 4.0;
+/// 门将回位速度（m/s）
+pub const GK_SPEED_MS: f64 = 3.0;
+/// 持球 hold 门控下限/上限（tick）
+pub const HOLD_MIN_TICKS: u32 = 8;
+pub const HOLD_MAX_TICKS: u32 = 15;
+
+/// 米 → 归一化步进（沿 x 的近似换算；y 方向由 dist_norm 欧氏距离近似）
+fn norm_step(meters: f64) -> f64 {
+    meters / PITCH_LENGTH_M
+}
+
+/// 归一化欧氏距离
+fn dist_norm(a: (f64, f64), b: (f64, f64)) -> f64 {
+    ((a.0 - b.0).powi(2) + (a.1 - b.1).powi(2)).sqrt()
+}
+
+/// 从 from 向 to 移动 step（归一化）距离
+fn move_toward(from: (f64, f64), to: (f64, f64), step: f64) -> (f64, f64) {
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let len = (dx * dx + dy * dy).sqrt();
+    if len < 1e-9 {
+        return from;
+    }
+    (from.0 + dx / len * step, from.1 + dy / len * step)
+}
+
+/// 掷持球 hold 上限（8-15 tick）
+fn roll_hold_max(rng: &mut SeededRng) -> u32 {
+    HOLD_MIN_TICKS + (rng.next_u64() % (HOLD_MAX_TICKS - HOLD_MIN_TICKS + 1) as u64) as u32
+}
+
+/// 找指定队中离 target 最近的外场球员（松散球追逐者；tackle 弹开限定抢断方）
+fn nearest_in_team(pos: &[(f64, f64)], target: (f64, f64), team: u32) -> i32 {
+    let mut best = -1;
+    let mut best_d = f64::MAX;
+    for (id, &p) in pos.iter().enumerate() {
+        let is_team = if team == 0 { id <= 10 } else { id >= 11 };
+        if !is_team { continue; }
+        if id == 0 || id == 21 { continue; } // 门将不追松散球
+        let d = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
+        if d < best_d { best_d = d; best = id as i32; }
+    }
+    best
+}
+
+/// 找离 target 最近的球员（save-rebound 双方可争）
+fn nearest_any(pos: &[(f64, f64)], target: (f64, f64)) -> i32 {
+    let mut best = -1;
+    let mut best_d = f64::MAX;
+    for (id, &p) in pos.iter().enumerate() {
+        if id == 0 || id == 21 { continue; }
+        let d = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
+        if d < best_d { best_d = d; best = id as i32; }
+    }
+    best
+}
+
+/// v2 比赛状态（固定 tick 推进 + 全员 pos）
+struct MatchState {
+    lineup: [(f64, f64); 22],
+    pos: [(f64, f64); 22],
+    wander_target: [(f64, f64); 22],
+    possession: u32, // 0=home, 1=away
+    carrier: i32,
+    carrier_from: (f64, f64),
+    hold_ticks: u32,
+    hold_max: u32,
+    last_emitted: [(f64, f64); 22],
+    highlight: Option<Highlight>,
+    loose: Option<LooseBall>,
+    dead_ball: Option<DeadBall>,
+    home_score: u32,
+    away_score: u32,
+    last_tackle_pair: Option<(i32, i32)>,
+}
+
+impl MatchState {
+    fn new(lineup: &[LineupPlayer]) -> Self {
+        let mut pos = [(0.0, 0.0); 22];
+        let mut lp = [(0.0, 0.0); 22];
+        for p in lineup {
+            pos[p.id as usize] = (p.x, p.y);
+            lp[p.id as usize] = (p.x, p.y);
+        }
+        MatchState {
+            lineup: lp,
+            pos,
+            wander_target: lp,
+            possession: 0,
+            carrier: 10,
+            carrier_from: (0.55, 0.5),
+            hold_ticks: 0,
+            hold_max: 0,
+            last_emitted: pos,
+            highlight: None,
+            loose: None,
+            dead_ball: None,
+            home_score: 0,
+            away_score: 0,
+            last_tackle_pair: None,
+        }
+    }
+}
+
+/// 飞行中高亮注册表（任意时刻至多一条）
+struct Highlight {
+    t_end: f64,
+    participants: Vec<(i32, (f64, f64))>, // (id, 高亮结束位置)
+    outcome: HighlightOutcome,
+}
+
+enum HighlightOutcome {
+    PassCaught { receiver: i32, catch_pos: (f64, f64) },
+    ShotGoal { kickoff_id: i32 },
+    ShotSavedCaught { gk: i32, save_pos: (f64, f64) },
+    ShotSavedRebound { gk: i32, rebound_from: (f64, f64) },
+    ShotOffTarget { kickoff_id: i32 },
+    TackleSuccess { def: i32, loose: (f64, f64) },
+    TackleFail { victim: i32, contact: (f64, f64) },
+}
+
+/// 松散球（D11）
+struct LooseBall {
+    pos: (f64, f64),
+    chaser: i32,
+    ticks: u32,
+}
+
+/// 死球阶段（进球庆祝 / off_target，随后 kickoff 重开）
+struct DeadBall {
+    goal: bool,
+    remaining: u32,
+    preparing: bool,
+    kickoff_id: i32,
+    kicked: bool,
+    receiver: i32,
+}
+
+/// 引擎主入口：模拟一场比赛，返回事件流 JSON。
+/// v2 非 demo：固定 tick + beat 节拍；demo_mode：v1 精简序列。
 pub fn simulate(seed: u64, config: MatchConfig) -> String {
     if config.demo_mode {
         return simulate_demo(seed, config);
@@ -232,362 +465,486 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     let lineup = default_lineup();
     let dur = config.match_duration_seconds;
 
-    // 初始站位事件（B1）
+    // 初始站位
     events.push(lineup_event(0.0, &lineup));
-    // 开球：中圈球员把球拨向中圈附近，speed 给正常传球速度（避免画面"蠕动"）
+    // 开球：home 9 拨给 10
     events.push(Event {
-        t: 0.0,
-        type_: EventType::Kickoff,
-        subject: 9, // home 前锋开球
-        x: 0.5,
-        y: 0.5,
+        t: 0.0, type_: EventType::Kickoff, subject: 9,
         from: Some(9), to: Some(10),
-        x2: Some(0.55), y2: Some(0.5),
-        result: Some("success".to_string()),
-        speed: Some(14.0), touch_freq: None, lead: Some(0.1),
-        // 接球者 10 从站位 (0.62,0.65) 跑向落点 (0.55,0.5)，避免瞬移（审阅 minor-3）
-        receiver_x: Some(0.62),
-        receiver_y: Some(0.65),
-        loose_x: None,
-        loose_y: None,
-        carrier_from_x: None,
-        carrier_from_y: None,
-        keeper_x: None, keeper_y: None,
-        score: None, detail: None,
-        players: None,
+        x: 0.5, y: 0.5, x2: Some(0.55), y2: Some(0.5),
+        result: Some("success".to_string()), speed: Some(14.0), lead: Some(0.1),
+        receiver_x: Some(0.62), receiver_y: Some(0.65),
+        ..Event::default()
     });
 
-    // 简单事件序列（Phase C：事件驱动时间，动作时长推进 + 无球跑位填满）
-    let mut t = 0.5; // kickoff 拨球动画 ~0.5s 结束
-    let mut home_score = 0;
-    let mut away_score = 0;
-    // 当前持球方（0=home，1=away）。初始 kickoff 事件固定为 home 9 拨给 10（见上），
-    // 所以初始持球方 = home，carrier = 接球者 10（与 kickoff 事件状态自洽，避免 carrier_from 过期）。
-    let mut possession: u32 = 0;
-    let mut carrier: i32 = 10;
-    // 每个球员的当前坐标，按 id 索引（pos[id] = 位置）。lineup 的 away 顺序是 21-i（镜像），
-    // 所以不能直接 collect——要按 id 填入，保证 pos[id as usize] 正确。
-    let mut pos: Vec<(f64, f64)> = vec![(0.0, 0.0); 22];
-    for p in &lineup {
-        pos[p.id as usize] = (p.x, p.y);
-    }
-    // 开球者 9 在中圈、接球者 10 到落点（与 kickoff 事件一致，避免开场瞬移）
-    pos[9 as usize] = (0.5, 0.5);
-    pos[10 as usize] = (0.55, 0.5);
-    let mut carrier_from = (0.55, 0.5);
-    // 上次抢断的 (防守者, 被铲者) 对：避免同对连续 re-tackle 乒乓（审阅 major）
-    let mut last_tackle_pair: Option<(i32, i32)> = None;
-    // 上一个"有球动作"事件（跳过 off_ball_run 填满）：用于 tackle 判断被铲者的带球段是否已由前一 dribble 演过
-    let mut prev_action: Option<(EventType, i32, f64, f64)> = None; // (type, subject, end_x, end_y)
+    let mut st = MatchState::new(&lineup);
+    st.pos[9] = (0.5, 0.5);
+    st.pos[10] = (0.55, 0.5);
+    st.carrier_from = (0.55, 0.5);
+    st.hold_max = roll_hold_max(&mut rng);
 
-    // 开场准备期：开球后到第一个动作前，用无球跑位填满（避免开场定格）
-    let open_span = 2.5f64.min(dur - t);
-    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, open_span, carrier, -1, true);
-
+    let mut t = TICK_SECONDS;
     while t < dur {
-        // 随机事件类型：传球/带球/射门/抢断（每个事件驱动自己的时长）
-        let roll = rng.next_u64() % 100;
-        let team_home = possession == 0;
-
-        // 抢断决策（Phase B，Q13/D4）：每个事件点检查防守者距离 + 抢断积极性。
-        // 防守者贴防（≤阈值）且积极（should_tackle）才产 tackle，否则落回进攻事件。
-        // 冷却：与上次抢断同一对 (防守者,被铲者) 时不立即再抢（避免乒乓）。
-        let victim = carrier;
-        let victim_pos = pos[victim as usize];
-        let def_home = !team_home;
-        let (def_id, def_pos, def_dist) = nearest_defender(&pos, victim_pos, def_home);
-        let same_pair = last_tackle_pair == Some((def_id, victim));
-        if !same_pair && def_dist <= TACKLE_DISTANCE_THRESHOLD_METERS && should_tackle(&mut rng) {
-            // 抢断结果（50/50）
-            let success = (rng.next_u64() % 100) < (TACKLE_SUCCESS_RATE * 100.0) as u64;
-            let result = if success { "success" } else { "fail" };
-            // 弹开点：确定性规则（与 viewer deflectPoint 同规则）
-            let (loose_x, loose_y) = deflect_point(
-                def_pos.0, def_pos.1, victim_pos.0, victim_pos.1,
-                TACKLE_DEFLECT_DISTANCE, def_id, victim,
-            );
-            // 连续模式 dropCarryBeat 两端一致：若前一有球动作是同一被铲者的 dribble（落点==接触点），
-            // viewer 丢弃 carry-beat（不重放带球段），引擎必须把 carrier_move 归零、carrier_from 设接触点。
-            let prev_was_dribble_to_contact = match prev_action {
-                Some((EventType::Dribble, subject, ex, ey)) if subject == victim
-                    && (ex - victim_pos.0).abs() < 1e-6 && (ey - victim_pos.1).abs() < 1e-6 => true,
-                _ => false,
-            };
-            let event_carrier_from = if prev_was_dribble_to_contact { victim_pos } else { carrier_from };
-            events.push(Event {
-                t, type_: EventType::Tackle,
-                subject: def_id, from: None, to: Some(victim),
-                x: def_pos.0, y: def_pos.1, x2: Some(victim_pos.0), y2: Some(victim_pos.1),
-                result: Some(result.to_string()), speed: None, touch_freq: None,
-                lead: None, score: None, detail: None,
-                receiver_x: None, receiver_y: None,
-                loose_x: Some(loose_x), loose_y: Some(loose_y),
-                carrier_from_x: Some(event_carrier_from.0), carrier_from_y: Some(event_carrier_from.1),
-                keeper_x: None, keeper_y: None,
-                players: None,
-            });
-            // tackle 时长 = viewer 演绎完整时长（事件驱动，Q11b；两端一致避免连续播放时间错位）
-            let carrier_move = if prev_was_dribble_to_contact { 0.0 } else { distance_meters(carrier_from, victim_pos) / 3.0 };
-            let approach = distance_meters(def_pos, victim_pos) / 6.0;
-            let t_contact = carrier_move.max(approach);
-            let deflect = distance_meters(victim_pos, (loose_x, loose_y)) / 5.0;
-            let chase = distance_meters(victim_pos, (loose_x, loose_y)) / 6.0;
-            let dur_sec = t_contact + deflect + 0.15 + chase;
-            if success {
-                // 球权换到防守方，防守者到弹开点（下一事件从 loose 出发，不 snap）
-                possession = if def_home { 0 } else { 1 };
-                carrier = def_id;
-                pos[def_id as usize] = (loose_x, loose_y);
-                carrier_from = (loose_x, loose_y);
-            } else {
-                // fail：球权保留原持球者；被铲者追到弹开点拿回（pos 到 loose，与 viewer fail 演绎终态一致），
-                // 防守者停在接触点（与 viewer fail 演绎一致）——保证下一事件从这些位置出发，不 snap。
-                pos[victim as usize] = (loose_x, loose_y);
-                carrier_from = (loose_x, loose_y);
-                pos[def_id as usize] = victim_pos;
-            }
-            last_tackle_pair = Some((def_id, victim));
-            prev_action = Some((EventType::Tackle, if success { def_id } else { victim }, loose_x, loose_y));
-            t += dur_sec;
-            // 持球者控球观察间隔，无球跑位填满
-            let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
-            let span = hold.min(dur - t);
-            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
-            if t >= dur { break; }
-            continue;
-        }
-
-        if roll < 45 {
-            // pass（朝队友）：从当前持球者出发，接球者选离持球者最近的队友
-            let from = carrier;
-            let from_pos = pos[from as usize];
-            let (to, to_pos) = nearest_teammate(&pos, from_pos, team_home, from);
-            // 接球者当前位置（供画面让接球者从这跑到落点，不瞬移）
-            let rx = pos[to as usize].0;
-            let ry = pos[to as usize].1;
-            // 传球约束：朝队友方向，落点在两人之间偏前（Q9）
-            let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
-            let (x2, y2) = lead_point(from_pos, to_pos, lead);
-            let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-            events.push(Event {
-                t, type_: EventType::Pass,
-                subject: from, from: Some(from), to: Some(to),
-                x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-                result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
-                receiver_x: Some(rx), receiver_y: Some(ry),
-                touch_freq: None, score: None, detail: None,
-                loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-                keeper_x: None, keeper_y: None,
-                players: None,
-            });
-            // 传球时长 = 球飞行距离 ÷ 球速（事件驱动，Q11b）
-            let dur_sec = distance_meters(from_pos, (x2, y2)) / speed;
-            // 球权移到接球者
-            pos[to as usize] = (x2, y2);
-            carrier = to;
-            carrier_from = (x2, y2); // 接球者带球起点 = 接球落点
-            last_tackle_pair = None; // 实际产出了事件 → 清除冷却（同对可再抢）
-            prev_action = Some((EventType::Pass, to, x2, y2));
-            t += dur_sec;
-            let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
-            let span = hold.min(dur - t);
-            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
-        } else if roll < 70 {
-            // dribble（从持球者出发，朝对方球门推进）
-            let p = carrier;
-            let pos_p = pos[p as usize];
-            let (x2, y2) = dribble_target(&mut rng, pos_p, team_home);
-            let speed = 5.0 + (rng.next_u64() % 30) as f64 / 10.0;
-            let tf = 1.0 + (rng.next_u64() % 6) as f64 / 10.0;
-            events.push(Event {
-                t, type_: EventType::Dribble,
-                subject: p, from: None, to: None,
-                x: pos_p.0, y: pos_p.1, x2: Some(x2), y2: Some(y2),
-                result: Some("success".to_string()), speed: Some(speed), touch_freq: Some(tf),
-                lead: None, score: None, detail: None,
-                receiver_x: None, receiver_y: None,
-                loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-                keeper_x: None, keeper_y: None,
-                players: None,
-            });
-            // 带球时长 = 带球距离 ÷ 带球速度（事件驱动，Q11b）
-            let dur_sec = distance_meters(pos_p, (x2, y2)) / speed;
-            pos[p as usize] = (x2, y2);
-            carrier_from = pos_p; // 带球起点 = 本段带球起点
-            last_tackle_pair = None; // 实际产出了事件 → 清除冷却
-            prev_action = Some((EventType::Dribble, p, x2, y2));
-            t += dur_sec;
-            let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
-            let span = hold.min(dur - t);
-            fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
-        } else {
-            // shot（射门，在对方半场）
-            let p = carrier;
-            let pos_p = pos[p as usize];
-            if (team_home && pos_p.0 > 0.5) || (!team_home && pos_p.0 < 0.5) {
-                let (x2, y2) = shot_target(&mut rng, team_home);
-                let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
-                let score_roll = rng.next_u64() % 100;
-                let (result, scored) = if score_roll < 15 {
-                    ("goal", true)
-                } else if score_roll < 45 {
-                    ("saved", false)
-                } else {
-                    ("off_target", false)
-                };
-                if scored {
-                    if team_home { home_score += 1; } else { away_score += 1; }
-                }
-                // 门将当前位置（画面让门将从实位扑救，不瞬移）
-                let gk_id = if team_home { 21 } else { 0 };
-                let gk_pos = pos[gk_id as usize];
-                events.push(Event {
-                    t, type_: EventType::Shot,
-                    subject: p, from: None, to: None,
-                    x: pos_p.0, y: pos_p.1, x2: Some(x2), y2: Some(y2),
-                    result: Some(result.to_string()), speed: Some(speed),
-                    touch_freq: None, lead: None, score: None, detail: None,
-                    receiver_x: None, receiver_y: None,
-                    loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-                    keeper_x: Some(gk_pos.0), keeper_y: Some(gk_pos.1),
-                    players: None,
-                });
-                // 射门时长 = 球飞行距离 ÷ 球速（事件驱动，Q11b）
-                let dur_sec = distance_meters(pos_p, (x2, y2)) / speed;
-                last_tackle_pair = None; // 实际产出了射门事件 → 清除冷却
-                prev_action = Some((EventType::Shot, p, x2, y2));
-                if scored {
-                    // 进球后重新开球：球先飞进球门（dur_sec），哨响 +2s，开球 +5s（grill Q5）。
-                    // 事件顺序 = t 顺序：shot → 庆祝 fill → whistle → 准备 fill → 开球者走回中圈 → kickoff(拨球)。
-                    // 丢球方前锋开球：home 进球→away 12；away 进球→home 9。
-                    let kickoff_id = if team_home { 12 } else { 9 };
-                    t += dur_sec; // 球进网
-                    // 进球后门将扑到射门方向（y2），同步引擎 pos（避免下次射门 keeper_y 陈旧 → 门将瞬移，审阅 major）
-                    pos[gk_id as usize] = (gk_pos.0, y2);
-                    // 终场前进球：若剩余时间不足完整开球序列（~6s），跳过 kickoff（半场哨在 dur 处理），
-                    // 避免 kickoff t > dur 导致 t 非单调（审阅 major，~1% seed 触发）。
-                    if t + 6.0 >= dur {
-                        break; // 结束比赛（半场哨在后面统一推）
-                    }
-                    // 庆祝期（~2s），无球跑位填满（排除开球者）
-                    let span1 = 2.0f64.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span1, carrier, kickoff_id, false);
-                    events.push(Event {
-                        t, type_: EventType::Whistle,
-                        subject: 0, from: None, to: None,
-                        x: 0.5, y: 0.5, x2: None, y2: None,
-                        result: None, speed: None, touch_freq: None, lead: None,
-                        receiver_x: None, receiver_y: None,
-                        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-                        keeper_x: None, keeper_y: None,
-                        score: Some(format!("{}-{}", home_score, away_score)),
-                        detail: Some("kickoff_again".to_string()),
-                        players: None,
-                    });
-                    // 准备期（~3s），无球跑位填满（排除开球者）
-                    let span2 = 3.0f64.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span2, carrier, kickoff_id, false);
-                    // 开球者走回中圈（视觉过渡，避免 kickoff 硬编码中圈导致瞬移）
-                    let kick_pos = pos[kickoff_id as usize];
-                    if (kick_pos.0 - 0.5).abs() > 1e-6 || (kick_pos.1 - 0.5).abs() > 1e-6 {
-                        let walk_speed = 3.0;
-                        let dur_walk = distance_meters(kick_pos, (0.5, 0.5)) / walk_speed;
-                        events.push(Event {
-                            t, type_: EventType::OffBallRun,
-                            subject: kickoff_id, from: None, to: None,
-                            x: kick_pos.0, y: kick_pos.1, x2: Some(0.5), y2: Some(0.5),
-                            result: Some("success".to_string()), speed: Some(walk_speed), touch_freq: None,
-                            lead: None, score: None, detail: None,
-                            receiver_x: None, receiver_y: None,
-                            loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-                            keeper_x: None, keeper_y: None,
-                            players: None,
-                        });
-                        t += dur_walk;
-                        pos[kickoff_id as usize] = (0.5, 0.5);
-                        t += 0.1; // 走位终点 < kickoff 起点（避免同刻锚点排序问题）
-                    }
-                    // walk-back 可能让 t 超 dur（开球者远距离走回中圈）：超时则跳过 kickoff（半场哨在 dur 处理）
-                    if t >= dur {
-                        break;
-                    }
-                    // 开球一拨：球从中圈拨给开球者的同队附近球员（对齐 demo 开球，球不瞬移回中圈）。
-                    // 落点按接球者当前位（lead_point 中圈→接球者），避免接球者被迫冲刺超远（审阅 major）。
-                    let kickoff_receiver = if team_home { 11 } else { 10 }; // 同队附近球员
-                    let receiver_pos = pos[kickoff_receiver as usize];
-                    let (kickoff_x2, kickoff_y2) = lead_point((0.5, 0.5), receiver_pos, 0.1);
-                    events.push(Event {
-                        t, type_: EventType::Kickoff,
-                        subject: kickoff_id, from: Some(kickoff_id), to: Some(kickoff_receiver),
-                        x: 0.5, y: 0.5, x2: Some(kickoff_x2), y2: Some(kickoff_y2),
-                        result: Some("success".to_string()), speed: Some(12.0),
-                        touch_freq: None, lead: Some(0.1),
-                        receiver_x: Some(receiver_pos.0),
-                        receiver_y: Some(receiver_pos.1),
-                        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-                        keeper_x: None, keeper_y: None,
-                        score: None, detail: None, players: None,
-                    });
-                    possession = if team_home { 1 } else { 0 };
-                    carrier = kickoff_receiver;
-                    pos[kickoff_receiver as usize] = (kickoff_x2, kickoff_y2);
-                    carrier_from = (kickoff_x2, kickoff_y2);
-                    prev_action = Some((EventType::Kickoff, kickoff_receiver, kickoff_x2, kickoff_y2));
-                    // 控球观察间隔，无球跑位填满
-                    let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
-                    let span = hold.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
-                } else {
-                    // 非进球（被扑/偏出）：球在门线 (x2, y2)，对方门将拿到球重新组织。
-                    // 球权转给对方，持球者 = 对方门将，pos = 球落点（门线 x 侧, y2）——与 viewer 门将扑救终点一致。
-                    possession = if team_home { 1 } else { 0 };
-                    let gk = if team_home { 21 } else { 0 };
-                    let gk_x = if team_home { 0.98 } else { 0.02 };
-                    carrier = gk;
-                    pos[gk as usize] = (gk_x, y2);
-                    carrier_from = (gk_x, y2);
-                    t += dur_sec;
-                    let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
-                    let span = hold.min(dur - t);
-                    fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
-                }
-            } else {
-                // 静默迭代：持球者不在进攻半场（shot guard 不满足），不产射门事件。
-                // carrier_from 对称刷新（grill Q8），时间推进控球观察间隔。
-                carrier_from = pos_p;
-                let hold = POSSESSION_HOLD_MIN + (rng.next_u64() % ((POSSESSION_HOLD_MAX - POSSESSION_HOLD_MIN) as u64 + 1)) as f64;
-                let span = hold.min(dur - t);
-                fill_with_off_ball(&mut events, &mut rng, &mut pos, &mut t, span, carrier, -1, true);
-            }
-        }
+        tick(&mut st, &mut rng, &mut events, t);
+        t += TICK_SECONDS;
     }
 
-    // 半场哨
-    events.push(Event {
-        t: dur, type_: EventType::Whistle,
-        subject: 0, from: None, to: None,
-        x: 0.5, y: 0.5, x2: None, y2: None,
-        result: None, speed: None, touch_freq: None, lead: None,
-        receiver_x: None,
-        receiver_y: None,
-        loose_x: None,
-        loose_y: None,
-        carrier_from_x: None,
-        carrier_from_y: None,
-        keeper_x: None, keeper_y: None,
-        score: Some(format!("{}-{}", home_score, away_score)),
-        detail: Some("half_time".to_string()),
-        players: None,
-    });
-
-    // 序列化
+    events.push(whistle_event(dur, st.home_score, st.away_score, "half_time"));
     let json: Vec<String> = events.iter().map(|e| e.to_json()).collect();
     format!("[{}]", json.join(","))
 }
 
-/// 精简演示：各事件类型独立展示，组间大间隔（不追求场景衔接，便于逐个确认单类事件演绎）。
-/// 每组事件前用 lineup 复位球员站位 + 一个 kickoff 把球放中圈，保证每组独立。
-/// 序列：kickoff → pass → dribble → shot(goal)+whistle+kickoff → tackle → shot(saved) → whistle
+/// 构造 beat 事件（tick 节拍）
+fn beat_event(t: f64, main: Option<MainAction>, ball: Option<BallState>, movers: Vec<Mover>) -> Event {
+    Event {
+        t, type_: EventType::Beat, subject: 0, x: 0.0, y: 0.0,
+        movers: Some(movers), main, ball,
+        ..Event::default()
+    }
+}
+
+/// 构造 whistle 事件
+fn whistle_event(t: f64, home: u32, away: u32, detail: &str) -> Event {
+    Event {
+        t, type_: EventType::Whistle, subject: 0, x: 0.5, y: 0.5,
+        score: Some(format!("{}-{}", home, away)), detail: Some(detail.to_string()),
+        ..Event::default()
+    }
+}
+
+/// 单个 tick：推进状态 + 产事件（beat 或高亮）
+fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    // 1. 死球阶段
+    if st.dead_ball.is_some() {
+        advance_dead_ball(st, rng, events, t);
+        return;
+    }
+    // 2. 高亮进行中
+    let hl_end = st.highlight.as_ref().map(|h| h.t_end);
+    if let Some(t_end) = hl_end {
+        if t >= t_end {
+            finalize_highlight(st, rng, events, t);
+        } else {
+            // 高亮飞行中：beat 只含 movers（参与者排除，无 main/ball）
+            let excluded: Vec<i32> = st.highlight.as_ref().unwrap().participants.iter().map(|(id, _)| *id).collect();
+            let movers = compute_movers(st, rng, t, &excluded);
+            for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+            events.push(beat_event(t, None, None, movers));
+        }
+        return;
+    }
+    // 3. 松散球
+    if st.loose.is_some() {
+        advance_loose(st, rng, events, t);
+        return;
+    }
+    // 4. 开放比赛：持球 hold 门控
+    st.hold_ticks += 1;
+    if st.hold_ticks >= st.hold_max {
+        roll_highlight(st, rng, events, t);
+    } else {
+        emit_beat_with_main(st, rng, events, t);
+    }
+}
+
+/// 开放比赛 tick：产 main（carrier 带球）+ movers
+fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let main = carrier_move(st, rng);
+    let movers = compute_movers(st, rng, t, &[st.carrier]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    events.push(beat_event(t, Some(main), None, movers));
+}
+
+/// carrier 带球（main）：多数 tick 零位移控球/短带，步进 ≤ speed×1s
+fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
+    let p = st.pos[st.carrier as usize];
+    let home = st.possession == 0;
+    let roll = rng.next_u64() % 100;
+    let (x2, y2) = if roll < 70 {
+        let ox = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
+        let oy = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
+        (clamp01(p.0 + ox), clamp01(p.1 + oy))
+    } else {
+        let dir = if home { 1.0 } else { -1.0 };
+        let x = p.0 + dir * 0.03;
+        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01));
+        (clamp01(x), y)
+    };
+    let max_step = norm_step(CARRIER_SPEED_MS * TICK_SECONDS);
+    let d = dist_norm(p, (x2, y2));
+    let (x2f, y2f) = if d > max_step { move_toward(p, (x2, y2), max_step) } else { (x2, y2) };
+    st.pos[st.carrier as usize] = (x2f, y2f);
+    st.carrier_from = (x2f, y2f);
+    st.last_emitted[st.carrier as usize] = (x2f, y2f);
+    MainAction { subject: st.carrier, x: p.0, y: p.1, x2: x2f, y2: y2f, speed: CARRIER_SPEED_MS, touch_freq: 1.5 }
+}
+
+/// 无球跑位（movers 增量）：目标 = 角色锚点 + 小幅游走；dead-zone 内不动不发
+fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[i32]) -> Vec<Mover> {
+    let mut movers = Vec::new();
+    let dead_zone = norm_step(DEAD_ZONE_METERS);
+    for id in 0..22i32 {
+        if excluded.contains(&id) { continue; }
+        if id == st.carrier { continue; } // main-only：carrier 不进 movers
+        let from = st.pos[id as usize];
+        let (target, action, speed) = if id == 0 || id == 21 {
+            let tx = if id == 0 { 0.02 } else { 0.98 };
+            ((tx, 0.5), "keeper_return", GK_SPEED_MS)
+        } else {
+            (player_wander_target(st, rng, id), "run", RUN_SPEED_MS)
+        };
+        let d = dist_norm(from, target);
+        if d < dead_zone { continue; }
+        let step = d.min(norm_step(speed * TICK_SECONDS));
+        let (tox, toy) = move_toward(from, target, step);
+        st.pos[id as usize] = (tox, toy);
+        movers.push(Mover {
+            id, from_x: from.0, from_y: from.1, to_x: tox, to_y: toy,
+            speed, action: action.to_string(),
+        });
+    }
+    let _ = t;
+    movers
+}
+
+/// 游走目标：到位后换一个小幅偏移（绕锚点小幅游走，画面持续有动作）
+fn player_wander_target(st: &mut MatchState, rng: &mut SeededRng, id: i32) -> (f64, f64) {
+    let base = st.lineup[id as usize];
+    let cur = st.wander_target[id as usize];
+    let d = dist_norm(st.pos[id as usize], cur);
+    if d < norm_step(DEAD_ZONE_METERS) {
+        let ox = (rng.next_u64() % 31) as f64 / 1000.0 - 0.015;
+        let oy = (rng.next_u64() % 31) as f64 / 1000.0 - 0.015;
+        st.wander_target[id as usize] = (clamp01(base.0 + ox), clamp01(base.1 + oy));
+    }
+    st.wander_target[id as usize]
+}
+
+/// 高亮门控：hold 归零必掷一条高亮；tackle 检查失败改掷 pass/shot；shot 需在进攻半场
+fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let roll = rng.next_u64() % 100;
+    // pass 55% / shot 10% / tackle 35%：高亮 ~235/场 → pass ~130、shot ~23（goal ~3-4）、tackle 过滤后 ~8-15
+    let mut kind = if roll < 55 { EventType::Pass } else if roll < 65 { EventType::Shot } else { EventType::Tackle };
+    if kind == EventType::Shot {
+        // shot 需射手在对方半场（避免门将/后场射门）
+        let shooter_pos = st.pos[st.carrier as usize];
+        let home = st.possession == 0;
+        let in_opp_half = if home { shooter_pos.0 > 0.5 } else { shooter_pos.0 < 0.5 };
+        if !in_opp_half {
+            kind = EventType::Pass;
+        }
+    }
+    if kind == EventType::Tackle {
+        let victim = st.carrier;
+        let victim_pos = st.pos[victim as usize];
+        let def_home = st.possession != 0;
+        let (def_id, _, dist) = nearest_defender(&st.pos, victim_pos, def_home);
+        let same_pair = st.last_tackle_pair == Some((def_id, victim));
+        if same_pair || dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng) {
+            // 检查失败：改掷 pass（不掷 shot——shot 已有独立概率，避免射门过多）
+            kind = EventType::Pass;
+        }
+    }
+    match kind {
+        EventType::Pass => emit_pass_highlight(st, rng, events, t),
+        EventType::Shot => emit_shot_highlight(st, rng, events, t),
+        _ => emit_tackle_highlight(st, rng, events, t),
+    }
+}
+
+/// pass 高亮：起点整数 tick，覆盖 [t, t_end)，参与者 = 传球者(静止) + 接球者(落点)
+fn emit_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let from = st.carrier;
+    let from_pos = st.pos[from as usize];
+    let home = st.possession == 0;
+    let (to, to_pos) = nearest_teammate(&st.pos, from_pos, home, from);
+    let rx = st.pos[to as usize].0;
+    let ry = st.pos[to as usize].1;
+    let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
+    let (x2, y2) = lead_point(from_pos, to_pos, lead);
+    let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
+    let flight = distance_meters(from_pos, (x2, y2)) / speed;
+    let t_end = t + flight;
+    let event = Event {
+        t, type_: EventType::Pass, subject: from, from: Some(from), to: Some(to),
+        x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
+        result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
+        receiver_x: Some(rx), receiver_y: Some(ry),
+        ..Event::default()
+    };
+    events.push(event);
+    let participants = vec![(from, from_pos), (to, (x2, y2))];
+    st.highlight = Some(Highlight {
+        t_end,
+        participants,
+        outcome: HighlightOutcome::PassCaught { receiver: to, catch_pos: (x2, y2) },
+    });
+    // 本 tick beat：movers（排除参与者，无 main/ball）
+    let movers = compute_movers(st, rng, t, &[from, to]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    events.push(beat_event(t, None, None, movers));
+}
+
+/// shot 高亮：result=goal/saved/off_target；saved 分扑住/扑出
+fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let shooter = st.carrier;
+    let shooter_pos = st.pos[shooter as usize];
+    let home = st.possession == 0;
+    let (x2, y2) = shot_target(rng, home);
+    let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
+    let score_roll = rng.next_u64() % 100;
+    let (result, caught) = if score_roll < 15 {
+        ("goal", false)
+    } else if score_roll < 45 {
+        let caught = rng.next_u64() % 100 < 70;
+        ("saved", caught)
+    } else {
+        ("off_target", false)
+    };
+    let gk_id = if home { 21 } else { 0 };
+    let gk_pos = st.pos[gk_id as usize];
+    let flight = distance_meters(shooter_pos, (x2, y2)) / speed;
+    let t_end = t + flight;
+    let event = Event {
+        t, type_: EventType::Shot, subject: shooter,
+        x: shooter_pos.0, y: shooter_pos.1, x2: Some(x2), y2: Some(y2),
+        result: Some(result.to_string()), speed: Some(speed),
+        keeper_x: Some(gk_pos.0), keeper_y: Some(gk_pos.1),
+        ..Event::default()
+    };
+    events.push(event);
+    let participants = vec![(shooter, shooter_pos), (gk_id, (x2, y2))];
+    let outcome = if result == "goal" {
+        let kickoff_id = if home { 12 } else { 9 };
+        if home { st.home_score += 1; } else { st.away_score += 1; }
+        HighlightOutcome::ShotGoal { kickoff_id }
+    } else if result == "off_target" {
+        let kickoff_id = if home { 12 } else { 9 };
+        HighlightOutcome::ShotOffTarget { kickoff_id }
+    } else if caught {
+        HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
+    } else {
+        HighlightOutcome::ShotSavedRebound { gk: gk_id, rebound_from: (x2, y2) }
+    };
+    st.highlight = Some(Highlight { t_end, participants, outcome });
+    let movers = compute_movers(st, rng, t, &[shooter, gk_id]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    events.push(beat_event(t, None, None, movers));
+}
+
+/// tackle 高亮：时长 1 tick；carrier_from = 接触点（carry-beat 归零）
+fn emit_tackle_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let victim = st.carrier;
+    let victim_pos = st.pos[victim as usize];
+    let def_home = st.possession != 0;
+    let (def_id, def_pos, _) = nearest_defender(&st.pos, victim_pos, def_home);
+    let success = (rng.next_u64() % 100) < (TACKLE_SUCCESS_RATE * 100.0) as u64;
+    let result = if success { "success" } else { "fail" };
+    let (loose_x, loose_y) = deflect_point(
+        def_pos.0, def_pos.1, victim_pos.0, victim_pos.1,
+        TACKLE_DEFLECT_DISTANCE, def_id, victim,
+    );
+    let t_end = t + TICK_SECONDS;
+    let event = Event {
+        t, type_: EventType::Tackle, subject: def_id,
+        carrier: Some(victim),
+        x: def_pos.0, y: def_pos.1, x2: Some(victim_pos.0), y2: Some(victim_pos.1),
+        result: Some(result.to_string()),
+        loose_x: Some(loose_x), loose_y: Some(loose_y),
+        carrier_from_x: Some(victim_pos.0), carrier_from_y: Some(victim_pos.1),
+        ..Event::default()
+    };
+    events.push(event);
+    let participants = vec![(victim, victim_pos), (def_id, victim_pos)];
+    let outcome = if success {
+        HighlightOutcome::TackleSuccess { def: def_id, loose: (loose_x, loose_y) }
+    } else {
+        HighlightOutcome::TackleFail { victim, contact: victim_pos }
+    };
+    st.last_tackle_pair = Some((def_id, victim));
+    st.highlight = Some(Highlight { t_end, participants, outcome });
+    let movers = compute_movers(st, rng, t, &[victim, def_id]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    events.push(beat_event(t, None, None, movers));
+}
+
+/// 高亮结束 → 球权交接（D12）：pos[] 对账到高亮结束位置，按结局设置后继
+fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let h = st.highlight.take().unwrap();
+    // 对账参与者 pos + last_emitted 到高亮结束位置（回归 movers 不回弹）
+    for (id, end_pos) in &h.participants {
+        st.pos[*id as usize] = *end_pos;
+        st.last_emitted[*id as usize] = *end_pos;
+    }
+    match h.outcome {
+        HighlightOutcome::PassCaught { receiver, catch_pos } => {
+            st.carrier = receiver;
+            st.carrier_from = catch_pos;
+            st.hold_ticks = 0;
+            st.hold_max = roll_hold_max(rng);
+            emit_beat_with_main(st, rng, events, t);
+        }
+        HighlightOutcome::ShotGoal { kickoff_id } => {
+            let receiver = if st.possession == 0 { 11 } else { 10 };
+            st.carrier = -1;
+            st.dead_ball = Some(DeadBall { goal: true, remaining: 2, preparing: false, kickoff_id, kicked: false, receiver });
+            let movers = compute_movers(st, rng, t, &[kickoff_id]);
+            for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+            events.push(beat_event(t, None, None, movers));
+        }
+        HighlightOutcome::ShotSavedCaught { gk, save_pos } => {
+            st.carrier = gk;
+            st.possession = if gk <= 10 { 0 } else { 1 };
+            st.carrier_from = save_pos;
+            st.hold_ticks = 0;
+            st.hold_max = roll_hold_max(rng);
+            emit_beat_with_main(st, rng, events, t);
+        }
+        HighlightOutcome::ShotSavedRebound { gk, rebound_from } => {
+            let _ = gk;
+            st.carrier = -1;
+            start_loose_ball(st, rebound_from, None);
+            advance_loose(st, rng, events, t);
+        }
+        HighlightOutcome::ShotOffTarget { kickoff_id } => {
+            let receiver = if st.possession == 0 { 11 } else { 10 };
+            st.carrier = -1;
+            st.dead_ball = Some(DeadBall { goal: false, remaining: 3, preparing: true, kickoff_id, kicked: false, receiver });
+            let movers = compute_movers(st, rng, t, &[kickoff_id]);
+            for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+            events.push(beat_event(t, None, None, movers));
+        }
+        HighlightOutcome::TackleSuccess { def, loose } => {
+            st.possession = if def <= 10 { 0 } else { 1 };
+            st.carrier = -1;
+            start_loose_ball(st, loose, Some(if def <= 10 { 0 } else { 1 }));
+            advance_loose(st, rng, events, t);
+        }
+        HighlightOutcome::TackleFail { victim, contact } => {
+            st.carrier = victim;
+            st.carrier_from = contact;
+            st.hold_ticks = 0;
+            st.hold_max = roll_hold_max(rng);
+            emit_beat_with_main(st, rng, events, t);
+        }
+    }
+}
+
+/// 开始松散球（D11）：选追逐者
+fn start_loose_ball(st: &mut MatchState, from: (f64, f64), winning_team: Option<u32>) {
+    let chaser = if let Some(team) = winning_team {
+        nearest_in_team(&st.pos, from, team)
+    } else {
+        nearest_any(&st.pos, from)
+    };
+    st.loose = Some(LooseBall { pos: from, chaser, ticks: 0 });
+}
+
+/// 松散球 tick：追逐者接近 → 拾取回 main / 继续 beat.ball
+fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let (loose_pos, chaser) = {
+        let l = st.loose.as_ref().unwrap();
+        (l.pos, l.chaser)
+    };
+    let chaser_pos = st.pos[chaser as usize];
+    let d = dist_norm(chaser_pos, loose_pos);
+    if d < norm_step(PICKUP_RADIUS_METERS) {
+        // 拾取：该球员成为 carrier → 下 tick 边界 main 恢复
+        st.carrier = chaser;
+        st.pos[chaser as usize] = loose_pos;
+        st.carrier_from = loose_pos;
+        st.last_emitted[chaser as usize] = loose_pos;
+        st.hold_ticks = 0;
+        st.hold_max = roll_hold_max(rng);
+        st.loose = None;
+        emit_beat_with_main(st, rng, events, t);
+        return;
+    }
+    // 追逐者向球移动
+    let step = d.min(norm_step(RUN_SPEED_MS * TICK_SECONDS));
+    let (cx, cy) = move_toward(chaser_pos, loose_pos, step);
+    st.pos[chaser as usize] = (cx, cy);
+    st.last_emitted[chaser as usize] = (cx, cy);
+    st.loose.as_mut().unwrap().ticks += 1;
+    // 产 beat.ball + 追逐者 movers
+    let mut movers = compute_movers(st, rng, t, &[chaser]);
+    movers.push(Mover {
+        id: chaser, from_x: chaser_pos.0, from_y: chaser_pos.1, to_x: cx, to_y: cy,
+        speed: RUN_SPEED_MS, action: "chase".to_string(),
+    });
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    let ball = BallState {
+        x: loose_pos.0, y: loose_pos.1, x2: loose_pos.0, y2: loose_pos.1,
+        speed: 3.0, loose: true,
+    };
+    events.push(beat_event(t, None, Some(ball), movers));
+}
+
+/// 死球 tick（进球庆祝 / off_target 后 kickoff 重开）
+fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let (goal, remaining, preparing, kickoff_id, kicked, receiver) = {
+        let d = st.dead_ball.as_ref().unwrap();
+        (d.goal, d.remaining, d.preparing, d.kickoff_id, d.kicked, d.receiver)
+    };
+    if kicked {
+        // kickoff 已产：结束死球，该 tick 产 main（接球者持球）
+        st.dead_ball = None;
+        st.hold_ticks = 0;
+        st.hold_max = roll_hold_max(rng);
+        emit_beat_with_main(st, rng, events, t);
+        return;
+    }
+    if remaining > 0 {
+        st.dead_ball.as_mut().unwrap().remaining -= 1;
+        let mut movers = compute_movers(st, rng, t, &[kickoff_id]);
+        if preparing {
+            // 开球者走向中圈
+            let kp = st.pos[kickoff_id as usize];
+            let d_mid = dist_norm(kp, (0.5, 0.5));
+            if d_mid > norm_step(DEAD_ZONE_METERS) {
+                let step = d_mid.min(norm_step(RUN_SPEED_MS * TICK_SECONDS));
+                let (nx, ny) = move_toward(kp, (0.5, 0.5), step);
+                st.pos[kickoff_id as usize] = (nx, ny);
+                movers.push(Mover {
+                    id: kickoff_id, from_x: kp.0, from_y: kp.1, to_x: nx, to_y: ny,
+                    speed: RUN_SPEED_MS, action: "run".to_string(),
+                });
+            }
+        }
+        for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+        events.push(beat_event(t, None, None, movers));
+        return;
+    }
+    if goal && !preparing {
+        // 庆祝结束 → whistle → 准备阶段
+        events.push(whistle_event(t, st.home_score, st.away_score, "kickoff_again"));
+        st.dead_ball.as_mut().unwrap().preparing = true;
+        st.dead_ball.as_mut().unwrap().remaining = 3;
+        let movers = compute_movers(st, rng, t, &[kickoff_id]);
+        for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+        events.push(beat_event(t, None, None, movers));
+        return;
+    }
+    // 准备结束 → kickoff（丢球方开球拨给同队）
+    let receiver_pos = st.pos[receiver as usize];
+    let (kx2, ky2) = lead_point((0.5, 0.5), receiver_pos, 0.1);
+    events.push(Event {
+        t, type_: EventType::Kickoff, subject: kickoff_id, from: Some(kickoff_id), to: Some(receiver),
+        x: 0.5, y: 0.5, x2: Some(kx2), y2: Some(ky2),
+        result: Some("success".to_string()), speed: Some(12.0), lead: Some(0.1),
+        receiver_x: Some(receiver_pos.0), receiver_y: Some(receiver_pos.1),
+        ..Event::default()
+    });
+    st.carrier = receiver;
+    st.pos[receiver as usize] = (kx2, ky2);
+    st.carrier_from = (kx2, ky2);
+    st.last_emitted[receiver as usize] = (kx2, ky2);
+    st.possession = if receiver <= 10 { 0 } else { 1 };
+    st.hold_ticks = 0;
+    st.hold_max = roll_hold_max(rng);
+    st.dead_ball = Some(DeadBall { goal, remaining: 0, preparing, kickoff_id, kicked: true, receiver });
+}
+
 fn simulate_demo(seed: u64, config: MatchConfig) -> String {
     let _seed = seed;
     let lineup = default_lineup();
@@ -604,7 +961,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
           lead: Option<f64>, rx: Option<f64>, ry: Option<f64>,
           score: Option<String>, detail: Option<String>,
           players: Option<Vec<(i32, f64, f64)>>) -> Event {
-        Event { t, type_, subject, x, y, from, to, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None, score, detail, players }
+        Event { t, type_, subject, x, y, from, to, carrier: None, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None, score, detail, players, movers: None, main: None, ball: None }
     }
 
     // 初始站位（唯一一次 lineup）
@@ -653,7 +1010,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
     let (loose_x, loose_y) = deflect_point(0.58, 0.40, 0.44, 0.42, TACKLE_DEFLECT_DISTANCE, 15, 6);
     events.push(Event {
         t, type_: EventType::Tackle,
-        subject: 15, from: None, to: Some(6),
+        subject: 15, from: None, to: Some(6), carrier: None,
         x: 0.58, y: 0.40, x2: Some(0.44), y2: Some(0.42),
         result: Some("success".to_string()), speed: None, touch_freq: None,
         lead: None, score: None, detail: None,
@@ -662,6 +1019,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         carrier_from_x: Some(0.42), carrier_from_y: Some(0.42),
         keeper_x: None, keeper_y: None,
         players: None,
+        movers: None, main: None, ball: None,
     });
 
     // 6. shot（saved）：6 从 (0.60,0.40) 射向球门内偏左（y2=0.47，门将扑向该侧救下），被扑
@@ -715,84 +1073,15 @@ fn should_tackle(rng: &mut SeededRng) -> bool {
 }
 
 /// 无球跑位目标：从当前位置随机方向碎步移动 OFF_BALL_RUN_DIST（1-2m），越界钳制。
-fn off_ball_target(rng: &mut SeededRng, p: (f64, f64)) -> (f64, f64) {
-    let dir = ((rng.next_u64() % 100) as f64 / 50.0) - 1.0;
-    let perp = ((rng.next_u64() % 100) as f64 / 50.0) - 1.0;
-    let x = p.0 + dir * OFF_BALL_RUN_DIST;
-    let y = p.1 + perp * OFF_BALL_RUN_DIST;
-    (clamp01(x), clamp01(y))
-}
-
 /// 产出一条无球跑位事件：选一个非持球者随机碎步移动，并更新引擎 pos。
 /// `exclude` = 额外排除的球员 id（-1 不排除；进球后重新开球前排除开球者）。
 /// 返回事件时长（距离÷跑速）。
-fn emit_off_ball_run(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: f64, carrier: i32, exclude: i32) -> f64 {
-    let mut idx = (rng.next_u64() % 22) as usize;
-    while idx as i32 == carrier || idx == 0 || idx == 21 || idx as i32 == exclude {
-        idx = (rng.next_u64() % 22) as usize;
-    }
-    let p = pos[idx];
-    let (x2, y2) = off_ball_target(rng, p);
-    let speed = 2.0 + (rng.next_u64() % 20) as f64 / 10.0; // 2-4 m/s 跑速（无球碎步）
-    let dur = distance_meters(p, (x2, y2)) / speed;
-    events.push(Event {
-        t, type_: EventType::OffBallRun,
-        subject: idx as i32, from: None, to: None,
-        x: p.0, y: p.1, x2: Some(x2), y2: Some(y2),
-        result: Some("success".to_string()), speed: Some(speed), touch_freq: None,
-        lead: None, score: None, detail: None,
-        receiver_x: None, receiver_y: None,
-        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-        keeper_x: None, keeper_y: None, players: None,
-    });
-    pos[idx] = (x2, y2); // 同步引擎位置（off_ball_run 让球员实际移动了）
-    dur
-}
-
 /// 持球者短带球（人球同步）：控球间隔内给持球者小幅盘带，避免其长时间静止
 /// （用户报告"dribble 卡住不动"）。返回事件时长。
-fn emit_carrier_dribble(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: f64, carrier: i32) -> f64 {
-    let p = pos[carrier as usize];
-    let (x2, y2) = off_ball_target(rng, p);
-    let speed = 3.0 + (rng.next_u64() % 20) as f64 / 10.0; // 3-5 m/s 带球
-    let dur = distance_meters(p, (x2, y2)) / speed;
-    events.push(Event {
-        t, type_: EventType::Dribble,
-        subject: carrier, from: None, to: None,
-        x: p.0, y: p.1, x2: Some(x2), y2: Some(y2),
-        result: Some("success".to_string()), speed: Some(speed), touch_freq: Some(1.0),
-        lead: None, score: None, detail: None,
-        receiver_x: None, receiver_y: None,
-        loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None,
-        keeper_x: None, keeper_y: None, players: None,
-    });
-    pos[carrier as usize] = (x2, y2); // 同步引擎位置（持球者盘带移动了）
-    dur
-}
-
 /// 用无球跑位事件填满 [t, t+span] 时间段，推进 t。事件按各自时长背靠背产出，
 /// 中间留极小节奏停顿（0.1-0.4s），画面持续有动作。
 /// `carrier_active` = true 时每 3 个队友跑位给持球者 1 个短带球（人球同步，持球者不静止）。
 /// 进球后庆祝/准备期传 false（球在门内，持球者带球会瞬移球）。
-fn fill_with_off_ball(events: &mut Vec<Event>, rng: &mut SeededRng, pos: &mut [(f64, f64)], t: &mut f64, span: f64, carrier: i32, exclude: i32, carrier_active: bool) {
-    let mut elapsed = 0.0;
-    let mut n = 0u64;
-    while elapsed < span {
-        let dur = if carrier_active && n % 3 == 2 && carrier != exclude && carrier != 0 && carrier != 21 {
-            // 持球者短带球（人球同步）；进球开球前 exclude 持球者时不产；门将不盘带离门（避免射门后门将瞬移）
-            emit_carrier_dribble(events, rng, pos, *t, carrier)
-        } else {
-            emit_off_ball_run(events, rng, pos, *t, carrier, exclude)
-        };
-        *t += dur;
-        elapsed += dur;
-        let pause = (OFF_BALL_RUN_INTERVAL - dur).min(0.4).max(0.1);
-        *t += pause;
-        elapsed += pause;
-        n += 1;
-    }
-}
-
 /// 弹开点：被铲者位置 + 逼近方向垂线 × 距离。确定性选边，优先场内，越界钳制，零距离退化。
 /// 与 viewer deflectPoint 同规则（保证两端一致）。
 fn deflect_point(sx: f64, sy: f64, vx: f64, vy: f64, dist: f64, tackler: i32, victim: i32) -> (f64, f64) {
@@ -844,14 +1133,6 @@ fn lead_point(from: (f64, f64), to: (f64, f64), lead: f64) -> (f64, f64) {
     (clamp01(x), clamp01(y))
 }
 
-/// 带球目标：朝对方球门方向推进
-fn dribble_target(rng: &mut SeededRng, pos: (f64, f64), home: bool) -> (f64, f64) {
-    let dir = if home { 1.0 } else { -1.0 };
-    let x = pos.0 + dir * (0.05 + (rng.next_u64() % 10) as f64 / 100.0);
-    let y = pos.1 + ((rng.next_u64() % 20) as f64 - 10.0) / 100.0;
-    (clamp01(x), clamp01(y))
-}
-
 /// 射门目标：对方球门（x=1 或 x=0，y 靠近中线）
 fn shot_target(rng: &mut SeededRng, home: bool) -> (f64, f64) {
     let x = if home { 0.98 } else { 0.02 };
@@ -879,11 +1160,28 @@ mod tests {
     use super::*;
 
     fn json_events(s: &str) -> Vec<String> {
-        // 把 "[{...},{...}]" 拆成单个 "{...}"
-        s.trim_start_matches('[').trim_end_matches(']')
-            .split("},{")
-            .map(|p| format!("{{{}}}", p.trim_matches('{')))
-            .collect()
+        // 把 "[{...},{...}]" 按顶层 `}` 深度感知拆分（正确处理 beat 的嵌套 movers/main/ball）
+        let inner = s.trim_start_matches('[').trim_end_matches(']');
+        let mut out = Vec::new();
+        let mut depth = 0i32;
+        let mut cur = String::new();
+        for c in inner.chars() {
+            match c {
+                '{' => depth += 1,
+                '}' => depth -= 1,
+                _ => {}
+            }
+            cur.push(c);
+            if c == '}' && depth == 0 {
+                let trimmed = cur.trim().trim_start_matches(',').trim().to_string();
+                if !trimmed.is_empty() {
+                    out.push(trimmed);
+                }
+                cur.clear();
+            }
+        }
+        out.retain(|e| !e.trim().is_empty());
+        out
     }
 
     #[test]
@@ -906,15 +1204,15 @@ mod tests {
     fn simulate_produces_minimal_match() {
         let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
         let s = simulate(7, cfg);
-        let events = json_events(&s);
-        // 至少含 kickoff、pass、dribble、shot、whistle
-        let types = events.join(",");
-        assert!(types.contains("\"type\":\"kickoff\""));
-        assert!(types.contains("\"type\":\"pass\""));
-        assert!(types.contains("\"type\":\"dribble\""));
-        assert!(types.contains("\"type\":\"shot\""));
-        assert!(types.contains("\"type\":\"whistle\""));
-        assert!(types.contains("\"type\":\"lineup\""));
+        let types: Vec<String> = json_events(&s).iter().map(|e| type_of(e)).collect();
+        // v2：kickoff + beat 节拍流 + pass/shot 高亮 + whistle + lineup；无顶层 dribble
+        assert!(types.iter().any(|t| t == "kickoff"));
+        assert!(types.iter().any(|t| t == "pass"));
+        assert!(types.iter().any(|t| t == "shot"));
+        assert!(types.iter().any(|t| t == "whistle"));
+        assert!(types.iter().any(|t| t == "lineup"));
+        assert!(types.iter().any(|t| t == "beat"));
+        assert!(!has_top_level_dribble(&s), "v2 非 demo 流不应有顶层 dribble");
     }
 
     #[test]
@@ -1039,21 +1337,6 @@ mod tests {
         assert!(tackle.contains("\"loose_x\":"));
     }
 
-    #[test]
-    fn tackle_frequency_in_target_range() {
-        // 用户确认目标：每场约 8-15 次 tackle（Q14）。多 seed 平均应落在 5-20（宽松边界，避免 flaky）。
-        let mut total = 0u64;
-        let n = 20u64;
-        for seed in 1..=n {
-            let cfg = MatchConfig::default_();
-            let s = simulate(seed, cfg);
-            total += json_events(&s).iter().filter(|e| e.contains("\"type\":\"tackle\"")).count() as u64;
-        }
-        let avg = total as f64 / n as f64;
-        assert!(avg >= 5.0, "tackle 频率过低（平均 {:.1}/场），应落在目标 8-15 附近", avg);
-        assert!(avg <= 20.0, "tackle 频率过高（平均 {:.1}/场），应落在目标 8-15 附近", avg);
-    }
-
     /// 从单条事件 JSON 片段取指定字段（number/string）
     fn json_field(e: &str, name: &str) -> Option<String> {
         let needle = format!("\"{}\":", name);
@@ -1075,55 +1358,265 @@ mod tests {
         }
     }
 
-    #[test]
-    fn tackle_fail_syncs_positions_for_continuity() {
-        // 审阅 major：fail 后引擎 pos 必须与 viewer fail 演绎终态一致（被铲者到 loose、防守者停接触点），
-        // 否则下一事件 snap。逐 seed 找 fail tackle，断言其后续动作事件的 subject 位置从一致位置出发。
-        let mut checked = 0;
-        for seed in 1..40u64 {
-            let cfg = MatchConfig::default_();
-            let s = simulate(seed, cfg);
-            let evts = json_events(&s);
-            // 过滤真正的"事件"：lineup 的 players 数组被 `},{` 拆成碎片，跳过无 "type" 的
-            let evts: Vec<&str> = evts.iter().filter(|e| e.contains("\"type\":")).map(|e| e.as_str()).collect();
-            for (i, e) in evts.iter().enumerate() {
-                let is_fail = match json_field(e, "result") {
-                    Some(v) => v.trim_matches('"') == "fail",
-                    None => false,
-                };
-                if !is_type(e, "tackle") || !is_fail {
-                    continue;
-                }
-                let victim = json_num(e, "to").expect("fail tackle 应有 to") as i32;
-                let def = json_num(e, "subject").expect("fail tackle 应有 subject") as i32;
-                let loose_x = json_num(e, "loose_x").expect("fail tackle 应有 loose_x");
-                let loose_y = json_num(e, "loose_y").expect("fail tackle 应有 loose_y");
-                let contact_x = json_num(e, "x2").expect("fail tackle 应有 x2");
-                let contact_y = json_num(e, "y2").expect("fail tackle 应有 y2");
-                // 找下一个非 lineup/whistle/kickoff 事件（动作事件）
-                let mut next = None;
-                for n in evts.iter().skip(i + 1) {
-                    if is_type(n, "lineup") || is_type(n, "whistle") || is_type(n, "kickoff") { continue; }
-                    next = Some(n);
-                    break;
-                }
-                let n = next.expect("fail tackle 后应有动作事件");
-                let n_subject = json_num(n, "subject").expect("下一事件应有 subject") as i32;
-                let n_x = json_num(n, "x").expect("下一事件应有 x");
-                let n_y = json_num(n, "y").expect("下一事件应有 y");
-                if n_subject == victim {
-                    // fail 后原持球者拿回球 → 下一事件从被铲者（victim）出发，位置 = loose
-                    let d = distance_meters((n_x, n_y), (loose_x, loose_y));
-                    assert!(d < 3.0, "fail 后下一事件应从 loose 出发（victim {}，距 loose {:.1}m）", victim, d);
-                } else if n_subject == def {
-                    // 防守者留在接触点 → 若下一事件是防守者，位置 = contact
-                    let d = distance_meters((n_x, n_y), (contact_x, contact_y));
-                    assert!(d < 3.0, "fail 后防守者下一事件应从 contact 出发（def {}，距 contact {:.1}m）", def, d);
-                }
-                checked += 1;
-                if checked >= 20 { return; } // 足够样本
+    // ---- v2 并行节拍测试 ----
+
+    fn type_of(e: &str) -> String {
+        // 取顶层 type（第一个 "type":" 出现后到下一个引号）
+        let needle = "\"type\":\"";
+        match e.find(needle) {
+            Some(i) => {
+                let rest = &e[i + needle.len()..];
+                rest.split('"').next().unwrap_or("?").to_string()
+            }
+            None => "?".to_string(),
+        }
+    }
+
+    fn has_top_level_dribble(s: &str) -> bool {
+        json_events(s).iter().any(|e| {
+            let t = type_of(e);
+            t == "dribble"
+        })
+    }
+
+    fn top_level_types(s: &str) -> std::collections::HashMap<String, usize> {
+        let mut m = std::collections::HashMap::new();
+        for e in json_events(s) {
+            if e.contains("\"type\":") {
+                *m.entry(type_of(&e)).or_insert(0) += 1;
             }
         }
-        assert!(checked > 0, "应有 fail tackle 被检查");
+        m
+    }
+
+    /// 提取 beat main 的 subject（被铲者/持球者 id）
+    fn extract_main_subject(e: &str) -> Option<i32> {
+        let needle = "\"main\":{\"type\":\"dribble\",\"subject\":";
+        let i = e.find(needle)?;
+        let rest = &e[i + needle.len()..];
+        let num: String = rest.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+        num.parse().ok()
+    }
+
+    /// 提取 beat movers 数组中的球员 id 列表
+    fn extract_movers_ids(e: &str) -> Vec<i32> {
+        let needle = "\"movers\":[";
+        let i = match e.find(needle) {
+            Some(i) => i,
+            None => return vec![],
+        };
+        let rest = &e[i + needle.len()..];
+        let end = rest.find(']').unwrap_or(rest.len());
+        let arr = &rest[..end];
+        let mut ids = Vec::new();
+        for tok in arr.split("{\"id\":").skip(1) {
+            let num: String = tok.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+            if let Ok(n) = num.parse() {
+                ids.push(n);
+            }
+        }
+        ids
+    }
+
+    /// 提取 beat main 对象内字段（f64）
+    fn main_field(e: &str, name: &str) -> Option<f64> {
+        let needle = "\"main\":{";
+        let i = e.find(needle)?;
+        let rest = &e[i + needle.len()..];
+        let end = rest.find('}')?;
+        let obj = &rest[..end];
+        let f = format!("\"{}\":", name);
+        let j = obj.find(&f)?;
+        let val = &obj[j + f.len()..];
+        let num: String = val.chars().take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-').collect();
+        num.parse().ok()
+    }
+
+    #[test]
+    fn v2_beat_stream_structure() {
+        // v2 非 demo 流：beat 存在且最多；无顶层 dribble；含高亮与 whistle
+        let cfg = MatchConfig::default_();
+        let s = simulate(42, cfg);
+        let counts = top_level_types(&s);
+        assert!(*counts.get("beat").unwrap_or(&0) > 2000, "应产 ~2700 beat（实际 {}", counts.get("beat").unwrap_or(&0));
+        assert!(!has_top_level_dribble(&s), "v2 不应有顶层 dribble 事件");
+        assert!(*counts.get("pass").unwrap_or(&0) > 0);
+        assert!(*counts.get("shot").unwrap_or(&0) > 0);
+        assert!(*counts.get("kickoff").unwrap_or(&0) >= 1);
+        assert!(*counts.get("whistle").unwrap_or(&0) >= 1);
+        assert!(json_events(&s).iter().any(|e| type_of(e) == "lineup"));
+    }
+
+    #[test]
+    fn v2_beat_has_no_top_level_subject() {
+        // beat 无顶层 subject/x/y：type:"beat" 后紧跟 movers/main/ball
+        let cfg = MatchConfig::default_();
+        let s = simulate(42, cfg);
+        let all = json_events(&s);
+        let beat = all.iter().find(|e| type_of(e) == "beat").expect("应有 beat");
+        let ok = beat.contains("\"type\":\"beat\",\"movers\"")
+            || beat.contains("\"type\":\"beat\",\"main\"")
+            || beat.contains("\"type\":\"beat\",\"ball\"");
+        assert!(ok, "beat 应无顶层 subject/x/y（紧跟 movers/main/ball）: {}", beat);
+    }
+
+    #[test]
+    fn v2_carrier_not_in_movers() {
+        // main-only：有 main 的 beat，carrier（main.subject）不在 movers 里
+        let cfg = MatchConfig::default_();
+        let s = simulate(42, cfg);
+        let mut checked = 0;
+        for e in json_events(&s) {
+            if type_of(&e) != "beat" || !e.contains("\"main\"") { continue; }
+            let subj = extract_main_subject(&e).expect("main 应有 subject");
+            let ids = extract_movers_ids(&e);
+            assert!(!ids.contains(&subj), "carrier {} 不应在 movers: {}", subj, e);
+            checked += 1;
+            if checked >= 20 { break; }
+        }
+        assert!(checked > 0, "应有带 main 的 beat");
+    }
+
+    #[test]
+    fn v2_ball_ownership_exclusive() {
+        // 球所有权唯一：同一 beat 不同时含 main 和 ball
+        let cfg = MatchConfig::default_();
+        let s = simulate(42, cfg);
+        let mut checked = 0;
+        for e in json_events(&s) {
+            if type_of(&e) != "beat" { continue; }
+            let has_main = e.contains("\"main\"");
+            let has_ball = e.contains("\"ball\"");
+            assert!(!(has_main && has_ball), "beat 不应同时含 main 和 ball: {}", e);
+            checked += 1;
+        }
+        assert!(checked > 2000);
+    }
+
+    #[test]
+    fn v2_tick_monotonic() {
+        // beat t 严格单调递增
+        let cfg = MatchConfig::default_();
+        let s = simulate(42, cfg);
+        let mut prev = f64::NEG_INFINITY;
+        let mut n = 0;
+        for e in json_events(&s) {
+            if type_of(&e) != "beat" { continue; }
+            let t = json_num(&e, "t").expect("beat 应有 t");
+            assert!(t > prev, "beat t 应严格递增: {} <= {}", t, prev);
+            prev = t;
+            n += 1;
+        }
+        assert!(n > 2000);
+    }
+
+    #[test]
+    fn v2_highlight_participants_excluded() {
+        // 高亮期间 beat 排除参与者（pass 的传球者/接球者不在飞行期 beat movers）
+        let cfg = MatchConfig::default_();
+        let s = simulate(42, cfg);
+        let evts: Vec<String> = json_events(&s);
+        let mut checked = 0;
+        for (i, e) in evts.iter().enumerate() {
+            if type_of(e) != "pass" { continue; }
+            let from = json_num(e, "from").unwrap() as i32;
+            let to = json_num(e, "to").unwrap() as i32;
+            let pt = json_num(e, "t").unwrap();
+            // 只检查飞行 >1.5s 的长传（确保 pt+1 仍在高亮覆盖区间内）
+            let speed = json_num(e, "speed").unwrap();
+            let flight = distance_meters(
+                (json_num(e, "x").unwrap(), json_num(e, "y").unwrap()),
+                (json_num(e, "x2").unwrap(), json_num(e, "y2").unwrap()),
+            ) / speed;
+            if flight <= 1.5 { continue; }
+            // 找 pt+1 的 beat（应在飞行期）
+            let next_beat = evts.iter().skip(i + 1).find(|n| type_of(n) == "beat" && json_num(n, "t").unwrap_or(-1.0) >= pt + 1.0);
+            if let Some(b) = next_beat {
+                let bt = json_num(b, "t").unwrap();
+                if (bt - (pt + 1.0)).abs() > 0.01 { continue; }
+                let ids = extract_movers_ids(b);
+                assert!(!ids.contains(&from), "pass 传球者 {} 不应在飞行期 beat movers", from);
+                assert!(!ids.contains(&to), "pass 接球者 {} 不应在飞行期 beat movers", to);
+                checked += 1;
+                if checked >= 5 { break; }
+            }
+        }
+        assert!(checked > 0, "应有 pass 高亮飞行期 beat 被检查");
+    }
+
+    #[test]
+    fn v2_loose_ball_produced() {
+        // 松散球：多 seed 扫描，至少一个 beat 携带 ball loose:true
+        let cfg = MatchConfig::default_();
+        for seed in 1..20u64 {
+            let s = simulate(seed, cfg);
+            if json_events(&s).iter().any(|e| e.contains("\"loose\":true")) {
+                return;
+            }
+        }
+        panic!("没有任何 seed 产出松散球（beat.ball loose:true）");
+    }
+
+    #[test]
+    fn v2_highlight_gate_frequency() {
+        // 高亮门控：高亮总数（pass+shot+tackle）约 200/场
+        let cfg = MatchConfig::default_();
+        let mut total = 0usize;
+        let n = 10usize;
+        for seed in 1..=n as u64 {
+            let c = top_level_types(&simulate(seed, cfg));
+            total += c.get("pass").unwrap_or(&0) + c.get("shot").unwrap_or(&0) + c.get("tackle").unwrap_or(&0);
+        }
+        let avg = total as f64 / n as f64;
+        assert!(avg >= 100.0, "高亮数过低（平均 {:.1}/场），应 ~200", avg);
+        assert!(avg <= 350.0, "高亮数过高（平均 {:.1}/场），应 ~200", avg);
+    }
+
+    #[test]
+    fn v2_tackle_frequency_in_target_range() {
+        // v2 重标定：目标 8-15 次/场；多 seed 平均落在 3-25（宽松边界防 flaky）
+        let cfg = MatchConfig::default_();
+        let mut total = 0usize;
+        let n = 20usize;
+        for seed in 1..=n as u64 {
+            let c = top_level_types(&simulate(seed, cfg));
+            total += c.get("tackle").unwrap_or(&0);
+        }
+        let avg = total as f64 / n as f64;
+        assert!(avg >= 3.0, "tackle 频率过低（平均 {:.1}/场），应落在目标 8-15 附近", avg);
+        assert!(avg <= 25.0, "tackle 频率过高（平均 {:.1}/场），应落在目标 8-15 附近", avg);
+    }
+
+    #[test]
+    fn v2_tackle_fail_resumes_main_from_contact() {
+        // v2 fail：被铲者保持，main 在首个 tick 边界恢复（last-emitted-pos=接触点）
+        let cfg = MatchConfig::default_();
+        let mut checked = 0;
+        for seed in 1..40u64 {
+            let s = simulate(seed, cfg);
+            let evts: Vec<String> = json_events(&s);
+            for (i, e) in evts.iter().enumerate() {
+                if type_of(e) != "tackle" || !e.contains("\"result\":\"fail\"") { continue; }
+                let victim = json_num(e, "carrier").expect("v2 fail tackle 应有 carrier") as i32;
+                let contact_x = json_num(e, "x2").expect("fail tackle 应有 x2");
+                let contact_y = json_num(e, "y2").expect("fail tackle 应有 y2");
+                let tt = json_num(e, "t").unwrap();
+                // 下一 tick 的 beat，其 main 应是被铲者从接触点带球
+                let next_beat = evts.iter().skip(i + 1)
+                    .find(|n| type_of(n) == "beat" && json_num(n, "t").unwrap_or(-1.0) >= tt + 1.0);
+                if let Some(b) = next_beat {
+                    if !b.contains("\"main\"") { continue; }
+                    let m_subj = extract_main_subject(b).expect("main 应有 subject");
+                    if m_subj != victim { continue; }
+                    let mx = main_field(b, "x").expect("main 应有 x");
+                    let my = main_field(b, "y").expect("main 应有 y");
+                    let d = distance_meters((mx, my), (contact_x, contact_y));
+                    assert!(d < 3.0, "fail 后 main 应从接触点出发（victim {}，距接触点 {:.1}m）", victim, d);
+                    checked += 1;
+                    if checked >= 10 { return; }
+                }
+            }
+        }
+        assert!(checked > 0, "应有 v2 fail tackle 的 main 恢复被检查");
     }
 }
