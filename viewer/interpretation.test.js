@@ -46,7 +46,8 @@ test('shot goal: 球越过门线进网，门将没够到', () => {
   const keeper = anchors.filter((a) => a.kind === 'player' && (a.id === 0 || a.id === 21));
   assert.ok(keeper.length >= 3, '门将应有起始+反应+终点锚点');
   const keeperEnd = keeper[keeper.length - 1];
-  assert.notEqual(keeperEnd.y, balls[balls.length - 1].y, 'goal 时门将未够到球（y 不同）');
+  // goal：门将停在门线（x2），球越过门线（1.02）——没够到由 x 差异表达（门将终点 = 引擎高亮结束位置）
+  assert.notEqual(keeperEnd.x, balls[balls.length - 1].x, 'goal 时门将未够到球（球越过门线）');
 });
 
 test('shot saved: 球停在门线，门将扑到球位置挡住', () => {
@@ -244,4 +245,137 @@ test('tackle 五段式: carrier_from 缺失时被铲者原地持球（fallback�
   // 球起点也在接触点
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
   assert.equal(balls[0].x, 0.45);
+});
+
+// ---- Phase C：off_ball_run 与 dropCarryBeat ----
+test('off_ball_run: 短距离碎步移动（人移动，球不动）', () => {
+  const e = { t: 10, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, x2: 0.42, y2: 0.27, speed: 3, result: 'success' };
+  const anchors = interpretEvent(e);
+  // 只有球员锚点，无球锚点
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.equal(balls.length, 0, 'off_ball_run 不应有球锚点');
+  const players = anchors.filter((a) => a.kind === 'player');
+  assert.equal(players.length, 2);
+  assert.equal(players[0].id, 4);
+  assert.equal(players[0].x, 0.40);
+  assert.equal(players[1].x, 0.42);
+  // 时长 = 距离 ÷ 速度（事件驱动）
+  const dur = players[1].t - players[0].t;
+  assert.ok(dur > 0, `off_ball_run 应有移动时长，实际 ${dur}`);
+});
+
+test('off_ball_run: 缺 x2/y2 时不产出 NaN 锚点', () => {
+  const e = { t: 10, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, result: 'success' };
+  const anchors = interpretEvent(e);
+  assert.equal(anchors.length, 0, '缺终点应跳过');
+});
+
+test('tackle dropCarryBeat: 被铲者从接触点开始（不重放带球段）', () => {
+  const e = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55,
+    carrier_from_x: 0.60, carrier_from_y: 0.50, loose_x: 0.4277, loose_y: 0.5053, result: 'success' };
+  const anchors = interpretEvent(e, true); // dropCarryBeat=true
+  const victimAnchors = anchors.filter((a) => a.kind === 'player' && a.id === 16).sort((a, b) => a.t - b.t);
+  // 起点 = 接触点（丢弃带球段）
+  assert.equal(victimAnchors[0].x, 0.45);
+  assert.equal(victimAnchors[0].y, 0.55);
+  // 球起点也在接触点
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  assert.equal(balls[0].x, 0.45);
+});
+
+test('buildTimeline continuous: tackle 前跳过 off_ball_run 找到同被铲者 dribble → dropCarryBeat', () => {
+  const events = [
+    { t: 20, type: 'dribble', subject: 16, x: 0.55, y: 0.5, x2: 0.45, y2: 0.55, speed: 3, result: 'success' },
+    { t: 21, type: 'off_ball_run', subject: 4, x: 0.40, y: 0.25, x2: 0.42, y2: 0.27, speed: 3, result: 'success' },
+    { t: 22, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55, carrier_from_x: 0.55, carrier_from_y: 0.5, result: 'success' },
+  ];
+  // continuous 模式：tackle 前跳过 off_ball_run，找到 dribble(16)→tackle(16)，dropCarryBeat 生效
+  const tlContinuous = buildTimeline(events, 'continuous');
+  const tackleIdx = 2;
+  const victimAnchors = tlContinuous.filter((a) => a.kind === 'player' && a.id === 16 && a.evt === tackleIdx).sort((a, b) => a.t - b.t);
+  assert.equal(victimAnchors[0].x, 0.45, 'continuous 模式应丢弃 carry-beat（起点=接触点）');
+  // clip 模式：不丢（保留带球段）
+  const tlClip = buildTimeline(events, 'clip');
+  const victimAnchorsClip = tlClip.filter((a) => a.kind === 'player' && a.id === 16 && a.evt === tackleIdx).sort((a, b) => a.t - b.t);
+  assert.equal(victimAnchorsClip[0].x, 0.55, 'clip 模式保留 carry-beat（起点=carrier_from）');
+});
+
+// ---- v2：beat 节拍演绎 ----
+
+test('beat: movers 铺满整拍 [t, t+1]，main 人球解耦，ball 滚动', () => {
+  const e = {
+    t: 10, type: 'beat',
+    movers: [
+      { id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.35, to_y: 0.4, speed: 4, action: 'run' },
+      { id: 6, from_x: 0.5, from_y: 0.6, to_x: 0.52, to_y: 0.58, speed: 4, action: 'run' },
+    ],
+    main: { type: 'dribble', subject: 10, x: 0.55, y: 0.5, x2: 0.58, y2: 0.5, speed: 5, touch_freq: 1.5 },
+  };
+  const anchors = interpretEvent(e);
+  // movers 铺满整拍：起点 t=10，终点 t=11
+  const m5 = anchors.filter((a) => a.kind === 'player' && a.id === 5).sort((a, b) => a.t - b.t);
+  assert.equal(m5[0].t, 10);
+  assert.equal(m5[0].x, 0.3);
+  assert.equal(m5[m5.length - 1].t, 11);
+  assert.equal(m5[m5.length - 1].x, 0.35);
+  // main：球随 carrier（拍边界连续，不做 sep 领先偏移——避免方向变化导致拍边界球跳）
+  const carrier = anchors.filter((a) => a.kind === 'player' && a.id === 10).sort((a, b) => a.t - b.t);
+  const ball = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  assert.ok(carrier.length >= 2 && ball.length >= 2);
+  assert.equal(carrier[0].t, 10);
+  assert.equal(ball[0].t, 10);
+  // 球位置 = carrier 位置（起点/终点对齐）
+  assert.equal(ball[0].x, carrier[0].x, 'beat.main 球起点随 carrier');
+  assert.equal(ball[ball.length - 1].x, carrier[carrier.length - 1].x, 'beat.main 球终点随 carrier');
+});
+
+test('beat: 松散球 ball 铺满整拍', () => {
+  const e = {
+    t: 20, type: 'beat',
+    ball: { x: 0.4, y: 0.5, x2: 0.42, y2: 0.51, speed: 3, loose: true },
+  };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
+  assert.equal(balls[0].t, 20);
+  assert.equal(balls[0].x, 0.4);
+  assert.equal(balls[balls.length - 1].t, 21);
+  assert.equal(balls[balls.length - 1].x, 0.42);
+});
+
+test('buildTimeline 两层合成: 高亮参与者从重叠 beat movers 排除', () => {
+  // pass 高亮 (t=10, 飞行到 ~10.7) + t=11 的 beat 重叠 → pass 参与者 from/to 不在 beat movers
+  const events = [
+    { t: 10, type: 'pass', from: 8, to: 9, subject: 8, x: 0.4, y: 0.5, x2: 0.6, y2: 0.4, speed: 8, lead: 0.2, result: 'success' },
+    { t: 11, type: 'beat', movers: [
+      { id: 8, from_x: 0.5, from_y: 0.5, to_x: 0.52, to_y: 0.5, speed: 4, action: 'run' },
+      { id: 9, from_x: 0.58, from_y: 0.42, to_x: 0.6, to_y: 0.4, speed: 4, action: 'run' },
+      { id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.32, to_y: 0.4, speed: 4, action: 'run' },
+    ] },
+  ];
+  // pass 飞行 = dist/speed：dist=(0.2,0.1)→~22.5m，speed=8 → ~2.8s → 覆盖 [10, 12.8)，t=11 在覆盖内
+  const tl = buildTimeline(events, 'continuous');
+  // t=11 beat 的 evt=1；其 movers 锚点不应含 id 8 和 9（参与者被排除）
+  const beatMovers = tl.filter((a) => a.evt === 1 && a.kind === 'player');
+  const idsInBeat = new Set(beatMovers.map((a) => a.id));
+  assert.ok(!idsInBeat.has(8), 'pass 传球者 8 应从重叠 beat movers 排除');
+  assert.ok(!idsInBeat.has(9), 'pass 接球者 9 应从重叠 beat movers 排除');
+  assert.ok(idsInBeat.has(5), '非参与者 5 保留在 beat movers');
+  // 高亮参与者仍由高亮事件驱动（evt=0 有 id 8/9 锚点）
+  const passAnchors = tl.filter((a) => a.evt === 0 && a.kind === 'player' && (a.id === 8 || a.id === 9));
+  assert.ok(passAnchors.length > 0, '高亮参与者由高亮事件驱动');
+});
+
+test('buildTimeline 跨 beat 连续: from(N+1)==to(N)', () => {
+  const events = [
+    { t: 10, type: 'beat', movers: [{ id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.35, to_y: 0.4, speed: 4, action: 'run' }] },
+    { t: 11, type: 'beat', movers: [{ id: 5, from_x: 0.35, from_y: 0.4, to_x: 0.38, to_y: 0.42, speed: 4, action: 'run' }] },
+  ];
+  const tl = buildTimeline(events, 'continuous');
+  const m5 = tl.filter((a) => a.kind === 'player' && a.id === 5).sort((a, b) => a.t - b.t);
+  // 锚点序列：10(0.3) → 11(0.35) → 11(0.35) → 12(0.38)
+  // 跨拍衔接：beat0 终点 (11, 0.35) == beat1 起点 (11, 0.35)
+  assert.equal(m5[1].t, 11);
+  assert.equal(m5[1].x, 0.35);
+  assert.equal(m5[2].t, 11);
+  assert.equal(m5[2].x, 0.35, '跨拍 from(N+1)==to(N)，位置连续');
 });

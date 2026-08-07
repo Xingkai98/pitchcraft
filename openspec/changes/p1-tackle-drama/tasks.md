@@ -30,4 +30,4 @@
 
 - [x] 5.1 跑 `node --test`（viewer 全量，52 用例）+ `verify.sh`（引擎 + viewer + WASM 端到端）
 - [x] 5.2 更新 `index.html` 与 `app.js` 的 `?v=` 版本号（JS 修改后强制浏览器刷新）
-- [ ] 5.3 代码审阅闭环：起 subagent 审阅 → 修复 → 复审直到通过
+- [x] 5.3 代码审阅闭环：起 subagent 审阅 → 修复 → 复审直到通过（多维度审阅 11 条发现全部修复，复审通过）

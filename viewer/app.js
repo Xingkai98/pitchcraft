@@ -5,10 +5,10 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260806-2';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260806-2';
-import { createGame } from './game.js?v=20260806-2';
-import { mockEventStream } from './mock-event-stream.js?v=20260806-2';
+import { config } from './config.js?v=20260807-2';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260807-2';
+import { createGame } from './game.js?v=20260807-2';
+import { mockEventStream } from './mock-event-stream.js?v=20260807-2';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -24,6 +24,8 @@ const eventIndicator = document.getElementById('event-indicator');
 const eventInfoEl = document.getElementById('event-info');
 const eventIdInput = document.getElementById('event-id-input');
 const noticeEl = document.getElementById('notice');
+const progressBar = document.getElementById('progress-bar');
+const progressTime = document.getElementById('progress-time');
 
 // 瞬时操作反馈（跳转/播放状态/错误）——显示在 notice，避免被帧循环的 status 时钟覆盖
 let _noticeTimer = null;
@@ -35,8 +37,8 @@ function showNotice(msg) {
 
 // 固定种子（Q8：固定种子 + 刷新重播）
 const FIXED_SEED = 42;
-// config：演示模式（demo_mode）产出精简事件（各类型 1-2 个），便于逐动作观看
-const MATCH_CONFIG = { match_duration_seconds: 200, demo_mode: true };
+// config：连续比赛（demo_mode: false）产整场事件流（Phase C，事件驱动高密度）
+const MATCH_CONFIG = { match_duration_seconds: 2700, demo_mode: false };
 
 let game = null;
 let renderer = null;
@@ -87,11 +89,36 @@ function frame(ts) {
     renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height);
     // 比分显示（简单：从事件流里找最近一次 goal）
     updateScore();
-    statusEl.textContent = `t=${game.playTime.toFixed(1)}s 速度=${game.getSpeed()}x`;
+    // 拖动进度条时 status 由 input handler 显示"已暂停"，不被帧循环覆盖
+    if (!_seeking) statusEl.textContent = `t=${game.playTime.toFixed(1)}s 速度=${game.getSpeed()}x`;
     updateEventIndicator();
+    updateProgress();
   }
   requestAnimationFrame(frame);
 }
+
+// 更新进度条（整场进度）与时间显示。拖动时由 _seeking 抑制回写，避免拖动被打断。
+function updateProgress() {
+  if (!game) return;
+  if (_seeking) return;
+  const pct = game.getProgress() * 100;
+  progressBar.value = String(pct);
+  progressTime.textContent = `${game.playTime.toFixed(1)}s / ${game.matchEnd.toFixed(1)}s`;
+}
+
+let _seeking = false;
+progressBar.addEventListener('input', () => {
+  if (!game) return;
+  _seeking = true;
+  const t = (progressBar.value / 100) * game.matchEnd;
+  game.seekTo(t);
+  renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height);
+  statusEl.textContent = `t=${game.playTime.toFixed(1)}s（已暂停，拖动进度条）`;
+  updateEventIndicator();
+});
+progressBar.addEventListener('change', () => {
+  _seeking = false;
+});
 
 // 事件摘要：id + 距离（米）等，方便用户描述"哪个 id 球慢"
 function describeEvent(e, id) {
@@ -198,11 +225,10 @@ btnSpeed.addEventListener('click', () => {
   }
 });
 btnReplay.addEventListener('click', () => {
-  // 重播当前动作（回到当前事件起点并播放），而非重置整场
   if (game) {
     game.replayCurrent();
     updateEventIndicator();
-    showNotice(`重播事件 #${game.currentEventIndex()}`);
+    showNotice(game.mode === 'continuous' ? '已整场重播' : `重播事件 #${game.currentEventIndex()}`);
   }
 });
 
