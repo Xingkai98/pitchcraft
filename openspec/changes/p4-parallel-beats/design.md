@@ -67,16 +67,21 @@ P3 之后连续播放成立，但事件流是"串行"的：每条事件只描述
 ### D7: 全员状态逐 tick 更新（Q7）+ 高亮触发节拍门控（审阅 H1）
 - 引擎维护 `pos[22]`，每 tick 为每个球员决策目标：持球者带球、队友跑位（本轮用现有角色锚点 + 小幅调整，队形公式进 p5）、门将回位。更新 pos[]，产节拍。
 - **高亮触发门控（H1）**：持球 hold 以 tick 计（8-15 tick），hold 内每 tick 发 main（carrier 带球）+ movers；hold 归零时在**整数 tick** 掷高亮类型（pass/shot/tackle，含 tackle 距离/积极性检查）。**不是每 tick 都掷高亮**（否则 2700 个），也**不是从不掷**（否则零高亮）。
+- **高亮门控 fallback（审阅 p4-103）**：hold 归零**必定**产出一条高亮；掷出 tackle 但距离/积极性检查失败 → 改掷 pass/shot（v2 无 'dribble' 落点，不落回 dribble）。tackle 频率目标保持主 spec 8-15/场，由检查阈值（距离 ~10m、积极性 ~0.09）维持。
 - **main 每拍推进上限（审阅 M3）**：main 的每拍推进 ≤ speed×1s（约 5-7m）；持球者多数 tick 为零位移控球（球在脚下小幅调整）或短带球，避免 8-15 tick 内横穿球场。
 - **为什么**：FM slice 模型；高亮门控决定流形状（约 200 次/场），main 步进上限防止 carrier 超速。
 
 ### D8: 高亮参与者排除 + 高亮锚点整数 tick 对齐（D12 的核心，升级定死）
 - **高亮期间参与者从 beat movers 排除**：pass 的传球者/接球者、shot 的射手/门将、tackle 的双方，在其高亮时序内不在 beat movers。这是**唯一规范**（无"或与高亮精确一致"逃生门）。
 - **高亮事件起点对齐整数 tick**：pass/shot/tackle 的 t 量化到 1s tick 边界。简化合成——高亮 tick 不产 main，高亮从该 tick 起是唯一驱动者。
-- **高亮覆盖区间**：[t_start, t_end)，t_end = 自然飞行终点（可非整数）；main 从接球者持球后的**首个 tick 边界**恢复。
+- **高亮覆盖区间**：[t_start, t_end)，t_end = 自然飞行终点（可非整数）；高亮结束后的驱动者按 D12 交接（不限于 pass）。
+- **高亮期间 beat 不含 main 也不含 ball（审阅 p4-108）**：高亮覆盖区间内的 beat 只含 movers（球由高亮驱动）——互斥校验扩展为：高亮期间 beat 无 main、无 ball；非高亮 beat 不同时含 main 与 ball。
 - **高亮事件必须携带参与者精确起点**：pass{passer_x/y, receiver_x/y}、shot{shooter_x/y, keeper_x/y}、tackle{carrier_from, tackler_x/y}——无 fallback（缺失即瞬移）。
+- **参与者起点硬约束（审阅 p4-109）**：高亮参与者起点 == 该 tick 开始时的 pos[]（前一 beat 的 to / main.to / last-emitted-pos），引擎保证等式成立（不依赖 viewer 阈值兜底）。
 - 引擎维护**飞行中高亮注册表**（哪些球员被高亮控制、到何时、结束位置），每 tick 查询以执行排除 + pos[] 对账到高亮结束位置。**任意时刻至多一条飞行中高亮**（保证球优先级链"高亮>main>ball"定义明确）。
+- **高亮参与者结束位置派生（审阅 p4-106）**：注册表的"高亮结束位置"由事件字段派生，viewer 与引擎同一派生、无额外 payload——pass 接球者结束位置 = pass.x2/y2；shot 门将结束位置 = shot.x2/y2；tackle 双方结束位置 = 接触点（carrier_from / tackler_x/y），球弹开结束位置 = loose_x/y。
 - **高亮参与者回归 movers**：参与者退出高亮时，last-emitted-pos 置为注册表的"高亮结束位置"——viewer 从高亮结束位置继续，不回弹。
+- **t 单调性澄清（审阅 p4-111）**：单类型流内严格单调（beat t 严格递增、高亮事件 t 严格递增）；合并流非严格单调（同一整数 t 允许 beat + 高亮并存）。
 - **为什么**：消除"同一球员双重移动"，是最大技术风险（审阅标为 blocker）。
 
 ### D9: 关键时刻保持当前节奏（Q9 升级）+ tackle carry-beat 归零（审阅 H2）
@@ -88,6 +93,24 @@ P3 之后连续播放成立，但事件流是"串行"的：每条事件只描述
 - 保留 v1 事件（pass/shot/tackle 等），新增 beat 节拍。viewer 兼容两者。
 - demo_mode 保持 v1 事件驱动（给 viewer 一个 v1 生产者，兼容路径可测）。
 - **为什么**：平滑过渡，旧事件（高亮）继续用，beat 补充并行。
+
+### D11: 松散球生命周期（审阅 p4-107 / cross p4-101——补定义）
+- 松散球由高亮结束产生：tackle 成功弹开、shot 扑出反弹。
+- 高亮结束 tick 起，球由 `beat.ball`（`loose:true`）驱动，直到被拾取——**不再属于高亮时序**（消除旧 Open Question 表述"作为 tackle 高亮的一部分"的矛盾）。
+- **追逐者**：距球最近的球员（按 pos[] 欧氏距离，确定性平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'）。
+- **拾取**：追逐者在拾取半径（~0.5m）内 → 该球员成为 carrier → 下一 tick 边界 `main` 恢复（last-emitted-pos = 拾取点，pos[] 连续性保证无 snap）。
+- **上限**：松散球最长持续 `LOOSE_MAX_TICKS = 2`；超时最近者强制拾取（避免无限松散）。
+- **为什么**：松散球是球权易主（tackle/扑救）的自然延续；p5 transition 依赖此生命周期（拾取时序确定性可断言）。
+
+### D12: 高亮结束 → 球权交接（审阅 cross p4-102 / p4-104——从 pass-only 推广）
+- 高亮结束（t_end）后的驱动者由球权结局决定：
+  - **pass（接球者持球）**：main 从接球者持球后的**首个 tick 边界**恢复（carrier = 接球者，last-emitted-pos = 接球点）。
+  - **shot → goal**：死球（hold）→ 按 P3 机制 kickoff 重开（viewer 允许死球→kickoff 的球位置跳变）。
+  - **shot → 门将扑住（save-caught）**：门将持球 → main 从**首个 tick 边界**恢复（carrier = 门将，last-emitted-pos = 扑救点）。
+  - **shot → 扑出反弹（save-rebound）**：进入松散球（D11，beat.ball 驱动）→ 拾取 → main。
+  - **tackle 成功弹开**：进入松散球（D11）→ 拾取 → main。
+  - **tackle 失败（被铲者保持）**：main 从**首个 tick 边界**恢复（被铲者继续带球，last-emitted-pos = 接触点）。
+- **为什么**：球优先级链"高亮 > main > beat.ball > hold"在每种高亮结局下都有明确后继。
 
 ## Risks / Trade-offs
 
@@ -107,5 +130,5 @@ P3 之后连续播放成立，但事件流是"串行"的：每条事件只描述
 ## Open Questions
 
 - 高亮事件的整数 tick 对齐是否影响关键时刻节奏（原事件在任意时刻）——实施时验证，必要时改为非整数 + 注册表。
-- movers 的 action 枚举值（run/return/close_down/dribble/keeper_return）——实施时定义。
-- 松散球生命周期（谁追、多久、谁拿回、拿回后回 main）——实施时细化，作为 tackle 高亮的一部分。
+- movers 的 action 枚举值（run/return/close_down/keeper_return/chase）——实施时定义（已删 dribble，carrier 带球在 main）。
+- 松散球追逐速度/拾取半径的具体值（拾取半径 ~0.5m、LOOSE_MAX_TICKS=2）——实施时调参。

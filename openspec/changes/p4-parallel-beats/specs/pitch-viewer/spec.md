@@ -4,7 +4,7 @@
 
 ### Requirement: beat 节拍演绎
 
-画面层 SHALL 将 `beat` 节拍事件演绎为并行移动：movers 数组中的每个球员从 from 位置移动到 to 位置（时长由距离÷speed 决定，或跨拍连续插值），同拍内多个球员同时移动；静止球员（不在 movers）保持原位。
+画面层 SHALL 将 `beat` 节拍事件演绎为并行移动：movers 数组中的每个球员从 from 位置移动到 to 位置，动画铺满整拍（1s tick 窗口内缓动到位；speed 决定缓动节奏，非动画时长），同拍内多个球员同时移动；静止球员（不在 movers）保持原位。
 
 #### Scenario: 多球员并行移动
 - **GIVEN** 一条 beat 事件，movers 含多个球员
@@ -39,6 +39,11 @@
 - **WHEN** 画面层播放该段
 - **THEN** 该参与者从高亮结束位置继续（viewer 用高亮结束位置衔接 beat movers，不回弹）
 
+#### Scenario: v2 tackle 零长度 carry
+- **GIVEN** 一条 v2 tackle 高亮事件（carrier_from == x2/y2，接触点）
+- **WHEN** 画面层演绎该事件
+- **THEN** 跳过被铲者带球段（carry-beat 归零，无零长度带球动画），直接从接触点起演绎逼近/碰撞/弹开
+
 ### Requirement: 球可见性
 
 画面层 SHALL 保证球在任意开放时刻可见并移动：main 带球时球随 main 轨迹；高亮时球随高亮轨迹；松散球时球随 beat.ball 坐标。
@@ -65,6 +70,11 @@
 #### Scenario: 连续无瞬移
 - **WHEN** 整场连续播放
 - **THEN** 每个 beat/高亮事件边界处，球/球员位移不超过阈值（无 snap）
+
+#### Scenario: 死球→kickoff 例外
+- **GIVEN** 进球庆祝结束、kickoff 重开
+- **WHEN** 画面层播放该段
+- **THEN** 允许球从最后已知位置跳变到中圈（kickoff 重开为显式例外，不计入无 snap 判定）
 
 #### Scenario: 高亮参与者排除无双重驱动
 - **WHEN** 高亮事件与 beat 重叠

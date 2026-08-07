@@ -8,19 +8,19 @@
 
 #### Scenario: 防线随球前压/回撤
 - **GIVEN** 球推进到前场
-- **THEN** 防守方后卫线（防线 = 外场后卫，不含门将）目标位置随球前压（push up），且防线 x 不超过球 x；球回撤时防线回收（drop back）；门将不参与防线前压（仅回位到门线）
+- **THEN** 防守方后卫线（防线 = 每队离己方门线最近的 4 名外场球员，不含门将）目标位置随球前压（push up），且防线不得越过球（沿己方进攻方向钳制：home 攻左→右则 line.x ≤ ball.x，away 攻右→左则 line.x ≥ ball.x）；球回撤时防线回收（drop back）；门将不参与防线前压（仅回位到门线）
 
 #### Scenario: 全队随球侧平移
 - **GIVEN** 球在球场左半
-- **THEN** 全队目标位置向左偏移（ball-side shift，连续映射 shift ∝ ball_x−0.5，非二分切换），保持球侧紧凑；防守时收窄，进攻时保持宽度
+- **THEN** 外场球员目标位置向左偏移（ball-side shift，连续映射 shift ∝ ball_x−0.5，非二分切换），保持球侧紧凑；防守时收窄，进攻时保持宽度；门将除外（不参与球侧平移，仅回位到门线）
 
 #### Scenario: 控球阶段压上
-- **GIVEN** 己方持球
-- **THEN** 全队目标位置前压；对方持球时回收
+- **GIVEN** 己方处于 attack phase（持球）
+- **THEN** 全队目标位置前压（不含门将）；己方处于 defend phase（对方持球）时回收
 
 #### Scenario: 防橡皮筋
 - **WHEN** 每 tick 更新目标
-- **THEN** 移动受速度上限约束；位移小于静区阈值时不移动（movers 保持增量）；目标点间距约束（repulsion），避免两圆点重叠
+- **THEN** 移动受速度上限约束；位移小于静区阈值时不移动（dead-zone 绑定 P4 单门 0.5m，同一变量）；目标点间距约束（repulsion，作用域 = 同队内部，在队形/close_down 目标后施加最小间距修正），避免两圆点重叠；运算顺序：先 dead-zone 判定，后 approach-rate cap 限幅
 
 ### Requirement: 控球阶段与攻防转换
 
@@ -28,7 +28,11 @@
 
 #### Scenario: 抢断成功触发反击
 - **GIVEN** 一次抢断成功（球权易主）
-- **THEN** 触发 transition（固定 `TRANSITION_TICKS = 4`）：tackle 成功 tick 即武装 transition（全队前压/回撤立即生效），新持球者前插目标等松散球被拾取后激活；新进攻方队形前压，新防守方整体回撤并就近 2 名外场防守者向持球者收缩（close_down）
+- **THEN** 触发 transition（固定 `TRANSITION_TICKS = 4`）：tackle 成功 tick 即武装 transition（全队前压/回撤立即生效）；新持球者前插目标等松散球被拾取后激活（P4 保证拾取 ≤ `LOOSE_MAX_TICKS = 2` < 窗口 4 tick，必在窗口内激活）；新进攻方队形前压，新防守方整体回撤并就近 2 名外场防守者收缩（close_down；松散球期间目标 = 松散球位置，拾取后切换为持球者）
+
+#### Scenario: 射门被扑救触发反击
+- **GIVEN** 一次射门被门将扑住（save-caught，球权易主）
+- **THEN** save 高亮结束（门将扑住）tick 即武装 transition（与 tackle 成功对称）：门将持球 → main 恢复（P4 D12）；新防守方回撤收缩，transition 窗口从该 tick 起算
 
 #### Scenario: 松散球期间 phase 沿用最后持球方
 - **GIVEN** 球权易主后的松散球阶段（无人持球，新持球者尚未拾取）
@@ -36,7 +40,7 @@
 
 #### Scenario: transition 期间高亮门控暂停
 - **GIVEN** transition 进行中
-- **THEN** 持球 hold 门控暂停（钉死为暂停这一种），transition 期间不再掷新高亮（保证反击窗口完整可见）
+- **THEN** 持球 hold 门控暂停（钉死为暂停这一种，hold 计数**冻结**——不增不减），transition 期间不再掷新高亮（保证反击窗口完整可见）；transition 结束续走
 
 #### Scenario: transition 窗口结束
 - **GIVEN** transition 窗口（4 tick）结束后
@@ -48,4 +52,4 @@
 
 #### Scenario: 阶段确定性
 - **WHEN** 同 seed 两次模拟
-- **THEN** phase 序列、transition 触发、队形目标完全一致
+- **THEN** 可观测代理一致：transition 触发后的窗口内无新高亮（门控暂停）、反击段 movers/main 模式（前压/回撤/close_down）、队形目标导致的位置更新完全一致（phase 本身不发射，通过可观测事件流断言）

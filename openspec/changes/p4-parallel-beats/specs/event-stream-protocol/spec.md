@@ -14,7 +14,7 @@
 #### Scenario: 节拍含带球 main
 - **GIVEN** 持球者在带球/控球（无高亮事件）
 - **WHEN** 引擎产出一条 beat 事件
-- **THEN** 携带 `main`（如 `{type:'dribble', subject, x, y, x2, y2, speed}`），球轨迹由 main 驱动；每个持球 tick 都发 main（含零位移控球）；main 每拍推进 ≤ speed×1s（约 5-7m）
+- **THEN** 携带 `main`（如 `{type:'dribble', subject, x, y, x2, y2, speed, touch_freq}`），球轨迹由 main 驱动；每个持球 tick 都发 main（含零位移控球）；main 每拍推进 ≤ speed×1s（约 5-7m）；`touch_freq` 与主 spec「事件含演绎参数」对 dribble 的要求一致
 
 #### Scenario: carrier 不进 movers（main-only）
 - **GIVEN** 持球者在带球/控球
@@ -68,8 +68,59 @@ pass/shot/tackle 高亮事件 SHALL 起点对齐整数 tick（量化到 1s 边�
 
 ### Requirement: movers/main/ball 互斥
 
-beat 事件 SHALL NOT 同时携带 main 与 ball（唯一驱动者）；movers 的 id 唯一且在 0-21；坐标在 [0,1]。
+beat 事件 SHALL NOT 同时携带 main 与 ball（唯一驱动者）；高亮覆盖区间内的 beat SHALL 既不含 main 也不含 ball（球由高亮驱动）；movers 的 id 唯一且在 0-21；坐标在 [0,1]。
 
 #### Scenario: 唯一驱动校验
 - **WHEN** 引擎产出一条 beat 事件
-- **THEN** 不同时含 main 和 ball；movers id 唯一且在 0-21；坐标在 [0,1]
+- **THEN** 非高亮 beat 不同时含 main 和 ball；movers id 唯一且在 0-21；坐标在 [0,1]
+
+#### Scenario: 高亮期间 beat 无 main 无 ball
+- **GIVEN** 一条高亮事件进行中（覆盖 [t_start, t_end)）
+- **WHEN** 引擎产出该区间内的 beat 事件
+- **THEN** beat 只含 movers，不含 main 也不含 ball（球由高亮事件驱动，不重复驱动）
+
+## MODIFIED Requirements
+
+### Requirement: 事件字段定义
+
+每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note）按事件类型使用。**例外：`beat` 类型不携带顶层 subject/x/y**（主体与位置嵌套在 main/movers/ball 内），协议校验对 beat 跳过基础字段必填。
+
+#### Scenario: 基础字段必填
+- **WHEN** 引擎产出一条事件
+- **THEN** 事件包含 t、type、subject、x、y 字段
+
+#### Scenario: beat 豁免基础字段
+- **GIVEN** 一条 type='beat' 的事件
+- **THEN** 其 t/type 必填，但顶层 subject/x/y 不要求（主体与位置在 main/movers/ball 内）——基础字段校验对 beat 跳过
+
+### Requirement: 事件类型枚举
+
+事件流 SHALL 支持事件类型：v1 的 kickoff、whistle、pass、shot、tackle、interception、substitution；**v2 新增 `beat` 节拍类型**。**v2 全场比赛不再产生顶层 `dribble` 事件**（带球由 beat.main 表达）；demo_mode 保持 v1 事件驱动（含 dribble）以测兼容路径。goal 不设独立类型，由 shot 的 result=goal 表达。
+
+#### Scenario: 枚举覆盖核心动作
+- **WHEN** 画面层遇到事件流中的事件
+- **THEN** 能按 type 识别为 kickoff/whistle/pass/dribble/shot/tackle/interception/substitution/beat 之一
+
+#### Scenario: v2 无顶层 dribble
+- **WHEN** 引擎以 v2 模式模拟全场比赛
+- **THEN** 非 demo 流不含顶层 type='dribble' 事件（带球由 beat.main 表达）；demo_mode 流仍含
+
+#### Scenario: 进球由射门表达
+- **WHEN** 一次射门得分
+- **THEN** 事件为 shot 且 result=goal，不产生独立的 goal 事件
+
+### Requirement: tackle 字段定稿（必填 to/x2/y2 + 新增可选字段）
+
+tackle 事件 SHALL 携带接触点 `x2/y2`（必填，定稿）与 `carrier_from_x/carrier_from_y`；SHALL 携带 `loose_x/loose_y`（弹开点）。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` = 被铲者在 tackle tick 的位置（接触点，带球逼近已由 beat.main 表达），不再是被铲者带球段起点。
+
+#### Scenario: tackle 必填字段
+- **GIVEN** 一条 tackle 事件
+- **THEN** 必须含 `x2`、`y2`（接触点）与 `carrier_from_x/carrier_from_y`（被铲者接触点位置）；缺失时协议校验抛错
+
+#### Scenario: v2 carrier_from = 接触点
+- **WHEN** 引擎以 v2 模式产出一条 tackle 事件
+- **THEN** `carrier_from_x/carrier_from_y` == `x2/y2`（接触点，carry-beat 归零）；`loose_x/loose_y` 为确定性弹开点（success/fail 均携带）
+
+#### Scenario: 向后兼容
+- **WHEN** 画面层收到 v1 旧版 tackle 事件（carrier_from = 带球段起点）
+- **THEN** 仍能解析并演绎（v1 五段式 carry 路径）；v2 事件按零长度 carry 处理

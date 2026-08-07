@@ -8,7 +8,7 @@
 
 #### Scenario: 固定 tick 产节拍
 - **WHEN** 引擎模拟一场比赛
-- **THEN** 每 1s 产一条 beat 事件，覆盖整场（约 2700 条），事件 t 严格单调递增
+- **THEN** 每 1s 产一条 beat 事件，覆盖整场（约 2700 条）；beat 事件 t 严格单调递增（高亮事件单独严格递增；合并流非严格单调——同一整数 t 允许 beat + 高亮并存）
 
 #### Scenario: 关键时刻仍产高亮事件
 - **WHEN** 传球/射门/抢断发生
@@ -32,7 +32,11 @@
 
 #### Scenario: 高亮触发节拍门控
 - **GIVEN** 持球 hold（8-15 tick）
-- **THEN** hold 内每 tick 发 main（carrier 带球）+ movers；hold 归零时在整数 tick 掷高亮类型（pass/shot/tackle）；非每 tick 掷高亮
+- **THEN** hold 内每 tick 发 main（carrier 带球）+ movers；hold 归零时在整数 tick 掷高亮类型（pass/shot/tackle，含 tackle 距离/积极性检查）；非每 tick 掷高亮
+
+#### Scenario: 高亮门控 fallback
+- **GIVEN** hold 归零且掷出 tackle 但距离/积极性检查失败（最近防守者距离 > ~10m 或积极性不中）
+- **THEN** 仍产出一条高亮，改掷 pass/shot（无 'dribble' 落点——v2 带球由 main 表达）；tackle 频率目标保持 8-15/场，由检查阈值维持
 
 #### Scenario: carrier 不进 movers
 - **GIVEN** 持球者在带球/控球
@@ -54,6 +58,22 @@
 - **GIVEN** 无持球者（抢断弹开等）
 - **THEN** beat 携带 ball 坐标（loose:true），球由 beat.ball 驱动
 
+### Requirement: 松散球生命周期
+
+松散球 SHALL 由高亮结束产生（tackle 成功弹开、shot 扑出反弹）；高亮结束 tick 起由 beat.ball 驱动；引擎按确定性规则选追逐者、在拾取半径内拾取、回到 main 驱动。
+
+#### Scenario: 追逐者选择
+- **GIVEN** 一个松散球（beat.ball loose:true）
+- **THEN** 追逐者 = 距球最近的球员（按 pos[] 欧氏距离，确定性平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'）
+
+#### Scenario: 拾取与回 main
+- **GIVEN** 追逐者进入拾取半径（~0.5m）
+- **THEN** 该球员成为 carrier；下一 tick 边界 main 恢复（last-emitted-pos = 拾取点，pos[] 连续性保证无 snap）
+
+#### Scenario: 松散球上限
+- **WHEN** 松散球持续超过 `LOOSE_MAX_TICKS = 2`
+- **THEN** 最近者强制拾取（避免无限松散）
+
 ### Requirement: 高亮参与者排除
 
 引擎 SHALL 在高亮事件（pass/shot/tackle）时序内，将该高亮的参与者从 beat movers 排除；高亮事件起点对齐整数 tick；高亮事件携带参与者精确起点；引擎维护飞行中高亮注册表并对账 pos[] 到高亮结束位置；任意时刻至多一条飞行中高亮；参与者退出高亮后以高亮结束位置回归 movers。
@@ -68,7 +88,23 @@
 
 #### Scenario: 高亮覆盖区间与 main 恢复
 - **GIVEN** 一条高亮事件的覆盖区间为 [t_start, t_end)
-- **THEN** t_start 为整数 tick；t_end = 自然飞行终点（可非整数）；main 从接球者持球后的首个 tick 边界恢复（非 t_end 立即恢复）
+- **THEN** t_start 为整数 tick；t_end = 自然飞行终点（可非整数）；高亮结束后的驱动者按球权结局交接（D12）：pass→接球者持球、shot→goal/save-caught/save-rebound、tackle→成功弹开/失败保持，main 在首个 tick 边界恢复（非 t_end 立即恢复）
+
+#### Scenario: 高亮参与者起点硬约束
+- **GIVEN** 一条高亮事件的参与者起点字段（passer/receiver/shooter/keeper/carrier_from/tackler）
+- **THEN** 各起点 == 该 tick 开始时的 pos[]（前一 beat 的 to / main.to / last-emitted-pos），引擎保证等式成立（不依赖 viewer 阈值兜底）
+
+#### Scenario: 高亮参与者结束位置派生
+- **GIVEN** 一条高亮事件结束（t_end）
+- **THEN** 参与者"高亮结束位置"由事件字段派生：pass 接球者 = pass.x2/y2；shot 门将 = shot.x2/y2；tackle 双方 = 接触点（carrier_from / tackler_x/y），球弹开 = loose_x/y——viewer 与引擎同一派生，无额外 payload
+
+#### Scenario: shot 高亮结局
+- **GIVEN** 一条 shot 高亮事件在 t_end 结束
+- **THEN** 按结局交接：result=goal → 死球（hold，P3 机制 kickoff 重开）；门将扑住（save）→ 门将持球，main 在首个 tick 边界恢复（last-emitted-pos = 扑救点）；扑出反弹（rebound）→ 进入松散球（D11）
+
+#### Scenario: tackle 高亮结局
+- **GIVEN** 一条 tackle 高亮事件在 t_end 结束
+- **THEN** 按结局交接：result=success → 弹开进入松散球（D11，球由 beat.ball 驱动）；result=fail → 被铲者保持，main 在首个 tick 边界恢复（last-emitted-pos = 接触点）
 
 #### Scenario: 至多一条飞行中高亮
 - **WHEN** 一条高亮事件在飞行中
@@ -89,3 +125,65 @@
 #### Scenario: 节拍确定性
 - **WHEN** 同 seed 两次模拟
 - **THEN** beat 节拍序列（movers/main/ball）与高亮事件完全一致
+
+## MODIFIED Requirements
+
+### Requirement: 产出最小比赛事件流
+
+引擎 SHALL 能产出一场最小比赛的事件流。**v2 全场比赛**：以 kickoff 开始、whistle 结束，中间为固定 tick 的 beat 节拍流（含 main 带球 + movers 跑位）与叠加其上的高亮事件（pass/shot/tackle）；**不再产出顶层 dribble 事件**（带球由 beat.main 表达）。demo_mode 保持 v1 事件驱动（含 dribble）。
+
+#### Scenario: 最小比赛（v2）
+- **WHEN** 引擎以 v2 模式被要求模拟一场最小比赛
+- **THEN** 输出事件流从 kickoff 开始，以 whistle 结束，中间包含 beat 节拍与 pass/shot/tackle 高亮事件，不含顶层 dribble 事件
+
+#### Scenario: demo_mode v1 兼容
+- **WHEN** 引擎以 demo_mode 模拟
+- **THEN** 仍产出 v1 事件流（含 dribble），供兼容路径测试
+
+### Requirement: 抢断触发决策（距离感知 + 抢断积极性）
+
+引擎 SHALL 不固定概率必抢，而是由防守者基于情境自行判断是否抢断：存在距持球者 ≤ 阈值的对方球员时，以低概率（抢断积极性）决定是否真的去抢；超阈值或无积极性则不产 tackle。**v2 整合到高亮门控**：hold 归零必掷一条高亮；掷出 tackle 但距离/积极性检查失败 → 改掷 pass/shot（v2 无 'dribble' 落点，带球由 main 表达）。参数为引擎内常量 + `should_tackle()` 决策函数。
+
+#### Scenario: 就近防守
+- **GIVEN** 一个事件点
+- **THEN** 引擎找离持球者最近的对方球员（用实时 pos[]）；最近距离超过阈值（约 10m）时不产 tackle
+
+#### Scenario: 超阈值落回进攻（v2）
+- **GIVEN** 最近防守者距离超过阈值
+- **THEN** 不产 tackle；若在 hold 门控归零时，该次机会改掷 pass/shot（无 'dribble' 落点）；非门控归零时刻则继续 hold
+
+#### Scenario: 抢断积极性
+- **GIVEN** 最近防守者距离 ≤ 阈值
+- **THEN** 以低概率（抢断积极性，标定约 0.09，目标每场 8-15 次）决定是否真的去抢；概率不中则继续 hold（main 带球）
+
+#### Scenario: 抢断频率目标
+- **WHEN** 一整场比赛（2700s）模拟
+- **THEN** tackle 事件总数落在约 8-15 次（用户确认目标）
+
+#### Scenario: 抢断可失败
+- **WHEN** 引擎产出一条 tackle 事件
+- **THEN** `result` 为 `success`（约 50%）或 `fail`（约 50%）
+
+#### Scenario: 抢断成功状态更新
+- **GIVEN** tackle `result=success`
+- **THEN** 球权归防守者，弹开进入松散球（D11：beat.ball 驱动 → 追逐 → 拾取 → main），不 snap
+
+#### Scenario: 抢断失败状态更新
+- **GIVEN** tackle `result=fail`
+- **THEN** 球权保留原持球者，被铲者保持，main 在首个 tick 边界恢复（last-emitted-pos = 接触点），不 snap
+
+### Requirement: 抢断事件携带完整坐标语义
+
+tackle 事件 SHALL 携带：防守者起点 `x/y`、被铲者接触点 `carrier_from_x/carrier_from_y`、接触点 `x2/y2`、弹开点 `loose_x/loose_y`。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` 等于被铲者在 tackle tick 的位置（接触点），带球逼近已由 beat.main 表达；不再等于被铲者带球段起点。
+
+#### Scenario: 带球起点（v2 归零）
+- **WHEN** 引擎产出一条 tackle 事件
+- **THEN** `carrier_from_x/carrier_from_y` == `x2/y2`（接触点，carry-beat 归零）
+
+#### Scenario: 弹开点（success/fail 都发）
+- **WHEN** 引擎产出一条 tackle 事件
+- **THEN** `loose_x/loose_y` 为确定性弹开点：逼近方向垂线 × 弹开距离，优先场内、越界钳制、零距离退化——与画面层 `deflectPoint` 同规则；success 与 fail 均携带
+
+#### Scenario: 确定性
+- **WHEN** 同 seed 同 config 两次模拟
+- **THEN** tackle 事件的选择、结果、弹开点全部一致

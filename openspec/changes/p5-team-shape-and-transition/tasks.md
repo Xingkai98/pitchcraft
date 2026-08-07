@@ -10,23 +10,23 @@
 - [ ] S1.4 控球阶段压上（己方持球前压 / 对方持球回收）
 - [ ] S1.5 防橡皮筋：approach-rate cap + dead-zone（位移 < 阈值不移动，movers 保持增量）
 - [ ] S1.6 防重叠：目标间距约束（repulsion）
-- [ ] S1.7 引擎测试：防线前压/回撤、球侧平移、静区、确定性
+- [ ] S1.7 引擎测试：防线前压/回撤（含 clamp 方向 home/away 两侧）、球侧平移（含门将豁免）、dead-zone 绑定（0.5m 单门）、approach-rate cap、repulsion（同队内不重叠）、确定性
 
 ## S2. 引擎：控球阶段 + 攻防转换
 
 - [ ] S2.1 每队 phase 状态机（attack/defend/transition）
 - [ ] S2.2 transition 触发：球权易主（tackle 成功 + 射门被扑救；拦截后续加入）→ transition 窗口（固定 `TRANSITION_TICKS = 4`）
-- [ ] S2.2b transition 窗口起算：tackle 成功 tick 武装 transition（全队前压/回撤立即生效），持球者前插目标等松散球被拾取后激活
-- [ ] S2.2c transition 与高亮门控合成：transition 期间 hold 门控暂停（钉死为暂停这一种），transition 期间不再掷新高亮
+- [ ] S2.2b transition 窗口起算：tackle 成功 tick / save-caught 扑住 tick 武装 transition（全队前压/回撤立即生效）；持球者前插目标等松散球被拾取后激活（拾取 ≤ LOOSE_MAX_TICKS=2 < 窗口 4，必在窗口内）
+- [ ] S2.2c transition 与高亮门控合成：transition 期间 hold 门控暂停（钉死为暂停这一种，hold 计数冻结），transition 期间不再掷新高亮；结束续走
 - [ ] S2.2d 松散球期间 phase：球权易主后无人持球时，两队 phase 沿用最后持球方归属，窗口不中断；新持球者拾取后按球权刷新
-- [ ] S2.3 transition 行为：新进攻方持球者前插 + 全队前压；新防守方回撤 + 就近 2 名外场防守者 close_down
+- [ ] S2.3 transition 行为：新进攻方持球者前插（经 main 表达）+ 全队前压；新防守方回撤 + 就近 2 名外场防守者 close_down（松散球期间目标 = 松散球位置，拾取后切换为持球者）
 - [ ] S2.4 transition 窗口（4 tick）结束 → 回 attack/defend
-- [ ] S2.5 引擎测试：tackle 成功触发反击、窗口结束恢复、反击期间无新高亮、确定性
+- [ ] S2.5 引擎测试：tackle 成功触发反击、射门扑救触发反击、close_down 松散球目标、hold 冻结、窗口结束恢复、反击期间无新高亮、确定性
 
 ## S3. viewer：micro-motion
 
 - [ ] S3.1 渲染层 micro-motion：静止球员小幅重心调整（振幅 < 0.002，逻辑位置不变）
-- [ ] S3.2 确定性且连续微动：A/φ/t0/T 由 `hash(id)` 一次派生并缓存（球员级常量），t 连续推进，`A·sin(2π(t−t0)/T+φ)` 波形 tick 边界无跳变
+- [ ] S3.2 确定性且连续微动：A/φ/T 由 `hash(id)` 一次派生并缓存（球员级常量），t 连续推进，`A·sin(2π·t/T+φ)` 波形 tick 边界无跳变
 - [ ] S3.3 移动中抑制微动（movers/高亮参与者/main 持球者不微动）
 - [ ] S3.4 viewer 测试：逻辑位置不变、确定性、tick 边界连续、无 snap 不破坏
 
