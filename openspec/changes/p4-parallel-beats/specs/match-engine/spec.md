@@ -64,11 +64,11 @@
 
 ### Requirement: 松散球生命周期
 
-松散球 SHALL 由高亮结束产生（tackle 成功弹开、shot 扑出反弹）；高亮结束（t_end）后的下一个整数 tick 边界起由 beat.ball 驱动；引擎按确定性规则选追逐者、在拾取半径内拾取、回到 main 驱动。
+松散球 SHALL 由高亮结束产生（tackle 成功弹开、shot 扑出反弹）；高亮结束（t_end）后的下一个整数 tick 边界起由 beat.ball 驱动；引擎按确定性规则选追逐者、在拾取半径内拾取、回到 main 驱动。**松散球起点**：tackle 弹开 = loose_x/y（首个 beat.ball 的 x/y = loose_x/y）；save-rebound = shot.x2/y2（弹开方向决定首个 beat.ball 滚动方向）。
 
 #### Scenario: 追逐者选择
 - **GIVEN** 一个松散球（beat.ball loose:true）
-- **THEN** 按松散球来源选追逐者：**tackle 成功弹开（transition 相关）**→ 追逐者 = 抢断方离球最近的球员（按 pos[] 欧氏距离，确定性平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'），原持球方不参与（回位）；**save-rebound（非 transition）**→ 追逐者 = 距球最近的球员（不限队，双方可争）
+- **THEN** 按松散球来源选追逐者：**tackle 成功弹开（transition 相关）**→ 追逐者 = 抢断方离球最近的球员（按 pos[] 欧氏距离，确定性平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'），原持球方不参与拾取竞争但按 p5 close_down 收缩（不进入拾取半径）；**save-rebound（非 transition）**→ 追逐者 = 距球最近的球员（不限队，双方可争）
 
 #### Scenario: 拾取与回 main
 - **GIVEN** 追逐者进入拾取半径（~0.5m）
@@ -104,7 +104,7 @@
 
 #### Scenario: shot 高亮结局
 - **GIVEN** 一条 shot 高亮事件在 t_end 结束
-- **THEN** 按结局交接：result=goal → 死球（hold，P3 机制 kickoff 重开）；门将扑住（save-caught）→ 门将持球，main 在首个 tick 边界恢复（last-emitted-pos = 扑救点，门将出球在 transition 窗口结束后经 pass 高亮）；扑出反弹（save-rebound）→ 进入松散球（D11，起点 = shot.x2/y2 **无位置跳变**，弹开方向决定首个 beat.ball 滚动方向，**双方可争**）；**打偏/出界（off_target）→ 死球（球出界），按 P3 机制 kickoff 重开（对方开球；球轨迹终点坐标钳制在 [0,1]，出界表现为到达边线）**
+- **THEN** 按结局交接：result=goal → 死球（hold，P3 机制 kickoff 重开）；门将扑住（save-caught）→ 门将持球，main 在首个 tick 边界恢复（last-emitted-pos = 扑救点；门将出球在 p5 transition 窗口结束、高亮门控恢复后按正常门控经 pass 高亮）；扑出反弹（save-rebound）→ 进入松散球（D11，起点 = shot.x2/y2 **无位置跳变**，弹开方向决定首个 beat.ball 滚动方向，**双方可争**）；**打偏/出界（off_target）→ 死球（球出界），按 P3 机制 kickoff 重开（对方开球；球轨迹终点坐标钳制在 [0,1]，出界表现为到达边线）**
 
 #### Scenario: tackle 高亮结局
 - **GIVEN** 一条 tackle 高亮事件在 t_end 结束
@@ -120,7 +120,7 @@
 
 #### Scenario: 高亮携带参与者起点
 - **GIVEN** 一条 pass/shot/tackle 高亮事件
-- **THEN** 携带参与者精确起点，无 fallback：pass{基础 x/y = 传球者起点，receiver_x/y = 接球者起点}；shot{基础 x/y = 射手起点，keeper_x/y = 门将起点}；tackle{基础 x/y = 防守者起点，carrier_from_x/y = 被铲者接触点（== x2/y2，carry-beat 归零）}——主参与者用基础 x/y，字段不冗余
+- **THEN** 携带参与者精确起点，无 fallback：pass{基础 x/y = 传球者起点，receiver_x/y = 接球者起点}；shot{基础 x/y = 射手起点，keeper_x/y = 门将起点}；tackle{基础 x/y = 防守者起点，carrier_from_x/y = 被铲者接触点（== x2/y2，carry-beat 归零），carrier = 被铲者 id}——主参与者用基础 x/y，字段不冗余
 
 ### Requirement: 确定性
 
@@ -178,7 +178,7 @@
 
 ### Requirement: 抢断事件携带完整坐标语义
 
-tackle 事件 SHALL 携带：防守者起点 `x/y`、被铲者接触点 `carrier_from_x/carrier_from_y`、接触点 `x2/y2`、弹开点 `loose_x/loose_y`。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` 等于被铲者在 tackle tick 的位置（接触点），带球逼近已由 beat.main 表达；不再等于被铲者带球段起点。
+tackle 事件 SHALL 携带：防守者起点 `x/y`、被铲者接触点 `carrier_from_x/carrier_from_y`、接触点 `x2/y2`、弹开点 `loose_x/loose_y`、**被铲者 id `carrier`**。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` 等于被铲者在 tackle tick 的位置（接触点），带球逼近已由 beat.main 表达；不再等于被铲者带球段起点。
 
 #### Scenario: 带球起点（v2 归零）
 - **WHEN** 引擎产出一条 tackle 事件

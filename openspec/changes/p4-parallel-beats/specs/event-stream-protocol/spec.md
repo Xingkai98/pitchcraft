@@ -24,7 +24,7 @@
 #### Scenario: 松散球
 - **GIVEN** 无持球者（抢断弹开等）
 - **WHEN** 引擎产出一条 beat 事件
-- **THEN** 携带 `ball: {x, y, loose:true}`，球由 beat.ball 驱动
+- **THEN** 携带 `ball: {x, y, x2, y2, speed, loose:true}`（含滚动轨迹，viewer 在拍内插值），球由 beat.ball 驱动
 
 #### Scenario: 向后兼容
 - **WHEN** viewer 收到 v1 事件（pass/shot/tackle 等）
@@ -48,7 +48,7 @@
 
 #### Scenario: kickoff 事件驱动球
 - **GIVEN** 开场或进球后 kickoff
-- **THEN** kickoff 事件自身携带球轨迹（x/y→x2/y2+speed）驱动球（与高亮同级的事件驱动）；kickoff 起点对齐整数 tick，其后首个 beat 从下一 tick 起
+- **THEN** kickoff 事件自身携带球轨迹（x/y→x2/y2+speed）驱动球（与高亮同级的事件驱动）；kickoff 起点对齐整数 tick，其后首个 beat 从下一 tick 起；**kickoff 球到达接球者（x2/y2）后 → 接球者持球 → main 在下一 tick 边界恢复（同 D12 pass 交接）**
 
 #### Scenario: shot 结局编码
 - **GIVEN** 一条 shot 高亮事件
@@ -103,7 +103,7 @@ beat 事件 SHALL NOT 同时携带 main 与 ball（唯一驱动者）；高亮�
 
 ### Requirement: 事件类型枚举
 
-事件流 SHALL 支持事件类型：v1 的 kickoff、whistle、pass、dribble、shot、tackle、interception、substitution、lineup（初始站位）、off_ball_run；**v2 新增 `beat` 节拍类型**。**v2 全场比赛不再产生顶层 `dribble` 与 `off_ball_run` 事件**（带球由 beat.main 表达、无球跑位由 beat.movers 表达）；lineup 保留（v2 开场初始站位）；demo_mode 保持 v1 事件驱动（含 dribble）以测兼容路径。goal 不设独立类型，由 shot 的 result=goal 表达。
+事件流 SHALL 支持事件类型：v1 的 kickoff、whistle、pass、dribble、shot、tackle、interception、substitution、lineup（初始站位）、off_ball_run；**v2 新增 `beat` 节拍类型**。**v2 全场比赛不再产生顶层 `dribble`、`off_ball_run` 与 `interception` 事件**（带球由 beat.main 表达、无球跑位由 beat.movers 表达、拦截标注"后续加入"p5）；lineup 保留（v2 开场初始站位）；demo_mode 保持 v1 事件驱动（含 dribble）以测兼容路径。goal 不设独立类型，由 shot 的 result=goal 表达。
 
 #### Scenario: 枚举覆盖核心动作
 - **WHEN** 画面层遇到事件流中的事件
@@ -119,11 +119,11 @@ beat 事件 SHALL NOT 同时携带 main 与 ball（唯一驱动者）；高亮�
 
 ### Requirement: tackle 字段定稿（必填 x2/y2 + carrier_from + loose）
 
-tackle 事件 SHALL 携带接触点 `x2/y2`（必填，定稿）与 `carrier_from_x/carrier_from_y`；SHALL 携带 `loose_x/loose_y`（弹开点）。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` = 被铲者在 tackle tick 的位置（接触点，带球逼近已由 beat.main 表达），不再是被铲者带球段起点。**v2 移除 `to` 字段**（被铲者接续位置——v2 中由 beat.main 表达；v1 兼容路径仍接受含 to 的旧事件）。
+tackle 事件 SHALL 携带接触点 `x2/y2`（必填，定稿）与 `carrier_from_x/carrier_from_y`；SHALL 携带 `loose_x/loose_y`（弹开点）。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` = 被铲者在 tackle tick 的位置（接触点，带球逼近已由 beat.main 表达），不再是被铲者带球段起点。**v2 移除 `to` 字段**（被铲者接续位置——v2 中由 beat.main 表达；v1 兼容路径仍接受含 to 的旧事件），**新增 `carrier`（被铲者 id）** 承载被铲者身份（v1 中 `to` 的身份语义迁移到 `carrier`）。
 
 #### Scenario: tackle 必填字段
 - **GIVEN** 一条 tackle 事件
-- **THEN** 必须含 `x2`、`y2`（接触点）与 `carrier_from_x/carrier_from_y`（被铲者接触点位置）；缺失时协议校验抛错
+- **THEN** 必须含 `x2`、`y2`（接触点）、`carrier_from_x/carrier_from_y`（被铲者接触点位置）、`carrier`（被铲者 id）与 `loose_x/loose_y`（弹开点）；缺失时协议校验抛错
 
 #### Scenario: v2 carrier_from = 接触点
 - **WHEN** 引擎以 v2 模式产出一条 tackle 事件

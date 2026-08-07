@@ -8,7 +8,7 @@
 
 #### Scenario: 防线随球前压/回撤
 - **GIVEN** 球推进到前场
-- **THEN** 防守方后卫线（防线 = 每队离己方门线最近的 4 名外场球员，不含门将）目标位置随球前压（push up），且防线不得越过球（沿己方进攻方向钳制：home 攻左→右则 line.x ≤ ball.x，away 攻右→左则 line.x ≥ ball.x）；球回撤时防线回收（drop back）；门将不参与防线前压（仅回位到门线）
+- **THEN** 防守方后卫线（防线 = 每队离己方门线最近的 4 名外场球员，**按 default_lineup 基准站位定静态身份，非逐 tick 动态重选**，不含门将）目标位置随球前压（push up），且防线不得越过球（沿己方进攻方向钳制：home 攻左→右则 line.x ≤ ball.x，away 攻右→左则 line.x ≥ ball.x）；球回撤时防线回收（drop back）；门将不参与防线前压（仅回位到门线）
 
 #### Scenario: 全队随球侧平移
 - **GIVEN** 球在球场左半
@@ -20,7 +20,7 @@
 
 #### Scenario: 防橡皮筋
 - **WHEN** 每 tick 更新目标
-- **THEN** 移动受速度上限约束；位移小于静区阈值时不移动（dead-zone 绑定 P4 单门 0.5m，同一变量）；目标点间距约束（repulsion，作用域 = 同队内部，在队形/close_down 目标后施加最小间距修正；**最小间距 = 球员半径 ×2 约 0.02 归一化，间距 < 阈值的同队球员对沿连线推开至阈值，确定性迭代 ≤3 次**），避免两圆点重叠；运算顺序：先 dead-zone 判定，后 approach-rate cap 限幅
+- **THEN** 移动受速度上限约束；位移小于静区阈值时不移动（dead-zone 绑定 P4 单门 0.5m，同一变量）；目标点间距约束（repulsion，作用域 = 同队内部，在队形/close_down 目标后施加最小间距修正；**最小间距 = 球员半径 ×2 约 0.02 归一化，间距 < 阈值的同队球员对沿连线推开至阈值，确定性迭代 ≤3 次；carrier 不参与 repulsion——其位置由 main 带球轨迹决定**），避免两圆点重叠；运算顺序：先 dead-zone 判定，后 approach-rate cap 限幅
 
 ### Requirement: 控球阶段与攻防转换
 
@@ -28,11 +28,11 @@
 
 #### Scenario: 抢断成功触发反击
 - **GIVEN** 一次抢断成功（球权易主）
-- **THEN** 触发 transition（固定 `TRANSITION_TICKS = 4`）：tackle 高亮起点 tick 即武装 transition（全队前压/回撤立即生效，tackle 高亮时长 1 tick 覆盖 [T, T+1)）；新持球者前插目标等松散球被拾取后激活（松散球 t_end=T+1 产生，追逐 ≤ `LOOSE_MAX_TICKS = 2` → 拾取 ≤ T+3，落在窗口 [T, T+4) 内）；新进攻方队形前压，新防守方整体回撤并**就近 2 名外场防守者收缩（close_down，执行者 = 距目标最近且非 carrier 的 2 名，确定性平局按 id 小者；过渡期目标 = 接触点/被铲者位置，松散球产生后切换为球位，拾取后切换为持球者；收缩不进入拾取半径，原持球方"回位"指不参与拾取竞争，非静止不向球移动）**
+- **THEN** 触发 transition（固定 `TRANSITION_TICKS = 4`）：tackle 高亮起点 tick 即武装 transition（全队前压/回撤立即生效，tackle 高亮时长 1 tick 覆盖 [T, T+1)）；新持球者前插目标等松散球被拾取后激活（松散球 t_end=T+1 产生，追逐 ≤ `LOOSE_MAX_TICKS = 2` → 拾取 ≤ T+3，落在窗口 [T, T+4) 内）；新进攻方队形前压，新防守方整体回撤并**就近 2 名外场防守者收缩（close_down，执行者 = 距目标最近且非 carrier 的 2 名，确定性平局按 id 小者；过渡期目标 = 接触点/被铲者位置，松散球产生后切换为球位，拾取后切换为持球者；收缩不进入拾取半径；原持球方"回位" = 不参与拾取竞争（不追球抢球），但按 close_down 向目标侧收缩/压迫，非静止不动）**
 
 #### Scenario: 射门被扑救触发反击
 - **GIVEN** 一次射门被门将扑住（save-caught，球权易主）
-- **THEN** save 高亮终点 tick 后的**首个整数 tick 边界**武装 transition（门将扑住时刻可非整数，取整到下一整数 tick）：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后恢复 hold 门控，按正常门控 8-15 tick 归零掷 pass 高亮出球**）；新防守方整体回撤 + **就近 2 名外场防守者 close_down（执行者 = 距目标最近且非 carrier 的 2 名，确定性平局按 id 小者；目标 = 原进攻方就近的前插球员——门前/禁区前沿的对方球员）**，transition 窗口从武装 tick 起算
+- **THEN** save 高亮终点 tick 后的**首个整数 tick 边界**武装 transition（门将扑住时刻可非整数，取整到下一整数 tick）：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后恢复 hold 门控，按正常门控 8-15 tick 归零掷 pass 高亮出球**）；新防守方整体回撤 + **就近 2 名外场防守者 close_down（执行者 = 距目标最近且非 carrier/非高亮参与者的 2 名，确定性平局按 id 小者；目标 = 新进攻方（原防守方）就近的前插球员——门前/禁区前沿的对方球员；停点 = 压迫距离 ~1-2m，不进入拾取半径）**，transition 窗口从武装 tick 起算
 
 #### Scenario: 射门扑出反弹不触发 transition
 - **GIVEN** 一次射门被门将扑出（save-rebound）
