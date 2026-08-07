@@ -24,19 +24,19 @@
 
 ### Requirement: 控球阶段与攻防转换
 
-引擎 SHALL 维护每队 phase（attack/defend/transition）；球权易主（抢断成功 / 射门被扑救；拦截标注"后续加入"）时触发固定 `TRANSITION_TICKS = 4` 的 transition 窗口，新进攻方持球者前插、全队前压，新防守方回撤并就近收缩。
+引擎 SHALL 维护每队**基础 phase（attack/defend）+ transition 叠加窗口（transition_active 布尔）**；球权易主（抢断成功 / 射门被扑住（save-caught）；拦截标注"后续加入"）时触发固定 `TRANSITION_TICKS = 4` 的 transition 窗口，新进攻方持球者前插、全队前压，新防守方回撤并就近收缩。
 
 #### Scenario: 抢断成功触发反击
 - **GIVEN** 一次抢断成功（球权易主）
-- **THEN** 触发 transition（固定 `TRANSITION_TICKS = 4`）：tackle 高亮起点 tick 即武装 transition（全队前压/回撤立即生效，tackle 高亮时长 1 tick）；新持球者前插目标等松散球被拾取后激活（P4 保证拾取 ≤ `LOOSE_MAX_TICKS = 2` < 窗口 4 tick，必在窗口内激活）；新进攻方队形前压，新防守方整体回撤并就近 2 名外场防守者收缩（close_down；**过渡期目标 = 接触点/被铲者位置**，松散球产生后切换为球位，拾取后切换为持球者）
+- **THEN** 触发 transition（固定 `TRANSITION_TICKS = 4`）：tackle 高亮起点 tick 即武装 transition（全队前压/回撤立即生效，tackle 高亮时长 1 tick 覆盖 [T, T+1)）；新持球者前插目标等松散球被拾取后激活（松散球 t_end=T+1 产生，追逐 ≤ `LOOSE_MAX_TICKS = 2` → 拾取 ≤ T+3，落在窗口 [T, T+4) 内）；新进攻方队形前压，新防守方整体回撤并就近 2 名外场防守者收缩（close_down；**过渡期目标 = 接触点/被铲者位置**，松散球产生后切换为球位，拾取后切换为持球者）
 
 #### Scenario: 射门被扑救触发反击
 - **GIVEN** 一次射门被门将扑住（save-caught，球权易主）
-- **THEN** save 高亮终点 tick 后的**首个整数 tick 边界**武装 transition（门将扑住时刻可非整数，取整到下一整数 tick）：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，随后经 pass 高亮出球）；新防守方整体回撤收缩，transition 窗口从武装 tick 起算
+- **THEN** save 高亮终点 tick 后的**首个整数 tick 边界**武装 transition（门将扑住时刻可非整数，取整到下一整数 tick）：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后**经 pass 高亮出球）；新防守方整体回撤 + 就近 2 名外场防守者 close_down（目标 = **门前区域对方球员（原进攻方前插者）**），transition 窗口从武装 tick 起算
 
 #### Scenario: 射门扑出反弹不触发 transition
 - **GIVEN** 一次射门被门将扑出（save-rebound）
-- **THEN** 不触发 transition——进入普通松散球（P4 D11，追逐者 = 门将所在方），拾取后 phase 按球权刷新（原进攻方补射拾取 → 继续 attack；防守方拾取 → 回 defend）
+- **THEN** 不触发 transition——进入普通松散球（P4 D11，**双方可争**，追逐者 = 距球最近者），拾取后 phase 按球权刷新（原进攻方补射拾取 → 继续 attack；防守方拾取 → 回 defend）
 
 #### Scenario: 松散球期间 phase 沿用最后持球方
 - **GIVEN** 球权易主后的松散球阶段（无人持球，新持球者尚未拾取）

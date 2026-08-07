@@ -17,8 +17,8 @@
 - [ ] P1.9 **movers 连续性**：引擎维护 last-emitted-pos，保证球员重新出现时 from = 上次 viewer 所见（跨缺席精确衔接）；**位移阈值 = 静区（dead-zone）等值 0.5m——移动超过阈值才动、才发 movers，低于阈值不动不发（last-emitted-pos 恒等于 pos[]）**
 - [ ] P1.10 **carrier 不进 movers**（main-only）：持球者移动只由 main 表达
 - [ ] P1.11 确定性：同 seed 同 config → 同节拍流 + 高亮事件
-- [ ] P1.12 **松散球生命周期**：高亮结束（tackle 弹开/shot 反弹）→ beat.ball 驱动 → 最近者追逐（action='chase'）→ 拾取半径 ~0.5m → 下一 tick 边界 main 恢复；LOOSE_MAX_TICKS=2 超时强制拾取
-- [ ] P1.13 **高亮结束→球权交接（D12）**：pass→接球者 main；shot→goal 死球 kickoff / save-caught 门将 main / save-rebound 松散球；tackle→success 松散球 / fail 被铲者 main
+- [ ] P1.12 **松散球生命周期**：高亮结束（t_end 后下个整数 tick 边界）→ beat.ball 驱动（含球滚动轨迹 x/y→x2/y2+speed）→ 追逐者（tackle 弹开 = 抢断方限定 / save-rebound = 不限队可争）→ 拾取半径 ~0.5m → 下一 tick 边界 main 恢复；LOOSE_MAX_TICKS=2，超时球 hold 等待**不瞬移**（非强制瞬移拾取）
+- [ ] P1.13 **高亮结束→球权交接（D12）**：pass→接球者 main；shot→goal 死球 kickoff / save-caught 门将 main（窗口后出球）/ save-rebound 松散球 / **off_target 死球 kickoff（对方开球）**；tackle→success 松散球 / fail 被铲者 main
 
 ## P2. 协议：beat 节拍 + 球所有权
 

@@ -97,22 +97,25 @@ P3 之后连续播放成立，但事件流是"串行"的：每条事件只描述
 
 ### D11: 松散球生命周期（审阅 p4-107 / cross p4-101——补定义）
 - 松散球由高亮结束产生：tackle 成功弹开、shot 扑出反弹。
-- 高亮结束 tick 起，球由 `beat.ball`（`loose:true`）驱动，直到被拾取——**不再属于高亮时序**（消除旧 Open Question 表述"作为 tackle 高亮的一部分"的矛盾）。
-- **追逐者限定球队（审阅 cross F1）**：追逐者 = **赢得球权的一方（tackle 成功方 / 扑救方）**离球最近的球员（按 pos[] 欧氏距离，确定性平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'）；**原持球方不参与松散球追逐**（回位）——保证"球权易主"确定（消除窗口内二次球权翻转），p5 transition 前提成立。
+- 高亮结束（t_end）后的**下一个整数 tick 边界起**，球由 `beat.ball`（`loose:true`）驱动，直到被拾取——**不再属于高亮时序**（消除旧 Open Question 表述"作为 tackle 高亮的一部分"的矛盾）。
+- **追逐者（两种模式，审阅 SEAM-3）**：
+  - **tackle 成功弹开（transition 相关）**：追逐者 = 赢得球权的一方（抢断方）离球最近的球员（按 pos[] 欧氏距离，平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'）；原持球方不参与追逐（回位）——保证"球权易主"确定（消除窗口内二次球权翻转），p5 transition 前提成立。
+  - **save-rebound（非 transition）**：追逐者 = 距球最近的球员（**不限队，双方可争**补射/解围），拾取方决定 phase（p5 S2.2d）。
 - **拾取**：追逐者在拾取半径（~0.5m）内 → 该球员成为 carrier → 下一 tick 边界 `main` 恢复（last-emitted-pos = 拾取点，pos[] 连续性保证无 snap）。
-- **上限与无瞬移（审阅 cross F6）**：松散球弹开时球速**阻尼递减**（每 tick 减速），追逐者速度高于球末速 → 追逐者必在 `LOOSE_MAX_TICKS = 2` 内进入拾取半径；若超时仍未进入（理论不可达），**球在当前位置 hold 等待拾取，不瞬移**（"无 snap"对球员与球都成立）。
+- **上限与无瞬移（审阅 cross F6 / SEAM-2）**：松散球弹开时球速**阻尼递减**（每 tick 减速），追逐者速度高于球末速 → 追逐者必在 `LOOSE_MAX_TICKS = 2` 内进入拾取半径；若超时仍未进入（理论不可达），**球在当前位置 hold 等待拾取，不瞬移**——**超时语义 = hold 等待，非强制瞬移拾取**（"无 snap"对球员与球都成立）。
+- **save-rebound 松散球起点（审阅 minor）**：从 shot.x2/y2（球到达门将处）沿弹开方向（同 deflectPoint 规则）确定。
 - **为什么**：松散球是球权易主（tackle/扑救）的自然延续；p5 transition 依赖此生命周期（拾取时序确定性可断言）。
 
 ### D12: 高亮结束 → 球权交接（审阅 cross p4-102 / p4-104——从 pass-only 推广）
 - 高亮结束（t_end）后的驱动者由球权结局决定：
   - **pass（接球者持球）**：main 从接球者持球后的**首个 tick 边界**恢复（carrier = 接球者，last-emitted-pos = 接球点）。
   - **shot → goal**：死球（hold）→ 按 P3 机制 kickoff 重开（viewer 允许死球→kickoff 的球位置跳变）。
-  - **shot → 门将扑住（save-caught）**：门将持球 → main 从**首个 tick 边界**恢复（carrier = 门将，last-emitted-pos = 扑救点）。
-  - **shot → 扑出反弹（save-rebound）**：进入松散球（D11，beat.ball 驱动）→ 拾取 → main。
+  - **shot → 门将扑住（save-caught）**：门将持球 → main 从**首个 tick 边界**恢复（carrier = 门将，last-emitted-pos = 扑救点）；**门将出球在 transition 窗口结束后经 pass 高亮**（窗口内高亮门控暂停，不出新高亮）。
+  - **shot → 扑出反弹（save-rebound）**：进入松散球（D11，beat.ball 驱动，**双方可争**）→ 拾取 → main（拾取方决定 phase）。
   - **shot → 打偏/出界（off_target，审阅 N2）**：死球（球出界）→ 按 P3 机制 kickoff 重开（对方开球）。
   - **tackle 成功弹开**：进入松散球（D11）→ 拾取 → main（追逐者 = 抢断方，见 D11 球队限定）。
   - **tackle 失败（被铲者保持）**：main 从**首个 tick 边界**恢复（被铲者继续带球，last-emitted-pos = 接触点）；**不进入松散球**（loose_x/y 仍携带作为被铲者续带方向参考，但不触发 beat.ball 松散阶段）。
-- **时序假设（审阅 p5 前插窗口）**：tackle 高亮时长为 1 tick（接触 + 弹开在触发 tick 内完成），故松散球在触发 tick 的 t_end 产生，拾取 ≤ 触发 tick + 2，落在 p5 transition 窗口（4 tick）内——"前插必在窗口内激活"成立。
+- **时序保证（审阅 SEAM-5，修正 off-by-one）**：tackle 高亮时长为 1 tick 覆盖 [T, T+1)，松散球在 t_end = T+1 产生；追逐 `LOOSE_MAX_TICKS = 2` → 拾取 ≤ T+3，落在 p5 transition 窗口 [T, T+4) 内——"前插必在窗口内激活"成立。
 - **为什么**：球优先级链"高亮 > main > beat.ball > hold"在每种高亮结局下都有明确后继。
 
 ## Risks / Trade-offs

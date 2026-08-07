@@ -44,7 +44,15 @@
 
 #### Scenario: 松散球驱动
 - **GIVEN** 无持球者
-- **THEN** beat 携带 ball 坐标（loose:true），球由 beat.ball 驱动
+- **THEN** beat 携带 `ball`（`{x, y, x2, y2, speed, loose:true}`——球滚动轨迹，viewer 在拍内插值），球由 beat.ball 驱动
+
+#### Scenario: kickoff 事件驱动球
+- **GIVEN** 开场或进球后 kickoff
+- **THEN** kickoff 事件自身携带球轨迹（x/y→x2/y2+speed）驱动球（与高亮同级的事件驱动）；kickoff 起点对齐整数 tick，其后首个 beat 从下一 tick 起
+
+#### Scenario: shot 结局编码
+- **GIVEN** 一条 shot 高亮事件
+- **THEN** 携带 `result`：`goal` / `saved` / `off_target`（引擎实际产出三值）；`saved` 的"扑住 vs 扑出反弹"**不由 result 值区分**，由高亮后的交接区分——`save-caught` 后随 main（门将 carrier），`save-rebound` 后随 beat.ball（loose）
 
 ### Requirement: 高亮事件锚点对齐
 
@@ -99,7 +107,7 @@ beat 事件 SHALL NOT 同时携带 main 与 ball（唯一驱动者）；高亮�
 
 #### Scenario: 枚举覆盖核心动作
 - **WHEN** 画面层遇到事件流中的事件
-- **THEN** 能按 type 识别为 kickoff/whistle/pass/dribble/shot/tackle/interception/substitution/beat 之一
+- **THEN** 能按 type 识别为 kickoff/whistle/pass/dribble/shot/tackle/interception/substitution/lineup/off_ball_run/beat 之一
 
 #### Scenario: v2 无顶层 dribble
 - **WHEN** 引擎以 v2 模式模拟全场比赛

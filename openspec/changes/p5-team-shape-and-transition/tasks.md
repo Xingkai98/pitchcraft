@@ -10,13 +10,13 @@
 - [ ] S1.4 控球阶段压上（己方持球前压 / 对方持球回收）
 - [ ] S1.5 防橡皮筋：approach-rate cap + dead-zone（位移 < 阈值不移动，movers 保持增量）
 - [ ] S1.6 防重叠：目标间距约束（repulsion）
-- [ ] S1.7 引擎测试：防线前压/回撤（含 clamp 方向 home/away 两侧）、球侧平移（含门将豁免）、dead-zone 绑定（0.5m 单门）、approach-rate cap、repulsion（同队内不重叠）、确定性
+- [ ] S1.7 引擎测试：防线前压/回撤（含 clamp 方向 home/away 两侧）、球侧平移（含门将豁免）、**控球阶段压上（attack 前压 / defend 回收）**、dead-zone 绑定（0.5m 单门）、approach-rate cap、repulsion（同队内不重叠）、确定性
 
 ## S2. 引擎：控球阶段 + 攻防转换
 
-- [ ] S2.1 每队 phase 状态机（attack/defend/transition）
-- [ ] S2.2 transition 触发：球权易主（tackle 成功 + 射门被扑救；拦截后续加入）→ transition 窗口（固定 `TRANSITION_TICKS = 4`）
-- [ ] S2.2b transition 窗口起算：tackle 高亮起点 tick 武装（高亮时长 1 tick）/ save-caught 高亮终点 tick 后首个整数 tick 边界武装；持球者前插目标等松散球被拾取后激活（拾取 ≤ LOOSE_MAX_TICKS=2 < 窗口 4，必在窗口内；追逐者限定赢得球权一方，无二次翻转）
+- [ ] S2.1 每队基础 phase 状态机（attack/defend）+ transition 叠加窗口（transition_active 布尔，非第三状态）
+- [ ] S2.2 transition 触发：球权易主（tackle 成功 + 射门被扑住 save-caught；拦截后续加入；save-rebound 不触发）→ transition 窗口（固定 `TRANSITION_TICKS = 4`）
+- [ ] S2.2b transition 窗口起算：tackle 高亮起点 tick 武装（高亮时长 1 tick）/ save-caught 高亮终点 tick 后首个整数 tick 边界武装；持球者前插目标等松散球被拾取后激活（拾取 ≤ T+3 < 窗口 T+4，必在窗口内；tackle 弹开追逐限定抢断方，save-rebound 不限队）
 - [ ] S2.2c transition 与高亮门控合成：transition 期间 hold 门控暂停（钉死为暂停这一种，hold 计数冻结），transition 期间不再掷新高亮；结束续走
 - [ ] S2.2d 松散球期间 phase：球权易主后无人持球时，两队 phase 沿用最后持球方归属，窗口不中断；新持球者拾取后按球权刷新；**save-rebound 不触发 transition**（普通松散球，phase 按拾取方）
 - [ ] S2.3 transition 行为：新进攻方持球者前插（经 main 表达）+ 全队前压（**save-caught 时 carrier=门将，门将不前插，队形前压由外场执行**）；新防守方回撤 + 就近 2 名外场防守者 close_down（过渡期目标=接触点/被铲者，松散球后=球位，拾取后=持球者）

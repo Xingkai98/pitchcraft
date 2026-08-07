@@ -58,13 +58,17 @@
 - **GIVEN** 无持球者（抢断弹开等）
 - **THEN** beat 携带 ball 坐标（loose:true），球由 beat.ball 驱动
 
+#### Scenario: kickoff 事件驱动球
+- **GIVEN** 开场或进球后 kickoff
+- **THEN** kickoff 事件携带球轨迹（x/y→x2/y2+speed）由事件驱动（与高亮同级）；kickoff 起点对齐整数 tick，其后首个 beat 从下一 tick 起
+
 ### Requirement: 松散球生命周期
 
-松散球 SHALL 由高亮结束产生（tackle 成功弹开、shot 扑出反弹）；高亮结束 tick 起由 beat.ball 驱动；引擎按确定性规则选追逐者、在拾取半径内拾取、回到 main 驱动。
+松散球 SHALL 由高亮结束产生（tackle 成功弹开、shot 扑出反弹）；高亮结束（t_end）后的下一个整数 tick 边界起由 beat.ball 驱动；引擎按确定性规则选追逐者、在拾取半径内拾取、回到 main 驱动。
 
 #### Scenario: 追逐者选择
 - **GIVEN** 一个松散球（beat.ball loose:true）
-- **THEN** 追逐者 = **赢得球权的一方（tackle 成功方 / 扑救方）**离球最近的球员（按 pos[] 欧氏距离，确定性平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'）；原持球方不参与追逐（回位）
+- **THEN** 按松散球来源选追逐者：**tackle 成功弹开（transition 相关）**→ 追逐者 = 抢断方离球最近的球员（按 pos[] 欧氏距离，确定性平局按 id 小者），每 tick 以速度上限向球移动（纳入 movers，action='chase'），原持球方不参与（回位）；**save-rebound（非 transition）**→ 追逐者 = 距球最近的球员（不限队，双方可争）
 
 #### Scenario: 拾取与回 main
 - **GIVEN** 追逐者进入拾取半径（~0.5m）
@@ -100,7 +104,7 @@
 
 #### Scenario: shot 高亮结局
 - **GIVEN** 一条 shot 高亮事件在 t_end 结束
-- **THEN** 按结局交接：result=goal → 死球（hold，P3 机制 kickoff 重开）；门将扑住（save-caught）→ 门将持球，main 在首个 tick 边界恢复（last-emitted-pos = 扑救点）；扑出反弹（save-rebound）→ 进入松散球（D11）；**打偏/出界（off_target）→ 死球（球出界），按 P3 机制 kickoff 重开（对方开球）**
+- **THEN** 按结局交接：result=goal → 死球（hold，P3 机制 kickoff 重开）；门将扑住（save-caught）→ 门将持球，main 在首个 tick 边界恢复（last-emitted-pos = 扑救点，门将出球在 transition 窗口结束后经 pass 高亮）；扑出反弹（save-rebound）→ 进入松散球（D11，起点 = shot.x2/y2 沿弹开方向，**双方可争**）；**打偏/出界（off_target）→ 死球（球出界），按 P3 机制 kickoff 重开（对方开球）**
 
 #### Scenario: tackle 高亮结局
 - **GIVEN** 一条 tackle 高亮事件在 t_end 结束

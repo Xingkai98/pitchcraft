@@ -9,7 +9,7 @@ P4（并行节拍核心，Change A）让"22 人同时动"，但审阅确认：�
 ## What Changes
 
 - **球相关队形目标**：每球员目标 = 角色基准 + 队形偏移（防线随球前压/回撤、全队随球侧平移、控球阶段压上）。替代 p4 的"角色锚点 + 小幅调整"占位目标。
-- **控球阶段 + 攻防转换**：每队 phase（attack/defend/transition）；球权易主触发 transition 窗口（新进攻方前插、新防守方回撤 + 就近收缩）。
+- **控球阶段 + 攻防转换**：每队基础 phase（attack/defend）+ transition 叠加窗口（非第三状态）；球权易主触发 transition 窗口（新进攻方前插、新防守方回撤 + 就近收缩）。
 - **micro-motion**：viewer 层给静止球员小幅重心调整（不改变逻辑位置），避免圆点完全冻结。
 
 ## Capabilities
