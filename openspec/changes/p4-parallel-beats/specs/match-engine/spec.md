@@ -35,7 +35,7 @@
 - **THEN** hold 内每 tick 发 main（carrier 带球）+ movers；hold 归零时在整数 tick 掷高亮类型（pass/shot/tackle，含 tackle 距离/积极性检查）；非每 tick 掷高亮
 
 #### Scenario: 高亮门控 fallback
-- **GIVEN** hold 归零且掷出 tackle 但距离/积极性检查失败（最近防守者距离 > ~10m 或积极性不中）
+- **GIVEN** hold 归零且掷出 tackle 但距离/积极性检查失败（最近防守者距离 > v2 标定 12m 或积极性不中）
 - **THEN** 仍产出一条高亮，改掷 pass/shot（无 'dribble' 落点——v2 带球由 main 表达）；tackle 频率目标保持 8-15/场，由检查阈值维持
 
 #### Scenario: carrier 不进 movers

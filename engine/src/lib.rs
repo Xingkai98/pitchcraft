@@ -431,7 +431,7 @@ enum HighlightOutcome {
     PassCaught { receiver: i32, catch_pos: (f64, f64) },
     ShotGoal { kickoff_id: i32 },
     ShotSavedCaught { gk: i32, save_pos: (f64, f64) },
-    ShotSavedRebound { gk: i32, rebound_from: (f64, f64) },
+    ShotSavedRebound { gk: i32, rebound_from: (f64, f64), dir: (f64, f64) },
     ShotOffTarget { kickoff_id: i32 },
     TackleSuccess { def: i32, loose: (f64, f64), contact: (f64, f64) },
     TackleFail { victim: i32, contact: (f64, f64) },
@@ -490,6 +490,10 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     while t < dur {
         tick(&mut st, &mut rng, &mut events, t);
         t += TICK_SECONDS;
+    }
+    // 终场前若高亮未 finalize（射门/传球飞行跨过 dur）：在 dur 时刻强制交接，比分按结局确认
+    if st.highlight.is_some() {
+        finalize_highlight(&mut st, &mut rng, &mut events, dur);
     }
 
     events.push(whistle_event(dur, st.home_score, st.away_score, "half_time"));
@@ -629,15 +633,6 @@ fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     let roll = rng.next_u64() % 100;
     // pass 55% / shot 8% / tackle 37%：高亮 ~235/场 → pass ~130、shot ~19（goal ~3）、tackle 过滤后 ~8-15
     let mut kind = if roll < 55 { EventType::Pass } else if roll < 63 { EventType::Shot } else { EventType::Tackle };
-    if kind == EventType::Shot {
-        // shot 需射手在对方半场（避免门将/后场射门）
-        let shooter_pos = st.pos[st.carrier as usize];
-        let home = st.possession == 0;
-        let in_opp_half = if home { shooter_pos.0 > 0.5 } else { shooter_pos.0 < 0.5 };
-        if !in_opp_half {
-            kind = EventType::Pass;
-        }
-    }
     if kind == EventType::Tackle {
         let victim = st.carrier;
         let victim_pos = st.pos[victim as usize];
@@ -645,9 +640,17 @@ fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
         let (def_id, _, dist) = nearest_defender(&st.pos, victim_pos, def_home);
         let same_pair = st.last_tackle_pair == Some((def_id, victim));
         if same_pair || dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng) {
-            // 检查失败：改掷 pass/shot（spec：无 dribble 落点；85% pass / 15% shot 控制射门频率；
-            // shot 有半场 guard，不满足自动转 pass）
+            // 检查失败：改掷 pass/shot（spec：无 dribble 落点；85% pass / 15% shot 控制射门频率）
             kind = if rng.next_u64() % 20 < 17 { EventType::Pass } else { EventType::Shot };
+        }
+    }
+    // 统一 shot 半场 guard（主分支与 tackle fallback 分支都过——避免门将/后场射门）
+    if kind == EventType::Shot {
+        let shooter_pos = st.pos[st.carrier as usize];
+        let home = st.possession == 0;
+        let in_opp_half = if home { shooter_pos.0 > 0.5 } else { shooter_pos.0 < 0.5 };
+        if !in_opp_half {
+            kind = EventType::Pass;
         }
     }
     match kind {
@@ -729,7 +732,16 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     } else if caught {
         HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
     } else {
-        HighlightOutcome::ShotSavedRebound { gk: gk_id, rebound_from: (x2, y2) }
+        // 扑出反弹：弹开方向按 deflectPoint 规则（射手→门将逼近方向的垂线弹开，同 tackle）
+        let (loose_x, loose_y) = deflect_point(
+            shooter_pos.0, shooter_pos.1, x2, y2,
+            TACKLE_DEFLECT_DISTANCE, shooter, gk_id,
+        );
+        let dx = loose_x - x2;
+        let dy = loose_y - y2;
+        let len = dx.hypot(dy);
+        let dir = if len < 1e-9 { (-1.0, 0.0) } else { (dx / len, dy / len) };
+        HighlightOutcome::ShotSavedRebound { gk: gk_id, rebound_from: (x2, y2), dir }
     };
     st.highlight = Some(Highlight { t_end, participants, outcome });
     let movers = compute_movers(st, rng, t, &[shooter, gk_id]);
@@ -807,12 +819,11 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.hold_max = roll_hold_max(rng);
             emit_beat_with_main(st, rng, events, t);
         }
-        HighlightOutcome::ShotSavedRebound { gk, rebound_from } => {
+        HighlightOutcome::ShotSavedRebound { gk, rebound_from, dir } => {
             let _ = gk;
-            // 滚动方向：从门线朝场内（球被扑出弹回场内）
-            let goal_side = if rebound_from.0 >= 0.5 { 1.0 } else { -1.0 };
+            // 滚动方向：deflectPoint 规则算出的弹开方向（从门线朝场内/两侧）
             st.carrier = -1;
-            start_loose_ball(st, rebound_from, (-goal_side, 0.0), None);
+            start_loose_ball(st, rebound_from, dir, None);
             advance_loose(st, rng, events, t);
         }
         HighlightOutcome::ShotOffTarget { kickoff_id } => {
@@ -922,7 +933,8 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
         // kickoff 球飞行中：产 beat（movers，无 main/ball——球由 kickoff 事件驱动）。
         // 飞行结束后（t >= kickoff_end）该 tick 产 main（接球者持球）。
         if t < kickoff_end {
-            let movers = compute_movers(st, rng, t, &[]);
+            // 排除开球者（kickoff 事件已由传球者锚点驱动，避免双重驱动）
+            let movers = compute_movers(st, rng, t, &[kickoff_id]);
             for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
             events.push(beat_event(t, None, None, movers));
         } else {
