@@ -48,8 +48,9 @@
 - `07` **画面层双端渲染**（JS + Canvas）✅ 已解决（GH issue closed）
 - `08` **运行时拓扑**（B 内嵌引擎）✅ 已解决（GH issue closed）
 - `09` **事件演绎层**（人球解耦与动画节奏）✅ 已解决（GH issue closed）
+- `10` **定位球 + 犯规规则层** ⏳ open（P6 立项 2026-08-08；任意球/角球/点球；含 foul/出界触发规则层前置）
 
-> 当前实施路线：P1（tackle 四段式）已完成；**P2 连续比赛播放**（`openspec/changes/p2-continuous-match-playback/`）分 Phase B（引擎 tackle 语义补全 + 协议定稿）+ Phase C（viewer 连续播放），做完 = 完整播放的比赛画面。
+> 当前实施路线：P4（并行节拍核心）✅ 已完成；**P5（队形公式 + 攻防转换 + micro-motion）实施中**（`openspec/changes/p5-team-shape-and-transition/`）；P6（定位球 + 犯规规则层）已立项待规划。
 
 ## 已确认的方向（Design 讨论，2026-08-04）
 
