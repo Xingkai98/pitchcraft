@@ -16,12 +16,12 @@
 
 - [ ] S2.1 每队 phase 状态机（attack/defend/transition）
 - [ ] S2.2 transition 触发：球权易主（tackle 成功 + 射门被扑救；拦截后续加入）→ transition 窗口（固定 `TRANSITION_TICKS = 4`）
-- [ ] S2.2b transition 窗口起算：tackle 成功 tick / save-caught 扑住 tick 武装 transition（全队前压/回撤立即生效）；持球者前插目标等松散球被拾取后激活（拾取 ≤ LOOSE_MAX_TICKS=2 < 窗口 4，必在窗口内）
+- [ ] S2.2b transition 窗口起算：tackle 高亮起点 tick 武装（高亮时长 1 tick）/ save-caught 高亮终点 tick 后首个整数 tick 边界武装；持球者前插目标等松散球被拾取后激活（拾取 ≤ LOOSE_MAX_TICKS=2 < 窗口 4，必在窗口内；追逐者限定赢得球权一方，无二次翻转）
 - [ ] S2.2c transition 与高亮门控合成：transition 期间 hold 门控暂停（钉死为暂停这一种，hold 计数冻结），transition 期间不再掷新高亮；结束续走
-- [ ] S2.2d 松散球期间 phase：球权易主后无人持球时，两队 phase 沿用最后持球方归属，窗口不中断；新持球者拾取后按球权刷新
-- [ ] S2.3 transition 行为：新进攻方持球者前插（经 main 表达）+ 全队前压；新防守方回撤 + 就近 2 名外场防守者 close_down（松散球期间目标 = 松散球位置，拾取后切换为持球者）
+- [ ] S2.2d 松散球期间 phase：球权易主后无人持球时，两队 phase 沿用最后持球方归属，窗口不中断；新持球者拾取后按球权刷新；**save-rebound 不触发 transition**（普通松散球，phase 按拾取方）
+- [ ] S2.3 transition 行为：新进攻方持球者前插（经 main 表达）+ 全队前压（**save-caught 时 carrier=门将，门将不前插，队形前压由外场执行**）；新防守方回撤 + 就近 2 名外场防守者 close_down（过渡期目标=接触点/被铲者，松散球后=球位，拾取后=持球者）
 - [ ] S2.4 transition 窗口（4 tick）结束 → 回 attack/defend
-- [ ] S2.5 引擎测试：tackle 成功触发反击、射门扑救触发反击、close_down 松散球目标、hold 冻结、窗口结束恢复、反击期间无新高亮、确定性
+- [ ] S2.5 引擎测试：tackle 成功触发反击、射门扑救触发反击、save-rebound 不触发、close_down 过渡期/松散球/拾取目标切换、hold 冻结、窗口结束恢复、反击期间无新高亮、确定性
 
 ## S3. viewer：micro-motion
 

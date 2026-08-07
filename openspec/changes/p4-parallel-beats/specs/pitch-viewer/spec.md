@@ -32,7 +32,7 @@
 #### Scenario: 高亮覆盖区间与 main 恢复
 - **GIVEN** 一条高亮事件覆盖 [t_start, t_end)，t_end 为自然飞行终点（可非整数）
 - **WHEN** 画面层播放该段
-- **THEN** 高亮期间以高亮为准；main 从接球者持球后的首个 tick 边界恢复（球驱动平滑切换，无瞬移）
+- **THEN** 高亮期间以高亮为准；t_end 到下一整数 tick 边界之间在各自高亮结束位置 hold（球与参与者）；从下一 tick 边界起按 D12 交接（main/beat.ball/hold 恢复，球驱动平滑切换，无瞬移）
 
 #### Scenario: 高亮参与者回归无回弹
 - **GIVEN** 一名高亮参与者退出高亮

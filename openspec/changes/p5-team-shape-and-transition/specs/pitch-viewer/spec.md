@@ -4,7 +4,7 @@
 
 ### Requirement: 静止球员 micro-motion
 
-画面层 SHALL 给静止球员（不在 beat movers、不在高亮参与者）做小幅重心调整（micro-motion），避免圆点完全冻结；该调整仅影响渲染层，不改变逻辑位置。
+画面层 SHALL 给静止球员（不在 beat movers、不在高亮参与者、**不是 main 持球者**）做小幅重心调整（micro-motion），避免圆点完全冻结；该调整仅影响渲染层，不改变逻辑位置。
 
 #### Scenario: 静止球员微动
 - **GIVEN** 一名球员静止（不在 movers/高亮参与者/main 持球者）

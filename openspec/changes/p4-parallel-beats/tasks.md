@@ -25,10 +25,10 @@
 - [ ] P2.1 新增 `beat` 事件类型：`{t, type:'beat', movers:[{id,from_x,from_y,to_x,to_y,speed,action}], main?:{...}, ball?:{x,y,loose}}`
 - [ ] P2.2 movers 增量（只含移动球员，位移阈值 ~0.5m）；to = tick 步进终点
 - [ ] P2.3 **main = 带球/控球 only**（pass/shot/tackle 只走高亮，避免双播）
-- [ ] P2.4 **球所有权三分**：main 带球 / 高亮 / beat.ball 松散球；movers/main/ball 互斥（不同时含 main 和 ball）
-- [ ] P2.5 movers action 枚举（run/return/close_down/keeper_return；**无 dribble**——carrier 不进 movers）
+- [ ] P2.4 **球所有权三分**：main 带球 / 高亮 / beat.ball 松散球；互斥扩展——高亮覆盖区间内 beat 既不含 main 也不含 ball；非高亮 beat 不同时含 main 和 ball
+- [ ] P2.5 movers action 枚举（run/return/close_down/keeper_return/chase；**无 dribble**——carrier 不进 movers；chase = 松散球追逐者）
 - [ ] P2.6 向后兼容：v1 事件（pass/shot/tackle 等）保留，viewer 兼容两者；demo_mode 保持 v1 事件驱动
-- [ ] P2.7 protocol 校验支持 beat（**特判 beat 无顶层 subject/x/y**）+ movers/main/ball 互斥 + id 唯一 + 坐标范围
+- [ ] P2.7 protocol 校验支持 beat（**特判 beat 无顶层 subject/x/y**）+ movers/main/ball 互斥（含高亮期间无 main 无 ball）+ id 唯一 + 坐标范围
 
 ## P3. viewer：beat 演绎 + 两层合成
 

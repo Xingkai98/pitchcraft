@@ -42,13 +42,13 @@ P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有
 > 审阅确认"攻防转换/突然反击"是最像足球的时刻。
 
 - 引擎维护每队 `phase`（attack / defend / transition）。
-- **transition 触发**：球权易主——**tackle 成功 + 射门被扑救**（p4 有生产者的高亮事件）；拦截标注"后续加入"（p4 不产拦截）。
+- **transition 触发**：球权易主——**tackle 成功 + 射门被扑住（save-caught）**（p4 有生产者的高亮事件）；拦截标注"后续加入"（p4 不产拦截）。**save-rebound（扑出反弹）不触发 transition**——按普通松散球（P4 D11）处理，phase 按拾取方刷新（S2.2d 通用规则）。
 - **transition 窗口 = 固定 `TRANSITION_TICKS = 4`**（确定性常量，非随机，保证可断言）。
-- **窗口起算点（审阅 p5）**：tackle 成功 tick 即武装 transition 状态（全队前压/回撤立即生效）；**射门被扑救同理——save 高亮结束（门将扑住）tick 起算**（与 tackle 成功对称）；"持球者前插"目标等新持球者拾取松散球后才激活（P4 D11 时序）。
-- **窗口 vs 拾取时序（审阅 p5）**：transition 窗口（4 tick）从触发 tick 起算，不因松散球延长；P4 保证松散球拾取在 `LOOSE_MAX_TICKS = 2` 内完成（< 窗口 4 tick）→ "持球者前插"目标必在窗口内激活，两机制无矛盾。
+- **窗口起算点（审阅 p5）**：**tackle 成功 → 在 tackle 高亮起点 tick 武装**（接触即得球权，tackle 高亮时长 1 tick）；**save-caught → 在 save 高亮终点 tick 后的首个整数 tick 边界武装**（门将扑住时刻可非整数，取整到下一整数 tick——与 tackle 的"起点 tick 武装"不同，不算对称）。"持球者前插"目标等新持球者拾取松散球后才激活（P4 D11 时序）。
+- **窗口 vs 拾取时序（审阅 p5）**：transition 窗口（4 tick）从武装 tick 起算，不因松散球延长；tackle 高亮 1 tick → 松散球在触发 tick 的 t_end 产生，拾取 ≤ 触发 tick + 2（< 窗口 4）→ "持球者前插"目标必在窗口内激活。**松散球追逐限定赢得球权一方**（P4 D11 队过滤）→ 窗口内无二次球权翻转。
 - **松散球期间 phase（P5-D）**：球权易主后的松散球阶段（无人持球），两队 phase 沿用最后持球方归属（新进攻方仍 attack、新防守方仍 defend），待新持球者拾取后按球权刷新——transition 窗口不因松散球中断。
 - **transition 与 p4 高亮门控合成**：transition 期间持球 hold 门控**暂停**（钉死为暂停这一种：transition 期间不掷新高亮，无"hold 计数下限"备选；hold 计数**冻结**——不增不减，transition 结束续走），保证反击窗口完整可见。
-- **transition 行为**：新进攻方持球者目标前移（高速推进，经 main 表达）、全队前压（队形偏移放大）；新防守方整体回撤 + 就近 2 名外场防守者收缩（close_down，覆盖队形目标；**松散球期间 close_down 目标 = 松散球位置**，新持球者拾取后切换为持球者）。
+- **transition 行为**：新进攻方持球者目标前移（高速推进，经 main 表达）、全队前压（队形偏移放大）；**save-caught 时 carrier = 门将，门将不参与"前插"**（前插只作用于外场球员；门将持球 main 在门线零位移/短带，随后经 pass 高亮出球，队形前压由外场球员执行）；新防守方整体回撤 + 就近 2 名外场防守者收缩（close_down，覆盖队形目标；**过渡期（武装 tick → 松散球产生）close_down 目标 = 接触点/被铲者位置**，松散球产生后切换为球位，拾取后切换为持球者）。
 - transition 窗口结束 → 回到 attack/defend（按球位置/持球方）。
 - **为什么**：粗糙的 transition 也能产生"突然反击"画面。
 

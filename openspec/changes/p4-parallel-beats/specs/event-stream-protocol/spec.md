@@ -56,7 +56,7 @@ pass/shot/tackle 高亮事件 SHALL 起点对齐整数 tick（量化到 1s 边�
 
 #### Scenario: 高亮覆盖区间
 - **GIVEN** 一条高亮事件的起点 t_start 为整数 tick
-- **THEN** 覆盖区间为 [t_start, t_end)，t_end = 自然飞行终点（可非整数）；main 从接球者持球后的首个 tick 边界恢复（该恢复规则在 viewer 两层合成中生效）
+- **THEN** 覆盖区间为 [t_start, t_end)，t_end = 自然飞行终点（可非整数）；高亮结束后的驱动者按 D12 交接（pass→接球者 main / shot→goal、save-caught、save-rebound、off_target / tackle→success 松散球、fail 被铲者 main），main 在首个 tick 边界恢复（该恢复规则在 viewer 两层合成中生效）
 
 #### Scenario: 至多一条飞行中高亮
 - **WHEN** 一条高亮事件在飞行中
@@ -64,7 +64,7 @@ pass/shot/tackle 高亮事件 SHALL 起点对齐整数 tick（量化到 1s 边�
 
 #### Scenario: 参与者起点精确
 - **GIVEN** 一条 pass/shot/tackle 高亮事件
-- **THEN** 携带参与者精确起点（pass: passer_x/y+receiver_x/y；shot: shooter_x/y+keeper_x/y；tackle: carrier_from+tackler_x/y），无 fallback
+- **THEN** 携带参与者精确起点，无 fallback：pass{基础 x/y = 传球者，receiver_x/y = 接球者}；shot{基础 x/y = 射手，keeper_x/y = 门将}；tackle{基础 x/y = 防守者，carrier_from_x/y = 被铲者接触点}——主参与者用基础 x/y，字段不冗余
 
 ### Requirement: movers/main/ball 互斥
 
@@ -95,7 +95,7 @@ beat 事件 SHALL NOT 同时携带 main 与 ball（唯一驱动者）；高亮�
 
 ### Requirement: 事件类型枚举
 
-事件流 SHALL 支持事件类型：v1 的 kickoff、whistle、pass、shot、tackle、interception、substitution；**v2 新增 `beat` 节拍类型**。**v2 全场比赛不再产生顶层 `dribble` 事件**（带球由 beat.main 表达）；demo_mode 保持 v1 事件驱动（含 dribble）以测兼容路径。goal 不设独立类型，由 shot 的 result=goal 表达。
+事件流 SHALL 支持事件类型：v1 的 kickoff、whistle、pass、dribble、shot、tackle、interception、substitution、lineup（初始站位）、off_ball_run；**v2 新增 `beat` 节拍类型**。**v2 全场比赛不再产生顶层 `dribble` 与 `off_ball_run` 事件**（带球由 beat.main 表达、无球跑位由 beat.movers 表达）；lineup 保留（v2 开场初始站位）；demo_mode 保持 v1 事件驱动（含 dribble）以测兼容路径。goal 不设独立类型，由 shot 的 result=goal 表达。
 
 #### Scenario: 枚举覆盖核心动作
 - **WHEN** 画面层遇到事件流中的事件
