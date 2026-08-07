@@ -1,0 +1,28 @@
+# Spec: pitch-viewer
+
+## ADDED Requirements
+
+### Requirement: 静止球员 micro-motion
+
+画面层 SHALL 给静止球员（不在 beat movers、不在高亮参与者）做小幅重心调整（micro-motion），避免圆点完全冻结；该调整仅影响渲染层，不改变逻辑位置。
+
+#### Scenario: 静止球员微动
+- **GIVEN** 一名球员静止（不在 movers/高亮参与者）
+- **WHEN** 画面层渲染该球员
+- **THEN** 在逻辑位置做小幅重心调整（振幅 < 0.002 归一化），逻辑位置不变
+
+#### Scenario: 微动确定性
+- **GIVEN** 同一播放时刻重放
+- **THEN** 微动偏移一致（由 id+时间确定性决定，非每帧随机）
+
+#### Scenario: 移动中抑制微动
+- **GIVEN** 一名球员正在移动（movers 或高亮参与者）
+- **THEN** 不做微动（避免与移动叠加）
+
+### Requirement: 微动不影响无 snap
+
+micro-motion SHALL 不改变逻辑位置，不影响跨拍连续（from(N+1)==to(N)）与无 snap 验证。
+
+#### Scenario: 逻辑位置不变
+- **WHEN** 渲染带微动的静止球员
+- **THEN** 其逻辑位置与 beat 数据一致（微动仅渲染偏移）
