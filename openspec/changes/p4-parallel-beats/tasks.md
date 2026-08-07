@@ -10,10 +10,10 @@
 - [ ] P1.4 **每个持球 tick 都发 main**（含零位移控球，球在脚下）——保证球可见、唯一驱动者
 - [ ] P1.4b **main 每拍推进 ≤ speed×1s（约 5-7m）** + 零位移控球占比——避免 carrier 横穿球场（校准）
 - [ ] P1.5 **高亮触发节拍门控**：持球 hold 以 tick 计（8-15 tick），hold 归零时在整数 tick 掷高亮类型（pass/shot/tackle），非每 tick 掷
-- [ ] P1.6 **高亮锚点整数 tick 对齐**：pass/shot/tackle 的 t 量化到 1s 边界
-- [ ] P1.7 **飞行中高亮注册表**：维护被高亮控制的球员（到何时、结束位置），每 tick 执行排除 + pos[] 对账
+- [ ] P1.6 **高亮锚点整数 tick 对齐**：pass/shot/tackle 的 t 量化到 1s 边界；覆盖区间 [t_start, t_end)，t_end = 自然飞行终点（可非整数）；main 从接球者持球后的首个 tick 边界恢复
+- [ ] P1.7 **飞行中高亮注册表**：维护被高亮控制的球员（到何时、结束位置），每 tick 执行排除 + pos[] 对账；**任意时刻至多一条飞行中高亮**；参与者退出高亮时 last-emitted-pos 置为高亮结束位置（回归 movers 不回弹）
 - [ ] P1.8 **高亮事件携带参与者精确起点**（pass: passer+receiver；shot: shooter+keeper；tackle: carrier_from+tackler；**tackle carrier_from = 接触点，carry-beat 归零**）
-- [ ] P1.9 **movers 连续性**：引擎维护 last-emitted-pos，保证球员重新出现时 from = 上次 viewer 所见（跨缺席精确衔接）
+- [ ] P1.9 **movers 连续性**：引擎维护 last-emitted-pos，保证球员重新出现时 from = 上次 viewer 所见（跨缺席精确衔接）；**位移阈值 = 静区（dead-zone）等值 0.5m——移动超过阈值才动、才发 movers，低于阈值不动不发（last-emitted-pos 恒等于 pos[]）**
 - [ ] P1.10 **carrier 不进 movers**（main-only）：持球者移动只由 main 表达
 - [ ] P1.11 确定性：同 seed 同 config → 同节拍流 + 高亮事件
 

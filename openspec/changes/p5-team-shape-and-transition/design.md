@@ -24,7 +24,7 @@ P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有
 > 审阅确认"静态 home 回位"产生 11 个独立人偶，不产生队形平移。本 change 落地球相关队形目标。
 
 - 每球员目标位置 = **角色基准 + 队形偏移**。队形偏移是 `(球位置, 控球阶段, 球侧)` 的公式：
-  - 防线随球前压/回撤（防守线 push up / drop back，**且防守线 x 不超过球 x**；**门将不参与防线前压，仅回位到门线**）
+  - 防线随球前压/回撤（**防线 = 防守方后卫线（外场后卫，不含门将）**；防守线 push up / drop back，**且防守线 x 不超过球 x**；**门将不参与防线前压，仅回位到门线**）
   - 全队随球侧平移（ball-side shift，球在左半场全队偏左；防守时收窄到球侧，进攻时保持宽度）
   - 控球阶段压上（己方持球时整体前压，对方持球时回收）
 - **球侧平移用连续映射**：shift ∝ (ball_x − 0.5)（而非二分切换），避免球在中线附近时全队左右 shuffle（防 P5-9 集体抖跳）。
@@ -42,7 +42,8 @@ P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有
 - **transition 触发**：球权易主——**tackle 成功 + 射门被扑救**（p4 有生产者的高亮事件）；拦截标注"后续加入"（p4 不产拦截）。
 - **transition 窗口 = 固定 `TRANSITION_TICKS = 4`**（确定性常量，非随机，保证可断言）。
 - **窗口起算点**：tackle 成功 tick 即武装 transition 状态（全队前压/回撤立即生效）；"持球者前插"目标等松散球被新持球者拾取后才激活（p4 松散球回收时序）。
-- **transition 与 p4 高亮门控合成**：transition 期间持球 hold 门控暂停（或 hold 计数下限 = max(8, transition 剩余+1)），保证反击窗口完整可见——tackle 成功后 N tick 内不再掷新高亮。
+- **松散球期间 phase（P5-D）**：球权易主后的松散球阶段（无人持球），两队 phase 沿用最后持球方归属（新进攻方仍 attack、新防守方仍 defend），待新持球者拾取后按球权刷新——transition 窗口不因松散球中断。
+- **transition 与 p4 高亮门控合成**：transition 期间持球 hold 门控**暂停**（钉死为暂停这一种：transition 期间不掷新高亮，无"hold 计数下限"备选），保证反击窗口完整可见——tackle 成功后 N tick 内不再掷新高亮。
 - **transition 行为**：新进攻方持球者目标前移（高速推进）、全队前压（队形偏移放大）；新防守方整体回撤 + 就近 2 名外场防守者向持球者收缩（close_down，覆盖队形目标）。
 - transition 窗口结束 → 回到 attack/defend（按球位置/持球方）。
 - **为什么**：粗糙的 transition 也能产生"突然反击"画面。
@@ -50,7 +51,7 @@ P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有
 ### D3: micro-motion（真实感层 viewer polish）
 
 - viewer 渲染层：静止球员（不在 movers/高亮参与者/**main 持球者**）在逻辑位置做小幅重心调整（振幅 < 0.002 归一化，约 0.2m）。
-- **确定性且连续**：偏移由 `hash(id, floor(t))` 作种子、用**连续波形**（如 `A·sin(2π·(t−t0)+φ)`，A/φ 由 hash 定），保证渲染在 tick 边界无跳变（避免 P5-1 整秒抖跳）。
+- **确定性且连续**：偏移 = `A(id)·sin(2π·(t − t0(id))/T(id) + φ(id))`，其中 A/φ/t0/T 由 `hash(id)` **一次派生并缓存**（球员级常量，入场即定，非每 tick 重哈希）；t = 连续比赛时间（连续推进，不 floor 到 tick）——波形连续，tick 边界自然无跳变（避免 P5-1 整秒抖跳）。
 - **不改变逻辑位置**：仅渲染偏移（drawPlayer），不进 game.players 逻辑位置——不污染调试日志、不违反无 snap、确定性可重放。
 - **抑制**：球员正在移动（movers 或高亮参与者）或为 main 持球者时不做 micro-motion（避免人球分离，P5-8）。
 - **为什么**：真实球员始终小幅调整重心，冻结圆点显假。
@@ -71,5 +72,4 @@ P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有
 ## Open Questions
 
 - 队形偏移公式的具体参数（防线前压幅度、球侧平移量、approach-rate cap、dead-zone）——实施时定义并调参。
-- transition 窗口的确切长度与衰减（3-5 tick？）——实施时定。
-- 是否把 loose-ball 回收也纳入 transition 触发——实施时看 tackle 高亮流程。
+- 是否把 loose-ball 回收也纳入 transition 触发（新持球者拾取松散球后是否刷新 transition 窗口）——实施时看 tackle 高亮流程。

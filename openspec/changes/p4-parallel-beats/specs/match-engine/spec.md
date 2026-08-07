@@ -24,7 +24,7 @@
 
 #### Scenario: 队友跑位
 - **GIVEN** 一名无球球员需要调整位置
-- **THEN** beat 的 movers 含该球员向目标位置的移动（本轮为角色锚点 + 小幅调整）；位移超过阈值（~0.5m）才列入 movers
+- **THEN** beat 的 movers 含该球员向目标位置的移动（本轮为角色锚点 + 小幅调整）；位移阈值 = 静区（dead-zone），等值 ~0.5m——移动超过阈值才动、才发 movers，低于阈值不动不发（"移动 ⇔ 发 movers"，last-emitted-pos 恒等于 pos[]）
 
 #### Scenario: last-emitted-pos 跨缺席连续
 - **GIVEN** 一名球员在 movers 中缺席若干 tick 后重新出现
@@ -56,7 +56,7 @@
 
 ### Requirement: 高亮参与者排除
 
-引擎 SHALL 在高亮事件（pass/shot/tackle）时序内，将该高亮的参与者从 beat movers 排除；高亮事件起点对齐整数 tick；高亮事件携带参与者精确起点；引擎维护飞行中高亮注册表并对账 pos[] 到高亮结束位置。
+引擎 SHALL 在高亮事件（pass/shot/tackle）时序内，将该高亮的参与者从 beat movers 排除；高亮事件起点对齐整数 tick；高亮事件携带参与者精确起点；引擎维护飞行中高亮注册表并对账 pos[] 到高亮结束位置；任意时刻至多一条飞行中高亮；参与者退出高亮后以高亮结束位置回归 movers。
 
 #### Scenario: 排除高亮参与者
 - **GIVEN** 一条 pass 高亮事件进行中
@@ -65,6 +65,18 @@
 #### Scenario: 高亮起点对齐整数 tick
 - **GIVEN** 一条高亮事件
 - **THEN** 其 t 量化到 1s tick 边界，高亮从该 tick 起是唯一驱动者（该 tick 不产 main）
+
+#### Scenario: 高亮覆盖区间与 main 恢复
+- **GIVEN** 一条高亮事件的覆盖区间为 [t_start, t_end)
+- **THEN** t_start 为整数 tick；t_end = 自然飞行终点（可非整数）；main 从接球者持球后的首个 tick 边界恢复（非 t_end 立即恢复）
+
+#### Scenario: 至多一条飞行中高亮
+- **WHEN** 一条高亮事件在飞行中
+- **THEN** 引擎不再掷新的高亮事件（保证球优先级链"高亮>main>ball"在任意时刻定义明确）
+
+#### Scenario: 高亮参与者回归 movers
+- **GIVEN** 一名高亮参与者退出高亮（高亮结束）
+- **THEN** 其 last-emitted-pos 置为注册表的"高亮结束位置"，回归 movers 时 from = 高亮结束位置（viewer 从该位置继续，不回弹）
 
 #### Scenario: 高亮携带参与者起点
 - **GIVEN** 一条 pass/shot/tackle 高亮事件

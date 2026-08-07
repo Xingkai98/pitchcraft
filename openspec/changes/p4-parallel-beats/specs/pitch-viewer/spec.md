@@ -29,6 +29,16 @@
 - **WHEN** 画面层播放该段
 - **THEN** 该 tick 不产 main，高亮从该 tick 起是唯一驱动者（无双重驱动）
 
+#### Scenario: 高亮覆盖区间与 main 恢复
+- **GIVEN** 一条高亮事件覆盖 [t_start, t_end)，t_end 为自然飞行终点（可非整数）
+- **WHEN** 画面层播放该段
+- **THEN** 高亮期间以高亮为准；main 从接球者持球后的首个 tick 边界恢复（球驱动平滑切换，无瞬移）
+
+#### Scenario: 高亮参与者回归无回弹
+- **GIVEN** 一名高亮参与者退出高亮
+- **WHEN** 画面层播放该段
+- **THEN** 该参与者从高亮结束位置继续（viewer 用高亮结束位置衔接 beat movers，不回弹）
+
 ### Requirement: 球可见性
 
 画面层 SHALL 保证球在任意开放时刻可见并移动：main 带球时球随 main 轨迹；高亮时球随高亮轨迹；松散球时球随 beat.ball 坐标。

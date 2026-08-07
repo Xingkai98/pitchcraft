@@ -48,11 +48,19 @@
 
 ### Requirement: 高亮事件锚点对齐
 
-pass/shot/tackle 高亮事件 SHALL 起点对齐整数 tick（量化到 1s 边界），并携带参与者精确起点。
+pass/shot/tackle 高亮事件 SHALL 起点对齐整数 tick（量化到 1s 边界），并携带参与者精确起点；覆盖区间为 [t_start, t_end)（t_end = 自然飞行终点，可非整数）；任意时刻至多一条飞行中高亮。
 
 #### Scenario: 高亮起点对齐
 - **GIVEN** 一条高亮事件
 - **THEN** 其 t 为整数（1s tick 边界），高亮 tick 不产 main
+
+#### Scenario: 高亮覆盖区间
+- **GIVEN** 一条高亮事件的起点 t_start 为整数 tick
+- **THEN** 覆盖区间为 [t_start, t_end)，t_end = 自然飞行终点（可非整数）；main 从接球者持球后的首个 tick 边界恢复（该恢复规则在 viewer 两层合成中生效）
+
+#### Scenario: 至多一条飞行中高亮
+- **WHEN** 一条高亮事件在飞行中
+- **THEN** 引擎不产新的高亮事件（球优先级链在任意时刻定义明确）
 
 #### Scenario: 参与者起点精确
 - **GIVEN** 一条 pass/shot/tackle 高亮事件
