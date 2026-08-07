@@ -54,9 +54,9 @@
 - **THEN** 球随 main 带球轨迹移动，始终可见（持球者脚下/前方），不冻结
 
 #### Scenario: 松散球可见
-- **GIVEN** beat 携带 ball（loose:true）
+- **GIVEN** beat 携带 ball（loose:true，含滚动轨迹 x/y→x2/y2+speed）
 - **WHEN** 画面层播放该段
-- **THEN** 球按 ball 坐标移动（松散球追逐），不冻结
+- **THEN** 球按 ball 轨迹在拍内插值移动（松散球追逐），不冻结、不瞬移
 
 #### Scenario: 死球 hold
 - **GIVEN** 进球庆祝/开球准备（无 main/高亮/松散球）

@@ -64,7 +64,7 @@ pass/shot/tackle 高亮事件 SHALL 起点对齐整数 tick（量化到 1s 边�
 
 #### Scenario: 高亮覆盖区间
 - **GIVEN** 一条高亮事件的起点 t_start 为整数 tick
-- **THEN** 覆盖区间为 [t_start, t_end)，t_end = 自然飞行终点（可非整数）；高亮结束后的驱动者按 D12 交接（pass→接球者 main / shot→goal、save-caught、save-rebound、off_target / tackle→success 松散球、fail 被铲者 main），main 在首个 tick 边界恢复（该恢复规则在 viewer 两层合成中生效）
+- **THEN** 覆盖区间为 [t_start, t_end)，t_end = 自然飞行终点（可非整数）；高亮结束后的驱动者按 D12 交接（pass→接球者 main / shot→goal、save-caught、save-rebound、off_target / tackle→success 松散球、fail 被铲者 main）；**main 在首个 tick 边界恢复仅对不进入松散球的结局成立**（pass、save-caught、tackle fail；进入松散球的结局按 D11 由 beat.ball 驱动，待拾取后回 main）
 
 #### Scenario: 至多一条飞行中高亮
 - **WHEN** 一条高亮事件在飞行中
@@ -117,9 +117,9 @@ beat 事件 SHALL NOT 同时携带 main 与 ball（唯一驱动者）；高亮�
 - **WHEN** 一次射门得分
 - **THEN** 事件为 shot 且 result=goal，不产生独立的 goal 事件
 
-### Requirement: tackle 字段定稿（必填 to/x2/y2 + 新增可选字段）
+### Requirement: tackle 字段定稿（必填 x2/y2 + carrier_from + loose）
 
-tackle 事件 SHALL 携带接触点 `x2/y2`（必填，定稿）与 `carrier_from_x/carrier_from_y`；SHALL 携带 `loose_x/loose_y`（弹开点）。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` = 被铲者在 tackle tick 的位置（接触点，带球逼近已由 beat.main 表达），不再是被铲者带球段起点。
+tackle 事件 SHALL 携带接触点 `x2/y2`（必填，定稿）与 `carrier_from_x/carrier_from_y`；SHALL 携带 `loose_x/loose_y`（弹开点）。**v2 语义（carry-beat 归零）**：`carrier_from_x/carrier_from_y` = 被铲者在 tackle tick 的位置（接触点，带球逼近已由 beat.main 表达），不再是被铲者带球段起点。**v2 移除 `to` 字段**（被铲者接续位置——v2 中由 beat.main 表达；v1 兼容路径仍接受含 to 的旧事件）。
 
 #### Scenario: tackle 必填字段
 - **GIVEN** 一条 tackle 事件

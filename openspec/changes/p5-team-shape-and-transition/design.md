@@ -33,7 +33,7 @@ P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有
 - 每个开放比赛时刻，球员目标随球/阶段实时变化。
 - **防"橡皮筋"**：每 tick 移动受速度上限（approach-rate cap）+ 静区（dead-zone）约束，movers 保持增量。**运算顺序：先 dead-zone 判定（位移 < 阈值不动不发），后 approach-rate cap（位移限幅）**。
 - **dead-zone 绑定 P4 单门（审阅 p5）**：dead-zone 阈值 == P4 movers 位移阈值（0.5m，同一变量），**不作为独立可调参数**——保证 last-emitted-pos 恒等于 pos[] 不变量跨 change 成立。
-- **防重叠**：目标点间距约束（repulsion），避免两圆点重叠（也进 match-engine spec）。**作用域 = 同队内部（11 人之间，不跨队）**；**施加顺序 = 在队形偏移/close_down 目标确定之后，对目标点做最小间距修正**。
+- **防重叠**：目标点间距约束（repulsion），避免两圆点重叠（也进 match-engine spec）。**作用域 = 同队内部（11 人之间，不跨队）**；**施加顺序 = 在队形偏移/close_down 目标确定之后，对目标点做最小间距修正**；**最小间距 = 球员半径 ×2（约 0.02 归一化）；修正算法 = 间距 < 阈值的同队球员对沿连线推开至阈值，确定性迭代 ≤3 次**。
 - **carrier 目标与 main 接缝（审阅 p5）**：持球者的移动由 main 表达（带球轨迹），队形公式不直接移动 carrier 的逻辑位置；transition 的"持球者前插" = main 的带球目标（高速推进），经 main 表达，不进 movers。
 - **为什么**：这是"像足球"的最大真实感来源——阵型伸缩/平移。
 
@@ -48,13 +48,13 @@ P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有
 - **窗口 vs 拾取时序（审阅 SEAM-5，修正 off-by-one）**：transition 窗口（4 tick）从武装 tick T 起算，不因松散球延长；tackle 高亮 1 tick 覆盖 [T, T+1) → 松散球在 t_end = T+1 产生，追逐 `LOOSE_MAX_TICKS = 2` → **拾取 ≤ T+3**，落在窗口 [T, T+4) 内 → "前插必在窗口内激活"成立。**tackle 弹开的追逐限定抢断方**（P4 D11）→ 窗口内无二次球权翻转；save-rebound 不限队（不触发 transition，无此约束）。
 - **松散球期间 phase（审阅 SEAM-6）**：球权易主后的松散球阶段（无人持球），**按易主后的归属**：新进攻方（抢断方/扑救方）为 attack、原持球方为 defend（基础 phase 不变，transition_active 叠加）；待新持球者拾取后按球权刷新——transition 窗口不因松散球中断。**save-rebound 未易主**：phase 沿用易主前归属（原进攻方仍 attack），拾取后按实际拾取方刷新。
 - **transition 与 p4 高亮门控合成**：transition 期间持球 hold 门控**暂停**（钉死为暂停这一种：transition 期间不掷新高亮，无"hold 计数下限"备选）；**hold 计数冻结针对当前 carrier**（不增不减，transition 结束续走；**球权易主 → 新 carrier 的 hold 计数重新起计**，冻结只影响当前 carrier 的剩余计数）。
-- **transition 行为**：新进攻方持球者目标前移（高速推进，经 main 表达）、全队前压（队形偏移放大）；**save-caught 时 carrier = 门将，门将不参与"前插"**（前插只作用于外场球员；门将持球 main 在门线零位移/短带，**transition 窗口结束后**经 pass 高亮出球，队形前压由外场球员执行）；新防守方整体回撤 + 就近 2 名外场防守者收缩（close_down，覆盖队形目标；**tackle 路径 close_down 目标阶梯：过渡期（武装 tick → 松散球产生）= 接触点/被铲者位置，松散球产生后 = 球位，拾取后 = 持球者**；**save-caught 路径 close_down 目标 = 门前区域对方球员（原进攻方前插者）**）。
+- **transition 行为**：新进攻方持球者目标前移（高速推进，经 main 表达）、全队前压（队形偏移放大）；**save-caught 时 carrier = 门将，门将不参与"前插"**（前插只作用于外场球员；门将持球 main 在门线零位移/短带，**transition 窗口结束后恢复 hold 门控，门将按正常门控（hold 8-15 tick 归零）掷 pass 高亮出球**，队形前压由外场球员执行）；新防守方整体回撤 + **就近 2 名外场防守者收缩（close_down，执行者 = 距目标最近且非 carrier 的 2 名外场防守者，确定性平局按 id 小者）**，覆盖队形目标；**tackle 路径 close_down 目标阶梯：过渡期（武装 tick → 松散球产生）= 接触点/被铲者位置，松散球产生后 = 球位，拾取后 = 持球者**；**save-caught 路径 close_down 目标 = 原进攻方就近的前插球员（门前/禁区前沿的对方球员）**。**原持球方（新防守方）"回位" = 不参与松散球拾取竞争（不追球抢球），但按 close_down 向目标侧收缩（压迫/封堵，不进入拾取半径）——与"不追逐"不矛盾**。
 - transition 窗口结束 → transition_active 清除，回到基础 attack/defend（按球位置/持球方）。
 - **为什么**：粗糙的 transition 也能产生"突然反击"画面。
 
 ### D3: micro-motion（真实感层 viewer polish）
 
-- viewer 渲染层：静止球员（不在 movers/高亮参与者/**main 持球者**）在逻辑位置做小幅重心调整（振幅 < 0.002 归一化，约 0.2m）。
+- viewer 渲染层：静止球员（不在 movers/高亮参与者/**main 持球者**）在逻辑位置做小幅重心调整（振幅 < 0.002 归一化，约 0.2m）；**启停时振幅从 0 渐变（fade in/out ~0.3s），避免微动开始/结束瞬间的渲染跳变**。
 - **确定性且连续**：偏移 = `A(id)·sin(2π·t/T(id) + φ(id))`，其中 A/φ/T 由 `hash(id)` **一次派生并缓存**（球员级常量，入场即定，非每 tick 重哈希；去冗余相位 t0——由 φ 吸收）；t = 连续比赛时间（连续推进，不 floor 到 tick）——波形连续，tick 边界自然无跳变（避免 P5-1 整秒抖跳）。
 - **不改变逻辑位置**：仅渲染偏移（drawPlayer），不进 game.players 逻辑位置——不污染调试日志、不违反无 snap、确定性可重放。
 - **抑制**：球员正在移动（movers 或高亮参与者）或为 main 持球者时不做 micro-motion（避免人球分离，P5-8）。

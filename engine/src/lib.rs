@@ -60,7 +60,7 @@ pub struct Event {
     pub to: Option<i32>,    // 目标球员 id（pass 的接球者）
     pub x2: Option<f64>,    // 目标位置 x（pass 落点 / shot 方向 / dribble 终点）
     pub y2: Option<f64>,    // 目标位置 y
-    pub result: Option<String>, // 结果（success/fail/goal/saved/off_target/blocked）
+    pub result: Option<String>, // 结果（success/fail/goal/saved/off_target；v2 shot 三值 goal/saved/off_target）
     pub speed: Option<f64>, // 球速/带球速度（m/s）
     pub touch_freq: Option<f64>, // 带球触球频率（次/秒）
     pub lead: Option<f64>,  // 传球提前量

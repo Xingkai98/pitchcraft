@@ -56,7 +56,7 @@
 
 #### Scenario: 松散球
 - **GIVEN** 无持球者（抢断弹开等）
-- **THEN** beat 携带 ball 坐标（loose:true），球由 beat.ball 驱动
+- **THEN** beat 携带 `ball`（`{x, y, x2, y2, speed, loose:true}`——球滚动轨迹，viewer 在拍内插值），球由 beat.ball 驱动
 
 #### Scenario: kickoff 事件驱动球
 - **GIVEN** 开场或进球后 kickoff
@@ -92,7 +92,7 @@
 
 #### Scenario: 高亮覆盖区间与 main 恢复
 - **GIVEN** 一条高亮事件的覆盖区间为 [t_start, t_end)
-- **THEN** t_start 为整数 tick；t_end = 自然飞行终点（可非整数）；t_end 到下一整数 tick 边界之间 viewer 在各自高亮结束位置 hold（球与参与者）；高亮结束后的驱动者按球权结局交接（D12）：pass→接球者持球、shot→goal/save-caught/save-rebound/off_target、tackle→成功弹开/失败保持，main 在首个 tick 边界恢复（非 t_end 立即恢复）
+- **THEN** t_start 为整数 tick；t_end = 自然飞行终点（可非整数）；t_end 到下一整数 tick 边界之间 viewer 在各自高亮结束位置 hold（球与参与者）；高亮结束后的驱动者按球权结局交接（D12）：pass→接球者持球、shot→goal/save-caught/save-rebound/off_target、tackle→成功弹开/失败保持；**main 在首个 tick 边界恢复仅对不进入松散球的结局成立**（pass、save-caught、tackle fail；save-rebound / tackle success 进入松散球，按 D11 由 beat.ball 驱动，待拾取后回 main）
 
 #### Scenario: 高亮参与者起点硬约束
 - **GIVEN** 一条高亮事件的参与者起点字段（主参与者 = 基础 x/y；第二参与者 = receiver_x/y / keeper_x/y；tackle 被铲者 = carrier_from_x/y）
@@ -100,11 +100,11 @@
 
 #### Scenario: 高亮参与者结束位置派生
 - **GIVEN** 一条高亮事件结束（t_end）
-- **THEN** 参与者"高亮结束位置"由事件字段派生：pass 接球者 = pass.x2/y2、**传球者 = 其起点（基础 x/y，高亮期间静止）**；shot 门将 = shot.x2/y2、**射手 = 其起点（基础 x/y）**；tackle 双方 = 接触点（carrier_from / 基础 x/y），球弹开 = loose_x/y——viewer 与引擎同一派生，无额外 payload
+- **THEN** 参与者"高亮结束位置"由事件字段派生：pass 接球者 = pass.x2/y2、**传球者 = 其起点（基础 x/y，高亮期间静止）**；shot 门将 = shot.x2/y2、**射手 = 其起点（基础 x/y）**；tackle 双方 = **接触点（被铲者 carrier_from / 防守者 x2/y2）**，球弹开 = loose_x/y——viewer 与引擎同一派生，无额外 payload
 
 #### Scenario: shot 高亮结局
 - **GIVEN** 一条 shot 高亮事件在 t_end 结束
-- **THEN** 按结局交接：result=goal → 死球（hold，P3 机制 kickoff 重开）；门将扑住（save-caught）→ 门将持球，main 在首个 tick 边界恢复（last-emitted-pos = 扑救点，门将出球在 transition 窗口结束后经 pass 高亮）；扑出反弹（save-rebound）→ 进入松散球（D11，起点 = shot.x2/y2 沿弹开方向，**双方可争**）；**打偏/出界（off_target）→ 死球（球出界），按 P3 机制 kickoff 重开（对方开球）**
+- **THEN** 按结局交接：result=goal → 死球（hold，P3 机制 kickoff 重开）；门将扑住（save-caught）→ 门将持球，main 在首个 tick 边界恢复（last-emitted-pos = 扑救点，门将出球在 transition 窗口结束后经 pass 高亮）；扑出反弹（save-rebound）→ 进入松散球（D11，起点 = shot.x2/y2 **无位置跳变**，弹开方向决定首个 beat.ball 滚动方向，**双方可争**）；**打偏/出界（off_target）→ 死球（球出界），按 P3 机制 kickoff 重开（对方开球；球轨迹终点坐标钳制在 [0,1]，出界表现为到达边线）**
 
 #### Scenario: tackle 高亮结局
 - **GIVEN** 一条 tackle 高亮事件在 t_end 结束
@@ -154,11 +154,11 @@
 
 #### Scenario: 超阈值落回进攻（v2）
 - **GIVEN** 最近防守者距离超过阈值
-- **THEN** 不产 tackle；若在 hold 门控归零时，该次机会改掷 pass/shot（无 'dribble' 落点）；非门控归零时刻则继续 hold
+- **THEN** 不产 tackle；在 hold 门控归零时改掷 pass/shot（无 'dribble' 落点——v2 中 tackle 检查只在门控归零时刻发生）
 
 #### Scenario: 抢断积极性
-- **GIVEN** 最近防守者距离 ≤ 阈值
-- **THEN** 以低概率（抢断积极性，标定约 0.09，目标每场 8-15 次）决定是否真的去抢；概率不中 → 若在 hold 门控归零时刻，改掷 pass/shot（无 'dribble' 落点，与高亮门控 fallback 一致）；非归零时刻则继续 hold（main 带球）
+- **GIVEN** 最近防守者距离 ≤ 阈值（hold 门控归零时刻）
+- **THEN** 以低概率（抢断积极性，标定约 0.09，目标每场 8-15 次）决定是否真的去抢；概率不中 → 改掷 pass/shot（无 'dribble' 落点，与高亮门控 fallback 一致）
 
 #### Scenario: 抢断频率目标
 - **WHEN** 一整场比赛（2700s）模拟
