@@ -5,10 +5,11 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260808-1';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-1';
-import { createGame } from './game.js?v=20260808-1';
-import { mockEventStream } from './mock-event-stream.js?v=20260808-1';
+import { config } from './config.js?v=20260808-2';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-2';
+import { createGame } from './game.js?v=20260808-2';
+import { mockEventStream } from './mock-event-stream.js?v=20260808-2';
+import { resetMicroMotion } from './micro-motion.js?v=20260808-2';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -86,11 +87,14 @@ function frame(ts) {
   if (game) {
     game.step(dt);
     // 渲染当前状态（renderFrame 返回 imageData 供测试；这里仅用于绘制）
-    // micro-motion（P5 S3）：传 playTime + 移动球员集合，静止球员小幅重心调整
+    // micro-motion（P5 S3）：传 playTime + 移动球员集合 + 持球者，静止球员小幅重心调整
     const movingIds = new Set();
     for (const p of game.players) {
       if (game.isPlayerMoving(p.id)) movingIds.add(p.id);
     }
+    // main 持球者不微动（避免人球分离）：即使静止（零位移控球）也抑制
+    const carrier = game.currentCarrier();
+    if (carrier !== null) movingIds.add(carrier);
     renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height, { playTime: game.playTime, movingIds, dt });
     // 比分显示（简单：从事件流里找最近一次 goal）
     updateScore();
@@ -117,6 +121,7 @@ progressBar.addEventListener('input', () => {
   _seeking = true;
   const t = (progressBar.value / 100) * game.matchEnd;
   game.seekTo(t);
+  resetMicroMotion(); // seek 后 micro-motion 相位不连续，从 fade 0 重新渐入（避免 snap）
   renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height);
   statusEl.textContent = `t=${game.playTime.toFixed(1)}s（已暂停，拖动进度条）`;
   updateEventIndicator();
@@ -156,6 +161,7 @@ function updateEventIndicator() {
 function jumpToEventFromUI(index) {
   if (!game) return;
   if (game.jumpToEvent(index)) {
+    resetMicroMotion(); // 跳转后 micro-motion 相位不连续，从 fade 0 重新渐入
     updateEventIndicator();
     showNotice(`已跳转到事件 #${index}（暂停，点播放）`);
   } else {
@@ -232,6 +238,7 @@ btnSpeed.addEventListener('click', () => {
 btnReplay.addEventListener('click', () => {
   if (game) {
     game.replayCurrent();
+    resetMicroMotion(); // 重播 playTime 跳回 0，micro-motion 相位不连续，从 fade 0 重新渐入
     updateEventIndicator();
     showNotice(game.mode === 'continuous' ? '已整场重播' : `重播事件 #${game.currentEventIndex()}`);
   }

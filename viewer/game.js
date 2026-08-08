@@ -165,6 +165,14 @@ export class Game {
     return prev.evt === next.evt && (prev.x !== next.x || prev.y !== next.y);
   }
 
+  // 当前时刻的持球者（beat.main 的 carrier）——micro-motion 抑制用（main 持球者不微动，避免人球分离）
+  currentCarrier() {
+    const idx = this.currentEventIndex();
+    const e = this.events[idx];
+    if (e && e.type === 'beat' && e.main) return e.main.subject;
+    return null;
+  }
+
   // 按实体构建时间索引：球一组、每球员一组（timeline 已按 t 排序，分组后仍有序）
   _buildAnchorIndex() {
     this._ballAnchors = [];

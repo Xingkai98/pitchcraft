@@ -51,33 +51,36 @@ test('micro-motion: 启停渐变（active→1，非 active→0，~0.3s 收敛）
 });
 
 test('renderFrame: 静止球员有 micro-motion 偏移，移动球员无', () => {
-  const c = new MockCanvas(W, H);
-  const ctx = c.getContext();
-  // 球员 5 静止（不在 movingIds），球员 6 移动（在 movingIds）
   const players = [
     { id: 5, x: 0.4, y: 0.5 },
     { id: 6, x: 0.6, y: 0.5 },
   ];
   const movingIds = new Set([6]);
-  // 用固定 t 让偏移非零
-  const t = 100.0;
   resetMicroMotion();
-  // 先让 fade 到 1（对 id5 调一次 active fade 多次）
   for (let i = 0; i < 40; i++) microMotionFade(5, true, 1 / 60);
-  renderFrame(ctx, { players, ball: { x: 0.5, y: 0.5 } }, W, H, { playTime: t, movingIds, dt: 1 / 60 });
-  const isPlayerArc = (c) =>
-    c.method === 'arc' && (c.args[2] === config.render.playerRadius);
-  const arcs = ctx.calls.filter(isPlayerArc);
-  // 2 个球员圆点
-  assert.equal(arcs.length, 2);
-  // id5 静止 → 有偏移（px ≠ 逻辑位置像素）；id6 移动 → 无偏移（px == 逻辑位置像素）
   const norm = config.pitchMargin;
   const px5 = norm + 0.4 * (W - 2 * norm);
   const px6 = norm + 0.6 * (W - 2 * norm);
-  const arc5 = arcs[0];
-  const arc6 = arcs[1];
-  assert.ok(Math.abs(arc5.args[0] - px5) > 0.5, `静止球员 5 应有偏移（px=${arc5.args[0]} vs ${px5}）`);
-  assert.ok(Math.abs(arc6.args[0] - px6) < 0.5, `移动球员 6 应无偏移（px=${arc6.args[0]} vs ${px6}）`);
+  const pyMid = norm + 0.5 * (H - 2 * norm);
+  // 幅度断言（与相位无关）：扫多个 t，静止球员 5 至少在某个 t 偏移 > 0.5px；移动球员 6 始终无偏移
+  let anyOffset = false;
+  for (const t of [100.0, 100.5, 101.0, 101.7]) {
+    const c2 = new MockCanvas(W, H);
+    const ctx2 = c2.getContext();
+    renderFrame(ctx2, { players, ball: { x: 0.5, y: 0.5 } }, W, H, { playTime: t, movingIds, dt: 1 / 60 });
+    const isPlayerArc = (cc) => cc.method === 'arc' && cc.args[2] === config.render.playerRadius;
+    const arcs = c2.getContext().calls.filter(isPlayerArc);
+    assert.equal(arcs.length, 2);
+    // 按 x 归属：靠近 px5 的是 id5，靠近 px6 的是 id6
+    const sorted = [...arcs].sort((a, b) => a.args[0] - b.args[0]); // 左(id5)右(id6)
+    const arc5 = sorted[0];
+    const arc6 = sorted[1];
+    const off6 = Math.hypot(arc6.args[0] - px6, arc6.args[1] - pyMid);
+    assert.ok(off6 < 0.5, `移动球员 6 应无偏移（px=${arc6.args[0]},py=${arc6.args[1]}）`);
+    const off5 = Math.hypot(arc5.args[0] - px5, arc5.args[1] - pyMid);
+    if (off5 > 0.5) { anyOffset = true; break; }
+  }
+  assert.ok(anyOffset, '静止球员 5 应有 micro-motion 偏移（幅度 > 0.5px，相位无关）');
 });
 
 test('renderFrame: 不修改逻辑位置', () => {
