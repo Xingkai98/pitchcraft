@@ -90,8 +90,11 @@ function interpretShot(e, out) {
   const flightDur = durationFromSpeed(meters, speed);
   const isGoal = e.result === 'goal';
   const isOff = e.result === 'off_target';
-  // 球终点（P6 区分）：goal 略过门线进网（x=1.02）、off_target 越底线偏出（x=1.02，y 偏离球门由引擎给）、saved 停门线
-  const ballEndX = (isGoal || isOff) ? (e.x2 >= 0.5 ? 1.02 : -0.02) : e.x2;
+  // 球终点（P6 区分）：
+  //   goal → 球停在门里：球心刚过门线（x=1.005），球体完全越线但停在网内（不飞过球门）
+  //   off_target → 飞过球门出界（x=1.02，y 偏离球门由引擎给）
+  //   saved → 停门线（x2）
+  const ballEndX = isGoal ? (e.x2 >= 0.5 ? 1.005 : -0.005) : (isOff ? (e.x2 >= 0.5 ? 1.02 : -0.02) : e.x2);
   const ballEndY = e.y2 ?? 0.5;
   out.push({ t: t0, kind: 'ball', x: e.x, y: e.y });
   out.push({ t: t0 + flightDur, kind: 'ball', x: ballEndX, y: ballEndY });

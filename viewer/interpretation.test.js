@@ -40,13 +40,13 @@ test('shot goal: 球越过门线进网，门将没够到', () => {
   const balls = anchors.filter((a) => a.kind === 'ball');
   assert.ok(balls.length >= 2);
   assert.equal(balls[0].x, 0.7); // 起点
-  // goal：球越过门线（x2>=0.5 → 终点 1.02，表示进网）
+  // goal：球停在门里（球心刚过门线 x=1.005，球体完全越线但不飞过球门）
   assert.ok(balls[balls.length - 1].x > 1.0, `进球应越过门线，实际 ${balls[balls.length - 1].x}`);
   // 门将扑向射门侧，但位置与球终点不同（没够到）
   const keeper = anchors.filter((a) => a.kind === 'player' && (a.id === 0 || a.id === 21));
   assert.ok(keeper.length >= 3, '门将应有起始+反应+终点锚点');
   const keeperEnd = keeper[keeper.length - 1];
-  // goal：门将停在门线（x2），球越过门线（1.02）——没够到由 x 差异表达（门将终点 = 引擎高亮结束位置）
+  // goal：门将停在门线（x2），球停在门里（1.005）——没够到由 x 差异表达（门将终点 = 引擎高亮结束位置）
   assert.notEqual(keeperEnd.x, balls[balls.length - 1].x, 'goal 时门将未够到球（球越过门线）');
 });
 
