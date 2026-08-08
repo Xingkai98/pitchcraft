@@ -1888,6 +1888,27 @@ mod tests {
         Some(rest.split('"').next().unwrap_or("").to_string())
     }
 
+    /// 提取 beat 全部 movers：[(id, from_x, from_y, to_x, to_y, speed)]
+    fn movers_of(e: &str) -> Vec<(i32, f64, f64, f64, f64, f64)> {
+        let needle = "\"movers\":[";
+        let i = match e.find(needle) { Some(i) => i, None => return vec![] };
+        let rest = &e[i + needle.len()..];
+        let end = rest.find(']').unwrap_or(rest.len());
+        let arr = &rest[..end];
+        let mut out = Vec::new();
+        for tok in arr.split("{\"id\":").skip(1) {
+            let id_str: String = tok.chars().take_while(|c| c.is_ascii_digit() || *c == '-').collect();
+            let id: i32 = match id_str.parse() { Ok(v) => v, Err(_) => continue };
+            let fx = extract_num_field(tok, "from_x").unwrap_or(0.0);
+            let fy = extract_num_field(tok, "from_y").unwrap_or(0.0);
+            let tx = extract_num_field(tok, "to_x").unwrap_or(0.0);
+            let ty = extract_num_field(tok, "to_y").unwrap_or(0.0);
+            let sp = extract_num_field(tok, "speed").unwrap_or(4.0);
+            out.push((id, fx, fy, tx, ty, sp));
+        }
+        out
+    }
+
     #[test]
     fn p5_formation_and_transition() {
         let cfg = MatchConfig::default_();
@@ -1929,6 +1950,114 @@ mod tests {
         // 防线前压：球在前场时防线 x 应显著大于球在后场时
         if front_n > 0 && back_n > 0 {
             assert!(front_avg > back_avg + 0.02, "防线应随球前压（前场 {:.3} vs 后场 {:.3}）", front_avg, back_avg);
+        }
+    }
+
+    /// 按主队/客队持球分桶采样某球员（id）的 mover to_x 平均
+    fn sample_player_x(seed: u64, pid: i32, home_ball: Option<bool>) -> (f64, usize) {
+        let cfg = MatchConfig::default_();
+        let s = simulate(seed, cfg);
+        let mut sum = 0.0;
+        let mut n = 0usize;
+        for e in json_events(&s) {
+            if type_of(&e) != "beat" || !e.contains("\"main\"") { continue; }
+            let subj = extract_main_subject(&e);
+            if subj.is_none() { continue; }
+            let is_home_ball = subj.unwrap() <= 10;
+            if let Some(hb) = home_ball { if is_home_ball != hb { continue; } }
+            for (id, _, _, tx, _, _) in movers_of(&e) {
+                if id == pid {
+                    sum += tx;
+                    n += 1;
+                }
+            }
+        }
+        (if n > 0 { sum / n as f64 } else { 0.0 }, n)
+    }
+
+    #[test]
+    fn p5_ball_side_shift() {
+        // 球侧平移：home 持球、球在左半 vs 右半时，home 中场（id 5，非 carrier 时）目标 x 偏左 vs 偏右
+        let cfg = MatchConfig::default_();
+        let mut left_sum = 0.0; let mut left_n = 0usize;
+        let mut right_sum = 0.0; let mut right_n = 0usize;
+        for seed in 1..8u64 {
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                if type_of(&e) != "beat" || !e.contains("\"main\"") { continue; }
+                let subj = extract_main_subject(&e);
+                if subj.is_none() || subj.unwrap() > 10 { continue; } // home 持球
+                let mx = main_field(&e, "x").unwrap_or(0.5);
+                for (id, _, _, tx, _, _) in movers_of(&e) {
+                    if id != 5 { continue; }
+                    if mx < 0.35 { left_sum += tx; left_n += 1; }
+                    else if mx > 0.65 { right_sum += tx; right_n += 1; }
+                }
+            }
+        }
+        let left = if left_n > 0 { left_sum / left_n as f64 } else { 0.0 };
+        let right = if right_n > 0 { right_sum / right_n as f64 } else { 0.0 };
+        assert!(left_n > 0 && right_n > 0, "应采到左右两侧样本（left_n={} right_n={}）", left_n, right_n);
+        assert!(right > left + 0.02, "球在右半时全队应偏右（left={:.3} right={:.3}）", left, right);
+    }
+
+    #[test]
+    fn p5_press_up_and_gk_exempt() {
+        // 控球阶段压上：home 持球 vs away 持球时 home 中场目标 x 前压；门将不受平移/压上影响
+        let (home_x, home_n) = sample_player_x(42, 5, Some(true));
+        let (away_x, away_n) = sample_player_x(42, 5, Some(false));
+        assert!(home_n > 0 && away_n > 0, "应采到两方样本（home_n={} away_n={}）", home_n, away_n);
+        assert!(home_x > away_x + 0.01, "己方持球时前压（home {:.3} vs away {:.3}）", home_x, away_x);
+        // 门将豁免：home 门将 id 0 目标 x 恒为门线（≈0.02），不随球/阶段
+        let (gk_x, gk_n) = sample_player_x(42, 0, None);
+        assert!(gk_n > 0);
+        assert!((gk_x - 0.02).abs() < 0.01, "门将应回门线（gk_x={:.3}）", gk_x);
+    }
+
+    #[test]
+    fn p5_approach_cap() {
+        // approach cap：单拍 from→to 距离 ≤ RUN_SPEED×1s（归一化）+ 容差（防球员超速横穿）
+        let cfg = MatchConfig::default_();
+        let mut checked_cap = 0usize;
+        for seed in 1..5u64 {
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                if type_of(&e) != "beat" { continue; }
+                for (id, fx, fy, tx, ty, sp) in movers_of(&e) {
+                    // 单拍位移 ≤ 该 mover 自身 speed×1s（开球者快走 8m/s 等特殊速度用自身 speed）
+                    let max_step = norm_step(sp * TICK_SECONDS);
+                    let d = dist_norm((fx, fy), (tx, ty));
+                    assert!(d <= max_step * 1.05 + 1e-6, "单拍位移超速: id={} d={:.4} max={:.4} sp={:.1}", id, d, max_step, sp);
+                    checked_cap += 1;
+                }
+            }
+        }
+        assert!(checked_cap > 100, "应检查足够多 mover（{}）", checked_cap);
+    }
+
+    #[test]
+    fn p5_repulsion_separates_overlap() {
+        // repulsion：两个同队球员放在同一位置、球在远处 → compute_movers 应把目标推开（不贴脸）。
+        // 内部单测（构造 MatchState）——直接验证 repulsion 目标层逻辑。
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.ball_pos = (0.8, 0.5);
+        st.possession = 0; // home 持球
+        st.carrier = 9;
+        st.pos[1] = (0.4, 0.5);
+        st.pos[2] = (0.4, 0.5); // 两个 home 外场球员完全重叠
+        let mut rng = SeededRng::new(1);
+        let movers = compute_movers(&mut st, &mut rng, 1.0, &[9]);
+        let mut t1 = None;
+        let mut t2 = None;
+        for m in &movers {
+            if m.id == 1 { t1 = Some((m.to_x, m.to_y)); }
+            if m.id == 2 { t2 = Some((m.to_x, m.to_y)); }
+        }
+        if let (Some(a), Some(b)) = (t1, t2) {
+            let d = dist_norm(a, b);
+            // 重叠球员应被 repulsion 推开（单拍 to 间距显著 > 原始 0）
+            assert!(d > 0.005, "重叠球员应被 repulsion 分开（d={:.4}）", d);
         }
     }
 }
