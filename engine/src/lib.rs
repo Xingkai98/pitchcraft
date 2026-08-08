@@ -476,6 +476,7 @@ enum HighlightOutcome {
     ShotSavedCaught { gk: i32, save_pos: (f64, f64) },
     ShotSavedRebound { gk: i32, rebound_from: (f64, f64), dir: (f64, f64) },
     ShotOffTarget { kickoff_id: i32, ball_end: (f64, f64) },
+    GoalKick { land: (f64, f64) },
     TackleSuccess { def: i32, loose: (f64, f64), contact: (f64, f64) },
     TackleFail { victim: i32, contact: (f64, f64) },
 }
@@ -621,6 +622,7 @@ fn highlight_ball_end(h: &Highlight) -> (f64, f64) {
         HighlightOutcome::ShotSavedCaught { save_pos, .. } => *save_pos,
         HighlightOutcome::ShotSavedRebound { rebound_from, .. } => *rebound_from,
         HighlightOutcome::ShotOffTarget { ball_end, .. } => *ball_end,
+        HighlightOutcome::GoalKick { land, .. } => *land,
         HighlightOutcome::TackleSuccess { loose, .. } => *loose,
         HighlightOutcome::TackleFail { contact, .. } => *contact,
     }
@@ -728,6 +730,14 @@ fn pick_close_down_players(st: &MatchState, defend_team: u32, target: (f64, f64)
     }
     cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
     cand.iter().take(n).map(|(_, id)| *id).collect()
+}
+
+/// 门球开大脚落点：中场偏对方半场，中线和对方禁区前之间随机波动
+fn goal_kick_land(st: &MatchState, rng: &mut SeededRng) -> (f64, f64) {
+    let dir = if st.possession == 0 { 1.0 } else { -1.0 };
+    let x = 0.5 + dir * (0.08 + (rng.next_u64() % 30) as f64 / 100.0); // 0.5±(0.08-0.37)：中线到对方禁区前
+    let y = 0.2 + (rng.next_u64() % 60) as f64 / 100.0; // 0.2-0.8 随机
+    (clamp01(x), clamp01(y))
 }
 
 /// 新进攻方（attacking 方）前插最深的外场球员位置（门前/禁区前沿）。
@@ -1033,14 +1043,40 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             start_loose_ball(st, rebound_from, dir, None);
             advance_loose(st, rng, events, t);
         }
-        HighlightOutcome::ShotOffTarget { kickoff_id, ball_end } => {
+        HighlightOutcome::ShotOffTarget { kickoff_id: _, ball_end } => {
+            // 门球（goal kick）：possession 切对方，球到对方门将脚下（瞬移）
             st.ball_pos = ball_end;
-            let receiver = if st.possession == 0 { 11 } else { 10 };
+            let gk_id = if st.possession == 0 { 21 } else { 0 };
+            st.possession = if gk_id <= 10 { 0 } else { 1 };
+            let gk_pos = if gk_id == 0 { (0.02, 0.5) } else { (0.98, 0.5) };
+            st.pos[gk_id as usize] = gk_pos;
+            st.last_emitted[gk_id as usize] = gk_pos;
             st.carrier = -1;
-            st.dead_ball = Some(DeadBall { goal: false, remaining: 3, preparing: true, kickoff_id, kicked: false, receiver, kickoff_end: 0.0 });
-            let movers = compute_movers(st, rng, t, &[kickoff_id]);
+            // 门将开大脚：pass 高亮（门线 → 中场偏对方半场落点，无 to——落点是争抢点）
+            let land = goal_kick_land(st, rng);
+            let speed = 16.0 + (rng.next_u64() % 50) as f64 / 10.0; // 16-21 m/s 长球
+            let t_end = t + distance_meters(gk_pos, land) / speed;
+            events.push(Event {
+                t, type_: EventType::Pass, subject: gk_id, from: Some(gk_id), to: None,
+                x: gk_pos.0, y: gk_pos.1, x2: Some(land.0), y2: Some(land.1),
+                result: Some("success".to_string()), speed: Some(speed),
+                ..Event::default()
+            });
+            st.highlight = Some(Highlight {
+                t_end,
+                participants: vec![(gk_id, gk_pos)],
+                outcome: HighlightOutcome::GoalKick { land },
+            });
+            let movers = compute_movers(st, rng, t, &[gk_id]);
             for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
             events.push(beat_event(t, None, None, movers));
+        }
+        HighlightOutcome::GoalKick { land } => {
+            // 门将开大脚球到达落点：进入松散球（双方可争），拾取恢复 main
+            st.ball_pos = land;
+            st.carrier = -1;
+            start_loose_ball(st, land, (0.0, 0.0), None);
+            advance_loose(st, rng, events, t);
         }
         HighlightOutcome::TackleSuccess { def, loose, contact } => {
             st.ball_pos = loose;
@@ -1780,7 +1816,8 @@ mod tests {
         for (i, e) in evts.iter().enumerate() {
             if type_of(e) != "pass" { continue; }
             let from = json_num(e, "from").unwrap() as i32;
-            let to = json_num(e, "to").unwrap() as i32;
+            // 门球开大脚 pass 无 to（落点是争抢点）——跳过（非传跑配合高亮）
+            let to = match json_num(e, "to") { Some(t) => t as i32, None => continue };
             let pt = json_num(e, "t").unwrap();
             // 只检查飞行 >1.5s 的长传（确保 pt+1 仍在高亮覆盖区间内）
             let speed = json_num(e, "speed").unwrap();
@@ -2092,5 +2129,84 @@ mod tests {
             // 重叠球员应被 repulsion 推开（单拍 to 间距显著 > 原始 0）
             assert!(d > 0.005, "重叠球员应被 repulsion 分开（d={:.4}）", d);
         }
+    }
+
+    // ---- P6 门球 + 进球回中圈测试 ----
+
+    /// 门球开大脚 pass：无 to、subject = 门将、球从门线飞向中场
+    fn find_goal_kick_pass(s: &str) -> Option<String> {
+        json_events(s).iter().find(|e| {
+            type_of(e) == "pass"
+                && json_num(e, "to").is_none()
+                && json_num(e, "subject").map(|s| s == 0.0 || s == 21.0).unwrap_or(false)
+        }).cloned()
+    }
+
+    #[test]
+    fn p6_goal_kick_produced_on_off_target() {
+        // off_target → 门球：找到门将开大脚 pass（无 to、subject=门将、从门线飞向中场）
+        let cfg = MatchConfig::default_();
+        for seed in 1..15u64 {
+            let s = simulate(seed, cfg);
+            if let Some(gk_pass) = find_goal_kick_pass(&s) {
+                // 门将开大脚：起点门线（x≈0.02 或 0.98），落点在中场偏对方半场
+                let x = json_num(&gk_pass, "x").unwrap();
+                let x2 = json_num(&gk_pass, "x2").unwrap();
+                let gk = json_num(&gk_pass, "subject").unwrap() as i32;
+                let gk_line = if gk == 0 { 0.02 } else { 0.98 };
+                assert!((x - gk_line).abs() < 0.01, "门将开大脚起点应在门线: x={}", x);
+                // 落点在中场偏对方半场：中线和对方禁区前之间（离门线 0.12-0.42 之外）
+                let dist_from_goal = (x2 - gk_line).abs();
+                assert!(dist_from_goal > 0.35 && dist_from_goal < 0.9, "落点应在中场偏对方半场: x2={} gk_line={}", x2, gk_line);
+                return;
+            }
+        }
+        panic!("没有任何 seed 产出门球（门将开大脚 pass 无 to）");
+    }
+
+    #[test]
+    fn p6_goal_kick_then_loose_ball() {
+        // 门球后：开大脚球到达落点 → 松散球（beat.ball loose:true）→ 拾取恢复
+        let cfg = MatchConfig::default_();
+        let mut checked = 0;
+        for seed in 1..20u64 {
+            let s = simulate(seed, cfg);
+            if let Some(gk_pass) = find_goal_kick_pass(&s) {
+                // 找门球 pass 之后是否出现 loose ball
+                let evts = json_events(&s);
+                let idx = evts.iter().position(|e| *e == gk_pass).unwrap();
+                let after: Vec<&String> = evts.iter().skip(idx + 1).collect();
+                // 高亮飞行期 beat 无 ball；finalize 后松散球 beat 带 ball loose:true
+                let has_loose = after.iter().any(|e| e.contains("\"loose\":true"));
+                assert!(has_loose, "门球后应出现松散球（beat.ball loose:true）");
+                checked += 1;
+                if checked >= 3 { return; }
+            }
+        }
+        assert!(checked > 0, "应有门球被检查");
+    }
+
+    #[test]
+    fn p6_goal_direct_center_spot() {
+        // 进球后：球直接回中圈（dead_ball 阶段 ball_pos=中圈，事件流 kickoff 起点球在中圈）
+        let cfg = MatchConfig::default_();
+        let mut checked = 0;
+        for seed in 1..25u64 {
+            let s = simulate(seed, cfg);
+            let evts = json_events(&s);
+            for (i, e) in evts.iter().enumerate() {
+                if type_of(e) != "shot" || !e.contains("\"result\":\"goal\"") { continue; }
+                // 进球后应有 kickoff（回中圈重开），其 x=0.5,y=0.5
+                let next_kickoff = evts.iter().skip(i + 1).find(|n| type_of(n) == "kickoff");
+                if let Some(k) = next_kickoff {
+                    let x = json_num(k, "x").unwrap_or(-1.0);
+                    let y = json_num(k, "y").unwrap_or(-1.0);
+                    assert!((x - 0.5).abs() < 0.01 && (y - 0.5).abs() < 0.01, "进球后 kickoff 应从中圈: ({},{})", x, y);
+                    checked += 1;
+                    if checked >= 3 { return; }
+                }
+            }
+        }
+        assert!(checked > 0, "应有进球被检查");
     }
 }
