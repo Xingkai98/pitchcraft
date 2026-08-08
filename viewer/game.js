@@ -146,6 +146,25 @@ export class Game {
     }
   }
 
+  // 当前时刻该球员是否在移动（同 evt 内相邻锚点位置不同 → 插值移动中；
+  // 跨 evt 间隙 hold → 静止）。供 micro-motion 抑制判断（P5 S3）。
+  isPlayerMoving(id) {
+    const arr = this._playerAnchors.get(id);
+    if (!arr || arr.length < 2) return false;
+    const t = this.playTime;
+    let lo = 0;
+    let hi = arr.length - 1;
+    let pos = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (arr[mid].t <= t) { pos = mid; lo = mid + 1; } else hi = mid - 1;
+    }
+    if (pos < 0 || pos + 1 >= arr.length) return false;
+    const prev = arr[pos];
+    const next = arr[pos + 1];
+    return prev.evt === next.evt && (prev.x !== next.x || prev.y !== next.y);
+  }
+
   // 按实体构建时间索引：球一组、每球员一组（timeline 已按 t 排序，分组后仍有序）
   _buildAnchorIndex() {
     this._ballAnchors = [];

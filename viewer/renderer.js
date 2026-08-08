@@ -3,6 +3,7 @@
 
 import { config } from './config.js';
 import { normalizedToPixels, pitchLines } from './geometry.js';
+import { microMotionOffset, microMotionFade } from './micro-motion.js';
 
 // 用离屏 canvas 渲染一帧，返回 { canvas, ctx, imageData }
 // 输入：pitch 当前状态（球员位置 + 球位置），canvas 尺寸取自 config
@@ -107,11 +108,28 @@ export function drawBall(ctx, x, y, width, height) {
 }
 
 // 渲染一帧：给定当前状态（22 球员位置 + 球位置），绘制到 ctx
+// opts 可选：{ playTime, movingIds:Set, dt }——开启 micro-motion（静止球员小幅重心调整）。
 // 返回 imageData（供测试断言）
-export function renderFrame(ctx, state, width, height) {
+export function renderFrame(ctx, state, width, height, opts = {}) {
   drawPitch(ctx, width, height);
+  const t = opts.playTime;
+  const movingIds = opts.movingIds;
+  const dt = opts.dt ?? 1 / 60;
+  const useMicro = typeof t === 'number' && movingIds instanceof Set;
   for (const p of state.players) {
-    drawPlayer(ctx, p.x, p.y, p.id, width, height);
+    let x = p.x;
+    let y = p.y;
+    if (useMicro) {
+      // micro-motion：静止球员（不在 movingIds）做小幅重心调整；移动/持球者抑制
+      const active = !movingIds.has(p.id);
+      const fade = microMotionFade(p.id, active, dt);
+      if (fade > 0.0001) {
+        const off = microMotionOffset(p.id, t);
+        x += off.dx * fade;
+        y += off.dy * fade;
+      }
+    }
+    drawPlayer(ctx, x, y, p.id, width, height);
   }
   if (state.ball) drawBall(ctx, state.ball.x, state.ball.y, width, height);
   // 调试日志：输出已渲染的球屏幕坐标（tasks 6.3 文本核对）。

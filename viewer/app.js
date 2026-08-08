@@ -5,10 +5,10 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260807-2';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260807-2';
-import { createGame } from './game.js?v=20260807-2';
-import { mockEventStream } from './mock-event-stream.js?v=20260807-2';
+import { config } from './config.js?v=20260808-1';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-1';
+import { createGame } from './game.js?v=20260808-1';
+import { mockEventStream } from './mock-event-stream.js?v=20260808-1';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -86,7 +86,12 @@ function frame(ts) {
   if (game) {
     game.step(dt);
     // 渲染当前状态（renderFrame 返回 imageData 供测试；这里仅用于绘制）
-    renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height);
+    // micro-motion（P5 S3）：传 playTime + 移动球员集合，静止球员小幅重心调整
+    const movingIds = new Set();
+    for (const p of game.players) {
+      if (game.isPlayerMoving(p.id)) movingIds.add(p.id);
+    }
+    renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height, { playTime: game.playTime, movingIds, dt });
     // 比分显示（简单：从事件流里找最近一次 goal）
     updateScore();
     // 拖动进度条时 status 由 input handler 显示"已暂停"，不被帧循环覆盖
