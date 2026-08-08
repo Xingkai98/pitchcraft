@@ -100,6 +100,24 @@ function validateBaseEvent(e) {
       }
     }
   }
+  // h（球高度，P6 批次1）：可选，0-1 数字（pass/shot 高亮带弧线高度）
+  if (e.h !== undefined && e.h !== null) {
+    if (typeof e.h !== 'number' || !Number.isFinite(e.h) || e.h < 0 || e.h > 1) {
+      throw new Error(`event h must be number 0-1: ${JSON.stringify(e.h)}`);
+    }
+  }
+  // detail 枚举按事件类型限定（P6 批次1）：pass 校验出界/角球/解围，shot 校验头球；
+  // 其他类型 detail（whistle 的 kickoff_again/half_time 等）不校验。
+  if (e.detail !== undefined && e.detail !== null) {
+    const passDetails = ['out_sideline', 'out_goal_line', 'corner', 'clearance'];
+    const shotDetails = ['header'];
+    if (e.type === 'pass' && !passDetails.includes(e.detail)) {
+      throw new Error(`pass detail must be one of ${passDetails.join('/')}: ${JSON.stringify(e.detail)}`);
+    }
+    if (e.type === 'shot' && !shotDetails.includes(e.detail)) {
+      throw new Error(`shot detail must be one of ${shotDetails.join('/')}: ${JSON.stringify(e.detail)}`);
+    }
+  }
   // 类型相关必填：pass 必须有 from；to 可选（门球开大脚无接收者，落点是争抢点）。
   // to 在场时校验 0-21 整数（同 tackle 身份校验）。
   if (e.type === 'pass') {

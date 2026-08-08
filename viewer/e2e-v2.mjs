@@ -70,9 +70,10 @@ let maxBallJump = 0;
 let maxBallJumpT = 0;
 const prevPlayers = new Map(game.players.map((p) => [p.id, { x: p.x, y: p.y }]));
 let maxPlayerJump = 0;
-// 预计算 spec 允许的球瞬移时刻（P6）：
+// 预计算 spec 允许的球瞬移时刻（P6 / P6 批次1）：
 // 1) 进球确认（whistle，前一动作是 goal shot）→ 球直接回中圈
-// 2) 门球（off_target → 门将开大脚 pass）→ 球瞬移到门将
+// 2) 重开 pass（门球开大脚 / 角球发球 / 出界 pass / 解围，to=undefined）→ 球瞬移：
+//    出界点 → 门将/角旗、出界 → 重开点（RestartPrep 准备期球停固定点，死球重开有瞬移）
 const allowedTeleportTimes = new Set();
 for (let i = 0; i < parsed.length; i++) {
   if (parsed[i].type === 'whistle' && i > 0) {
@@ -82,8 +83,9 @@ for (let i = 0; i < parsed.length; i++) {
       allowedTeleportTimes.add(parsed[i].t);
     }
   } else if (parsed[i].type === 'pass' && parsed[i].to === undefined) {
-    // 门球开大脚：球瞬移到门将（开大脚起点 = 门线，球从出界处瞬移）
+    // 重开 pass（to=None）：球瞬移到门将/角旗/出界点；准备期（RestartPrep）球停固定点
     allowedTeleportTimes.add(parsed[i].t);
+    for (let k = 1; k <= 6; k++) allowedTeleportTimes.add(parsed[i].t + k);
   }
 }
 const isAllowedTeleport = (t) => {

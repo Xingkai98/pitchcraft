@@ -177,3 +177,38 @@ test('pass: to 在场时校验 0-21 整数', () => {
   assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, to: 'abc', subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12 }));
   assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, to: 22, subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12 }));
 });
+
+// ---- P6 批次1：h 字段 + detail 枚举校验 ----
+
+test('P6 批次1: h 合法（0-1 数字）', () => {
+  const e = parseEvent({ t: 100, type: 'pass', from: 13, subject: 13, x: 0, y: 1, x2: 0.14, y2: 0.6, speed: 18, h: 0.6, detail: 'corner' });
+  assert.equal(e.h, 0.6);
+});
+
+test('P6 批次1: h 越界/非数字抛错', () => {
+  assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12, h: 1.5 }));
+  assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12, h: -0.1 }));
+  assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12, h: 'high' }));
+});
+
+test('P6 批次1: pass detail 合法枚举（out_sideline/out_goal_line/corner/clearance）', () => {
+  for (const d of ['out_sideline', 'out_goal_line', 'corner', 'clearance']) {
+    const e = parseEvent({ t: 100, type: 'pass', from: 21, subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12, detail: d });
+    assert.equal(e.detail, d);
+  }
+});
+
+test('P6 批次1: pass detail 非法枚举抛错', () => {
+  assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12, detail: 'header' }), 'pass 不应允许 header detail');
+});
+
+test('P6 批次1: shot detail=header 合法；非法抛错', () => {
+  const e = parseEvent({ t: 200, type: 'shot', subject: 10, x: 0.7, y: 0.5, x2: 0.98, y2: 0.5, speed: 20, result: 'goal', detail: 'header', h: 0 });
+  assert.equal(e.detail, 'header');
+  assert.throws(() => parseEvent({ t: 200, type: 'shot', subject: 10, x: 0.7, y: 0.5, x2: 0.98, y2: 0.5, speed: 20, result: 'goal', detail: 'corner' }), 'shot 不应允许 corner detail');
+});
+
+test('P6 批次1: 非 pass/shot 的 detail 不校验（whistle 等既有 detail）', () => {
+  const e = parseEvent({ t: 300, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0', detail: 'kickoff_again' });
+  assert.equal(e.detail, 'kickoff_again');
+});
