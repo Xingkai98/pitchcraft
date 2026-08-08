@@ -1440,16 +1440,16 @@ fn lead_point(from: (f64, f64), to: (f64, f64), lead: f64) -> (f64, f64) {
 }
 
 /// 射门目标（按 result 区分，P6）：goal/saved 瞄准球门（y 在球门范围 0.455-0.545）；
-/// off_target 偏离球门（y 偏高/偏低，视觉打偏出界）
+/// off_target 擦柱偏出一点点（y 贴近球门边缘外侧 0.40-0.445 / 0.555-0.60，约偏出 0.7-3.7m）
 fn shot_target(rng: &mut SeededRng, home: bool, result: &str) -> (f64, f64) {
     let x = if home { 0.98 } else { 0.02 };
     if result == "off_target" {
-        // 打偏：偏离球门范围（高/低，视觉出界）
+        // 打偏：擦着门柱偏出（球门范围 0.455-0.545，偏出 0.01-0.055 ≈ 0.7-3.7m，视觉"差一点点进门"）
         let high = rng.next_u64() % 2 == 0;
         let y = if high {
-            0.72 + (rng.next_u64() % 18) as f64 / 100.0 // 0.72-0.90 偏高
+            0.555 + (rng.next_u64() % 5) as f64 / 100.0 // 0.555-0.60 偏高偏出
         } else {
-            0.10 + (rng.next_u64() % 18) as f64 / 100.0 // 0.10-0.28 偏低
+            0.40 + (rng.next_u64() % 5) as f64 / 100.0 // 0.40-0.445 偏低偏出
         };
         (x, clamp01(y))
     } else {
