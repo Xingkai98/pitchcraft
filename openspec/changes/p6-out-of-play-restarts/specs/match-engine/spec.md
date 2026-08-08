@@ -12,10 +12,10 @@
 
 #### Scenario: 传球出底线 → 门球
 - **GIVEN** 一次传球落点出底线（x<0 或 x>1）
-- **THEN** 高亮结局 PassOutOfPlay（detail=`out_goal_line`），pass 事件 to=None；门球重开（对方门将）
+- **THEN** 高亮结局 PassOutOfPlay（detail=`out_goal_line`），pass 事件 to=None；**门球重开（球出界侧的门将：home 传球出 x>1 → away 门将；出 x<0 → 兜底 away 门将，简化）**
 
 #### Scenario: 射门被扑出底线 → 角球
-- **GIVEN** 一次射门被扑出（save-rebound）且**未钳制弹开点越过门线**（home 攻 x>1 / away 攻 x<0）
+- **GIVEN** 一次射门被扑出（save-rebound）且**越线（概率 ~30% 触发，弹开点 = 门线外一点）**（home 攻 x>1 / away 攻 x<0）
 - **THEN** 高亮结局 CornerAward → 角球重开（进攻方从角旗区开球）
 
 ### Requirement: 角球机制
