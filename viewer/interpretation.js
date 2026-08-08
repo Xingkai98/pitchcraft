@@ -89,8 +89,9 @@ function interpretShot(e, out) {
   const speed = e.speed ?? config.defaults.shotSpeed;
   const flightDur = durationFromSpeed(meters, speed);
   const isGoal = e.result === 'goal';
-  // 球终点：goal 时略过门线（进网），saved 时停在门线
-  const ballEndX = isGoal ? (e.x2 >= 0.5 ? 1.02 : -0.02) : e.x2; // 越过门线一点表示进网
+  const isOff = e.result === 'off_target';
+  // 球终点（P6 区分）：goal 略过门线进网（x=1.02）、off_target 越底线偏出（x=1.02，y 偏离球门由引擎给）、saved 停门线
+  const ballEndX = (isGoal || isOff) ? (e.x2 >= 0.5 ? 1.02 : -0.02) : e.x2;
   const ballEndY = e.y2 ?? 0.5;
   out.push({ t: t0, kind: 'ball', x: e.x, y: e.y });
   out.push({ t: t0 + flightDur, kind: 'ball', x: ballEndX, y: ballEndY });
@@ -281,12 +282,13 @@ function interpretBeat(e, out, excluded = null) {
 
 // 高亮事件的参与者集合（两层合成排除用）
 function highlightParticipants(e) {
-  if (e.type === 'pass') return new Set([e.from, e.to]);
+  const clean = (ids) => new Set(ids.filter((x) => x !== undefined && x !== null));
+  if (e.type === 'pass') return clean([e.from, e.to]); // 门球开大脚无 to → 只有传球者
   if (e.type === 'shot') {
     const keeperId = (typeof e.subject === 'number' && e.subject <= 10) ? 21 : 0;
-    return new Set([e.subject, keeperId]);
+    return clean([e.subject, keeperId]);
   }
-  if (e.type === 'tackle') return new Set([e.subject, e.carrier ?? e.to]);
+  if (e.type === 'tackle') return clean([e.subject, e.carrier ?? e.to]);
   return new Set();
 }
 
@@ -403,7 +405,10 @@ export function buildTimeline(events, mode = 'clip') {
       let j = i - 1;
       while (j >= 0 && (events[j].type === 'off_ball_run' || events[j].type === 'beat')) j--;
       const prevShot = j >= 0 ? events[j] : null;
-      if (prevShot && prevShot.type === 'shot' && prevShot.result === 'goal') {
+      // 守卫：仅当 whistle 在射门飞行结束后（真实引擎流）才加中圈锚点；
+      // mock 流 shot 与 whistle 同 t 时跳过，避免破坏进球飞行（审阅 minor）
+      if (prevShot && prevShot.type === 'shot' && prevShot.result === 'goal'
+        && e.t >= highlightEndTime(prevShot) - 0.01) {
         // 进球确认：球直接跳到中圈（瞬移；死球→kickoff 例外）
         anchors.push({ t: e.t, kind: 'ball', x: 0.5, y: 0.5, evt: i });
       }

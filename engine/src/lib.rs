@@ -475,7 +475,7 @@ enum HighlightOutcome {
     ShotGoal { kickoff_id: i32, ball_end: (f64, f64) },
     ShotSavedCaught { gk: i32, save_pos: (f64, f64) },
     ShotSavedRebound { gk: i32, rebound_from: (f64, f64), dir: (f64, f64) },
-    ShotOffTarget { kickoff_id: i32, ball_end: (f64, f64) },
+    ShotOffTarget,
     GoalKick { land: (f64, f64) },
     TackleSuccess { def: i32, loose: (f64, f64), contact: (f64, f64) },
     TackleFail { victim: i32, contact: (f64, f64) },
@@ -621,7 +621,7 @@ fn highlight_ball_end(h: &Highlight) -> (f64, f64) {
         HighlightOutcome::ShotGoal { ball_end, .. } => *ball_end,
         HighlightOutcome::ShotSavedCaught { save_pos, .. } => *save_pos,
         HighlightOutcome::ShotSavedRebound { rebound_from, .. } => *rebound_from,
-        HighlightOutcome::ShotOffTarget { ball_end, .. } => *ball_end,
+        HighlightOutcome::ShotOffTarget => (0.02, 0.5),
         HighlightOutcome::GoalKick { land, .. } => *land,
         HighlightOutcome::TackleSuccess { loose, .. } => *loose,
         HighlightOutcome::TackleFail { contact, .. } => *contact,
@@ -732,10 +732,13 @@ fn pick_close_down_players(st: &MatchState, defend_team: u32, target: (f64, f64)
     cand.iter().take(n).map(|(_, id)| *id).collect()
 }
 
-/// 门球开大脚落点：中场偏对方半场，中线和对方禁区前之间随机波动
+/// 门球开大脚落点：中场偏对方半场，中线和对方禁区前之间随机波动。
+/// 禁区前 = 对方禁区边缘外侧（home 禁区 x∈[0,0.16]，away 禁区 x∈[0.84,1]），落点钳到禁区外。
 fn goal_kick_land(st: &MatchState, rng: &mut SeededRng) -> (f64, f64) {
     let dir = if st.possession == 0 { 1.0 } else { -1.0 };
-    let x = 0.5 + dir * (0.08 + (rng.next_u64() % 30) as f64 / 100.0); // 0.5±(0.08-0.37)：中线到对方禁区前
+    // home 开大脚（dir=+1）：落点 x∈[0.5, 0.84-0.02]；away 开大脚（dir=-1）：x∈[0.16+0.02, 0.5]
+    let (lo, hi) = if dir > 0.0 { (0.50, 0.82) } else { (0.18, 0.50) };
+    let x = lo + (rng.next_u64() % 100) as f64 / 100.0 * (hi - lo);
     let y = 0.2 + (rng.next_u64() % 60) as f64 / 100.0; // 0.2-0.8 随机
     (clamp01(x), clamp01(y))
 }
@@ -904,7 +907,6 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let shooter = st.carrier;
     let shooter_pos = st.pos[shooter as usize];
     let home = st.possession == 0;
-    let (x2, y2) = shot_target(rng, home);
     let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
     let score_roll = rng.next_u64() % 100;
     let (result, caught) = if score_roll < 15 {
@@ -915,6 +917,8 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     } else {
         ("off_target", false)
     };
+    // 轨迹按 result 区分（P6）：goal/saved 瞄准球门，off_target 偏离球门
+    let (x2, y2) = shot_target(rng, home, result);
     let gk_id = if home { 21 } else { 0 };
     let gk_pos = st.pos[gk_id as usize];
     let flight = distance_meters(shooter_pos, (x2, y2)) / speed;
@@ -933,8 +937,7 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
         // 比分在高亮结束（finalize）确认，不在射门时刻递增
         HighlightOutcome::ShotGoal { kickoff_id, ball_end: (x2, y2) }
     } else if result == "off_target" {
-        let kickoff_id = if home { 12 } else { 9 };
-        HighlightOutcome::ShotOffTarget { kickoff_id, ball_end: (x2, y2) }
+        HighlightOutcome::ShotOffTarget
     } else if caught {
         HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
     } else {
@@ -1043,9 +1046,8 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             start_loose_ball(st, rebound_from, dir, None);
             advance_loose(st, rng, events, t);
         }
-        HighlightOutcome::ShotOffTarget { kickoff_id: _, ball_end } => {
+        HighlightOutcome::ShotOffTarget => {
             // 门球（goal kick）：possession 切对方，球瞬移到对方门将脚下（门将不瞬移——用其当前位置）
-            st.ball_pos = ball_end;
             let gk_id = if st.possession == 0 { 21 } else { 0 };
             st.possession = if gk_id <= 10 { 0 } else { 1 };
             let gk_pos = st.pos[gk_id as usize]; // 门将当前位置（门线附近），球瞬移过去，门将不动
@@ -1054,12 +1056,12 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.carrier = -1;
             // 门将开大脚：pass 高亮（门线 → 中场偏对方半场落点，无 to——落点是争抢点）
             let land = goal_kick_land(st, rng);
-            let speed = 16.0 + (rng.next_u64() % 50) as f64 / 10.0; // 16-21 m/s 长球
+            let speed = 16.0 + (rng.next_u64() % 40) as f64 / 10.0; // 16-19.9 m/s（spec ~15-20）
             let t_end = t + distance_meters(gk_pos, land) / speed;
             events.push(Event {
                 t, type_: EventType::Pass, subject: gk_id, from: Some(gk_id), to: None,
                 x: gk_pos.0, y: gk_pos.1, x2: Some(land.0), y2: Some(land.1),
-                result: Some("success".to_string()), speed: Some(speed),
+                result: Some("contested".to_string()), speed: Some(speed),
                 ..Event::default()
             });
             st.highlight = Some(Highlight {
@@ -1437,11 +1439,24 @@ fn lead_point(from: (f64, f64), to: (f64, f64), lead: f64) -> (f64, f64) {
     (clamp01(x), clamp01(y))
 }
 
-/// 射门目标：对方球门（x=1 或 x=0，y 靠近中线）
-fn shot_target(rng: &mut SeededRng, home: bool) -> (f64, f64) {
+/// 射门目标（按 result 区分，P6）：goal/saved 瞄准球门（y 在球门范围 0.455-0.545）；
+/// off_target 偏离球门（y 偏高/偏低，视觉打偏出界）
+fn shot_target(rng: &mut SeededRng, home: bool, result: &str) -> (f64, f64) {
     let x = if home { 0.98 } else { 0.02 };
-    let y = 0.3 + (rng.next_u64() % 40) as f64 / 100.0; // 0.3-0.7
-    (x, clamp01(y))
+    if result == "off_target" {
+        // 打偏：偏离球门范围（高/低，视觉出界）
+        let high = rng.next_u64() % 2 == 0;
+        let y = if high {
+            0.72 + (rng.next_u64() % 18) as f64 / 100.0 // 0.72-0.90 偏高
+        } else {
+            0.10 + (rng.next_u64() % 18) as f64 / 100.0 // 0.10-0.28 偏低
+        };
+        (x, clamp01(y))
+    } else {
+        // goal/saved：瞄准球门范围内（y 0.455-0.545）
+        let y = 0.455 + (rng.next_u64() % 10) as f64 / 100.0;
+        (x, clamp01(y))
+    }
 }
 
 fn clamp01(v: f64) -> f64 {

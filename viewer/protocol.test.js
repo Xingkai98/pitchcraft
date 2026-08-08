@@ -160,3 +160,20 @@ test('tackle: v2 用 carrier（无 to）合法', () => {
 test('tackle: 缺 to 且缺 carrier 抛错', () => {
   assert.throws(() => parseEvent({ t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, x2: 0.45, y2: 0.55, result: 'success' }));
 });
+
+// ---- P6：门球 pass 协议 ----
+
+test('pass: 有 from 无 to 合法（门球开大脚）', () => {
+  const e = parseEvent({ t: 100, type: 'pass', from: 21, subject: 21, x: 0.98, y: 0.5, x2: 0.7, y2: 0.5, speed: 18, result: 'contested' });
+  assert.equal(e.type, 'pass');
+  assert.equal(e.to, undefined);
+});
+
+test('pass: 缺 from 抛错', () => {
+  assert.throws(() => parseEvent({ t: 100, type: 'pass', subject: 21, x: 0.98, y: 0.5, x2: 0.7, y2: 0.5, speed: 18 }));
+});
+
+test('pass: to 在场时校验 0-21 整数', () => {
+  assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, to: 'abc', subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12 }));
+  assert.throws(() => parseEvent({ t: 100, type: 'pass', from: 21, to: 22, subject: 21, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12 }));
+});

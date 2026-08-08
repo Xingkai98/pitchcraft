@@ -100,10 +100,14 @@ function validateBaseEvent(e) {
       }
     }
   }
-  // 类型相关必填：pass 必须有 from；to 可选（门球开大脚无接收者，落点是争抢点）
+  // 类型相关必填：pass 必须有 from；to 可选（门球开大脚无接收者，落点是争抢点）。
+  // to 在场时校验 0-21 整数（同 tackle 身份校验）。
   if (e.type === 'pass') {
     if (e.from === undefined) {
       throw new Error(`pass event requires from: ${JSON.stringify(e)}`);
+    }
+    if (e.to !== undefined && (typeof e.to !== 'number' || !Number.isInteger(e.to) || e.to < 0 || e.to > 21)) {
+      throw new Error(`pass event to must be integer 0-21 when present: ${JSON.stringify(e.to)}`);
     }
   }
   // shot 必须有射门方向 x2/y2

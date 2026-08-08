@@ -379,3 +379,46 @@ test('buildTimeline 跨 beat 连续: from(N+1)==to(N)', () => {
   assert.equal(m5[2].t, 11);
   assert.equal(m5[2].x, 0.35, '跨拍 from(N+1)==to(N)，位置连续');
 });
+
+// ---- P6：门球 + 进球回中圈 ----
+
+test('P6 interpretPass: 无 to 门球开大脚产球飞行 + 无接球者', () => {
+  const e = { t: 100, type: 'pass', from: 21, subject: 21, x: 0.98, y: 0.5, x2: 0.7, y2: 0.5, speed: 18, result: 'contested' };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  // 球从门线飞到落点
+  assert.ok(balls.length >= 2);
+  assert.equal(balls[0].x, 0.98);
+  assert.equal(balls[balls.length - 1].x, 0.7);
+  // 无接球者动画（无 receiver 锚点，只有传球者静止）
+  const receivers = anchors.filter((a) => a.kind === 'player' && a.id !== 21);
+  assert.equal(receivers.length, 0, '无 to pass 不应有接球者锚点');
+  const passer = anchors.filter((a) => a.kind === 'player' && a.id === 21);
+  assert.ok(passer.length >= 1, '传球者（门将）应有锚点');
+});
+
+test('P6 buildTimeline: 进球 whistle 时球直接回中圈', () => {
+  const events = [
+    { t: 200, type: 'shot', subject: 10, x: 0.7, y: 0.5, x2: 0.98, y2: 0.5, speed: 20, result: 'goal' },
+    { t: 200, type: 'beat', movers: [] }, // 模拟事件间隙
+    { t: 202, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0' },
+  ];
+  const tl = buildTimeline(events, 'continuous');
+  // whistle 时刻应有中圈球锚点（进球确认 → 球直接回中圈）
+  const whistleAnchors = tl.filter((a) => a.kind === 'ball' && Math.abs(a.t - 202) < 0.01);
+  assert.ok(whistleAnchors.some((a) => a.x === 0.5 && a.y === 0.5), 'whistle 时应产中圈球锚点');
+});
+
+test('P6 interpretShot: off_target 越底线偏出，saved 停门线', () => {
+  const off = { t: 30, type: 'shot', subject: 10, x: 0.7, y: 0.5, x2: 0.98, y2: 0.15, speed: 20, result: 'off_target' };
+  const saved = { t: 30, type: 'shot', subject: 10, x: 0.7, y: 0.5, x2: 0.98, y2: 0.5, speed: 20, result: 'saved' };
+  const offAnchors = interpretEvent(off);
+  const savedAnchors = interpretEvent(saved);
+  const offBallEnd = offAnchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t).pop();
+  const savedBallEnd = savedAnchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t).pop();
+  // off_target 越底线（x>1），saved 停门线（x=0.98）
+  assert.ok(offBallEnd.x > 1.0, `off_target 应越底线偏出（x=${offBallEnd.x}）`);
+  assert.equal(savedBallEnd.x, 0.98, 'saved 应停门线');
+  // y 不同（off_target 偏离球门 vs saved 球门内）
+  assert.notEqual(offBallEnd.y, savedBallEnd.y);
+});

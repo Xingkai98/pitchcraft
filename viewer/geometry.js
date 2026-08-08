@@ -5,15 +5,16 @@
 // x: 0=左门线→1=右门线（画布从左到右）
 // y: 0=下边线→1=上边线（画布从上到下 —— 注意：y=0 在下边线，所以 y=0 → py 大，y=1 → py 小）
 // 返回 {px, py}，px ∈ [margin, width-margin]，py ∈ [margin, height-margin]
-// 越界坐标钳制到 [0,1]（不抛错）——球进网时 x 可能略超 1.0，渲染应钳制而非崩溃。
-export function normalizedToPixels(x, y, canvasWidth, canvasHeight, margin) {
-  const cx = Math.max(0, Math.min(1, x));
-  const cy = Math.max(0, Math.min(1, y));
+// 默认越界坐标钳制到 [0,1]（不抛错）。isBall=true 时允许球小幅越界渲染（x ∈ [-0.03, 1.03]）
+// ——进球/打偏越底线时球心进入球门框/界外（P6 视觉区分）。
+export function normalizedToPixels(x, y, canvasWidth, canvasHeight, margin, isBall = false) {
+  const clampX = isBall ? Math.max(-0.03, Math.min(1.03, x)) : Math.max(0, Math.min(1, x));
+  const clampY = isBall ? Math.max(-0.03, Math.min(1.03, y)) : Math.max(0, Math.min(1, y));
   const innerW = canvasWidth - 2 * margin;
   const innerH = canvasHeight - 2 * margin;
   return {
-    px: margin + cx * innerW,
-    py: margin + (1 - cy) * innerH, // y=0(下)→底部，y=1(上)→顶部
+    px: margin + clampX * innerW,
+    py: margin + (1 - clampY) * innerH, // y=0(下)→底部，y=1(上)→顶部
   };
 }
 

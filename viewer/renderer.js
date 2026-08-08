@@ -93,11 +93,11 @@ export function drawPlayer(ctx, x, y, id, width, height) {
   ctx.fillText(String(id), p.px, p.py);
 }
 
-// 绘制球
+// 绘制球（isBall=true 允许越界渲染：进球/打偏越底线时球心进入球门框/界外）
 export function drawBall(ctx, x, y, width, height) {
   const margin = config.pitchMargin;
   const r = config.render;
-  const p = normalizedToPixels(x, y, width, height, margin);
+  const p = normalizedToPixels(x, y, width, height, margin, true);
   ctx.fillStyle = r.ballColor;
   ctx.beginPath();
   ctx.arc(p.px, p.py, r.ballRadius, 0, Math.PI * 2);
