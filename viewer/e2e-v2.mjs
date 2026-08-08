@@ -60,8 +60,8 @@ const last60 = e60[e60.length - 1].t;
 const last2700 = events[events.length - 1].t;
 if (last60 > 61 || last2700 < 2699) throw new Error(`config 时长未生效: t=${last60}/${last2700}`);
 
-// ---- viewer 端到端：连续播放无 snap（覆盖高亮边界）----
-// 步进 300s（18000 帧）：覆盖首 pass(~23s)、首 tackle(~98s)、首 shot(~291s seed42)——高亮边界是 snap 高发区
+// ---- viewer 端到端：连续播放无 snap（覆盖高亮边界 + 角球/界外球/门球重开）----
+// 步进整场（覆盖 seed42 的角球 t≈1067/2492、界外球、门球重开）——P6 批次1 重开路径是 snap 高发区
 const { events: parsed, lineup } = parseEventStream(events);
 const game = new Game(parsed, lineup, 'continuous');
 game.playing = true;
@@ -70,10 +70,12 @@ let maxBallJump = 0;
 let maxBallJumpT = 0;
 const prevPlayers = new Map(game.players.map((p) => [p.id, { x: p.x, y: p.y }]));
 let maxPlayerJump = 0;
-// 预计算 spec 允许的球瞬移时刻（P6 / P6 批次1）：
+// 预计算 spec 允许的球瞬移时刻（P6 / P6 批次1）：只豁免设计接受的重开瞬移
 // 1) 进球确认（whistle，前一动作是 goal shot）→ 球直接回中圈
-// 2) 重开 pass（门球开大脚 / 角球发球 / 出界 pass / 解围，to=undefined）→ 球瞬移：
-//    出界点 → 门将/角旗、出界 → 重开点（RestartPrep 准备期球停固定点，死球重开有瞬移）
+// 2) 角球发球前准备期（detail=corner pass 的 t-6..t）→ 球从射门终点/出界点瞬移到角旗
+//    （CornerAward / 防方解围出底线重开；RestartPrep 球停固定点）
+// 3) 门球开大脚（pass subject=门将、to=None）→ 球瞬移到门将
+// 界外球无瞬移（出界落点=边线出界点，球停那连续到掷球），不需豁免。
 const allowedTeleportTimes = new Set();
 for (let i = 0; i < parsed.length; i++) {
   if (parsed[i].type === 'whistle' && i > 0) {
@@ -82,13 +84,14 @@ for (let i = 0; i < parsed.length; i++) {
     if (parsed[j] && parsed[j].type === 'shot' && parsed[j].result === 'goal') {
       allowedTeleportTimes.add(parsed[i].t);
     }
-  } else if (parsed[i].type === 'pass' && parsed[i].to === undefined) {
-    // 重开 pass（to=None）：球瞬移到门将/角旗/出界点；准备期（RestartPrep）球停固定点
-    allowedTeleportTimes.add(parsed[i].t);
-    for (let k = 1; k <= 6; k++) allowedTeleportTimes.add(parsed[i].t + k);
   } else if (parsed[i].type === 'pass' && parsed[i].detail === 'corner') {
-    // 角球发球前的准备期：球从射门终点/出界点瞬移到角旗（CornerAward/解围出底线重开）
-    for (let k = 1; k <= 6; k++) allowedTeleportTimes.add(parsed[i].t - k);
+    // 角球发球：准备期球从射门终点/出界点瞬移到角旗（CornerAward/解围出底线重开）。
+    // 准备期 = 发球者走位 tick（最长 ~7s），豁免 t-7..t 覆盖球到角旗的瞬移时刻
+    for (let k = 0; k <= 7; k++) allowedTeleportTimes.add(parsed[i].t - k);
+  } else if (parsed[i].type === 'pass' && parsed[i].to === undefined
+      && (parsed[i].subject === 0 || parsed[i].subject === 21)) {
+    // 门球开大脚：球瞬移到门将（subject=门将、无 to）
+    allowedTeleportTimes.add(parsed[i].t);
   }
 }
 const isAllowedTeleport = (t) => {
@@ -97,8 +100,11 @@ const isAllowedTeleport = (t) => {
   }
   return false;
 };
-for (let i = 0; i < 18000; i++) {
+let frames = 0;
+const maxFrames = Math.ceil(game.matchEnd * 60) + 60; // 覆盖整场 + 尾部余量
+while (game.playing && frames < maxFrames) {
   game.step(1 / 60);
+  frames++;
   const bj = Math.hypot(game.ball.x - prevBall.x, game.ball.y - prevBall.y);
   if (!isAllowedTeleport(game.playTime) && bj > maxBallJump) {
     maxBallJump = bj;
