@@ -52,7 +52,7 @@ P6 首批完成门球 + 进球回中圈。用户 batch-grill 确认批次1 = 出
 角球从角旗区开出（**角旗区选择：按出底线点 x/y 就近取角**——home 攻扑出 x>1 → 右角 x=1；away 攻扑出 x<0 → 左角 x=0；防方解围出底线同理。y 就近取 0/1）：
 0. **发球准备期（归属机制：新增轻量 `RestartPrep` 状态，非 DeadBall）**：角球触发（CornerAward 或防方解围出底线 PassOutOfPlay source=Clearance）后，发球者 = **攻方离角旗最近的外场球员**；进入 `RestartPrep { player, target=角旗, kind=Corner }`。**准备期 `st.ball_pos = 角旗`（球停在固定点等待发球，产 beat.ball 静止锚点）**——formation_target 以角旗为基准、发球高亮起点=角旗，无球瞬移。准备期 tick（发球者走位 + 攻防站位，见步骤 4），发球者到角旗（<1m）触发发球高亮。**准备期归属：RestartPrep 挂在 tick 主分支（dead_ball 之后、highlight 之前）**，同 DeadBall preparing 的走位模式。
 1. **长角球发球**：pass 高亮（复用 GoalKick 开球高亮先例），**带 detail=`corner`**（viewer 据此识别这是角球发球，不靠起点推断），起点=角旗区（x=0/1, y=0/1），落点=禁区附近（x 贴近门线、y 球门范围）——**落点在发球高亮时刻选定**（准备期站位用队形目标，不预知精确落点），带高度（协议加 h 字段，见 D6，h>0）。
-2. **落点松散球 + 双追逐**：落点无人持球 → 松散球；**攻防各 1 名追逐**——LooseBall 加 `battle: Option<(i32, i32)>`（争抢场景：攻方 chaser、防方 chaser，**loose 启动时固定**，避免每 tick 重算 nearest 导致胜者身份漂移）；攻方 chaser = 攻方 nearest（LooseBall.chaser 沿用），防方 chaser = 防方 nearest（存 battle 元组）。compute_movers 让两个 chaser 都 chase 落点（action=chase，复用 GoalKick 预判模式）。
+2. **落点松散球 + 双追逐**：落点无人持球 → 松散球；**攻防各 1 名追逐**——LooseBall 加 `battle: Option<(i32, i32)>`（**元组 = (攻方 chaser, 防方 chaser)，loose 启动时固定**，避免每 tick 重算 nearest 导致胜者身份漂移）；攻方 chaser = 攻方 nearest（LooseBall.chaser 沿用），防方 chaser = 防方 nearest（存 battle 元组第 2 位）。compute_movers 让两个 chaser 都 chase 落点（action=chase，复用 GoalKick 预判模式）。**battle 期间 advance_loose 移动攻方 chaser（现有逻辑），compute_movers 额外产防方 chaser 的 chase mover**；battle 结束后（无论胜负）回普通 LooseBall 路径。
 3. **争抢结果**：攻方 chaser 达到落点拾取半径时，**就地 roll 55/45（攻/防）**（不在落点前 roll，避免"追到一半改判"）：
    - 攻方胜：**就地争抢结果分支**（攻方 chaser 即胜者，起点=落点，**carrier=攻方 chaser**）——**头球射门**（~55%）→ shot 高亮（subject=攻方 chaser，起点=争抢点，detail=header，h=0），结果 goal(~10%)/saved(~40%)/off_target(~50%)；**头球摆渡**（~30%）→ pass 高亮给队友（subject=攻方 chaser，普通 pass 无 detail，h=0）；**拿球组织**（~15%）→ main 恢复（carrier=攻方 chaser）。
    - 防方胜：**防方 chaser 移动到位**（到落点，拾取语义，同现有 LooseBall 拾取瞬移 `pos[chaser]=loose_pos`），**carrier=防方 chaser**，就地头球解围——**头球解围**（~70%）→ pass 高亮顶出禁区（subject=防方 chaser，起点=落点，detail=clearance，h=0）→ 落点松散球**重新争（普通松散球，非 battle）**；**解围出底线**（~20%）→ PassOutOfPlay(detail=out_goal_line, source=Clearance) → **角球（进攻方）**；**解围出边线**（~10%）→ PassOutOfPlay(detail=out_sideline, source=Clearance) → **界外球（进攻方）**。
@@ -73,7 +73,7 @@ P6 首批完成门球 + 进球回中圈。用户 batch-grill 确认批次1 = 出
 
 ### D5: 统一机制（Q9 grill 确认）
 
-- 所有死球重开（门球/角球/界外球）都走**固定点开球高亮 + 松散球**路径（同 GoalKick 先例），**不扩展 DeadBall 状态机**（DeadBall 仅进球→中圈 kickoff）。**`RestartPrep` 是独立轻量状态（非 DeadBall 扩展）**，只负责发球者/掷球者走位到固定点的准备期（角球/界外球专用，门球无需准备期——门将已在门线）。**RestartPrep 期间 `st.ball_pos = 固定点`（角旗/出界点），球停固定点等待发球，发球高亮起点=固定点 → 无球瞬移。**
+- 所有死球重开（门球/角球/界外球）都走**固定点开球高亮 + 松散球**路径（同 GoalKick 先例），**不扩展 DeadBall 状态机**（DeadBall 仅进球→中圈 kickoff）。**`RestartPrep` 是独立轻量状态（非 DeadBall 扩展）**，只负责发球者/掷球者走位到固定点的准备期（角球/界外球专用，门球无需准备期——门将已在门线）。**RestartPrep 期间 `st.ball_pos = 固定点`（角旗/出界点），球停固定点等待发球，发球高亮起点=固定点 → 无球瞬移。** **创建 RestartPrep 时切换 possession**：角球 → possession=攻方；界外球 → possession=掷球方（对方/进攻方）；发球高亮 finalize 后持球方按 pass 的 to/落点确定。
 - 所有球飞行都走 pass/shot 高亮；落点争抢都走松散球。
 - 本 change 新增机制：出界判定（PassOutOfPlay/CornerAward 高亮结局）+ 角球双追逐 + 协议 h 字段。
 
@@ -81,6 +81,7 @@ P6 首批完成门球 + 进球回中圈。用户 batch-grill 确认批次1 = 出
 
 - 事件流加可选字段 `h`（归一化 0-1，球高度）——pass/shot 高亮带弧线高度，viewer 用球大小表示（FM 做法，P6 首批已实现）。
 - **h 语义统一**（四份文档同一表述）：`h` 缺失（undefined）→ viewer 按飞行时长/距离默认插值（向后兼容，P6 首批现有行为）；`h=0` → 明确无高度（球不放大，如界外球掷球/头球解围/**头球摆渡**/头球射门/短传）；`h>0` → 有高度（球放大，如角球发球/门球开大脚/普通长传）。**头球类动作（头球射门 shot detail=header、头球解围 pass detail=clearance、头球摆渡）h=0**（头球是低高度动作，不放大）。
+- **普通传球 h 分类阈值**：**短传（≤20m）h=0**；**中长传（>20m）h>0**（0.2-0.4，随距离增大）；**角球发球/门球开大脚 h>0（0.5-0.8）**（长弧线高球）。头球类恒 h=0。
 - 术语统一：`h` 缺失时的 viewer 回退统一称"按飞行时长/距离默认插值"（design、event-stream-protocol spec、pitch-viewer spec、tasks 四份文档同一表述）。
 - viewer 据 h 调球大小：半径 × (1 + h×1.5)，h∈[0,1] → 球放大 1.0-2.5 倍。**量纲**：协议 h 是 0-1 全范围；P6 首批实现的 h 是 0-0.2（飞行弧线），本 change 将引擎产出的 h 统一为 0-1 语义，viewer 公式不变（半径 ×(1+h×1.5) 适配 0-1）。
 

@@ -39,11 +39,11 @@
 事件流 SHALL 支持可选字段 `h`（归一化 0-1，球高度）——pass/shot 高亮带弧线高度，viewer 用球大小表示（FM 做法，P6 首批已实现）。**h 语义**：h 缺失（undefined）→ viewer 按飞行时长/距离默认插值（向后兼容）；h=0 → 明确无高度（球不放大）；h>0 → 有高度（球放大）。
 
 #### Scenario: 带高度
-- **GIVEN** 一次长球（角球发球/门球开大脚/普通长传）
+- **GIVEN** 一次长球（角球发球/门球开大脚 h>0 0.5-0.8；普通中长传 >20m h>0 0.2-0.4）
 - **THEN** pass 事件带 h>0（球飞起）
 
 #### Scenario: 无高度（h=0）
-- **GIVEN** 一次短传（界外球掷球/头球解围/头球摆渡/头球射门/普通短传）
+- **GIVEN** 一次短传（界外球掷球/头球解围/头球摆渡/头球射门/普通短传 ≤20m）
 - **THEN** pass/shot 事件 h=0（球不放大，明确无高度）
 
 #### Scenario: h 缺失向后兼容
@@ -52,7 +52,7 @@
 
 ### Requirement: 角球发球 detail
 
-角球发球 SHALL 以 pass 事件 detail=`corner` 表达（viewer 据此识别角球发球，不靠起点推断）。
+角球发球 SHALL 以 pass 事件 detail=`corner` 表达（viewer 据此识别角球发球，不靠起点推断）。**detail 校验按事件类型限定**（pass 校验 out_sideline/out_goal_line/corner/clearance、shot 校验 header），不校验 whistle/kickoff 等既有 detail。
 
 #### Scenario: 角球发球带 corner
 - **GIVEN** 一次角球发球
