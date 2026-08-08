@@ -77,3 +77,19 @@ test('renderFrame: 传球后球像素位置移动', () => {
 
   assert.notEqual(cx1, cx2, '球位置不同，像素应不同');
 });
+
+test('P6 批次1 drawBall: h 大小表示高度（h=0 基础半径，h>0 放大）', () => {
+  const radiusOf = (h) => {
+    const c = new MockCanvas(W, H);
+    const ctx = c.getContext();
+    drawBall(ctx, 0.5, 0.5, W, H, h);
+    const arc = ctx.calls.find((x) => x.method === 'arc');
+    return arc.args[2];
+  };
+  const r0 = radiusOf(0);
+  const rHigh = radiusOf(0.8);
+  // 公式：半径 × (1 + h × 1.5)，h=0.8 → 放大 2.2 倍
+  assert.ok(rHigh > r0 * 1.5, `h=0.8 球应显著放大（r0=${r0}, rHigh=${rHigh}）`);
+  // h=0 用基础半径
+  assert.equal(r0, config.render.ballRadius);
+});

@@ -1200,19 +1200,20 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
                     }
                 }
                 PassOutSource::Clearance => {
+                    // 防方解围出界：重开给进攻方（possession 此时=防方，进攻方 = 1-防方）
                     if detail == "out_sideline" {
                         // 界外球（进攻方掷）——防方解围出边线
-                        start_throw_in(st, rng, events, t, out_pos, st.possession);
+                        start_throw_in(st, rng, events, t, out_pos, 1 - st.possession);
                     } else {
                         // 角球（进攻方）——防方解围出底线
-                        start_corner(st, rng, events, t, out_pos);
+                        start_corner(st, rng, events, t, out_pos, 1 - st.possession);
                     }
                 }
             }
         }
         HighlightOutcome::CornerAward { rebound_from } => {
             // 射门扑出越线 → 角球（进攻方发，possession 保持射门方）
-            start_corner(st, rng, events, t, rebound_from);
+            start_corner(st, rng, events, t, rebound_from, st.possession);
         }
         HighlightOutcome::CornerKick { land, dir } => {
             // 角球发球到达落点：落点松散球（battle 双追逐争抢）
@@ -1293,8 +1294,8 @@ fn start_goal_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Ev
 }
 
 /// 开始角球重开：按出底线点 x/y 就近取角，发球者 = 攻方离角旗最近外场球员，进入 RestartPrep 准备期
-fn start_corner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, out_pos: (f64, f64)) {
-    let attacking = st.possession; // 攻方 = 当前 possession（CornerAward/解围出底线时）
+/// attacking 由调用方显式传入（CornerAward → 射门方；Clearance 解围出底线 → 进攻方 = 1-防方）
+fn start_corner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, out_pos: (f64, f64), attacking: u32) {
     let flag = corner_flag(out_pos);
     let player = nearest_in_team(&st.pos, flag, attacking);
     st.possession = attacking;
@@ -2988,5 +2989,155 @@ mod tests {
         }
         assert!(saw_goal_kick_h, "应有门球 h>0");
         assert!(saw_corner_h, "应有角球发球 h>0");
+    }
+
+    #[test]
+    fn p6_pass_h_classification() {
+        // 普通传球 h 分类：短传 ≤20m h=0；中长传 >20m h>0（0.2-0.4）
+        let cfg = MatchConfig::default_();
+        let mut saw_short = false;
+        let mut saw_long = false;
+        for seed in 1..80u64 {
+            let s = simulate(seed, cfg);
+            let evts = json_events(&s);
+            for e in evts {
+                if type_of(&e) != "pass" { continue; }
+                if json_num(&e, "to").is_none() { continue; } // 跳过重开 pass（角球/门球/界外球）
+                if json_field(&e, "detail").is_some() { continue; } // 跳过出界 pass
+                let x = json_num(&e, "x").unwrap();
+                let y = json_num(&e, "y").unwrap();
+                let x2 = json_num(&e, "x2").unwrap();
+                let y2 = json_num(&e, "y2").unwrap();
+                let meters = distance_meters((x, y), (x2, y2));
+                let h = h_of(&e).expect("普通 pass 应有 h");
+                if meters <= 20.0 {
+                    assert_eq!(h, 0.0, "短传(≤20m) h 应为 0: {}", e);
+                    saw_short = true;
+                } else {
+                    assert!(h > 0.0, "长传(>20m) h 应>0: {}", e);
+                    saw_long = true;
+                }
+                if saw_short && saw_long { return; }
+            }
+        }
+        assert!(saw_short, "应有短传 h=0");
+        assert!(saw_long, "应有长传 h>0");
+    }
+
+    #[test]
+    fn p6_corner_award_saved_rebound_path() {
+        // 射门扑出越线 → 角球（CornerAward）：shot saved 后出现角球发球 detail=corner；
+        // 未越线 → 松散球（saved 后 loose ball）。两条路径都应可达。
+        let cfg = MatchConfig::default_();
+        let mut saw_corner_after_saved = false;
+        for seed in 1..120u64 {
+            let s = simulate(seed, cfg);
+            let evts = json_events(&s);
+            for (i, e) in evts.iter().enumerate() {
+                if type_of(e) != "shot" || !e.contains("\"result\":\"saved\"") { continue; }
+                let after: Vec<&String> = evts.iter().skip(i + 1).collect();
+                let has_corner = after.iter().any(|n| {
+                    type_of(n) == "pass" && json_field(n, "detail").as_deref() == Some("\"corner\"")
+                });
+                if has_corner {
+                    saw_corner_after_saved = true;
+                    return;
+                }
+            }
+        }
+        assert!(saw_corner_after_saved, "应有射门扑出越线→角球（CornerAward）路径");
+    }
+
+    #[test]
+    fn p6_restart_prep_ball_anchor() {
+        // RestartPrep 准备期：角球发球前球停在角旗（beat.ball 静止 x==x2 且 y==y2）
+        let cfg = MatchConfig::default_();
+        for seed in 1..120u64 {
+            let s = simulate(seed, cfg);
+            if let Some(corner) = find_pass_detail(&s, "corner") {
+                let evts = json_events(&s);
+                let idx = evts.iter().position(|e| *e == corner).unwrap();
+                // 发球 pass 之前最近的 beat 应为准备期（球停角旗：x==x2 且 y==y2）
+                let prep = evts.iter().skip(idx.saturating_sub(8)).take(8).rev().find(|e| {
+                    type_of(e) == "beat" && e.contains("\"loose\":true")
+                });
+                assert!(prep.is_some(), "角球发球前应有准备期 beat");
+                let p = prep.unwrap();
+                let bx = json_num(p, "x").unwrap();
+                let by = json_num(p, "y").unwrap();
+                let bx2 = json_num(p, "x2").unwrap();
+                let by2 = json_num(p, "y2").unwrap();
+                assert_eq!(bx, bx2, "准备期球应静止（x==x2）: {}", p);
+                assert_eq!(by, by2, "准备期球应静止（y==y2）: {}", p);
+                return;
+            }
+        }
+        panic!("没有任何 seed 产出角球发球");
+    }
+
+    #[test]
+    fn p6_clearance_restart_team_attribution() {
+        // blocker 回归：防方解围出界后重开给进攻方（解围者队 ≠ 重开方队）
+        // 解围出底线（detail=out_goal_line 无 lead）→ 角球发球者非解围者队
+        // 解围出边线（detail=out_sideline 无 lead）→ 掷球者非解围者队
+        let cfg = MatchConfig::default_();
+        let mut og_ok = 0;
+        let mut os_ok = 0;
+        for seed in 1..120u64 {
+            let s = simulate(seed, cfg);
+            let evts = json_events(&s);
+            for (i, e) in evts.iter().enumerate() {
+                if type_of(e) != "pass" { continue; }
+                let detail = json_field(e, "detail");
+                if detail.as_deref() == Some("\"out_goal_line\"") && json_field(e, "lead").is_none() {
+                    // 解围出底线 → 后续角球发球，不同队
+                    let corner = evts.iter().skip(i + 1).find(|n| {
+                        type_of(n) == "pass" && json_field(n, "detail").as_deref() == Some("\"corner\"")
+                    });
+                    if let Some(c) = corner {
+                        let def = json_num(e, "from").unwrap() as i32;
+                        let taker = json_num(c, "from").unwrap() as i32;
+                        if (def <= 10) != (taker <= 10) { og_ok += 1; }
+                    }
+                } else if detail.as_deref() == Some("\"out_sideline\"") && json_field(e, "lead").is_none() {
+                    // 解围出边线 → 后续掷球 pass（有 to、h=0），不同队
+                    let throw_in = evts.iter().skip(i + 1).find(|n| {
+                        type_of(n) == "pass" && json_num(n, "to").is_some() && h_of(n) == Some(0.0)
+                    });
+                    if let Some(t) = throw_in {
+                        let def = json_num(e, "from").unwrap() as i32;
+                        let thrower = json_num(t, "from").unwrap() as i32;
+                        if (def <= 10) != (thrower <= 10) { os_ok += 1; }
+                    }
+                }
+            }
+            if og_ok >= 2 && os_ok >= 2 { return; }
+        }
+        assert!(og_ok >= 1, "解围出底线→角球应给进攻方（不同队），实测 {} 例", og_ok);
+        assert!(os_ok >= 1, "解围出边线→界外球应给进攻方（不同队），实测 {} 例", os_ok);
+    }
+
+    #[test]
+    fn p6_battle_attack_win_branches() {
+        // 攻方胜分支可达：头球摆渡（角球后 pass 无 detail、h=0、禁区起点、有 to）
+        let cfg = MatchConfig::default_();
+        for seed in 1..160u64 {
+            let s = simulate(seed, cfg);
+            if let Some(corner) = find_pass_detail(&s, "corner") {
+                let evts = json_events(&s);
+                let idx = evts.iter().position(|e| *e == corner).unwrap();
+                // 角球后的摆渡：pass 有 to、无 detail、h=0、起点=争抢点（禁区 x<0.2 或 x>0.8）
+                let flick = evts.iter().skip(idx + 1).find(|n| {
+                    type_of(n) == "pass" && json_num(n, "to").is_some()
+                        && json_field(n, "detail").is_none() && h_of(n) == Some(0.0)
+                        && {
+                            let x = json_num(n, "x").unwrap_or(0.5);
+                            x < 0.2 || x > 0.8 // 起点=争抢点（角球落点禁区）
+                        }
+                });
+                if flick.is_some() { return; }
+            }
+        }
+        panic!("没有任何 seed 产出攻方胜头球摆渡（角球后 pass 无 detail h=0）");
     }
 }

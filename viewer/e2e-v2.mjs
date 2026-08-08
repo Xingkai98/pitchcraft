@@ -86,6 +86,9 @@ for (let i = 0; i < parsed.length; i++) {
     // 重开 pass（to=None）：球瞬移到门将/角旗/出界点；准备期（RestartPrep）球停固定点
     allowedTeleportTimes.add(parsed[i].t);
     for (let k = 1; k <= 6; k++) allowedTeleportTimes.add(parsed[i].t + k);
+  } else if (parsed[i].type === 'pass' && parsed[i].detail === 'corner') {
+    // 角球发球前的准备期：球从射门终点/出界点瞬移到角旗（CornerAward/解围出底线重开）
+    for (let k = 1; k <= 6; k++) allowedTeleportTimes.add(parsed[i].t - k);
   }
 }
 const isAllowedTeleport = (t) => {
