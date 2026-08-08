@@ -32,7 +32,7 @@
 
 #### Scenario: 头球摆渡
 - **GIVEN** 攻方赢得角球争抢后头球摆渡给队友
-- **THEN** pass 事件无 detail（普通 pass），viewer 按普通传球演绎
+- **THEN** pass 事件无 detail、h=0（普通 pass，viewer 按普通传球演绎，球不放大）
 
 ### Requirement: 球高度 h 字段
 
@@ -43,7 +43,7 @@
 - **THEN** pass 事件带 h>0（球飞起）
 
 #### Scenario: 无高度（h=0）
-- **GIVEN** 一次短传（界外球掷球/头球解围/头球射门/普通短传）
+- **GIVEN** 一次短传（界外球掷球/头球解围/头球摆渡/头球射门/普通短传）
 - **THEN** pass/shot 事件 h=0（球不放大，明确无高度）
 
 #### Scenario: h 缺失向后兼容
@@ -57,3 +57,11 @@
 #### Scenario: 角球发球带 corner
 - **GIVEN** 一次角球发球
 - **THEN** pass 事件 detail=`corner`，起点=角旗区、落点=禁区附近、h>0、to=None（落点是争抢点）
+
+### Requirement: 重开准备期球锚点
+
+角球/界外球发球准备期（RestartPrep）SHALL 产 beat 事件表达球停在固定点等待发球：beat.ball = 静止锚点（x==x2 且 y==y2，loose=true），坐标=角旗区/出界点；movers 含发球者/掷球者走向固定点的走位。发球高亮起点=同一固定点，viewer 连续播放无球瞬移。
+
+#### Scenario: 准备期球停固定点
+- **GIVEN** 一次角球/界外球发球准备期
+- **THEN** beat.ball 静止在角旗区/出界点（x==x2、y==y2），发球者/掷球者 mover 走向固定点；发球 pass 起点=同一固定点

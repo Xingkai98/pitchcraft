@@ -4,7 +4,7 @@
 
 ### Requirement: 出界判定与重开类型
 
-引擎 SHALL 判定球出界并按类型触发重开：传球出边线 → 界外球（对方）；传球出底线 → 门球（对方门将）；**防方头球解围出底线/出边线 → 角球/界外球（进攻方）**；射门被扑出底线 → 角球（进攻方）。出界走新高亮结局（PassOutOfPlay/CornerAward），落点坐标钳制在 [0,1]，事件带 detail 表达出界类型。**PassOutOfPlay 按 source 区分重开**：source=NormalPass（普通传球）出边线 → 界外球（对方）、出底线 → 门球（对方门将）；source=Clearance（防方解围）出边线 → 界外球（进攻方）、出底线 → 角球（进攻方）。
+引擎 SHALL 判定球出界并按类型触发重开：**射门打偏 → 门球（已有）**；传球出边线 → 界外球（对方）；传球出底线 → 门球（对方门将）；**防方头球解围出底线/出边线 → 角球/界外球（进攻方）**；射门被扑出底线 → 角球（进攻方）。出界走新高亮结局（PassOutOfPlay/CornerAward），落点坐标钳制在 [0,1]，事件带 detail 表达出界类型。**PassOutOfPlay 按 source 区分重开**：source=NormalPass（普通传球）出边线 → 界外球（对方）、出底线 → 门球（对方门将）；source=Clearance（防方解围）出边线 → 界外球（进攻方）、出底线 → 角球（进攻方）。**出界 roll（3-5%）仅普通传球**——重开球（角球发球/界外球掷球/门球开大脚）落点恒在界内。
 
 #### Scenario: 传球出边线 → 界外球
 - **GIVEN** 一次传球落点出边线（y<0 或 y>1，3-5% 概率，source=NormalPass）
@@ -32,23 +32,23 @@
 
 #### Scenario: 长角球发球
 - **GIVEN** 一次角球
-- **THEN** 从角旗区（**按出底线点 x/y 就近取角**：x>0.5 → 右角 x=1，x≤0.5 → 左角 x=0；y≥0.5 → y=1，y<0.5 → y=0）开长角球，pass 事件 detail=`corner`、to=None、h>0，落点禁区附近（pass 高亮）；**发球准备期发球者（攻方离角旗最近外场球员）走向角旗（RestartPrep），到角旗后发球**
+- **THEN** 从角旗区（**按出底线点 x/y 就近取角**：x>0.5 → 右角 x=1，x≤0.5 → 左角 x=0；y≥0.5 → y=1，y<0.5 → y=0）开长角球，pass 事件 detail=`corner`、to=None、h>0，落点禁区附近（**落点在发球高亮时刻选定**，pass 高亮）；**发球准备期发球者（攻方离角旗最近外场球员）走向角旗（RestartPrep，球停在角旗），到角旗后发球**
 
 #### Scenario: 角球站位
-- **GIVEN** 角球发球准备期（RestartPrep）
-- **THEN** 攻方禁区包抄（nearest 几名向落点/禁区预判）、防方回防（formation_target 自然覆盖 + 落点预判）；发球者走向角旗区
+- **GIVEN** 角球发球准备期（RestartPrep，球在角旗）
+- **THEN** 攻方禁区包抄（nearest 几名向禁区/球门区预判，formation_target 覆盖）、防方回防（formation_target 自然覆盖 + 向禁区回收）；发球者走向角旗区
 
 #### Scenario: 禁区双追逐争抢
-- **GIVEN** 角球落点松散球
-- **THEN** 攻方 nearest（LooseBall chaser）+ 防方 nearest（compute_movers chase）向落点追逐；**攻方 chaser 达到落点拾取半径时掷胜者**（攻方得球概率 55/45）；败者就地停
+- **GIVEN** 角球落点松散球（battle 标记）
+- **THEN** 攻防各 1 名追逐（攻方 chaser=LooseBall.chaser、防方 chaser=battle 元组，**loose 启动时固定**）向落点追逐；**攻方 chaser 达到落点拾取半径时掷胜者**（攻方得球概率 55/45）；败者就地停；**防方胜时防方 chaser 移动到位（到落点）**
 
 #### Scenario: 攻方头球射门
 - **GIVEN** 攻方赢得角球争抢
-- **THEN** 以概率分支（55/30/15）：头球射门（shot 高亮 detail=header、h=0，起点=争抢点、方向=球门，result=goal(~10%)/saved(~40%)/off_target(~50%)）/ 头球摆渡（pass 给队友，无 detail）/ 拿球组织（main 恢复）
+- **THEN** 以概率分支（55/30/15）：头球射门（subject=攻方 chaser，shot 高亮 detail=header、h=0，起点=争抢点、方向=球门，result=goal(~10%)/saved(~40%)/off_target(~50%)）/ 头球摆渡（subject=攻方 chaser，pass 给队友，无 detail、h=0）/ 拿球组织（main 恢复，carrier=攻方 chaser）
 
 #### Scenario: 防方头球解围
-- **GIVEN** 防方赢得角球争抢
-- **THEN** 防方 chaser 就地以概率分支（70/20/10）：头球解围（pass 顶出禁区 detail=clearance、h=0 → 松散球重新争）/ 解围出底线（PassOutOfPlay source=Clearance → 再角球）/ 解围出边线（PassOutOfPlay source=Clearance → 界外球，进攻方掷）
+- **GIVEN** 防方赢得角球争抢（防方 chaser 已移动到位）
+- **THEN** 防方 chaser（carrier）就地以概率分支（70/20/10）：头球解围（subject=防方 chaser，pass 顶出禁区 detail=clearance、h=0 → 松散球**重新争（普通松散球，非 battle）**）/ 解围出底线（PassOutOfPlay source=Clearance → 再角球）/ 解围出边线（PassOutOfPlay source=Clearance → 界外球，进攻方掷）
 
 ### Requirement: 界外球机制
 
@@ -56,7 +56,7 @@
 
 #### Scenario: 界外球掷球
 - **GIVEN** 一次界外球
-- **THEN** 接球方离出界点最近**非门将外场球员**（掷球者）**先走向出界点（边线，RestartPrep 准备期）**，到点后从边线出界点掷向附近队友（pass 高亮，短传无高度 h=0，to=附近队友，receiver_x/y=接球队友当前位置）
+- **THEN** 接球方离出界点最近**非门将外场球员**（掷球者）**先走向出界点（边线，RestartPrep 准备期，球停在出界点）**，到点后从边线出界点掷向附近队友（pass 高亮，短传无高度 h=0，to=附近队友，receiver_x/y=接球队友当前位置）
 
 ### Requirement: 头球复用高亮
 
@@ -69,3 +69,7 @@
 #### Scenario: 头球解围为 pass
 - **GIVEN** 一次头球解围
 - **THEN** pass 事件顶出禁区（无高度 h=0），落点松散球重新争
+
+#### Scenario: 头球摆渡为 pass
+- **GIVEN** 攻方赢得角球争抢后头球摆渡给队友
+- **THEN** pass 事件无 detail、h=0（低空头球，球不放大）
