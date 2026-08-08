@@ -9,14 +9,14 @@ P6 首批完成门球 + 进球回中圈。用户 batch-grill 确认批次1 = 出
 ## Goals / Non-Goals
 
 **Goals:**
-- 出界判定：传球出边线 → 界外球（对方）；传球出底线 → 门球；射门被扑出底线 → 角球（进攻方）。
+- 出界判定：传球出边线 → 界外球（对方）；传球出底线 → 门球（对方门将）；防方解围出底线/出边线 → 角球/界外球（进攻方）；射门被扑出底线 → 角球（进攻方）。
 - 角球：角旗区长角球 → 禁区 → 争抢 → 头球（解围/射门/摆渡，可进球）。
-- 界外球：边线掷向附近队友（对方掷）。
+- 界外球：边线掷向附近队友（传球出边线对方掷 / 防方解围出边线进攻方掷）。
 - 头球复用 shot/pass 高亮，不新增事件类型。
 
 **Non-Goals（批次2/后续）:**
 - 犯规判定 + 任意球 + 点球（批次2）。
-- 最后触碰方追踪（传球出底线归属）——简化一律门球。
+- **普通传球出底线的触碰归属追踪**（球是否被防守方折射后出界）——简化一律门球。**例外：防方头球解围（detail=clearance）出底线 → 角球**——解围的最后触碰方明确（解围者本人），不属"不做触碰归属"范围。
 - 越位。
 - 防守人墙/任意球排墙。
 
@@ -32,42 +32,48 @@ P6 首批完成门球 + 进球回中圈。用户 batch-grill 确认批次1 = 出
 | 传球出底线 | pass 落点出底线（x<0 或 x>1） | 门球（简化，不做触碰归属） |
 
 **方向映射（home 攻左→右、away 攻右→左）**：**任何出底线传球都由对方门将开门球**（简化，不追踪触碰归属）——home 传球出 x>1（对方门线）或 x<0（己方底线异常）→ away 门将开门球；away 传球出 x<0（对方门线）或 x>1（己方底线异常）→ home 门将开门球。**不做"球出界侧门将"的区分**（该语义仅用于射门扑出底线角球——进攻方向确定时）。
+**解围出底线例外**：防方头球解围（detail=clearance）落点出底线 → **角球（进攻方）**，不是门球——解围的最后触碰方明确是防守方（解围者本人），不受"普通传球出底线不做触碰归属"约束（见 Non-Goals 澄清）。
 
 ### D2: 出界判定实现（批次1 简化）
 
 - **传球出界**：低概率（~3-5%）落点出界。引擎在选落点时，掷 3-5% 让落点 x/y 超出 [0,1]（≤0.05 归一化）。
-- **出界走新 HighlightOutcome**（参照 GoalKick 先例）：新增 `HighlightOutcome::PassOutOfPlay { detail, out_pos }`。出界 pass 事件 **to=None**（落点是出界点，无接球者），带 detail=`out_sideline`/`out_goal_line`；坐标钳制 [0,1]。finalize 时据 detail 触发对应重开（界外球/门球），**不设 carrier**。
+- **出界走新 HighlightOutcome**（参照 GoalKick 先例）：新增 `HighlightOutcome::PassOutOfPlay { detail, out_pos, source }`。出界 pass 事件 **to=None**（落点是出界点，无接球者），带 detail=`out_sideline`/`out_goal_line`；坐标钳制 [0,1]。finalize 时据 **detail + source** 触发对应重开，**不设 carrier**：
+  - `source=NormalPass`（普通传球）：出边线 → **界外球（对方）**；出底线 → **门球（对方门将）**。
+  - `source=Clearance`（防方头球解围）：出边线 → **界外球（进攻方）**；出底线 → **角球（进攻方）**——解围最后触碰方明确是防守方，走角球而非门球。
 - **扑出底线角球**：`emit_shot_highlight` 的 saved-rebound 分支，**先掷越线概率**（~30%），若越线则**弹开点改为未钳制**（球越过门线，home 攻 x>1 / away 攻 x<0）→ 新增 `HighlightOutcome::CornerAward`（角球）；否则维持现有松散球（rebound）。**角球触发源 = 扑出反弹越线（概率触发，非几何必然）**；按此源角球约 0.5-2 次/场（19 射门×30% saved×30% 扑出×30% 越线 ≈ 0.5-2 次），不设 6-10 次/场的高频目标。
   - **几何说明**：saved 射门目标 x=0.98/0.02（界内门线），deflect_point 弹开点钳制 [0,1]——仅靠几何无法越线，故用**概率触发越线**（越线时弹开点 = 门线外一点，如 home 攻 x=1.03 / away 攻 x=-0.03），确保角球可达。
+  - **未钳制点仅引擎内部消费**：越线弹开点只用于确定角旗侧与触发角球，**所有事件字段坐标一律钳制 [0,1]**（corner 高亮起点=角旗、落点=禁区、发球者走位都在界内）——protocol.js 0-1 校验不受影响。
 - 事件坐标：出界落点钳制 [0,1]，带 detail；viewer 球飞向边界（钳制到边缘）。
 
 **为什么**：协议坐标 [0,1] 校验不破坏；出界视觉 = 球到边界；简化不追踪触碰归属（传球出底线一律门球）。
 
 ### D3: 角球机制（Q3 grill 确认：完整版）
 
-角球从角旗区开出（角旗区选择：按扑出反弹点 y 就近的角旗，home 攻取右角 x=1 / away 攻取左角 x=0）：
+角球从角旗区开出（**角旗区选择：按出底线点 x/y 就近取角**——home 攻扑出 x>1 → 右角 x=1；away 攻扑出 x<0 → 左角 x=0；防方解围出底线同理。y 就近取 0/1）：
+0. **发球准备期（归属机制：新增轻量 `RestartPrep` 状态，非 DeadBall）**：CornerAward 后，发球者 = **攻方离角旗最近的外场球员**；进入 `RestartPrep { player, target=角旗, kind=Corner }`。准备期 tick（发球者走位 + 攻防站位，见步骤 4），发球者到角旗（<1m）触发发球高亮。**准备期归属：RestartPrep 挂在 tick 主分支（dead_ball 之后、highlight 之前）**，同 DeadBall preparing 的走位模式。
 1. **长角球发球**：pass 高亮（复用 GoalKick 开球高亮先例），**带 detail=`corner`**（viewer 据此识别这是角球发球，不靠起点推断），起点=角旗区（x=0/1, y=0/1），落点=禁区附近（x 贴近门线、y 球门范围），带高度（协议加 h 字段，见 D6，h>0）。
-2. **落点松散球 + 双追逐**：落点无人持球 → 松散球；**攻防各 1 名**（攻方 nearest、防方 nearest）向落点追逐（扩展 LooseBall 支持双追逐，或由 compute_movers 让另一侧最近者 chase 跑位）。
-3. **争抢结果**：按 55/45 掷胜者（攻/防）；胜者达到落点后**就地争抢结果分支**（不是拾取→main）：
-   - 攻方胜：**头球射门**（~55%）→ shot 高亮（起点=争抢点，detail=header），结果 goal(~10%)/saved(~40%)/off_target(~50%)；头球摆渡（~30%）→ pass 高亮给队友；拿球组织（~15%）→ main 恢复。
-   - 防方胜：**头球解围**（~70%）→ pass 高亮顶出禁区（detail=clearance）→ 落点松散球重新争；解围出底线（~20%）→ 再角球；解围出边线（~10%）→ 界外球。
+2. **落点松散球 + 双追逐**：落点无人持球 → 松散球；**攻防各 1 名追逐**——LooseBall 单 chaser = **攻方 nearest**（现有机制不变），LooseBall 加 `battle_team: Option<u32>` 标记（Some=角球争抢），compute_movers 据此让**防方 nearest 也 chase 落点**（复用 GoalKick 预判模式，action=chase）。
+3. **争抢结果**：攻方 chaser 达到落点拾取半径时，**就地 roll 55/45（攻/防）**（不在落点前 roll，避免"追到一半改判"）：
+   - 攻方胜：**就地争抢结果分支**（攻方 chaser 即胜者，起点=落点）——**头球射门**（~55%）→ shot 高亮（起点=争抢点，detail=header，h=0），结果 goal(~10%)/saved(~40%)/off_target(~50%)；**头球摆渡**（~30%）→ pass 高亮给队友（普通 pass 无 detail）；**拿球组织**（~15%）→ main 恢复。
+   - 防方胜：防方 chaser（已 chase 到落点附近）**就地头球解围**——**头球解围**（~70%）→ pass 高亮顶出禁区（detail=clearance，h=0）→ 落点松散球重新争；**解围出底线**（~20%）→ PassOutOfPlay(detail=out_goal_line, source=Clearance) → **角球（进攻方）**；**解围出边线**（~10%）→ PassOutOfPlay(detail=out_sideline, source=Clearance) → **界外球（进攻方）**。
+   - 败者行为：roll 失败方就地停（画面呈现"没争到"，不再额外移动）。
 4. **角球站位**：发球准备期（发球者走向角旗），攻方禁区包抄（nearest 几名向落点/禁区预判）、防方回防（formation_target 自然覆盖 + 落点预判）。
 
-**为什么**：完整呈现"角球 → 争抢 → 头球解围/射门/进球"；复用 shot/pass 高亮（头球=shot detail=header、解围=pass detail=clearance）；角球争抢扩展 LooseBall（双追逐 + 争抢结果分支），是**本 change 唯一的新机制**。
+**为什么**：完整呈现"角球 → 争抢 → 头球解围/射门/进球"；复用 shot/pass 高亮（头球=shot detail=header、解围=pass detail=clearance）；角球争抢扩展 LooseBall（battle 标记 + 双追逐 + 争抢结果分支），是**本 change 唯一的新机制**；解围出底线走 PassOutOfPlay(source=Clearance) 与普通传球出底线（source=NormalPass→门球）区分，避免规范矛盾。
 
 ### D4: 界外球机制（Q4 grill 确认：复用 pass）
 
-- 传球出边线 → **对方掷界外球**（detail=out_sideline → 对方）。
-- **掷球者**：接球方离出界点最近的外场球员（非门将）。
-- **掷球者准备期**：掷球者走向出界点（边线），再掷球（同角球发球准备期，避免 viewer 瞬移）。
-- **掷球**：pass 高亮（复用 GoalKick 开球先例），起点=出界点（边线），落点=掷球者附近队友（nearest_teammate），短传无高度（h=0，协议 h 字段见 D6）。
+- 传球出边线 → **对方掷界外球**（detail=out_sideline, source=NormalPass → 对方）；防方解围出边线 → **进攻方掷界外球**（source=Clearance）。
+- **掷球者**：接球方离出界点最近的外场球员（**排除门将**，同 tackle/解围的"外场"语义，避免门将跑出禁区掷球）。
+- **掷球者准备期（归属机制：RestartPrep）**：进入 `RestartPrep { player=掷球者, target=出界点, kind=ThrowIn }`，掷球者走向出界点（边线），到点触发掷球高亮（同角球发球准备期，避免 viewer 瞬移）。
+- **掷球**：pass 高亮（复用 GoalKick 开球先例），起点=出界点（边线），落点=掷球者附近队友（nearest_teammate），**receiver_x/y = 接球队友当前位置**（同普通 pass，viewer 让接球者从实位跑向落点，不瞬移），短传无高度（h=0，协议 h 字段见 D6）。
 - 复用"固定点开球高亮 + 接球者持球"路径（同 GoalKick 但落点有人接）。
 
 **为什么**：界外球 = 从边线短传重新组织，复用 pass 高亮 + 掷球者定位 + 准备期。
 
 ### D5: 统一机制（Q9 grill 确认）
 
-- 所有死球重开（门球/角球/界外球）都走**固定点开球高亮 + 松散球**路径（同 GoalKick 先例），**不扩展 DeadBall 状态机**（DeadBall 仅进球→中圈 kickoff）。
+- 所有死球重开（门球/角球/界外球）都走**固定点开球高亮 + 松散球**路径（同 GoalKick 先例），**不扩展 DeadBall 状态机**（DeadBall 仅进球→中圈 kickoff）。**`RestartPrep` 是独立轻量状态（非 DeadBall 扩展）**，只负责发球者/掷球者走位到固定点的准备期（角球/界外球专用，门球无需准备期——门将已在门线）。
 - 所有球飞行都走 pass/shot 高亮；落点争抢都走松散球。
 - 本 change 新增机制：出界判定（PassOutOfPlay/CornerAward 高亮结局）+ 角球双追逐 + 协议 h 字段。
 
@@ -97,4 +103,3 @@ P6 首批完成门球 + 进球回中圈。用户 batch-grill 确认批次1 = 出
 - 角球发球落点分布（禁区哪里）——实施时调参（近门柱/远门柱/禁区弧）。
 - 头球射门/解围的具体概率（攻方 55/30/15、防方 70/20/10；头球射门 goal 10%/saved 40%/off 50%）——实施时可调。
 - 传球出界频率（3-5%）——实施时按画面节奏调。
-- 角球争抢的双追逐：LooseBall 扩展双 chaser vs compute_movers 让另一侧最近者 chase 跑位——实施时选（倾向后者，改动小）。

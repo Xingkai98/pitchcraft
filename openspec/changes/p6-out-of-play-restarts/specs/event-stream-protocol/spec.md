@@ -4,11 +4,15 @@
 
 ### Requirement: 出界 detail 表达
 
-pass/shot 事件 SHALL 在出界时携带 detail 表达出界类型（`out_sideline` / `out_goal_line`），坐标仍钳制 [0,1]；出界 pass 的 to=None（落点是出界点，无接球者）。
+**pass 事件** SHALL 在出界时携带 detail 表达出界类型（`out_sideline` / `out_goal_line`），坐标仍钳制 [0,1]；出界 pass 的 to=None（落点是出界点，无接球者）。**射门出界不额外加 detail**（打偏由 result=`off_target` 表达门球；扑出越线由 CornerAward 高亮结局表达角球，见 match-engine spec）。
 
-#### Scenario: 出界 detail
-- **GIVEN** 一次出界（传球/射门）
-- **THEN** 事件 detail=`out_sideline` 或 `out_goal_line`；坐标 [0,1]；出界 pass 的 to=None
+#### Scenario: 出界 pass detail
+- **GIVEN** 一次出界传球
+- **THEN** pass 事件 detail=`out_sideline` 或 `out_goal_line`；坐标 [0,1]；to=None
+
+#### Scenario: 射门出界不加 detail
+- **GIVEN** 一次射门出界（打偏/被扑出底线）
+- **THEN** shot 事件不加 out_goal_line detail（result=off_target → 门球；扑出越线 → CornerAward 高亮结局 → 角球）
 
 #### Scenario: 出界 pass 无接球者
 - **GIVEN** 一次出界传球
@@ -25,6 +29,10 @@ pass/shot 事件 SHALL 在出界时携带 detail 表达出界类型（`out_sidel
 #### Scenario: 头球解围
 - **GIVEN** 一次头球解围
 - **THEN** pass 事件 detail=`clearance`，顶出禁区
+
+#### Scenario: 头球摆渡
+- **GIVEN** 攻方赢得角球争抢后头球摆渡给队友
+- **THEN** pass 事件无 detail（普通 pass），viewer 按普通传球演绎
 
 ### Requirement: 球高度 h 字段
 
