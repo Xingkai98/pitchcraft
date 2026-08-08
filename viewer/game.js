@@ -173,6 +173,21 @@ export class Game {
     return null;
   }
 
+  // 当前高亮事件的参与者（pass 传球者/接球者、shot 射手/门将、tackle 双方）——micro-motion 抑制用
+  // （spec：高亮参与者不微动；即使静止（传球者摆腿/门将待命）也抑制）
+  currentHighlightParticipants() {
+    const idx = this.currentEventIndex();
+    const e = this.events[idx];
+    if (!e) return [];
+    if (e.type === 'pass') return [e.from, e.to].filter((x) => x !== undefined && x !== null);
+    if (e.type === 'shot') {
+      const keeper = typeof e.subject === 'number' && e.subject <= 10 ? 21 : 0;
+      return [e.subject, keeper];
+    }
+    if (e.type === 'tackle') return [e.subject, e.carrier ?? e.to].filter((x) => x !== undefined && x !== null);
+    return [];
+  }
+
   // 按实体构建时间索引：球一组、每球员一组（timeline 已按 t 排序，分组后仍有序）
   _buildAnchorIndex() {
     this._ballAnchors = [];

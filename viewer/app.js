@@ -5,11 +5,11 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260808-2';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-2';
-import { createGame } from './game.js?v=20260808-2';
-import { mockEventStream } from './mock-event-stream.js?v=20260808-2';
-import { resetMicroMotion } from './micro-motion.js?v=20260808-2';
+import { config } from './config.js?v=20260808-3';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-3';
+import { createGame } from './game.js?v=20260808-3';
+import { mockEventStream } from './mock-event-stream.js?v=20260808-3';
+import { resetMicroMotion } from './micro-motion.js?v=20260808-3';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -95,6 +95,8 @@ function frame(ts) {
     // main 持球者不微动（避免人球分离）：即使静止（零位移控球）也抑制
     const carrier = game.currentCarrier();
     if (carrier !== null) movingIds.add(carrier);
+    // 高亮参与者不微动（spec：即使静止也抑制——传球者摆腿/门将待命）
+    for (const pid of game.currentHighlightParticipants()) movingIds.add(pid);
     renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height, { playTime: game.playTime, movingIds, dt });
     // 比分显示（简单：从事件流里找最近一次 goal）
     updateScore();

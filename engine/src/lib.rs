@@ -730,17 +730,21 @@ fn pick_close_down_players(st: &MatchState, defend_team: u32, target: (f64, f64)
     cand.iter().take(n).map(|(_, id)| *id).collect()
 }
 
-/// 新进攻方（attacking 方）前插最深的外场球员位置（离对方球门最近——门前/禁区前沿）
+/// 新进攻方（attacking 方）前插最深的外场球员位置（门前/禁区前沿）。
+/// 评分：x 深度为主（离对方球门越近越好）+ y 偏离中线为次（中路禁区优先，避免贴边路）。
 fn attacking_forward(st: &MatchState, attacking: u32) -> (f64, f64) {
     let goal_x = if attacking == 0 { 1.0 } else { 0.0 };
     let mut best = (0.5, 0.5);
-    let mut best_d = f64::MAX;
+    let mut best_score = f64::MAX;
     for id in 0..22i32 {
         let is_team = if attacking == 0 { id <= 10 } else { id >= 11 };
         if !is_team { continue; }
         if id == 0 || id == 21 { continue; }
-        let d = (st.pos[id as usize].0 - goal_x).abs();
-        if d < best_d { best_d = d; best = st.pos[id as usize]; }
+        let p = st.pos[id as usize];
+        let depth = (p.0 - goal_x).abs();
+        let central = (p.1 - 0.5).abs();
+        let score = depth + central * 0.3; // 深度为主，中路为次
+        if score < best_score { best_score = score; best = p; }
     }
     best
 }
@@ -1612,14 +1616,6 @@ mod tests {
 
     fn json_num(e: &str, name: &str) -> Option<f64> {
         json_field(e, name)?.parse().ok()
-    }
-
-    /// 是否指定 type（去掉 JSON 字符串引号比较）
-    fn is_type(e: &str, t: &str) -> bool {
-        match json_field(e, "type") {
-            Some(v) => v.trim_matches('"') == t,
-            None => false,
-        }
     }
 
     // ---- v2 并行节拍测试 ----

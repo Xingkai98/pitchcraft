@@ -41,9 +41,10 @@ export function microMotionOffset(id, t) {
   };
 }
 
-// 启停渐变系数：active=true 时向 1 逼近，false 时向 0 逼近（~0.3s 收敛）
+// 启停渐变系数：active=true 时向 1 逼近，false 时向 0 逼近（~0.3s 收敛）。
+// 未知球员（reset 后/首次）从 0 开始渐入——resetMicroMotion 后从 fade 0 重新渐入（非直接全幅）。
 export function microMotionFade(id, active, dt) {
-  const cur = _fade.get(id) ?? (active ? 1 : 0);
+  const cur = _fade.get(id) ?? 0;
   const target = active ? 1 : 0;
   const rate = dt > 0 ? dt / 0.3 : 0;
   const next = target > cur
