@@ -16,7 +16,7 @@ echo "=== 2/3 Viewer 单测（node --test）==="
 echo ""
 echo "=== 3/3 WASM 端到端（v2 并行节拍：engine.wasm → viewer 播放无 snap）==="
 if [ ! -f viewer/engine.wasm ]; then
-  echo "缺少 viewer/engine.wasm —— 先运行: cd engine && cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/"
+  echo "缺少 viewer/engine.wasm —— 先运行: cd engine && cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm"
   exit 1
 fi
 (cd viewer && node e2e-v2.mjs)

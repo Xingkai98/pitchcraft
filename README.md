@@ -41,7 +41,7 @@ wayfinder 决策票据迁移到 **GitHub issues**（`github.com/Xingkai98/pitchc
 # 1. 编译 WASM 引擎并拷到 viewer
 cd engine
 cargo build --target wasm32-unknown-unknown --release
-cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/
+cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm
 
 # 2. 启动本地 HTTP server（file:// 下 fetch .wasm 会失败）
 #    用 serve.py（带 no-cache 头，避免浏览器缓存 JS/HTML）
