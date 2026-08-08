@@ -321,6 +321,20 @@ pub const GK_SPEED_MS: f64 = 3.0;
 pub const HOLD_MIN_TICKS: u32 = 8;
 pub const HOLD_MAX_TICKS: u32 = 15;
 
+// ---- P5 队形/攻防转换参数 ----
+/// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
+pub const SIDE_SHIFT_FACTOR: f64 = 0.06;
+/// 防线前压幅度（归一化）：球到前场时防线推进量（≈12m）
+pub const DEFENSE_PUSH_FACTOR: f64 = 0.12;
+/// 控球阶段压上偏移（归一化）：己方持球前压 / 对方持球回收（≈2m）
+pub const PRESS_UP_OFFSET: f64 = 0.02;
+/// transition 窗口长度（tick）
+pub const TRANSITION_TICKS: u32 = 4;
+/// repulsion 最小间距（归一化，球员半径×2 ≈0.02）
+pub const REPULSION_MIN_DIST: f64 = 0.02;
+/// close_down 停点距目标距离（归一化，≈2m 压迫距离）
+pub const CLOSE_DOWN_STOP_DIST: f64 = 0.02;
+
 /// 米 → 归一化步进（沿 x 的近似换算；y 方向由 dist_norm 欧氏距离近似）
 fn norm_step(meters: f64) -> f64 {
     meters / PITCH_LENGTH_M
@@ -377,7 +391,7 @@ fn nearest_any(pos: &[(f64, f64)], target: (f64, f64)) -> i32 {
 struct MatchState {
     lineup: [(f64, f64); 22],
     pos: [(f64, f64); 22],
-    wander_target: [(f64, f64); 22],
+    ball_pos: (f64, f64), // 当前球位置（每 tick 按状态维护，供队形目标）
     possession: u32, // 0=home, 1=away
     carrier: i32,
     carrier_from: (f64, f64),
@@ -390,6 +404,17 @@ struct MatchState {
     home_score: u32,
     away_score: u32,
     last_tackle_pair: Option<(i32, i32)>,
+    // P5：静态防线身份（每队离己方门线最近的 4 名外场，default_lineup 基准）
+    home_defenders: [i32; 4],
+    away_defenders: [i32; 4],
+    // P5：transition 叠加窗口（球权易主后的反击窗口；非第三状态，基础 phase 由 possession 推导）
+    transition: Option<Transition>,
+}
+
+/// transition 叠加窗口（P5）
+struct Transition {
+    ticks_left: u32,
+    attacking: u32, // 得球方（0=home, 1=away）
 }
 
 impl MatchState {
@@ -400,10 +425,17 @@ impl MatchState {
             pos[p.id as usize] = (p.x, p.y);
             lp[p.id as usize] = (p.x, p.y);
         }
+        // 静态防线身份：home 取 x 最小 4 名外场（id 1-10），away 取 x 最大 4 名外场（id 11-20）
+        let mut home_outs = vec![(lp[1].0, 1i32), (lp[2].0, 2), (lp[3].0, 3), (lp[4].0, 4), (lp[5].0, 5), (lp[6].0, 6), (lp[7].0, 7), (lp[8].0, 8), (lp[9].0, 9), (lp[10].0, 10)];
+        home_outs.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+        let mut away_outs = vec![(lp[11].0, 11i32), (lp[12].0, 12), (lp[13].0, 13), (lp[14].0, 14), (lp[15].0, 15), (lp[16].0, 16), (lp[17].0, 17), (lp[18].0, 18), (lp[19].0, 19), (lp[20].0, 20)];
+        away_outs.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+        let home_defenders = [home_outs[0].1, home_outs[1].1, home_outs[2].1, home_outs[3].1];
+        let away_defenders = [away_outs[0].1, away_outs[1].1, away_outs[2].1, away_outs[3].1];
         MatchState {
             lineup: lp,
             pos,
-            wander_target: lp,
+            ball_pos: (0.55, 0.5),
             possession: 0,
             carrier: 10,
             carrier_from: (0.55, 0.5),
@@ -416,6 +448,9 @@ impl MatchState {
             home_score: 0,
             away_score: 0,
             last_tackle_pair: None,
+            home_defenders,
+            away_defenders,
+            transition: None,
         }
     }
 }
@@ -429,10 +464,10 @@ struct Highlight {
 
 enum HighlightOutcome {
     PassCaught { receiver: i32, catch_pos: (f64, f64) },
-    ShotGoal { kickoff_id: i32 },
+    ShotGoal { kickoff_id: i32, ball_end: (f64, f64) },
     ShotSavedCaught { gk: i32, save_pos: (f64, f64) },
     ShotSavedRebound { gk: i32, rebound_from: (f64, f64), dir: (f64, f64) },
-    ShotOffTarget { kickoff_id: i32 },
+    ShotOffTarget { kickoff_id: i32, ball_end: (f64, f64) },
     TackleSuccess { def: i32, loose: (f64, f64), contact: (f64, f64) },
     TackleFail { victim: i32, contact: (f64, f64) },
 }
@@ -523,6 +558,7 @@ fn whistle_event(t: f64, home: u32, away: u32, detail: &str) -> Event {
 fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
     // 1. 死球阶段
     if st.dead_ball.is_some() {
+        st.ball_pos = (0.5, 0.5); // 死球/准备/kickoff：球在中圈附近（队形目标用）
         advance_dead_ball(st, rng, events, t);
         return;
     }
@@ -533,6 +569,7 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
             finalize_highlight(st, rng, events, t);
         } else {
             // 高亮飞行中：beat 只含 movers（参与者排除，无 main/ball）
+            st.ball_pos = highlight_ball_end(st.highlight.as_ref().unwrap());
             let excluded: Vec<i32> = st.highlight.as_ref().unwrap().participants.iter().map(|(id, _)| *id).collect();
             let movers = compute_movers(st, rng, t, &excluded);
             for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
@@ -542,36 +579,70 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     }
     // 3. 松散球
     if st.loose.is_some() {
+        st.ball_pos = st.loose.as_ref().unwrap().pos;
         advance_loose(st, rng, events, t);
         return;
     }
     // 4. 开放比赛：持球 hold 门控
-    st.hold_ticks += 1;
-    if st.hold_ticks >= st.hold_max {
-        roll_highlight(st, rng, events, t);
-    } else {
+    if st.transition.is_some() {
+        // transition 期间：hold 门控暂停（计数冻结），只产 main + movers（不掷高亮）
+        let done = {
+            let tr = st.transition.as_mut().unwrap();
+            tr.ticks_left -= 1;
+            tr.ticks_left == 0
+        };
+        if done { st.transition = None; }
         emit_beat_with_main(st, rng, events, t);
+    } else {
+        st.hold_ticks += 1;
+        if st.hold_ticks >= st.hold_max {
+            roll_highlight(st, rng, events, t);
+        } else {
+            emit_beat_with_main(st, rng, events, t);
+        }
+    }
+}
+
+/// 高亮期间球位置（队形目标用）：按结局的球终点推导
+fn highlight_ball_end(h: &Highlight) -> (f64, f64) {
+    match &h.outcome {
+        HighlightOutcome::PassCaught { catch_pos, .. } => *catch_pos,
+        HighlightOutcome::ShotGoal { ball_end, .. } => *ball_end,
+        HighlightOutcome::ShotSavedCaught { save_pos, .. } => *save_pos,
+        HighlightOutcome::ShotSavedRebound { rebound_from, .. } => *rebound_from,
+        HighlightOutcome::ShotOffTarget { ball_end, .. } => *ball_end,
+        HighlightOutcome::TackleSuccess { loose, .. } => *loose,
+        HighlightOutcome::TackleFail { contact, .. } => *contact,
     }
 }
 
 /// 开放比赛 tick：产 main（carrier 带球）+ movers
 fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
     let main = carrier_move(st, rng);
+    st.ball_pos = st.pos[st.carrier as usize];
     let movers = compute_movers(st, rng, t, &[st.carrier]);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     events.push(beat_event(t, Some(main), None, movers));
 }
 
-/// carrier 带球（main）：多数 tick 零位移控球/短带，步进 ≤ speed×1s
+/// carrier 带球（main）：多数 tick 零位移控球/短带，步进 ≤ speed×1s；transition 期间高速前插
 fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
     let p = st.pos[st.carrier as usize];
     let home = st.possession == 0;
     let is_gk = st.carrier == 0 || st.carrier == 21; // 门将持球恒零位移控球（不推进离门）
+    // transition 期间新进攻方持球者前插（高速推进，经 main 表达）
+    let in_transition = st.transition.as_ref().map_or(false, |tr| tr.attacking == st.possession);
     let roll = rng.next_u64() % 100;
-    let (x2, y2) = if is_gk || roll < 70 {
+    let (x2, y2) = if is_gk || (!in_transition && roll < 70) {
         let ox = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
         let oy = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
         (clamp01(p.0 + ox), clamp01(p.1 + oy))
+    } else if in_transition {
+        // 反击：持球者前插（每拍推进 ~5m）
+        let dir = if home { 1.0 } else { -1.0 };
+        let x = p.0 + dir * 0.05;
+        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01));
+        (clamp01(x), y)
     } else {
         let dir = if home { 1.0 } else { -1.0 };
         let x = p.0 + dir * 0.03;
@@ -587,19 +658,120 @@ fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
     MainAction { subject: st.carrier, x: p.0, y: p.1, x2: x2f, y2: y2f, speed: CARRIER_SPEED_MS, touch_freq: 1.5 }
 }
 
-/// 无球跑位（movers 增量）：目标 = 角色锚点 + 小幅游走；dead-zone 内不动不发
-fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[i32]) -> Vec<Mover> {
-    let mut movers = Vec::new();
-    let dead_zone = norm_step(DEAD_ZONE_METERS);
+/// 是否防线球员（静态身份，default_lineup 基准）
+fn is_defender(st: &MatchState, id: i32) -> bool {
+    if id <= 10 { st.home_defenders.contains(&id) } else { st.away_defenders.contains(&id) }
+}
+
+/// 队形目标（P5 S1）：目标 = 角色基准 + 队形偏移(球位置, 控球阶段, 球侧)。
+/// 门将恒回门线；防线随球前压/回撤（不越过球）；全队随球侧平移；控球阶段压上。
+fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
+    let base = st.lineup[id as usize];
+    let ball = st.ball_pos;
+    let home = id <= 10;
+    // 门将：不参与平移/前压，仅回位到门线
+    if id == 0 { return (0.02, 0.5); }
+    if id == 21 { return (0.98, 0.5); }
+    let attack_dir = if home { 1.0 } else { -1.0 };
+    // 球侧平移（连续映射，非二分——避免中线附近 shuffle）
+    let shift = (ball.0 - 0.5) * SIDE_SHIFT_FACTOR;
+    // 控球阶段压上（己方 attack 前压 / 对方持球回收）
+    let my_attack = (home && st.possession == 0) || (!home && st.possession == 1);
+    let press = if my_attack { PRESS_UP_OFFSET } else { -PRESS_UP_OFFSET };
+    let mut tx = base.0 + shift + attack_dir * press;
+    if is_defender(st, id) {
+        // 防线随球前压/回撤：防线沿进攻方向推，且不越过球
+        let own_goal_x = if home { 0.0 } else { 1.0 };
+        let push = (ball.0 - own_goal_x).abs() * DEFENSE_PUSH_FACTOR;
+        let pushed_x = base.0 + attack_dir * push;
+        // 防线 x 不超过球 x（沿己方进攻方向钳制：home line.x ≤ ball.x / away line.x ≥ ball.x）
+        let clamped_x = if home { pushed_x.min(ball.0) } else { pushed_x.max(ball.0) };
+        tx = if home { clamped_x.min(ball.0) } else { clamped_x.max(ball.0) };
+    }
+    let ty = base.1 + (ball.1 - 0.5) * SIDE_SHIFT_FACTOR * 0.6;
+    (clamp01(tx), clamp01(ty))
+}
+
+/// close_down 停点：向 target 逼近，但停在 target 附近 CLOSE_DOWN_STOP_DIST（不贴身/不进入拾取半径）
+fn close_down_stop(from: (f64, f64), target: (f64, f64)) -> (f64, f64) {
+    let d = dist_norm(from, target);
+    if d <= CLOSE_DOWN_STOP_DIST { return from; }
+    let ux = (target.0 - from.0) / d;
+    let uy = (target.1 - from.1) / d;
+    (from.0 + ux * (d - CLOSE_DOWN_STOP_DIST), from.1 + uy * (d - CLOSE_DOWN_STOP_DIST))
+}
+
+/// transition 期间新防守方距球最近的 n 名外场（close_down 执行者）
+fn pick_close_down_players(st: &MatchState, defend_team: u32, n: usize) -> Vec<i32> {
+    let mut cand: Vec<(f64, i32)> = Vec::new();
     for id in 0..22i32 {
-        if excluded.contains(&id) { continue; }
-        if id == st.carrier { continue; } // main-only：carrier 不进 movers
+        let is_team = if defend_team == 0 { id <= 10 } else { id >= 11 };
+        if !is_team { continue; }
+        if id == 0 || id == 21 { continue; } // 门将不 close_down
+        if id == st.carrier { continue; }
+        let d = (st.pos[id as usize].0 - st.ball_pos.0).powi(2) + (st.pos[id as usize].1 - st.ball_pos.1).powi(2);
+        cand.push((d, id));
+    }
+    cand.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap());
+    cand.iter().take(n).map(|(_, id)| *id).collect()
+}
+
+/// 无球跑位（movers 增量）：目标 = 队形目标（formation_target），transition 期间 close_down 覆盖；dead-zone 内不动不发；repulsion 修正同队目标间距
+fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[i32]) -> Vec<Mover> {
+    let _ = rng;
+    let _ = t;
+    let dead_zone = norm_step(DEAD_ZONE_METERS);
+    // transition 期间：新防守方 2 名就近外场 close_down（向球/持球者逼近，覆盖队形目标）
+    let close_down_ids: Vec<i32> = if let Some(tr) = &st.transition {
+        pick_close_down_players(st, 1 - tr.attacking, 2)
+    } else {
+        Vec::new()
+    };
+    // 第一遍：算每个外场球员的目标点（门将单独处理）
+    let mut targets: Vec<Option<(f64, f64)>> = vec![None; 22];
+    let mut actions = vec!["run".to_string(); 22];
+    for id in 0..22i32 {
+        if excluded.contains(&id) || id == st.carrier { continue; }
+        if id == 0 || id == 21 { continue; } // 门将最后单独处理
+        if close_down_ids.contains(&id) {
+            targets[id as usize] = Some(close_down_stop(st.pos[id as usize], st.ball_pos));
+            actions[id as usize] = "close_down".to_string();
+        } else {
+            targets[id as usize] = Some(formation_target(st, id));
+        }
+    }
+    // 第二遍：repulsion（同队目标间距修正，迭代 ≤3；carrier 不参与）
+    for _ in 0..3 {
+        for a in 0..22i32 {
+            if targets[a as usize].is_none() { continue; }
+            for b in a + 1..22i32 {
+                if targets[b as usize].is_none() { continue; }
+                if (a <= 10) != (b <= 10) { continue; } // 同队内部
+                let ta = targets[a as usize].unwrap();
+                let tb = targets[b as usize].unwrap();
+                let d = dist_norm(ta, tb);
+                if d < REPULSION_MIN_DIST && d > 1e-9 {
+                    let push = (REPULSION_MIN_DIST - d) / 2.0;
+                    let ux = (tb.0 - ta.0) / d;
+                    let uy = (tb.1 - ta.1) / d;
+                    targets[a as usize] = Some((clamp01(ta.0 - ux * push), clamp01(ta.1 - uy * push)));
+                    targets[b as usize] = Some((clamp01(tb.0 + ux * push), clamp01(tb.1 + uy * push)));
+                }
+            }
+        }
+    }
+    // 第三遍：移动 + 产出 movers
+    let mut movers = Vec::new();
+    for id in 0..22i32 {
+        if excluded.contains(&id) || id == st.carrier { continue; }
         let from = st.pos[id as usize];
         let (target, action, speed) = if id == 0 || id == 21 {
             let tx = if id == 0 { 0.02 } else { 0.98 };
-            ((tx, 0.5), "keeper_return", GK_SPEED_MS)
+            ((tx, 0.5), "keeper_return".to_string(), GK_SPEED_MS)
+        } else if let Some(ta) = targets[id as usize] {
+            (ta, actions[id as usize].clone(), RUN_SPEED_MS)
         } else {
-            (player_wander_target(st, rng, id), "run", RUN_SPEED_MS)
+            continue;
         };
         let d = dist_norm(from, target);
         if d < dead_zone { continue; }
@@ -608,24 +780,10 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
         st.pos[id as usize] = (tox, toy);
         movers.push(Mover {
             id, from_x: from.0, from_y: from.1, to_x: tox, to_y: toy,
-            speed, action: action.to_string(),
+            speed, action,
         });
     }
-    let _ = t;
     movers
-}
-
-/// 游走目标：到位后换一个小幅偏移（绕锚点小幅游走，画面持续有动作）
-fn player_wander_target(st: &mut MatchState, rng: &mut SeededRng, id: i32) -> (f64, f64) {
-    let base = st.lineup[id as usize];
-    let cur = st.wander_target[id as usize];
-    let d = dist_norm(st.pos[id as usize], cur);
-    if d < norm_step(DEAD_ZONE_METERS) {
-        let ox = (rng.next_u64() % 31) as f64 / 1000.0 - 0.015;
-        let oy = (rng.next_u64() % 31) as f64 / 1000.0 - 0.015;
-        st.wander_target[id as usize] = (clamp01(base.0 + ox), clamp01(base.1 + oy));
-    }
-    st.wander_target[id as usize]
 }
 
 /// 高亮门控：hold 归零必掷一条高亮；tackle 检查失败改掷 pass/shot；shot 需在进攻半场
@@ -725,10 +883,10 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let outcome = if result == "goal" {
         let kickoff_id = if home { 12 } else { 9 };
         // 比分在高亮结束（finalize）确认，不在射门时刻递增
-        HighlightOutcome::ShotGoal { kickoff_id }
+        HighlightOutcome::ShotGoal { kickoff_id, ball_end: (x2, y2) }
     } else if result == "off_target" {
         let kickoff_id = if home { 12 } else { 9 };
-        HighlightOutcome::ShotOffTarget { kickoff_id }
+        HighlightOutcome::ShotOffTarget { kickoff_id, ball_end: (x2, y2) }
     } else if caught {
         HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
     } else {
@@ -795,14 +953,16 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     }
     match h.outcome {
         HighlightOutcome::PassCaught { receiver, catch_pos } => {
+            st.ball_pos = catch_pos;
             st.carrier = receiver;
             st.carrier_from = catch_pos;
             st.hold_ticks = 0;
             st.hold_max = roll_hold_max(rng);
             emit_beat_with_main(st, rng, events, t);
         }
-        HighlightOutcome::ShotGoal { kickoff_id } => {
+        HighlightOutcome::ShotGoal { kickoff_id, ball_end } => {
             // 比分在高亮结束（finalize）时确认——不在射门时刻递增（避免比赛在飞行中结束仍计分）
+            st.ball_pos = ball_end;
             if kickoff_id <= 10 { st.away_score += 1; } else { st.home_score += 1; }
             let receiver = if st.possession == 0 { 11 } else { 10 };
             st.carrier = -1;
@@ -812,21 +972,26 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             events.push(beat_event(t, None, None, movers));
         }
         HighlightOutcome::ShotSavedCaught { gk, save_pos } => {
+            st.ball_pos = save_pos;
             st.carrier = gk;
             st.possession = if gk <= 10 { 0 } else { 1 };
             st.carrier_from = save_pos;
+            // save-caught 触发 transition（球权易主）：save 高亮终点 tick 后的首个整数 tick 边界武装
+            st.transition = Some(Transition { ticks_left: TRANSITION_TICKS, attacking: st.possession });
             st.hold_ticks = 0;
             st.hold_max = roll_hold_max(rng);
             emit_beat_with_main(st, rng, events, t);
         }
         HighlightOutcome::ShotSavedRebound { gk, rebound_from, dir } => {
             let _ = gk;
-            // 滚动方向：deflectPoint 规则算出的弹开方向（从门线朝场内/两侧）
+            st.ball_pos = rebound_from;
+            // save-rebound 不触发 transition（普通松散球，双方可争，拾取后按拾取方刷新）
             st.carrier = -1;
             start_loose_ball(st, rebound_from, dir, None);
             advance_loose(st, rng, events, t);
         }
-        HighlightOutcome::ShotOffTarget { kickoff_id } => {
+        HighlightOutcome::ShotOffTarget { kickoff_id, ball_end } => {
+            st.ball_pos = ball_end;
             let receiver = if st.possession == 0 { 11 } else { 10 };
             st.carrier = -1;
             st.dead_ball = Some(DeadBall { goal: false, remaining: 3, preparing: true, kickoff_id, kicked: false, receiver, kickoff_end: 0.0 });
@@ -835,7 +1000,10 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             events.push(beat_event(t, None, None, movers));
         }
         HighlightOutcome::TackleSuccess { def, loose, contact } => {
+            st.ball_pos = loose;
             st.possession = if def <= 10 { 0 } else { 1 };
+            // tackle 成功触发 transition：tackle 高亮起点 tick 武装（接触即得球权）
+            st.transition = Some(Transition { ticks_left: TRANSITION_TICKS, attacking: st.possession });
             // 滚动方向：沿接触点 → 弹开点方向
             let dx = loose.0 - contact.0;
             let dy = loose.1 - contact.1;
@@ -846,6 +1014,7 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             advance_loose(st, rng, events, t);
         }
         HighlightOutcome::TackleFail { victim, contact } => {
+            st.ball_pos = contact;
             st.carrier = victim;
             st.carrier_from = contact;
             st.hold_ticks = 0;
@@ -1676,5 +1845,90 @@ mod tests {
             }
         }
         assert!(checked > 0, "应有 v2 fail tackle 的 main 恢复被检查");
+    }
+
+    // ---- P5 队形/攻防转换测试 ----
+
+    /// 从 beat 事件提取 movers 数组中的指定球员目标
+    fn mover_target(e: &str, pid: i32) -> Option<(f64, f64, String)> {
+        let needle = "\"movers\":[";
+        let i = e.find(needle)?;
+        let rest = &e[i + needle.len()..];
+        let end = rest.find(']')?;
+        let arr = &rest[..end];
+        // 按 "{" 拆分每个 mover
+        for tok in arr.split("{\"id\":") {
+            let tok2 = tok.trim_start_matches(',').trim_start_matches('{');
+            if !tok2.starts_with(&format!("{}", pid)) && !tok2.starts_with(&format!("\"{}\"", pid)) {
+                continue;
+            }
+            // id 匹配：解析 from_x/to_x/action
+            let fx = extract_num_field(tok2, "to_x");
+            let fy = extract_num_field(tok2, "to_y");
+            let act = extract_str_field(tok2, "action");
+            if let (Some(fx), Some(fy), Some(act)) = (fx, fy, act) {
+                return Some((fx, fy, act));
+            }
+        }
+        None
+    }
+
+    fn extract_num_field(s: &str, name: &str) -> Option<f64> {
+        let f = format!("\"{}\":", name);
+        let j = s.find(&f)?;
+        let val = &s[j + f.len()..];
+        let num: String = val.chars().take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-').collect();
+        num.parse().ok()
+    }
+
+    fn extract_str_field(s: &str, name: &str) -> Option<String> {
+        let f = format!("\"{}\":\"", name);
+        let j = s.find(&f)?;
+        let rest = &s[j + f.len()..];
+        Some(rest.split('"').next().unwrap_or("").to_string())
+    }
+
+    #[test]
+    fn p5_formation_and_transition() {
+        let cfg = MatchConfig::default_();
+        let mut close_down_total = 0usize;
+        let mut front_avg = 0.0;
+        let mut front_n = 0usize;
+        let mut back_avg = 0.0;
+        let mut back_n = 0usize;
+        for seed in 1..6u64 {
+            let s = simulate(seed, cfg);
+            let evts: Vec<String> = json_events(&s);
+            for e in &evts {
+                if type_of(e) != "beat" { continue; }
+                // action 统计
+                let needle = "\"movers\":[";
+                if let Some(i) = e.find(needle) {
+                    let rest = &e[i + needle.len()..];
+                    let end = rest.find(']').unwrap_or(rest.len());
+                    let arr = &rest[..end];
+                    close_down_total += arr.matches("close_down").count();
+                }
+                // 防线采样：home 持球（main 存在且 subject ≤10），球 x 分桶
+                let has_main = e.contains("\"main\"");
+                if !has_main { continue; }
+                let main_subj = extract_main_subject(e);
+                if main_subj.is_none() || main_subj.unwrap() > 10 { continue; } // home 持球
+                let mx = main_field(e, "x").unwrap_or(0.5);
+                if let Some((fx, _, _)) = mover_target(e, 4) { // home 后卫 id4
+                    if mx > 0.7 { front_avg += fx; front_n += 1; }
+                    else if mx < 0.3 { back_avg += fx; back_n += 1; }
+                }
+            }
+        }
+        if front_n > 0 { front_avg /= front_n as f64; }
+        if back_n > 0 { back_avg /= back_n as f64; }
+        println!("P5 防线(id4): 球前场(>0.7) avg_x={:.3} n={} / 球后场(<0.3) avg_x={:.3} n={}", front_avg, front_n, back_avg, back_n);
+        println!("P5 close_down 总数: {}", close_down_total);
+        assert!(close_down_total > 0, "应有 close_down 动作（transition 触发）");
+        // 防线前压：球在前场时防线 x 应显著大于球在后场时
+        if front_n > 0 && back_n > 0 {
+            assert!(front_avg > back_avg + 0.02, "防线应随球前压（前场 {:.3} vs 后场 {:.3}）", front_avg, back_avg);
+        }
     }
 }
