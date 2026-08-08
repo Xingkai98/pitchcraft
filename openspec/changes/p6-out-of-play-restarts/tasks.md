@@ -11,7 +11,8 @@
 
 ## O2. 引擎：角球 + 双追逐争抢 + 头球
 
-- [ ] O2.1 角球发球：角旗区（按扑出点 y 就近）开长角球，pass 高亮带 h → 落点禁区松散球
+- [ ] O2.1 角球发球：角旗区（按扑出点 y 就近）开长角球，pass 高亮带 h + detail=corner + to=None → 落点禁区松散球
+- [ ] O2.1b 角球站位：发球准备期发球者走向角旗；攻方禁区包抄（nearest 几名预判）、防方回防
 - [ ] O2.2 松散球双追逐：攻防各 1 名（nearest）向落点追逐（扩展 LooseBall 双 chaser 或 compute_movers 另一侧 chase）
 - [ ] O2.3 争抢结果：按 55/45 掷胜者；胜者达到落点就地争抢结果分支（非拾取→main）
 - [ ] O2.4 攻方胜：头球射门（shot detail=header，goal 10%/saved 40%/off 50%）/ 摆渡（pass）/ 拿球组织（main）
@@ -36,7 +37,7 @@
 - [ ] O5.3 头球射门（shot detail=header）、头球解围（pass detail=clearance 顶出禁区）
 - [ ] O5.4 界外球掷球（边线短传 h=0）
 - [ ] O5.5 出界视觉（球飞向边界钳制到边缘）；协议 h 字段支持（h 大小表示：h 缺失→距离插值、h=0→基础半径、h>0→放大）
-- [ ] O5.5b protocol.js 校验 h（0-1 数字）+ detail 枚举（out_sideline/out_goal_line/header/clearance）
+- [ ] O5.5b protocol.js 校验 h（0-1 数字）+ detail 枚举（out_sideline/out_goal_line/header/clearance/corner）
 - [ ] O5.6 viewer 测试：角球/头球/界外球/出界视觉/h 大小
 
 ## O6. 验证与收尾

@@ -28,12 +28,24 @@ pass/shot 事件 SHALL 在出界时携带 detail 表达出界类型（`out_sidel
 
 ### Requirement: 球高度 h 字段
 
-事件流 SHALL 支持可选字段 `h`（归一化 0-1，球高度）——pass/shot 高亮带弧线高度，viewer 用球大小表示（FM 做法，P6 首批已实现）。未提供 h 时 viewer 按距离默认插值（向后兼容）。
+事件流 SHALL 支持可选字段 `h`（归一化 0-1，球高度）——pass/shot 高亮带弧线高度，viewer 用球大小表示（FM 做法，P6 首批已实现）。**h 语义**：h 缺失（undefined）→ viewer 按飞行时长/距离默认插值（向后兼容）；h=0 → 明确无高度（球不放大）；h>0 → 有高度（球放大）。
 
 #### Scenario: 带高度
 - **GIVEN** 一次长球（角球发球/门球开大脚/普通长传）
 - **THEN** pass 事件带 h>0（球飞起）
 
-#### Scenario: 无高度
-- **GIVEN** 一次短传（界外球掷球/头球解围/普通短传）
-- **THEN** pass 事件 h=0 或缺失（viewer 按距离默认）
+#### Scenario: 无高度（h=0）
+- **GIVEN** 一次短传（界外球掷球/头球解围/头球射门/普通短传）
+- **THEN** pass/shot 事件 h=0（球不放大，明确无高度）
+
+#### Scenario: h 缺失向后兼容
+- **GIVEN** 一次 pass/shot 不带 h（旧事件流）
+- **THEN** viewer 按飞行时长/距离默认插值（不回归）
+
+### Requirement: 角球发球 detail
+
+角球发球 SHALL 以 pass 事件 detail=`corner` 表达（viewer 据此识别角球发球，不靠起点推断）。
+
+#### Scenario: 角球发球带 corner
+- **GIVEN** 一次角球发球
+- **THEN** pass 事件 detail=`corner`，起点=角旗区、落点=禁区附近、h>0、to=None（落点是争抢点）

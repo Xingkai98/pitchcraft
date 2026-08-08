@@ -29,7 +29,7 @@ P6 首批完成了"门球 + 进球回中圈"，但球出界后的完整重开体
 ### Modified Capabilities
 
 - `match-engine`：出界判定（PassOutOfPlay/CornerAward 高亮结局）；角球（角旗区开球 + 禁区双追逐争抢 + 头球）；界外球（边线掷球）；松散球扩展（双追逐 + 争抢结果分支）。
-- `event-stream-protocol`：新增 h 字段 + detail 枚举（out_sideline/out_goal_line/header/clearance）。
+- `event-stream-protocol`：新增 h 字段 + detail 枚举（out_sideline/out_goal_line/header/clearance/corner）。
 - `pitch-viewer`：角球发球高亮 + 禁区双追逐 + 头球演绎；界外球掷球；出界视觉；h 大小表示。
 
 ## Impact
