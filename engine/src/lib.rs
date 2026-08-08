@@ -1044,12 +1044,12 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             advance_loose(st, rng, events, t);
         }
         HighlightOutcome::ShotOffTarget { kickoff_id: _, ball_end } => {
-            // 门球（goal kick）：possession 切对方，球到对方门将脚下（瞬移）
+            // 门球（goal kick）：possession 切对方，球瞬移到对方门将脚下（门将不瞬移——用其当前位置）
             st.ball_pos = ball_end;
             let gk_id = if st.possession == 0 { 21 } else { 0 };
             st.possession = if gk_id <= 10 { 0 } else { 1 };
-            let gk_pos = if gk_id == 0 { (0.02, 0.5) } else { (0.98, 0.5) };
-            st.pos[gk_id as usize] = gk_pos;
+            let gk_pos = st.pos[gk_id as usize]; // 门将当前位置（门线附近），球瞬移过去，门将不动
+            st.ball_pos = gk_pos;
             st.last_emitted[gk_id as usize] = gk_pos;
             st.carrier = -1;
             // 门将开大脚：pass 高亮（门线 → 中场偏对方半场落点，无 to——落点是争抢点）

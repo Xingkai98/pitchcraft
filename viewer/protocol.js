@@ -100,10 +100,10 @@ function validateBaseEvent(e) {
       }
     }
   }
-  // 类型相关必填：pass 必须有 from/to（传球语义核心）
+  // 类型相关必填：pass 必须有 from；to 可选（门球开大脚无接收者，落点是争抢点）
   if (e.type === 'pass') {
-    if (e.from === undefined || e.to === undefined) {
-      throw new Error(`pass event requires from/to: ${JSON.stringify(e)}`);
+    if (e.from === undefined) {
+      throw new Error(`pass event requires from: ${JSON.stringify(e)}`);
     }
   }
   // shot 必须有射门方向 x2/y2

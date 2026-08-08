@@ -70,10 +70,32 @@ let maxBallJump = 0;
 let maxBallJumpT = 0;
 const prevPlayers = new Map(game.players.map((p) => [p.id, { x: p.x, y: p.y }]));
 let maxPlayerJump = 0;
+// 预计算 spec 允许的球瞬移时刻（P6）：
+// 1) 进球确认（whistle，前一动作是 goal shot）→ 球直接回中圈
+// 2) 门球（off_target → 门将开大脚 pass）→ 球瞬移到门将
+const allowedTeleportTimes = new Set();
+for (let i = 0; i < parsed.length; i++) {
+  if (parsed[i].type === 'whistle' && i > 0) {
+    let j = i - 1;
+    while (j >= 0 && (parsed[j].type === 'beat' || parsed[j].type === 'off_ball_run')) j--;
+    if (parsed[j] && parsed[j].type === 'shot' && parsed[j].result === 'goal') {
+      allowedTeleportTimes.add(parsed[i].t);
+    }
+  } else if (parsed[i].type === 'pass' && parsed[i].to === undefined) {
+    // 门球开大脚：球瞬移到门将（开大脚起点 = 门线，球从出界处瞬移）
+    allowedTeleportTimes.add(parsed[i].t);
+  }
+}
+const isAllowedTeleport = (t) => {
+  for (const at of allowedTeleportTimes) {
+    if (Math.abs(at - t) < 0.1) return true;
+  }
+  return false;
+};
 for (let i = 0; i < 18000; i++) {
   game.step(1 / 60);
   const bj = Math.hypot(game.ball.x - prevBall.x, game.ball.y - prevBall.y);
-  if (bj > maxBallJump) {
+  if (!isAllowedTeleport(game.playTime) && bj > maxBallJump) {
     maxBallJump = bj;
     maxBallJumpT = game.playTime;
   }

@@ -396,22 +396,15 @@ export function buildTimeline(events, mode = 'clip') {
         dropCarryBeat = true;
       }
     }
-    // 连续模式：进球后重新开球，球从门内"滚回"中圈（避免球从门内瞬移到中圈）。
-    // 检测 shot(goal) → whistle → kickoff 序列，在 kickoff 起点前插入门内→中圈的过渡球锚点。
-    if (mode === 'continuous' && e.type === 'kickoff') {
-      // 向前找最近的 shot goal（跳过 whistle）
+    // 连续模式：进球后球直接回中圈（用户确认：不做"从门内滚回中圈"过渡）。
+    // 进球确认（whistle，进球庆祝后）时刻球直接出现在中圈；庆祝/准备期间球在中圈，kickoff 从中圈开球。
+    if (mode === 'continuous' && e.type === 'whistle') {
+      // 向前找最近的 shot goal（跳过 off_ball_run/beat）
       let j = i - 1;
-      while (j >= 0 && (events[j].type === 'whistle' || events[j].type === 'off_ball_run' || events[j].type === 'beat')) j--;
+      while (j >= 0 && (events[j].type === 'off_ball_run' || events[j].type === 'beat')) j--;
       const prevShot = j >= 0 ? events[j] : null;
-      if (prevShot && prevShot.type === 'shot' && (prevShot.result === 'goal' || prevShot.result === 'off_target')) {
-        // 死球后 kickoff：球从终点（goal=门内 / off_target=边线）滚回中圈，避免瞬移。
-        // goal：球在门内（越过门线）；off_target：球停在边线（x2 钳制）。
-        const goalSide = prevShot.x2 >= 0.5 ? 1 : -1;
-        const ballEndX = prevShot.result === 'goal' ? 0.5 + goalSide * 0.52 : prevShot.x2;
-        const inGoal = { x: ballEndX, y: prevShot.y2 ?? 0.5 };
-        const tPrev = e.t - 2.0; // 过渡窗口 2s：球从终点平滑滚回中圈（避免瞬移）
-        anchors.push({ t: tPrev, kind: 'ball', x: inGoal.x, y: inGoal.y, evt: i });
-        // kickoff 起点球在中圈（interpretEvent 会加），这里补一个过渡起点保证插值从终点滑到中圈
+      if (prevShot && prevShot.type === 'shot' && prevShot.result === 'goal') {
+        // 进球确认：球直接跳到中圈（瞬移；死球→kickoff 例外）
         anchors.push({ t: e.t, kind: 'ball', x: 0.5, y: 0.5, evt: i });
       }
     }

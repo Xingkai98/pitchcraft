@@ -262,8 +262,9 @@ test('continuous: 事件边界无 snap（球位置平滑）', () => {
     maxJump = Math.max(maxJump, jump);
     prevBall = { ...g.ball };
   }
-  // 事件边界位移不应超过正常事件内位移（阈值 ~0.1 归一化）
-  assert.ok(maxJump < 0.5, `事件边界球位移过大，maxJump=${maxJump}`);
+  // 事件边界位移不应超过正常事件内位移（阈值 ~0.1 归一化）；
+  // 但进球后球直接回中圈（死球→kickoff 瞬移例外，P6）允许 ~0.5 跳变——阈值放宽到 0.6
+  assert.ok(maxJump < 0.6, `事件边界球位移过大，maxJump=${maxJump}`);
 });
 
 // ---- v2：beat 节拍连续播放 ----
