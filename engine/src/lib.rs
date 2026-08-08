@@ -476,7 +476,7 @@ enum HighlightOutcome {
     ShotSavedCaught { gk: i32, save_pos: (f64, f64) },
     ShotSavedRebound { gk: i32, rebound_from: (f64, f64), dir: (f64, f64) },
     ShotOffTarget,
-    GoalKick { land: (f64, f64) },
+    GoalKick { land: (f64, f64), dir: (f64, f64) },
     TackleSuccess { def: i32, loose: (f64, f64), contact: (f64, f64) },
     TackleFail { victim: i32, contact: (f64, f64) },
 }
@@ -778,6 +778,20 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     } else {
         (Vec::new(), st.ball_pos)
     };
+    // 门球飞行期预判：GoalKick 高亮期间，双方各 1 名离落点最近的外场预判跑向落点（球落地前就开始争抢）
+    let goal_kick_anticipate: Option<(f64, f64)> = match &st.highlight {
+        Some(h) => match h.outcome {
+            HighlightOutcome::GoalKick { land, .. } => Some(land),
+            _ => None,
+        },
+        None => None,
+    };
+    let mut anticipate_ids: Vec<i32> = Vec::new();
+    if let Some(land) = goal_kick_anticipate {
+        anticipate_ids.push(nearest_in_team(&st.pos, land, 0));
+        anticipate_ids.push(nearest_in_team(&st.pos, land, 1));
+        anticipate_ids.retain(|id| *id >= 0 && !excluded.contains(id));
+    }
     // 第一遍：算每个外场球员的目标点（门将单独处理）
     let mut targets: Vec<Option<(f64, f64)>> = vec![None; 22];
     let mut actions = vec!["run".to_string(); 22];
@@ -787,6 +801,10 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
         if close_down_ids.contains(&id) {
             targets[id as usize] = Some(close_down_stop(st.pos[id as usize], close_down_target));
             actions[id as usize] = "close_down".to_string();
+        } else if anticipate_ids.contains(&id) {
+            // 门球预判：跑向落点（球落地前争抢位），action='chase'
+            targets[id as usize] = Some(st.ball_pos); // ball_pos 高亮期 = 落点（highlight_ball_end）
+            actions[id as usize] = "chase".to_string();
         } else {
             targets[id as usize] = Some(formation_target(st, id));
         }
@@ -1064,20 +1082,25 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
                 result: Some("contested".to_string()), speed: Some(speed),
                 ..Event::default()
             });
+            // 落点滚动方向 = 飞行方向（门线 → 落点），球落地沿此方向滚一段减速停（不是突然停）
+            let dx = land.0 - gk_pos.0;
+            let dy = land.1 - gk_pos.1;
+            let len = dx.hypot(dy);
+            let dir = if len < 1e-9 { (1.0, 0.0) } else { (dx / len, dy / len) };
             st.highlight = Some(Highlight {
                 t_end,
                 participants: vec![(gk_id, gk_pos)],
-                outcome: HighlightOutcome::GoalKick { land },
+                outcome: HighlightOutcome::GoalKick { land, dir },
             });
             let movers = compute_movers(st, rng, t, &[gk_id]);
             for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
             events.push(beat_event(t, None, None, movers));
         }
-        HighlightOutcome::GoalKick { land } => {
-            // 门将开大脚球到达落点：进入松散球（双方可争），拾取恢复 main
+        HighlightOutcome::GoalKick { land, dir } => {
+            // 门将开大脚球到达落点：沿飞行方向滚一段（滚动减速），进入松散球（双方可争），拾取恢复 main
             st.ball_pos = land;
             st.carrier = -1;
-            start_loose_ball(st, land, (0.0, 0.0), None);
+            start_loose_ball(st, land, dir, None);
             advance_loose(st, rng, events, t);
         }
         HighlightOutcome::TackleSuccess { def, loose, contact } => {

@@ -59,9 +59,13 @@ function interpretPass(e, out) {
   const speed = e.speed ?? config.defaults.passSpeed;
   const ballDur = durationFromSpeed(meters, speed);
 
-  // 球：起点 → 终点（直线）
-  out.push({ t: t0, kind: 'ball', x: e.x, y: e.y });
-  out.push({ t: t0 + ballDur, kind: 'ball', x: e.x2, y: e.y2 });
+  // 球：起点 → 弧线顶点 → 终点（h=高度，表现抛物线；飞行越长越高）
+  const h = Math.min(0.08 + ballDur * 0.03, 0.2); // 高度随飞行时长（0.08-0.2 归一化屏幕高度）
+  const midX = (e.x + e.x2) / 2;
+  const midY = (e.y + e.y2) / 2;
+  out.push({ t: t0, kind: 'ball', x: e.x, y: e.y, h: 0 });
+  out.push({ t: t0 + ballDur / 2, kind: 'ball', x: midX, y: midY, h });
+  out.push({ t: t0 + ballDur, kind: 'ball', x: e.x2, y: e.y2, h: 0 });
   // 接球者（to）：从当前位置(receiver_x/y)跑向落点。终点锚点 = t0+ballDur（引擎高亮结束位置 = 落点），
   // 保证 beat-main（接球者持球）在首个 tick 边界从落点继续，无 freeze/teleport（审阅 blocker）。
   if (e.to !== undefined) {
@@ -96,8 +100,13 @@ function interpretShot(e, out) {
   //   saved → 停门线（x2）
   const ballEndX = isGoal ? (e.x2 >= 0.5 ? 1.005 : -0.005) : (isOff ? (e.x2 >= 0.5 ? 1.02 : -0.02) : e.x2);
   const ballEndY = e.y2 ?? 0.5;
-  out.push({ t: t0, kind: 'ball', x: e.x, y: e.y });
-  out.push({ t: t0 + flightDur, kind: 'ball', x: ballEndX, y: ballEndY });
+  // 弧线（h=高度）：射门飞行短而快，高度略低（0.05-0.12）
+  const h = Math.min(0.05 + flightDur * 0.04, 0.12);
+  const midX = (e.x + ballEndX) / 2;
+  const midY = (e.y + ballEndY) / 2;
+  out.push({ t: t0, kind: 'ball', x: e.x, y: e.y, h: 0 });
+  out.push({ t: t0 + flightDur / 2, kind: 'ball', x: midX, y: midY, h });
+  out.push({ t: t0 + flightDur, kind: 'ball', x: ballEndX, y: ballEndY, h: 0 });
   // 射手（subject）：原地（摆腿）
   out.push({ t: t0, kind: 'player', id: e.subject, x: e.x, y: e.y });
   // 门将：从当前实际位置（引擎给 keeper_x/y，可能因带球离门）向射门方向扑；缺失时 fallback 门线中点。

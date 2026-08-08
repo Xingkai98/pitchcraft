@@ -93,14 +93,25 @@ export function drawPlayer(ctx, x, y, id, width, height) {
   ctx.fillText(String(id), p.px, p.py);
 }
 
-// 绘制球（isBall=true 允许越界渲染：进球/打偏越底线时球心进入球门框/界外）
-export function drawBall(ctx, x, y, width, height) {
+// 绘制球（isBall=true 允许越界渲染：进球/打偏越底线时球心进入球门框/界外）。
+// h 高度（0=地面，0-1 屏幕比例）：球飞行时按 h 抬高 + 画地面阴影（抛物线高度感，P6）
+export function drawBall(ctx, x, y, width, height, h = 0) {
   const margin = config.pitchMargin;
   const r = config.render;
   const p = normalizedToPixels(x, y, width, height, margin, true);
+  const innerH = height - 2 * margin;
+  const hPx = h * innerH;
+  if (hPx > 1) {
+    // 地面阴影（在球的正下方地面点）
+    ctx.fillStyle = 'rgba(0,0,0,0.25)';
+    ctx.beginPath();
+    ctx.ellipse(p.px, p.py, r.ballRadius * 0.8, r.ballRadius * 0.4, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // 球本体抬高 hPx（py 向上，即减去 hPx）
   ctx.fillStyle = r.ballColor;
   ctx.beginPath();
-  ctx.arc(p.px, p.py, r.ballRadius, 0, Math.PI * 2);
+  ctx.arc(p.px, p.py - hPx, r.ballRadius, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = '#000';
   ctx.lineWidth = 1;
@@ -131,7 +142,7 @@ export function renderFrame(ctx, state, width, height, opts = {}) {
     }
     drawPlayer(ctx, x, y, p.id, width, height);
   }
-  if (state.ball) drawBall(ctx, state.ball.x, state.ball.y, width, height);
+  if (state.ball) drawBall(ctx, state.ball.x, state.ball.y, width, height, state.ball.h ?? 0);
   // 调试日志：输出已渲染的球屏幕坐标（tasks 6.3 文本核对）。
   // 由 config.debug.logRender 控制（默认 false，避免每帧 60 行刷屏；测试时开）。
   if (config.debug.enabled && config.debug.logRender) {

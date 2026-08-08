@@ -241,15 +241,19 @@ export class Game {
       if (pos === -1) return null;
       const prev = arr[pos];
       const next = pos + 1 < arr.length ? arr[pos + 1] : null;
-      if (!next) return { x: prev.x, y: prev.y }; // 末尾，停在最后锚点
+      if (!next) return { x: prev.x, y: prev.y, h: prev.h ?? 0 }; // 末尾，停在最后锚点
       // 事件间隙（不同 evt 的相邻锚点，中间无锚点）：hold 在 prev（事件之间不滑动）
       // v2：跨拍连续由引擎保证 from(N+1)==to(N)，hold 在相同位置无视觉跳变
       if (prev.evt !== undefined && next.evt !== undefined && prev.evt !== next.evt) {
-        return { x: prev.x, y: prev.y };
+        return { x: prev.x, y: prev.y, h: prev.h ?? 0 };
       }
       const span = Math.max(next.t - prev.t, 1e-6);
       const u = Math.min(Math.max((t - prev.t) / span, 0), 1);
-      return { x: prev.x + (next.x - prev.x) * u, y: prev.y + (next.y - prev.y) * u };
+      return {
+        x: prev.x + (next.x - prev.x) * u,
+        y: prev.y + (next.y - prev.y) * u,
+        h: (prev.h ?? 0) + ((next.h ?? 0) - (prev.h ?? 0)) * u,
+      };
     }
     // clip 模式
     const idx = this._clipIndex;
@@ -268,10 +272,14 @@ export class Game {
       }
     }
     if (prevCur) {
-      if (!next) return { x: prevCur.x, y: prevCur.y };
+      if (!next) return { x: prevCur.x, y: prevCur.y, h: prevCur.h ?? 0 };
       const span = Math.max(next.t - prevCur.t, 1e-6);
       const u = Math.min(Math.max((t - prevCur.t) / span, 0), 1);
-      return { x: prevCur.x + (next.x - prevCur.x) * u, y: prevCur.y + (next.y - prevCur.y) * u };
+      return {
+        x: prevCur.x + (next.x - prevCur.x) * u,
+        y: prevCur.y + (next.y - prevCur.y) * u,
+        h: (prevCur.h ?? 0) + ((next.h ?? 0) - (prevCur.h ?? 0)) * u,
+      };
     }
     if (prevAny) return { x: prevAny.x, y: prevAny.y };
     return null;
