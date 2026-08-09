@@ -309,7 +309,7 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
 /// 固定 tick 时长（秒）
 pub const TICK_SECONDS: f64 = 1.0;
 /// movers 位移阈值 = 静区（dead-zone），等值 ~0.5m（移动 ⇔ 发 movers）
-pub const DEAD_ZONE_METERS: f64 = 0.5;
+pub const DEAD_ZONE_METERS: f64 = 2.0; // P7 观感：到位静止距离——前锋到位后目标微变（球位置波动）不追，避免球门旁来回小幅摆动
 /// 松散球拾取半径（米）
 pub const PICKUP_RADIUS_METERS: f64 = 0.5;
 /// 松散球最长持续 tick 数；超时球 hold 等待（不瞬移）
@@ -371,11 +371,14 @@ fn move_toward(from: (f64, f64), to: (f64, f64), step: f64) -> (f64, f64) {
 
 /// P7：槽位 hold 上限（tick）= 槽位间距（比赛时长 / 高亮总数）减事件平均时长，下限 3 tick。
 /// 槽位驱动：每个高亮后 hold 到槽位间距再产下一个高亮，保证精彩事件固定产出（不随时长漂移）。
-/// 减事件时长让 5 分钟比赛也能塞下全部槽位（300s / 32 ≈ 9.4s 每槽，事件 ~4s + hold ~5s）。
 fn slot_hold_max(match_duration: f64) -> u32 {
     let slot = (match_duration / HIGHLIGHTS_PER_MATCH as f64 - SLOT_AVG_EVENT_TICKS).floor() as u32;
     slot.max(SLOT_HOLD_MIN_TICKS)
 }
+
+/// P7 观感：普通传球过渡间隔（tick）——carrier 持球超过此值产一次普通传球（球权流动），
+/// 避免 90 分钟比赛 carrier 在球门旁停 200+ tick（观感：前锋来回小幅运动很久）。
+pub const PASS_BREAK_TICKS: u32 = 12;
 
 /// P7：槽位高亮类型（每槽必产一个高亮，类型固定比例保证精彩事件数量稳定）
 enum HighlightSlot {
@@ -438,6 +441,8 @@ struct MatchState {
     carrier_from: (f64, f64),
     hold_ticks: u32,
     hold_max: u32,
+    slot_clock: u32,     // P7 观感：距上次槽位高亮的 tick（普通传球过渡不重置，保证槽位固定触发）
+    slot_interval: u32,  // 槽位间隔（= 比赛时长 / 高亮总数）
     match_duration: f64, // P7：比赛时长（槽位机制算 hold 间距）
     last_emitted: [(f64, f64); 22],
     highlight: Option<Highlight>,
@@ -492,6 +497,8 @@ impl MatchState {
             carrier_from: (0.55, 0.5),
             hold_ticks: 0,
             hold_max: 0,
+            slot_clock: 0,
+            slot_interval: slot_hold_max(match_duration),
             match_duration,
             last_emitted: pos,
             highlight: None,
@@ -681,13 +688,21 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
         advance_loose(st, rng, events, t);
         return;
     }
-    // 4. 开放比赛：持球 hold 门控（transition 期间暂停，只产 main + movers）
+    // 4. 开放比赛：槽位时钟驱动高亮 + 持球过渡（transition 期间暂停，只产 main + movers）
     if st.transition.is_some() {
         emit_beat_with_main(st, rng, events, t);
     } else {
         st.hold_ticks += 1;
-        if st.hold_ticks >= st.hold_max {
+        st.slot_clock += 1;
+        if st.slot_clock >= st.slot_interval {
+            // 槽位高亮：固定间隔（比赛时长 / 高亮总数），保证精彩事件不随时长漂移
             roll_highlight(st, rng, events, t);
+            st.slot_clock = 0;
+        } else if st.hold_ticks >= PASS_BREAK_TICKS {
+            // P7 观感：carrier 持球超过 PASS_BREAK（12s）产普通传球过渡（球权流动），
+            // 避免 90 分钟比赛 carrier 在球门旁停 200+ tick（前锋来回小幅运动很久）。
+            // 普通传球不出界（指标稳定），不重置槽位时钟（finalize 后 hold_ticks 归零，槽位仍按间隔触发）。
+            emit_pass_highlight_no_out(st, rng, events, t);
         } else {
             emit_beat_with_main(st, rng, events, t);
         }
@@ -789,7 +804,8 @@ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
         };
     }
     let ty = base.1 + (ball.1 - 0.5) * SIDE_SHIFT_FACTOR * 0.6;
-    (clamp01(tx), clamp01(ty))
+    // P7 观感：目标不进小禁区/不顶门线（前锋最多压到禁区边缘 x=0.9，避免顶在球门线来回摆动）
+    (clamp01(tx).clamp(0.04, 0.9), clamp01(ty))
 }
 
 /// 角球准备期站位目标：攻方禁区包抄（贴近门线、y 分散）、防方回防（禁区前沿到门线之间）。
@@ -1064,6 +1080,16 @@ fn emit_pass_out_play_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mu
 /// pass 高亮：起点整数 tick，覆盖 [t, t_end)，参与者 = 传球者(静止) + 接球者(落点)。
 /// P6 批次1：低概率（3-5%）落点出界 → PassOutOfPlay（to=None + detail + source=NormalPass）；普通传球带 h（长传>20m h>0 / 短传≤20m h=0）。
 fn emit_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    emit_pass_highlight_inner(st, rng, events, t, true)
+}
+
+/// P7：普通过渡传球（carrier 持球超 PASS_BREAK 让画面流动）不出界——避免 90 分钟过渡传球
+/// 导致界外球数量级漂移（5min/90min 指标稳定）。`allow_out=false` 时落点恒在界内。
+fn emit_pass_highlight_no_out(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    emit_pass_highlight_inner(st, rng, events, t, false)
+}
+
+fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, allow_out: bool) {
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
     let home = st.possession == 0;
@@ -1074,9 +1100,9 @@ fn emit_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let (lx, ly) = lead_point(from_pos, to_pos, lead);
     // 出界 roll（8-10%，P7）：仅普通传球掷，落点 x/y 超出 [0,1]（≤0.05），事件坐标钳制。
     // 出底线仅当传球朝对方半场（home lx>0.5 / away lx<0.5）——避免"出自家底线"错误重开；
-    // 否则出边线（界外球）。出界以边线为主（65%）。
+    // 否则出边线（界外球）。出界以边线为主（65%）。allow_out=false（过渡传球）恒不出界。
     let out_roll = rng.next_u64() % 100;
-    let out_goal_line = if out_roll < (8 + rng.next_u64() % 3) {
+    let out_goal_line = if allow_out && out_roll < (8 + rng.next_u64() % 3) {
         let toward_opp_half = if home { lx > 0.5 } else { lx < 0.5 };
         toward_opp_half && rng.next_u64() % 100 >= 65 // 朝对方半场且 35% 出底线 / 否则边线
     } else {
@@ -2567,8 +2593,9 @@ mod tests {
             total += c.get("pass").unwrap_or(&0) + c.get("shot").unwrap_or(&0) + c.get("tackle").unwrap_or(&0);
         }
         let avg = total as f64 / n as f64;
-        assert!(avg >= 30.0, "高亮数过低（平均 {:.1}/场），应 ~40（32 槽 + 级联）", avg);
-        assert!(avg <= 80.0, "高亮数过高（平均 {:.1}/场），应 ~40（32 槽 + 级联）", avg);
+        // P7：24 槽 + 普通过渡传球（carrier 每 12s 传一次），90 分钟 ~410 高亮；5 分钟槽位密（~24）
+        assert!(avg >= 300.0, "高亮数过低（平均 {:.1}/场），应 ~410（24 槽 + 过渡传球）", avg);
+        assert!(avg <= 500.0, "高亮数过高（平均 {:.1}/场），应 ~410（24 槽 + 过渡传球）", avg);
     }
 
     #[test]
