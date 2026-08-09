@@ -63,13 +63,21 @@ export class Game {
     return false;
   }
 
-  // 高亮事件窗口索引：[t, end]（窗口内正常播放，窗口外可跳过）
+  // 高亮事件窗口索引：[t, end]（窗口内正常播放，窗口外可跳过）。
+  // 相邻高亮事件（间隔 < skipThreshold）合并成一个连续窗口——角球发球→争抢→头球整段连续播放，不中途跳过。
   _buildHighlightIndex() {
     this._highlightWindows = [];
     if (this._eventEnds) {
+      let cur = null;
       for (let i = 0; i < this.events.length; i++) {
         if (this.isHighlightEvent(this.events[i])) {
-          this._highlightWindows.push({ t: this.events[i].t, end: this._eventEnds[i] ?? this.events[i].t });
+          const w = { t: this.events[i].t, end: this._eventEnds[i] ?? this.events[i].t };
+          if (cur && w.t <= cur.end + this._skipThreshold) {
+            cur.end = Math.max(cur.end, w.end); // 合并级联（间隔 < 阈值）
+          } else {
+            cur = w;
+            this._highlightWindows.push(cur);
+          }
         }
       }
     }
@@ -92,22 +100,29 @@ export class Game {
   }
 
   // 当前是否处于跳过段（非高亮窗口且距下一个高亮 > 阈值；尾部 nextHl=null 也算跳过）。
-  // skipThreshold=Infinity 时跳过完全禁用（测试用）。
+  // skipMode='off' 或 skipThreshold=Infinity 时跳过完全禁用（测试/关闭用）。
   isSkipping() {
-    if (this._skipThreshold >= Infinity) return false;
+    if (!this.isSkipEnabled()) return false;
     const nextHl = this._nextHighlightTime(this.playTime);
     const inHl = this._inHighlightWindow(this.playTime);
     return !inHl && (nextHl === null || (nextHl - this.playTime) > this._skipThreshold);
   }
 
-  // P7：循环跳过模式（快速播放/直接跳过）
+  // P7：循环跳过模式（快速播放 → 直接跳 → 关闭）
   cycleSkipMode() {
-    this.skipMode = this.skipMode === 'fast' ? 'skip' : 'fast';
+    if (this.skipMode === 'fast') this.skipMode = 'skip';
+    else if (this.skipMode === 'skip') this.skipMode = 'off';
+    else this.skipMode = 'fast';
     return this.skipMode;
   }
 
   getSkipMode() {
     return this.skipMode;
+  }
+
+  // 跳过是否开启（off 时完全禁用，正常播放所有内容）
+  isSkipEnabled() {
+    return this.skipMode !== 'off' && this._skipThreshold < Infinity;
   }
 
   // P7：循环快速播放倍速（5x/10x）
@@ -158,9 +173,8 @@ export class Game {
     if (this.mode === 'continuous') {
       const nextHl = this._nextHighlightTime(this.playTime);
       const inHl = this._inHighlightWindow(this.playTime);
-      // 跳过条件：非高亮窗口且距下一个高亮 > 阈值；尾部（nextHl=null）也跳过剩余比赛。
-      // skipThreshold=Infinity 时跳过完全禁用（测试用）。
-      const shouldSkip = this._skipThreshold < Infinity
+      // 跳过条件：跳过开启、非高亮窗口且距下一个高亮 > 阈值；尾部（nextHl=null）也跳过剩余比赛
+      const shouldSkip = this.isSkipEnabled()
         && !inHl && (nextHl === null || (nextHl - this.playTime) > this._skipThreshold);
       if (shouldSkip) {
         if (this.skipMode === 'skip') {

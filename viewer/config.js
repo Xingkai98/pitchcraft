@@ -33,7 +33,7 @@ export const config = {
   playback: {
     matchDurations: [5, 10, 45, 90], // 比赛时长选项（分钟，引擎 match_duration_seconds）
     matchDuration: 90,               // 默认 90 分钟比赛
-    skipMode: 'skip',                // 'fast'=快速播放（skipChoice 倍速）| 'skip'=直接跳过（切到下一个高亮，最快）
+    skipMode: 'fast',                // 'fast'=快进非精彩段 | 'skip'=直接跳到下一高亮 | 'off'=不跳过正常播
     skipChoices: [5, 10],            // 快速播放倍速档位（在基速上再乘）
     skipThresholdSeconds: 5,         // 间隙阈值（比赛秒）：距下一个高亮超过此值进入跳过模式
     speeds: [1, 2, 4],               // 高亮段倍速档位

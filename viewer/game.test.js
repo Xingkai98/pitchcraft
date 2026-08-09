@@ -407,3 +407,28 @@ test('P7 fast 模式: dt 钳制（大 dt 不整段跳过高亮窗口）', () => 
   assert.ok(g.playTime < 30, `dt 钳制后不应越过高亮（实际 ${g.playTime}）`);
   assert.ok(g.playTime > 5, 'fast 应快进');
 });
+
+test('P7 高亮窗口合并级联：相邻高亮（间隔 < 阈值）合并成连续窗口', () => {
+  // 构造：角球发球（corner）→ battle beat → 头球（header shot），间隔 < 阈值 → 应合并
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [{ id: 10, team: 'home', x: 0.55, y: 0.5 }] },
+    { t: 10, type: 'pass', from: 10, subject: 10, to: undefined, x: 1, y: 0, x2: 0.9, y2: 0.5, speed: 18, detail: 'corner', h: 0.6 },
+    { t: 11, type: 'beat', movers: [] }, // battle
+    { t: 12, type: 'shot', subject: 10, x: 0.9, y: 0.5, x2: 0.98, y2: 0.5, speed: 15, result: 'goal', detail: 'header', h: 0 },
+  ];
+  const lineup = [{ id: 10, team: 'home', x: 0.55, y: 0.5 }];
+  const g = new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: 5 });
+  // corner pass(t=10) 与 header shot(t=12) 间隔 2s < 阈值 5s → 合并成一个窗口
+  assert.equal(g._highlightWindows.length, 1, '角球→头球应合并成单个连续窗口');
+  assert.ok(g._highlightWindows[0].t <= 10 && g._highlightWindows[0].end >= 12, '窗口应覆盖角球到头球');
+});
+
+test('P7 跳过模式循环：fast → skip → off → fast', () => {
+  const g = makeSkipGame();
+  assert.equal(g.skipMode, 'fast'); // config 默认 fast
+  assert.equal(g.cycleSkipMode(), 'skip');
+  assert.equal(g.cycleSkipMode(), 'off');
+  assert.equal(g.isSkipEnabled(), false, 'off 模式跳过禁用');
+  assert.equal(g.cycleSkipMode(), 'fast');
+  assert.equal(g.isSkipEnabled(), true);
+});

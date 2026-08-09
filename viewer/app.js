@@ -5,11 +5,11 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260808-13';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-13';
-import { createGame } from './game.js?v=20260808-13';
-import { mockEventStream } from './mock-event-stream.js?v=20260808-13';
-import { resetMicroMotion } from './micro-motion.js?v=20260808-13';
+import { config } from './config.js?v=20260808-14';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-14';
+import { createGame } from './game.js?v=20260808-14';
+import { mockEventStream } from './mock-event-stream.js?v=20260808-14';
+import { resetMicroMotion } from './micro-motion.js?v=20260808-14';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -116,10 +116,10 @@ function frame(ts) {
     if (!_seeking) {
       const skipping = game.isSkipping();
       if (skipping) {
-        const detail = game.skipMode === 'fast' ? `${game.getSkipChoice()}x快进` : '跳转';
-        statusEl.textContent = `比赛 ${formatMatchClock(game.playTime)} 跳过中(${detail})`;
+        const detail = game.skipMode === 'fast' ? `${game.getSkipChoice()}x 快进` : '跳到下段';
+        statusEl.textContent = `比赛 ${formatMatchClock(game.playTime)} · 跳过中(${detail})`;
       } else {
-        statusEl.textContent = `比赛 ${formatMatchClock(game.playTime)} 播放率=${game.getPlaybackRate().toFixed(0)}x`;
+        statusEl.textContent = `比赛 ${formatMatchClock(game.playTime)} · ${game.getPlaybackRate().toFixed(0)}x`;
       }
     }
     updateEventIndicator();
@@ -238,9 +238,13 @@ async function init() {
     statusEl.textContent = `事件数: ${game.events.length} | ${engine ? 'WASM 引擎' : 'mock 数据'}`;
     // 重置时长/跳过/速度按钮与跳转输入（新 game 回到当前时长、快速跳过、1x、事件 0）
     const durMin = config.playback.matchDurations[durationIndex] ?? 90;
-    btnDuration.textContent = `比赛 ${durMin}min`;
-    btnSkip.textContent = game.skipMode === 'fast' ? `跳过:快进${game.getSkipChoice()}x` : '跳过:直接跳';
+    btnDuration.textContent = `比赛 ${durMin} 分钟`;
+    btnDuration.title = '比赛内容时长：点击切换 5/10/45/90 分钟（内容固定，播放时长随跳过/倍速）';
+    btnSkip.textContent = game.skipMode === 'fast' ? `跳过 快进${game.getSkipChoice()}x`
+      : game.skipMode === 'skip' ? '跳过 直接跳' : '跳过 关';
+    btnSkip.title = '跳过非精彩段：快进（连续画面）/ 直接跳（切到下一高亮）/ 关（全部播放）';
     btnSpeed.textContent = `倍速 ${game.getSpeed()}x`;
+    btnSpeed.title = '精彩段播放倍速：1x/2x/4x';
     eventIdInput.value = '0';
   } catch (err) {
     statusEl.textContent = `错误: ${err.message}`;
@@ -269,17 +273,19 @@ btnDuration.addEventListener('click', () => {
 });
 btnSkip.addEventListener('click', () => {
   if (game) {
+    // 循环：快进5x → 快进10x → 直接跳 → 关闭
     if (game.skipMode === 'fast') {
-      // fast → skip
-      game.skipMode = 'skip';
-      btnSkip.textContent = '跳过:直接跳';
-      showNotice('跳过模式：直接跳过非精彩段（切到下一个高亮）');
-    } else {
-      // skip → fast（循环快进倍速）
-      game.skipMode = 'fast';
       const c = game.cycleSkipChoice();
-      btnSkip.textContent = `跳过:快进${c}x`;
-      showNotice(`跳过模式：非精彩段 ${c}x 快进`);
+      btnSkip.textContent = `跳过 快进${c}x`;
+      showNotice(`跳过：非精彩段 ${c}x 快进（连续画面）`);
+    } else if (game.skipMode === 'skip') {
+      game.skipMode = 'off';
+      btnSkip.textContent = '跳过 关';
+      showNotice('跳过：关闭，正常播放全部比赛');
+    } else {
+      game.skipMode = 'fast';
+      btnSkip.textContent = `跳过 快进${game.getSkipChoice()}x`;
+      showNotice(`跳过：非精彩段 ${game.getSkipChoice()}x 快进`);
     }
   }
 });
