@@ -6,7 +6,7 @@
 //! - `get_json_ptr()` / `get_json_length()`：取结果指针/长度
 //! - `free_json()`：释放（P0 简化，静态缓冲区即可）
 //!
-//! 约定：config 传入格式 `{ "match_duration_seconds": 2700 }`。
+//! 约定：config 传入格式 `{ "match_duration_seconds": 5400 }`（P7 默认 90 分钟）。
 //! 返回：整场事件流 JSON（含 lineup 事件）。
 
 use crate::MatchConfig;
@@ -16,7 +16,7 @@ static mut RESULT_BUFFER: Vec<u8> = Vec::new();
 
 /// 解析 config JSON（手写极简解析，只取 match_duration_seconds）。
 fn parse_config(json: &str) -> MatchConfig {
-    // 默认 2700（45 分钟）
+    // 默认 5400（90 分钟，P7）
     let mut cfg = MatchConfig::default_();
     // 查找 "match_duration_seconds": <number>
     if let Some(idx) = json.find("match_duration_seconds") {

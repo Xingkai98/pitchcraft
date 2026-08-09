@@ -17,7 +17,8 @@ function makeDemoGame() {
     { id: 9, team: 'home', x: 0.62, y: 0.35 },
     { id: 10, team: 'home', x: 0.62, y: 0.65 },
   ];
-  return new Game(events, lineup);
+  // 无高亮事件流，关闭跳过（debug 测试验证逐帧日志）
+  return new Game(events, lineup, 'continuous', { skipThreshold: Infinity });
 }
 
 test('debug: 事件切换打印 [EVENT] 日志', () => {

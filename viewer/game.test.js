@@ -217,8 +217,8 @@ function makeContinuousGame() {
     { id: 4, team: 'home', x: 0.40, y: 0.25 },
     { id: 7, team: 'home', x: 0.62, y: 0.15 },
   ];
-  // P7：watchMinutes=90 使基速=1（1 比赛秒=1 真实秒），保持既有 1:1 断言语义
-  return new Game(events, lineup, 'continuous', { baseSpeed: 1 });
+  // P7：无高亮事件流，关闭跳过（保持既有 1:1 断言语义）
+  return new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
 }
 
 test('continuous: 默认模式是 continuous，playTime 从 0 到 matchEnd', () => {
@@ -284,7 +284,7 @@ function makeV2Game() {
     { t: 3, type: 'beat', movers: [{ id: 5, from_x: 0.45, from_y: 0.43, to_x: 0.47, to_y: 0.43, speed: 4, action: 'run' }], main: { type: 'dribble', subject: 10, x: 0.6, y: 0.51, x2: 0.62, y2: 0.51, speed: 5, touch_freq: 1.5 } },
     { t: 4, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '0-0' },
   ];
-  return new Game(events, lineup, 'continuous', { baseSpeed: 1 });
+  return new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
 }
 
 test('v2 continuous: beat 跨拍推进，球员与球并行移动', () => {
@@ -324,13 +324,15 @@ test('v2 continuous: beat 事件边界无 snap（球 + 球员位置连续）', (
 // ---- P7：跳过机制（高亮识别 + 间隙检测 + 跳过模式）----
 
 function makeSkipGame() {
-  // 构造：普通 pass + beat 过渡 + 高亮 shot，间隙 > 阈值
+  // 构造：beat 过渡 + 高亮 shot（t=30）+ 尾部 beat（t=40，非精彩段）
   const events = [
     { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [{ id: 5, team: 'home', x: 0.4, y: 0.5 }, { id: 10, team: 'home', x: 0.55, y: 0.5 }] },
     { t: 1, type: 'beat', movers: [], main: { type: 'dribble', subject: 10, x: 0.55, y: 0.5, x2: 0.58, y2: 0.5, speed: 5, touch_freq: 1.5 } },
     // 高亮 shot（t=30，间隙 29s > 阈值 5s）
     { t: 30, type: 'shot', subject: 10, x: 0.6, y: 0.5, x2: 0.98, y2: 0.5, speed: 20, result: 'goal' },
-    { t: 30, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0' },
+    // 尾部非精彩段（shot 后到 t=40 无高亮）
+    { t: 40, type: 'beat', movers: [], main: { type: 'dribble', subject: 10, x: 0.6, y: 0.5, x2: 0.6, y2: 0.5, speed: 5, touch_freq: 1.5 } },
+    { t: 40, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0' },
   ];
   const lineup = [{ id: 5, team: 'home', x: 0.4, y: 0.5 }, { id: 10, team: 'home', x: 0.55, y: 0.5 }];
   return new Game(events, lineup, 'continuous', { baseSpeed: 1 });
@@ -383,4 +385,25 @@ test('P7 时间显示格式: formatMatchClock 跟随 matchEnd', () => {
   // matchEnd = 最后事件 t（无锚点 → 0）——用有锚点的事件
   const g = makeSkipGame();
   assert.ok(g.matchEnd >= 30, `matchEnd 应 ≥ 最后事件 t（实际 ${g.matchEnd}）`);
+});
+
+test('P7 skip 模式: 尾部（最后一个高亮后）也跳过到比赛结束', () => {
+  const g = makeSkipGame();
+  g.skipMode = 'skip';
+  g.playing = true;
+  g.playTime = 35; // 尾部（shot 窗口 [30,~31] 之后、t=40 无高亮）
+  g.step(1 / 60);
+  assert.equal(g.playTime, g.matchEnd, '尾部应跳过到比赛结束');
+  assert.equal(g.playing, false, '跳过结束后应停止');
+});
+
+test('P7 fast 模式: dt 钳制（大 dt 不整段跳过高亮窗口）', () => {
+  const g = makeSkipGame();
+  g.skipMode = 'fast';
+  g.playing = true;
+  g.playTime = 5; // 间隙中
+  // 模拟帧尖峰 dt=2s：应被钳制到 0.1s，不会直接越过高亮 t=30
+  g.step(2);
+  assert.ok(g.playTime < 30, `dt 钳制后不应越过高亮（实际 ${g.playTime}）`);
+  assert.ok(g.playTime > 5, 'fast 应快进');
 });

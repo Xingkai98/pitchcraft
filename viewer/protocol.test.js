@@ -212,3 +212,8 @@ test('P6 批次1: 非 pass/shot 的 detail 不校验（whistle 等既有 detail�
   const e = parseEvent({ t: 300, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0', detail: 'kickoff_again' });
   assert.equal(e.detail, 'kickoff_again');
 });
+
+test('P7: pass detail=throw_in 合法（界外球掷球）', () => {
+  const e = parseEvent({ t: 100, type: 'pass', from: 5, subject: 5, to: 1, x: 0.47, y: 0, x2: 0.3, y2: 0.25, speed: 12, h: 0, detail: 'throw_in' });
+  assert.equal(e.detail, 'throw_in');
+});

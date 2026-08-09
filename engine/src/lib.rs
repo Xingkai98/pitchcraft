@@ -324,8 +324,9 @@ pub const GK_SPEED_MS: f64 = 3.0;
 pub const HOLD_MIN_TICKS: u32 = 8;
 pub const HOLD_MAX_TICKS: u32 = 15;
 /// P7：每场核心精彩事件数（槽位机制）——不随时长漂移，5 分钟与 90 分钟比赛产出相同数量级。
-/// 32 = 5 分钟（300s）能容纳的最大值（每槽 hold 5 + 事件 ~4s ≈ 9s × 32 ≈ 290s）。
-pub const HIGHLIGHTS_PER_MATCH: u32 = 32;
+/// 24 = 5 分钟（300s）能容纳的槽位（每槽 hold 8 + 事件+级联 ~5s ≈ 13s × 24 ≈ 300s）——
+/// 实测 5min ~20 槽、90min ~24 槽（ratio ~1.2，同一数量级）。
+pub const HIGHLIGHTS_PER_MATCH: u32 = 24;
 /// P7：槽位 hold 下限（tick）——即使比赛很短，两高亮间至少留这么多 tick 过渡
 pub const SLOT_HOLD_MIN_TICKS: u32 = 3;
 /// P7：高亮事件平均时长（tick，含 corner 准备期/发球/battle 等）——hold 间距减去它，保证 5 分钟能塞下全部槽
@@ -528,11 +529,12 @@ enum HighlightOutcome {
     Clearance { land: (f64, f64), dir: (f64, f64) },  // 防方头球解围（落点禁区外普通松散球）
 }
 
-/// 出界 pass 的来源（决定重开类型）：普通传球 vs 防方解围
+/// 出界 pass 的来源（决定重开类型）：普通传球 / 防方解围 / 槽位直接角球（P7）
 #[derive(Clone, Copy, PartialEq)]
 enum PassOutSource {
     NormalPass,
     Clearance,
+    CornerDirect, // P7 槽位角球：直接产"出底线"事件 → 角球（攻方发）
 }
 
 /// 松散球（D11）；battle 标记角球争抢（攻方 chaser、防方 chaser，loose 启动时固定）
@@ -957,8 +959,8 @@ fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
                 emit_shot_highlight(st, rng, events, t);
             }
         }
-        HighlightSlot::Corner => start_corner_slot(st, rng, events, t),
-        HighlightSlot::ThrowIn => start_throw_in_slot(st, rng, events, t),
+        HighlightSlot::Corner => emit_pass_out_play_slot(st, rng, events, t, HighlightSlot::Corner),
+        HighlightSlot::ThrowIn => emit_pass_out_play_slot(st, rng, events, t, HighlightSlot::ThrowIn),
         HighlightSlot::Tackle => {
             let victim = st.carrier;
             let victim_pos = st.pos[victim as usize];
@@ -973,33 +975,44 @@ fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     }
 }
 
-/// 槽位角球：直接进入角球重开（球停角旗 + 准备期走位），复用 start_corner
-fn start_corner_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    let attacking = st.possession;
-    // 出底线点 = 进攻端底线附近（定角旗）
-    let out_pos = if attacking == 0 { (1.0, 0.5) } else { (0.0, 0.5) };
-    start_corner(st, rng, events, t, out_pos, attacking);
-    // 产过渡 beat：球停角旗（静止锚点）+ 全队走位（准备期由 RestartPrep 下 tick 推进）
-    let flag = st.restart_prep.as_ref().unwrap().target;
-    let movers = compute_movers(st, rng, t, &[]);
+/// P7 槽位出界：直接产"出界 pass"高亮（球飞向边界，viewer 演绎飞行），复用现有重开流程——
+/// 避免直接设球在固定点造成瞬移。corner 槽 → 进攻端底线出界（source=CornerDirect → 角球）；
+/// throw_in 槽 → 边线出界（source=NormalPass → 对方掷）。
+fn emit_pass_out_play_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, slot: HighlightSlot) {
+    let from = st.carrier;
+    let from_pos = st.pos[from as usize];
+    let (raw_x, raw_y, detail, source) = match slot {
+        HighlightSlot::Corner => {
+            let home = st.possession == 0;
+            let x = if home { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
+            let y = 0.2 + (rng.next_u64() % 60) as f64 / 100.0;
+            (x, y, "out_goal_line", PassOutSource::CornerDirect)
+        }
+        HighlightSlot::ThrowIn => {
+            let y = if rng.next_u64() % 2 == 0 { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 } else { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 };
+            (from_pos.0, y, "out_sideline", PassOutSource::NormalPass)
+        }
+        _ => unreachable!("emit_pass_out_play_slot 只服务 Corner/ThrowIn 槽"),
+    };
+    let (x2, y2) = (clamp01(raw_x), clamp01(raw_y));
+    let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
+    let flight = distance_meters(from_pos, (x2, y2)) / speed;
+    let t_end = t + flight;
+    events.push(Event {
+        t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
+        x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
+        result: Some("contested".to_string()), speed: Some(speed),
+        detail: Some(detail.to_string()),
+        ..Event::default()
+    });
+    st.highlight = Some(Highlight {
+        t_end,
+        participants: vec![(from, from_pos)],
+        outcome: HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (x2, y2), source },
+    });
+    let movers = compute_movers(st, rng, t, &[from]);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
-    let ball = BallState { x: flag.0, y: flag.1, x2: flag.0, y2: flag.1, speed: 0.1, loose: true };
-    events.push(beat_event(t, None, Some(ball), movers));
-}
-
-/// 槽位界外球：直接进入界外球重开（球停边线 + 准备期走位），复用 start_throw_in。
-/// 界外球给对方掷（当前持球方"出界"→ 对方掷）。
-fn start_throw_in_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    let throwing = 1 - st.possession;
-    let y = if rng.next_u64() % 2 == 0 { 0.0 } else { 1.0 }; // 边线侧
-    let x = 0.15 + (rng.next_u64() % 70) as f64 / 100.0; // 场内
-    start_throw_in(st, rng, events, t, (x, y), throwing);
-    // 产过渡 beat：球停出界点（静止锚点）+ 全队走位
-    let out = st.restart_prep.as_ref().unwrap().target;
-    let movers = compute_movers(st, rng, t, &[]);
-    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
-    let ball = BallState { x: out.0, y: out.1, x2: out.0, y2: out.1, speed: 0.1, loose: true };
-    events.push(beat_event(t, None, Some(ball), movers));
+    events.push(beat_event(t, None, None, movers));
 }
 
 /// pass 高亮：起点整数 tick，覆盖 [t, t_end)，参与者 = 传球者(静止) + 接球者(落点)。
@@ -1285,6 +1298,10 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
                         // 角球（进攻方）——防方解围出底线
                         start_corner(st, rng, events, t, out_pos, 1 - st.possession);
                     }
+                }
+                PassOutSource::CornerDirect => {
+                    // 槽位角球（P7）：出底线 → 角球（攻方发，possession=攻方）
+                    start_corner(st, rng, events, t, out_pos, st.possession);
                 }
             }
         }
@@ -2705,10 +2722,20 @@ mod tests {
         let (away_x, away_n) = sample_player_x(42, 5, Some(false));
         assert!(home_n > 0 && away_n > 0, "应采到两方样本（home_n={} away_n={}）", home_n, away_n);
         assert!(home_x > away_x + 0.01, "己方持球时前压（home {:.3} vs away {:.3}）", home_x, away_x);
-        // 门将豁免：home 门将 id 0 目标 x 恒为门线（≈0.02），不随球/阶段
-        let (gk_x, gk_n) = sample_player_x(42, 0, None);
-        assert!(gk_n > 0);
-        assert!((gk_x - 0.02).abs() < 0.01, "门将应回门线（gk_x={:.3}）", gk_x);
+        // 门将豁免（P7 槽位下门将 mover 极少，直接测 compute_movers 的 keeper_return 分支）：
+        // 门将离门线时产 mover 回门线（x≈0.02），不受球位置影响
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.pos[0] = (0.2, 0.5); // 门将离门
+        st.ball_pos = (0.8, 0.5); // 球远
+        st.possession = 0;
+        let mut rng = SeededRng::new(1);
+        let movers = compute_movers(&mut st, &mut rng, 0.0, &[]);
+        let gk_mover = movers.iter().find(|m| m.id == 0);
+        assert!(gk_mover.is_some(), "门将离门应产 keeper_return mover");
+        let gk = gk_mover.unwrap();
+        assert_eq!(gk.action, "keeper_return", "门将 mover action 应为 keeper_return");
+        assert!(gk.to_x < gk.from_x, "门将应向门线移动（from {:.3} → to {:.3}）", gk.from_x, gk.to_x);
     }
 
     #[test]
@@ -3237,9 +3264,10 @@ mod tests {
 
     #[test]
     fn p7_frequency_5min_vs_90min_consistent() {
-        // P7 核心：5 分钟与 90 分钟比赛产出相同数量级的核心精彩事件（槽位机制，不随时长漂移）。
+        // P7 核心：5 分钟与 90 分钟比赛产出同一数量级的核心精彩事件（槽位机制，不随时长漂移）。
         // 核心事件 = shot + corner 发球 + throw_in 掷球 + tackle + 进球。
-        // 断言 5min 与 90min 各项 ratio < 2.5（同一数量级）。
+        // spec：5min 核心事件 ≥ 90min 的 60%（5min 物理容纳 ~20 槽、90min ~24 槽）。
+        // 多 seed（1-20）防单 seed 侥幸。
         let mut count = |dur: f64, seed: u64| -> [usize; 5] {
             let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false });
             let evts = json_events(&s);
@@ -3261,7 +3289,7 @@ mod tests {
             }
             [shot, corner, throw_in, tackle, goal]
         };
-        let n = 10usize;
+        let n = 20usize;
         let mut a5 = [0usize; 5];
         let mut a90 = [0usize; 5];
         for seed in 1..=n as u64 {
@@ -3270,11 +3298,13 @@ mod tests {
             for i in 0..5 { a5[i] += c5[i]; a90[i] += c90[i]; }
         }
         let names = ["shot", "corner", "throw_in", "tackle", "goal"];
+        // 5min 核心事件 ≥ 90min 的 60%（ratio ≤ 1.67）；进球最差可接受 ratio ≤ 2.5（小样本波动）
         for i in 0..5 {
             let v5 = a5[i] as f64 / n as f64;
             let v90 = a90[i] as f64 / n as f64;
             let ratio = v90 / v5.max(0.5);
-            assert!(ratio < 2.5, "{} 数量级不一致：5min {:.1} vs 90min {:.1}（ratio {:.2}）", names[i], v5, v90, ratio);
+            let limit = if i == 4 { 2.5 } else { 1.7 };
+            assert!(ratio <= limit, "{} 数量级不一致：5min {:.1} vs 90min {:.1}（ratio {:.2}，限 {:.2}）", names[i], v5, v90, ratio, limit);
         }
         // 5min 也要有足够的精彩内容（集锦）：进球 ≥0.5、shot ≥4
         assert!(a5[4] as f64 / n as f64 >= 0.5, "5min 进球过少（{:.1}）", a5[4] as f64 / n as f64);

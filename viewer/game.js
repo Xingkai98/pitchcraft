@@ -34,8 +34,9 @@ export class Game {
       ? Math.max(events[events.length - 1]?.t ?? 0, this.timeline[this.timeline.length - 1].t)
       : 0;
     // P7：跳过机制——高亮段正常播放（baseSpeed=1，球员真实速度），非精彩段（间隙 > 阈值）快进/跳过。
-    // opts.baseSpeed 可覆盖基速（测试用 1x）。
+    // opts.baseSpeed 可覆盖基速（测试用 1x）；opts.skipThreshold 可覆盖间隙阈值（测试用 Infinity 关闭跳过）。
     this._baseSpeed = opts.baseSpeed ?? 1;
+    this._skipThreshold = opts.skipThreshold ?? config.playback.skipThresholdSeconds;
     // 高亮事件索引（间隙检测用）
     this._buildHighlightIndex();
     // 跳过模式：fast（快速播放 skipChoice 倍速）/ skip（直接跳到下一个高亮）
@@ -90,11 +91,13 @@ export class Game {
     return null;
   }
 
-  // 当前是否处于跳过段（非高亮窗口且距下一个高亮 > 阈值）
+  // 当前是否处于跳过段（非高亮窗口且距下一个高亮 > 阈值；尾部 nextHl=null 也算跳过）。
+  // skipThreshold=Infinity 时跳过完全禁用（测试用）。
   isSkipping() {
+    if (this._skipThreshold >= Infinity) return false;
     const nextHl = this._nextHighlightTime(this.playTime);
     const inHl = this._inHighlightWindow(this.playTime);
-    return !inHl && nextHl !== null && (nextHl - this.playTime) > config.playback.skipThresholdSeconds;
+    return !inHl && (nextHl === null || (nextHl - this.playTime) > this._skipThreshold);
   }
 
   // P7：循环跳过模式（快速播放/直接跳过）
@@ -148,14 +151,20 @@ export class Game {
   // clip：只在当前事件片段内推进，播完自动停。
   step(dt) {
     if (!this.playing) return;
+    // 帧尖峰钳制（切标签页/GC 时 dt 数秒）：限制单帧步进，避免 fast 跳过整段高亮窗口
+    dt = Math.min(dt, 0.1);
     // P7：高亮段基速 × 倍速；非精彩段（间隙 > 阈值）跳过（快速播放 × skipChoice 或直接跳）
     const speed = this._baseSpeed * (config.playback.speeds[this.speedIndex] || 1);
     if (this.mode === 'continuous') {
       const nextHl = this._nextHighlightTime(this.playTime);
       const inHl = this._inHighlightWindow(this.playTime);
-      if (!inHl && nextHl !== null && (nextHl - this.playTime) > config.playback.skipThresholdSeconds) {
+      // 跳过条件：非高亮窗口且距下一个高亮 > 阈值；尾部（nextHl=null）也跳过剩余比赛。
+      // skipThreshold=Infinity 时跳过完全禁用（测试用）。
+      const shouldSkip = this._skipThreshold < Infinity
+        && !inHl && (nextHl === null || (nextHl - this.playTime) > this._skipThreshold);
+      if (shouldSkip) {
         if (this.skipMode === 'skip') {
-          this.playTime = nextHl; // 直接跳过非精彩段（切到下一个高亮起点）
+          this.playTime = nextHl !== null ? nextHl : this._matchEnd; // 直接跳（尾部 → 比赛结束）
         } else {
           this.playTime += dt * speed * this.getSkipChoice(); // 快速播放（比赛时钟快跳）
         }

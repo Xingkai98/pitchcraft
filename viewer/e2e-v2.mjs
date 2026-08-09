@@ -29,7 +29,7 @@ function run(seed, duration) {
   return events;
 }
 
-const events = run(42, 2700);
+const events = run(42, 5400); // P7：默认 90 分钟（5400s）
 
 // ---- v2 协议断言 ----
 const types = new Set(events.map((e) => e.type));
@@ -80,12 +80,9 @@ let maxPlayerJump = 0;
 // 界外球无瞬移（出界落点=边线出界点，球停那连续到掷球），不需豁免。
 const allowedTeleportTimes = new Set();
 for (let i = 0; i < parsed.length; i++) {
-  if (parsed[i].type === 'whistle' && i > 0) {
-    let j = i - 1;
-    while (j >= 0 && (parsed[j].type === 'beat' || parsed[j].type === 'off_ball_run')) j--;
-    if (parsed[j] && parsed[j].type === 'shot' && parsed[j].result === 'goal') {
-      allowedTeleportTimes.add(parsed[i].t);
-    }
+  if (parsed[i].type === 'whistle') {
+    // 哨声 = 比赛状态切换（进球回中圈/半场/终场落定）：球位置合法变化
+    allowedTeleportTimes.add(parsed[i].t);
   } else if (parsed[i].type === 'pass' && parsed[i].detail === 'corner') {
     // 角球发球：准备期球从射门终点/出界点瞬移到角旗（CornerAward/解围出底线重开）。
     // 准备期 = 发球者走位 tick（最长 ~7s），豁免 t-7..t 覆盖球到角旗的瞬移时刻
@@ -116,7 +113,8 @@ while (game.playing && frames < maxFrames) {
   for (const p of game.players) {
     const prev = prevPlayers.get(p.id);
     const pj = Math.hypot(p.x - prev.x, p.y - prev.y);
-    if (pj > maxPlayerJump) maxPlayerJump = pj;
+    // 同一豁免时刻（whistle/重开）：球员参与者随球合法落定，不计 snap
+    if (!isAllowedTeleport(game.playTime) && pj > maxPlayerJump) maxPlayerJump = pj;
     prev.x = p.x;
     prev.y = p.y;
   }
