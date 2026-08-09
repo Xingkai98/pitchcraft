@@ -203,7 +203,7 @@ pub struct MatchConfig {
 
 impl MatchConfig {
     pub fn default_() -> Self {
-        MatchConfig { match_duration_seconds: 2700.0, demo_mode: false }
+        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false }
     }
 }
 
@@ -949,10 +949,11 @@ fn emit_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let ry = st.pos[to as usize].1;
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
     let (lx, ly) = lead_point(from_pos, to_pos, lead);
-    // 出界 roll（3-5%）：仅普通传球掷，落点 x/y 超出 [0,1]（≤0.05），事件坐标钳制
+    // 出界 roll（8-10%，P7）：仅普通传球掷，落点 x/y 超出 [0,1]（≤0.05），事件坐标钳制。
+    // 出界以边线为主（65%）→ 界外球 17-21 次/场（90min 基准）
     let out_roll = rng.next_u64() % 100;
-    let out_goal_line = if out_roll < (3 + rng.next_u64() % 3) {
-        rng.next_u64() % 2 == 0
+    let out_goal_line = if out_roll < (8 + rng.next_u64() % 3) {
+        rng.next_u64() % 100 >= 65 // 35% 出底线 / 65% 出边线
     } else {
         return normal_pass_highlight(st, rng, events, t, from, from_pos, home, to, to_pos, rx, ry, lead, lx, ly);
     };
@@ -1037,10 +1038,10 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let home = st.possession == 0;
     let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
     let score_roll = rng.next_u64() % 100;
-    let (result, caught) = if score_roll < 15 {
-        ("goal", false)
+    let (result, caught) = if score_roll < 9 {
+        ("goal", false) // P7：goal 率 15→9%（射门增多后避免比分过高）
     } else if score_roll < 45 {
-        let caught = rng.next_u64() % 100 < 70;
+        let caught = rng.next_u64() % 100 < 40; // P7：扑出率 60%（40% 扑住、60% 扑出，角球来源）
         ("saved", caught)
     } else {
         ("off_target", false)
@@ -1069,9 +1070,9 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     } else if caught {
         HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
     } else {
-        // 扑出反弹：先掷越线概率（~30%）——越线 → CornerAward（角球）；否则弹回场内松散球
+        // 扑出反弹：先掷越线概率（~80%，P7）——越线 → CornerAward（角球）；否则弹回场内松散球
         let corner_roll = rng.next_u64() % 100;
-        if corner_roll < 30 {
+        if corner_roll < 90 {
             // 越线：弹开点 = 门线外一点（home 攻 x>1 / away 攻 x<0），仅引擎内部确定角旗侧，不进事件
             HighlightOutcome::CornerAward { rebound_from: (x2, y2) }
         } else {
@@ -1555,10 +1556,10 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     let home = st.possession == 0;
     let speed = 15.0 + (rng.next_u64() % 50) as f64 / 10.0;
     let score_roll = rng.next_u64() % 100;
-    let (result, caught) = if score_roll < 10 {
-        ("goal", false)
+    let (result, caught) = if score_roll < 8 {
+        ("goal", false) // P7：头球 goal 率 10→8%
     } else if score_roll < 50 {
-        let caught = rng.next_u64() % 100 < 70;
+        let caught = rng.next_u64() % 100 < 40; // P7：扑出率 60%（40% 扑住、60% 扑出，角球来源）
         ("saved", caught)
     } else {
         ("off_target", false)
@@ -1585,9 +1586,9 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     } else if caught {
         HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
     } else {
-        // 头球扑出：越线（~30%）→ 角球；否则弹回场内松散球（同普通射门 saved-rebound）
+        // 头球扑出：越线（~80%，P7）→ 角球；否则弹回场内松散球（同普通射门 saved-rebound）
         let corner_roll = rng.next_u64() % 100;
-        if corner_roll < 30 {
+        if corner_roll < 90 {
             HighlightOutcome::CornerAward { rebound_from: (x2, y2) }
         } else {
             let (loose_x, loose_y) = deflect_point(pos.0, pos.1, x2, y2, TACKLE_DEFLECT_DISTANCE, header, gk_id);
@@ -2405,7 +2406,7 @@ mod tests {
 
     #[test]
     fn v2_highlight_gate_frequency() {
-        // 高亮门控：高亮总数（pass+shot+tackle）约 200/场
+        // 高亮门控：高亮总数（pass+shot+tackle）约 400/场（90 分钟，P7 时长翻倍）
         let cfg = MatchConfig::default_();
         let mut total = 0usize;
         let n = 10usize;
@@ -2414,13 +2415,13 @@ mod tests {
             total += c.get("pass").unwrap_or(&0) + c.get("shot").unwrap_or(&0) + c.get("tackle").unwrap_or(&0);
         }
         let avg = total as f64 / n as f64;
-        assert!(avg >= 100.0, "高亮数过低（平均 {:.1}/场），应 ~200", avg);
-        assert!(avg <= 350.0, "高亮数过高（平均 {:.1}/场），应 ~200", avg);
+        assert!(avg >= 200.0, "高亮数过低（平均 {:.1}/场），应 ~400", avg);
+        assert!(avg <= 650.0, "高亮数过高（平均 {:.1}/场），应 ~400", avg);
     }
 
     #[test]
     fn v2_tackle_frequency_in_target_range() {
-        // v2 重标定：目标 8-15 次/场（阈值 12m、积极性 0.15）；多 seed 平均落在 5-20（宽松边界防 flaky）
+        // v2 重标定：目标 16-30 次/场（90 分钟，P7 时长翻倍；阈值 12m、积极性 0.15）；多 seed 平均落在 10-40（宽松边界防 flaky）
         let cfg = MatchConfig::default_();
         let mut total = 0usize;
         let n = 20usize;
@@ -2429,8 +2430,8 @@ mod tests {
             total += c.get("tackle").unwrap_or(&0);
         }
         let avg = total as f64 / n as f64;
-        assert!(avg >= 5.0, "tackle 频率过低（平均 {:.1}/场），应落在目标 8-15 附近", avg);
-        assert!(avg <= 20.0, "tackle 频率过高（平均 {:.1}/场），应落在目标 8-15 附近", avg);
+        assert!(avg >= 10.0, "tackle 频率过低（平均 {:.1}/场），应落在目标 16-30 附近", avg);
+        assert!(avg <= 40.0, "tackle 频率过高（平均 {:.1}/场），应落在目标 16-30 附近", avg);
     }
 
     #[test]
@@ -3139,5 +3140,42 @@ mod tests {
             }
         }
         panic!("没有任何 seed 产出攻方胜头球摆渡（角球后 pass 无 detail h=0）");
+    }
+
+    // ---- P7：频率区间断言（90 分钟基准，接近真实比赛）----
+
+    fn count_detail(s: &str, detail: &str) -> usize {
+        let target = format!("\"{}\"", detail);
+        json_events(s).iter().filter(|e| {
+            json_field(e, "detail").as_deref() == Some(target.as_str())
+        }).count()
+    }
+
+    fn count_goals(s: &str) -> usize {
+        json_events(s).iter().filter(|e| {
+            type_of(e) == "shot" && e.contains("\"result\":\"goal\"")
+        }).count()
+    }
+
+    #[test]
+    fn p7_frequency_90min_in_range() {
+        // 90 分钟频率目标：角球 6-9、界外球 17-21、进球 3-3.5（多 seed 平均）
+        let cfg = MatchConfig::default_();
+        let mut corner = 0;
+        let mut out_sideline = 0;
+        let mut goal = 0;
+        let n = 15usize;
+        for seed in 1..=n as u64 {
+            let s = simulate(seed, cfg);
+            corner += count_detail(&s, "corner");
+            out_sideline += count_detail(&s, "out_sideline");
+            goal += count_goals(&s);
+        }
+        let avg_corner = corner as f64 / n as f64;
+        let avg_out = out_sideline as f64 / n as f64;
+        let avg_goal = goal as f64 / n as f64;
+        assert!(avg_corner >= 4.0 && avg_corner <= 11.0, "角球频率异常：{:.1}/场（目标 ~6-9）", avg_corner);
+        assert!(avg_out >= 12.0 && avg_out <= 30.0, "界外球频率异常：{:.1}/场（目标 ~17-21）", avg_out);
+        assert!(avg_goal >= 1.5 && avg_goal <= 6.0, "进球频率异常：{:.1}/场（目标 ~3）", avg_goal);
     }
 }
