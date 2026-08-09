@@ -215,9 +215,9 @@ pub const PITCH_WIDTH_M: f64 = 68.0;
 /// 就近阈值（米）：距持球者最近的防守者超过此距离则不产 tackle（避免跨半场逼抢）。
 /// v2 标定：高亮 ~200/场 × tackle 掷出 32% × 贴防率 ≈ 目标 8-15 次/场 → 阈值 12m。
 pub const TACKLE_DISTANCE_THRESHOLD_METERS: f64 = 12.0;
-/// 抢断积极性：贴防时"真的去抢"的概率（低概率，只有少量机会去抢）。
-/// v2 标定：贴防（≤12m）时以 0.15 去抢，过滤后 ~8-15 次/场。
-pub const TACKLE_EAGERNESS: f64 = 0.15;
+/// 抢断积极性：贴防时"真的去抢"的概率。
+/// P7 槽位：tackle 槽总是产（检查失败 force_fail），贴防通过率需够高才能出现 success——0.5。
+pub const TACKLE_EAGERNESS: f64 = 0.5;
 /// 抢断成功率（success/fail 各半，用户确认 50/50）。
 pub const TACKLE_SUCCESS_RATE: f64 = 0.5;
 /// 弹开距离（归一化，与 viewer config.interpretation.tackle.deflectDistance 对齐）。
@@ -323,6 +323,13 @@ pub const GK_SPEED_MS: f64 = 3.0;
 /// 持球 hold 门控下限/上限（tick）
 pub const HOLD_MIN_TICKS: u32 = 8;
 pub const HOLD_MAX_TICKS: u32 = 15;
+/// P7：每场核心精彩事件数（槽位机制）——不随时长漂移，5 分钟与 90 分钟比赛产出相同数量级。
+/// 32 = 5 分钟（300s）能容纳的最大值（每槽 hold 5 + 事件 ~4s ≈ 9s × 32 ≈ 290s）。
+pub const HIGHLIGHTS_PER_MATCH: u32 = 32;
+/// P7：槽位 hold 下限（tick）——即使比赛很短，两高亮间至少留这么多 tick 过渡
+pub const SLOT_HOLD_MIN_TICKS: u32 = 3;
+/// P7：高亮事件平均时长（tick，含 corner 准备期/发球/battle 等）——hold 间距减去它，保证 5 分钟能塞下全部槽
+pub const SLOT_AVG_EVENT_TICKS: f64 = 4.0;
 
 // ---- P5 队形/攻防转换参数 ----
 /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
@@ -359,9 +366,37 @@ fn move_toward(from: (f64, f64), to: (f64, f64), step: f64) -> (f64, f64) {
     (from.0 + dx / len * step, from.1 + dy / len * step)
 }
 
-/// 掷持球 hold 上限（8-15 tick）
-fn roll_hold_max(rng: &mut SeededRng) -> u32 {
-    HOLD_MIN_TICKS + (rng.next_u64() % (HOLD_MAX_TICKS - HOLD_MIN_TICKS + 1) as u64) as u32
+/// P7：槽位 hold 上限（tick）= 槽位间距（比赛时长 / 高亮总数）减事件平均时长，下限 3 tick。
+/// 槽位驱动：每个高亮后 hold 到槽位间距再产下一个高亮，保证精彩事件固定产出（不随时长漂移）。
+/// 减事件时长让 5 分钟比赛也能塞下全部槽位（300s / 32 ≈ 9.4s 每槽，事件 ~4s + hold ~5s）。
+fn slot_hold_max(match_duration: f64) -> u32 {
+    let slot = (match_duration / HIGHLIGHTS_PER_MATCH as f64 - SLOT_AVG_EVENT_TICKS).floor() as u32;
+    slot.max(SLOT_HOLD_MIN_TICKS)
+}
+
+/// P7：槽位高亮类型（每槽必产一个高亮，类型固定比例保证精彩事件数量稳定）
+enum HighlightSlot {
+    Shot,    // 射门
+    Corner,  // 角球（直接进入角球重开）
+    ThrowIn, // 界外球（直接进入界外球重开）
+    Tackle,  // 抢断
+    Pass,    // 普通传球（可能出界派生额外界外球/门球）
+}
+
+/// 槽位类型分配（P7）：Shot 30% / Corner 12% / ThrowIn 18% / Tackle 22% / Pass 18%
+fn roll_highlight_slot(rng: &mut SeededRng) -> HighlightSlot {
+    let roll = rng.next_u64() % 100;
+    if roll < 30 {
+        HighlightSlot::Shot
+    } else if roll < 42 {
+        HighlightSlot::Corner
+    } else if roll < 60 {
+        HighlightSlot::ThrowIn
+    } else if roll < 82 {
+        HighlightSlot::Tackle
+    } else {
+        HighlightSlot::Pass
+    }
 }
 
 /// 找指定队中离 target 最近的外场球员（松散球追逐者；tackle 弹开限定抢断方）
@@ -400,6 +435,7 @@ struct MatchState {
     carrier_from: (f64, f64),
     hold_ticks: u32,
     hold_max: u32,
+    match_duration: f64, // P7：比赛时长（槽位机制算 hold 间距）
     last_emitted: [(f64, f64); 22],
     highlight: Option<Highlight>,
     loose: Option<LooseBall>,
@@ -430,7 +466,7 @@ enum TransitionSource {
 }
 
 impl MatchState {
-    fn new(lineup: &[LineupPlayer]) -> Self {
+    fn new(lineup: &[LineupPlayer], match_duration: f64) -> Self {
         let mut pos = [(0.0, 0.0); 22];
         let mut lp = [(0.0, 0.0); 22];
         for p in lineup {
@@ -453,6 +489,7 @@ impl MatchState {
             carrier_from: (0.55, 0.5),
             hold_ticks: 0,
             hold_max: 0,
+            match_duration,
             last_emitted: pos,
             highlight: None,
             loose: None,
@@ -556,11 +593,11 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
         ..Event::default()
     });
 
-    let mut st = MatchState::new(&lineup);
+    let mut st = MatchState::new(&lineup, dur);
     st.pos[9] = (0.5, 0.5);
     st.pos[10] = (0.55, 0.5);
     st.carrier_from = (0.55, 0.5);
-    st.hold_max = roll_hold_max(&mut rng);
+    st.hold_max = slot_hold_max(st.match_duration);
 
     let mut t = TICK_SECONDS;
     while t < dur {
@@ -906,36 +943,63 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     movers
 }
 
-/// 高亮门控：hold 归零必掷一条高亮；tackle 检查失败改掷 pass/shot；shot 需在进攻半场
+/// 高亮门控（P7 槽位驱动）：每槽必产一个高亮，类型按固定比例（Shot/Corner/ThrowIn/Tackle/Pass），
+/// 保证核心精彩事件（射门/角球/界外球/头球/抢断）数量稳定，不随时长漂移。
 fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    let roll = rng.next_u64() % 100;
-    // pass 55% / shot 8% / tackle 37%：高亮 ~235/场 → pass ~130、shot ~19（goal ~3）、tackle 过滤后 ~8-15
-    let mut kind = if roll < 55 { EventType::Pass } else if roll < 63 { EventType::Shot } else { EventType::Tackle };
-    if kind == EventType::Tackle {
-        let victim = st.carrier;
-        let victim_pos = st.pos[victim as usize];
-        let def_home = st.possession != 0;
-        let (def_id, _, dist) = nearest_defender(&st.pos, victim_pos, def_home);
-        let same_pair = st.last_tackle_pair == Some((def_id, victim));
-        if same_pair || dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng) {
-            // 检查失败：改掷 pass/shot（spec：无 dribble 落点；85% pass / 15% shot 控制射门频率）
-            kind = if rng.next_u64() % 20 < 17 { EventType::Pass } else { EventType::Shot };
+    let slot = roll_highlight_slot(rng);
+    match slot {
+        HighlightSlot::Shot => {
+            // shot 槽总是射门（含远射）：门将不射（改普通传球）；非门将无论位置都射——
+            // 5min 比赛 carrier 没时间推进到前场，guard 会大量降级导致 5min/90min 射门数不一致
+            if st.carrier == 0 || st.carrier == 21 {
+                emit_pass_highlight(st, rng, events, t);
+            } else {
+                emit_shot_highlight(st, rng, events, t);
+            }
         }
-    }
-    // 统一 shot 半场 guard（主分支与 tackle fallback 分支都过——避免门将/后场射门）
-    if kind == EventType::Shot {
-        let shooter_pos = st.pos[st.carrier as usize];
-        let home = st.possession == 0;
-        let in_opp_half = if home { shooter_pos.0 > 0.5 } else { shooter_pos.0 < 0.5 };
-        if !in_opp_half {
-            kind = EventType::Pass;
+        HighlightSlot::Corner => start_corner_slot(st, rng, events, t),
+        HighlightSlot::ThrowIn => start_throw_in_slot(st, rng, events, t),
+        HighlightSlot::Tackle => {
+            let victim = st.carrier;
+            let victim_pos = st.pos[victim as usize];
+            let def_home = st.possession != 0;
+            let (def_id, _, dist) = nearest_defender(&st.pos, victim_pos, def_home);
+            let same_pair = st.last_tackle_pair == Some((def_id, victim));
+            let far = dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng);
+            // 总是产 tackle（数量稳定）；same_pair 强制 fail、far 降成功率（15%）、贴防正常 50/50
+            emit_tackle_highlight_impl(st, rng, events, t, same_pair, far);
         }
+        HighlightSlot::Pass => emit_pass_highlight(st, rng, events, t),
     }
-    match kind {
-        EventType::Pass => emit_pass_highlight(st, rng, events, t),
-        EventType::Shot => emit_shot_highlight(st, rng, events, t),
-        _ => emit_tackle_highlight(st, rng, events, t),
-    }
+}
+
+/// 槽位角球：直接进入角球重开（球停角旗 + 准备期走位），复用 start_corner
+fn start_corner_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let attacking = st.possession;
+    // 出底线点 = 进攻端底线附近（定角旗）
+    let out_pos = if attacking == 0 { (1.0, 0.5) } else { (0.0, 0.5) };
+    start_corner(st, rng, events, t, out_pos, attacking);
+    // 产过渡 beat：球停角旗（静止锚点）+ 全队走位（准备期由 RestartPrep 下 tick 推进）
+    let flag = st.restart_prep.as_ref().unwrap().target;
+    let movers = compute_movers(st, rng, t, &[]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    let ball = BallState { x: flag.0, y: flag.1, x2: flag.0, y2: flag.1, speed: 0.1, loose: true };
+    events.push(beat_event(t, None, Some(ball), movers));
+}
+
+/// 槽位界外球：直接进入界外球重开（球停边线 + 准备期走位），复用 start_throw_in。
+/// 界外球给对方掷（当前持球方"出界"→ 对方掷）。
+fn start_throw_in_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let throwing = 1 - st.possession;
+    let y = if rng.next_u64() % 2 == 0 { 0.0 } else { 1.0 }; // 边线侧
+    let x = 0.15 + (rng.next_u64() % 70) as f64 / 100.0; // 场内
+    start_throw_in(st, rng, events, t, (x, y), throwing);
+    // 产过渡 beat：球停出界点（静止锚点）+ 全队走位
+    let out = st.restart_prep.as_ref().unwrap().target;
+    let movers = compute_movers(st, rng, t, &[]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    let ball = BallState { x: out.0, y: out.1, x2: out.0, y2: out.1, speed: 0.1, loose: true };
+    events.push(beat_event(t, None, Some(ball), movers));
 }
 
 /// pass 高亮：起点整数 tick，覆盖 [t, t_end)，参与者 = 传球者(静止) + 接球者(落点)。
@@ -1038,9 +1102,9 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let home = st.possession == 0;
     let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
     let score_roll = rng.next_u64() % 100;
-    let (result, caught) = if score_roll < 9 {
-        ("goal", false) // P7：goal 率 15→9%（射门增多后避免比分过高）
-    } else if score_roll < 45 {
+    let (result, caught) = if score_roll < 15 {
+        ("goal", false) // P7：goal 率 15%（5min 集锦也要有进球）
+    } else if score_roll < 50 {
         let caught = rng.next_u64() % 100 < 40; // P7：扑出率 60%（40% 扑住、60% 扑出，角球来源）
         ("saved", caught)
     } else {
@@ -1096,11 +1160,23 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 
 /// tackle 高亮：时长 1 tick；carrier_from = 接触点（carry-beat 归零）
 fn emit_tackle_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    emit_tackle_highlight_impl(st, rng, events, t, false, false)
+}
+
+/// P7：`same_pair`（连续同 pair）强制 fail；`far`（远离阈值）降成功率（15%，偶尔成功）；
+/// 贴防正常 50/50。保证 tackle 数量稳定且 success 可出现。
+fn emit_tackle_highlight_impl(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, same_pair: bool, far: bool) {
     let victim = st.carrier;
     let victim_pos = st.pos[victim as usize];
     let def_home = st.possession != 0;
     let (def_id, def_pos, _) = nearest_defender(&st.pos, victim_pos, def_home);
-    let success = (rng.next_u64() % 100) < (TACKLE_SUCCESS_RATE * 100.0) as u64;
+    let success = if same_pair {
+        false
+    } else if far {
+        (rng.next_u64() % 100) < 15
+    } else {
+        (rng.next_u64() % 100) < (TACKLE_SUCCESS_RATE * 100.0) as u64
+    };
     let result = if success { "success" } else { "fail" };
     let (loose_x, loose_y) = deflect_point(
         def_pos.0, def_pos.1, victim_pos.0, victim_pos.1,
@@ -1149,7 +1225,7 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.carrier = receiver;
             st.carrier_from = catch_pos;
             st.hold_ticks = 0;
-            st.hold_max = roll_hold_max(rng);
+            st.hold_max = slot_hold_max(st.match_duration);
             emit_beat_with_main(st, rng, events, t);
         }
         HighlightOutcome::ShotGoal { kickoff_id, ball_end } => {
@@ -1171,7 +1247,7 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             // save-caught 触发 transition（球权易主）：save 高亮终点 tick 后的首个整数 tick 边界武装
             st.transition = Some(Transition { ticks_left: TRANSITION_TICKS, attacking: st.possession, source: TransitionSource::SaveCaught });
             st.hold_ticks = 0;
-            st.hold_max = roll_hold_max(rng);
+            st.hold_max = slot_hold_max(st.match_duration);
             emit_beat_with_main(st, rng, events, t);
         }
         HighlightOutcome::ShotSavedRebound { gk, rebound_from, dir } => {
@@ -1254,7 +1330,7 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.carrier = victim;
             st.carrier_from = contact;
             st.hold_ticks = 0;
-            st.hold_max = roll_hold_max(rng);
+            st.hold_max = slot_hold_max(st.match_duration);
             emit_beat_with_main(st, rng, events, t);
         }
     }
@@ -1421,6 +1497,7 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
         x: out_pos.0, y: out_pos.1, x2: Some(x2), y2: Some(y2),
         result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
         h: Some(0.0), // 界外球无高度
+        detail: Some("throw_in".to_string()), // P7：viewer 识别界外球掷球（跳过机制）
         receiver_x: Some(rx), receiver_y: Some(ry),
         ..Event::default()
     });
@@ -1486,7 +1563,7 @@ fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
         st.carrier_from = loose_pos;
         st.last_emitted[chaser as usize] = loose_pos;
         st.hold_ticks = 0;
-        st.hold_max = roll_hold_max(rng);
+        st.hold_max = slot_hold_max(st.match_duration);
         st.loose = None;
         emit_beat_with_main(st, rng, events, t);
         return;
@@ -1537,7 +1614,7 @@ fn battle_attack_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     st.carrier_from = loose_pos;
     st.last_emitted[atk as usize] = loose_pos;
     st.hold_ticks = 0;
-    st.hold_max = roll_hold_max(rng);
+    st.hold_max = slot_hold_max(st.match_duration);
     let roll = rng.next_u64() % 100;
     if roll < 55 {
         // 头球射门（shot 高亮 detail=header、h=0）
@@ -1556,8 +1633,8 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     let home = st.possession == 0;
     let speed = 15.0 + (rng.next_u64() % 50) as f64 / 10.0;
     let score_roll = rng.next_u64() % 100;
-    let (result, caught) = if score_roll < 8 {
-        ("goal", false) // P7：头球 goal 率 10→8%
+    let (result, caught) = if score_roll < 12 {
+        ("goal", false) // P7：头球 goal 率 12%
     } else if score_roll < 50 {
         let caught = rng.next_u64() % 100 < 40; // P7：扑出率 60%（40% 扑住、60% 扑出，角球来源）
         ("saved", caught)
@@ -1641,7 +1718,7 @@ fn battle_defend_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     st.carrier_from = loose_pos;
     st.last_emitted[def as usize] = loose_pos;
     st.hold_ticks = 0;
-    st.hold_max = roll_hold_max(rng);
+    st.hold_max = slot_hold_max(st.match_duration);
     let roll = rng.next_u64() % 100;
     if roll < 70 {
         // 头球解围（pass 顶出禁区 detail=clearance、h=0 → 松散球重新争，普通非 battle）
@@ -1723,7 +1800,7 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
         } else {
             st.dead_ball = None;
             st.hold_ticks = 0;
-            st.hold_max = roll_hold_max(rng);
+            st.hold_max = slot_hold_max(st.match_duration);
             emit_beat_with_main(st, rng, events, t);
         }
         return;
@@ -1782,7 +1859,7 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
     st.last_emitted[receiver as usize] = (kx2, ky2);
     st.possession = if receiver <= 10 { 0 } else { 1 };
     st.hold_ticks = 0;
-    st.hold_max = roll_hold_max(rng);
+    st.hold_max = slot_hold_max(st.match_duration);
     st.dead_ball = Some(DeadBall { goal, remaining: 0, preparing, kickoff_id, kicked: true, receiver, kickoff_end });
 }
 
@@ -2406,7 +2483,7 @@ mod tests {
 
     #[test]
     fn v2_highlight_gate_frequency() {
-        // 高亮门控：高亮总数（pass+shot+tackle）约 400/场（90 分钟，P7 时长翻倍）
+        // 高亮门控（P7 槽位驱动）：每场 ~32 槽 + 级联派生（角球 battle/解围等），总高亮 ~35-50/场
         let cfg = MatchConfig::default_();
         let mut total = 0usize;
         let n = 10usize;
@@ -2415,13 +2492,13 @@ mod tests {
             total += c.get("pass").unwrap_or(&0) + c.get("shot").unwrap_or(&0) + c.get("tackle").unwrap_or(&0);
         }
         let avg = total as f64 / n as f64;
-        assert!(avg >= 200.0, "高亮数过低（平均 {:.1}/场），应 ~400", avg);
-        assert!(avg <= 650.0, "高亮数过高（平均 {:.1}/场），应 ~400", avg);
+        assert!(avg >= 30.0, "高亮数过低（平均 {:.1}/场），应 ~40（32 槽 + 级联）", avg);
+        assert!(avg <= 80.0, "高亮数过高（平均 {:.1}/场），应 ~40（32 槽 + 级联）", avg);
     }
 
     #[test]
     fn v2_tackle_frequency_in_target_range() {
-        // v2 重标定：目标 16-30 次/场（90 分钟，P7 时长翻倍；阈值 12m、积极性 0.15）；多 seed 平均落在 10-40（宽松边界防 flaky）
+        // P7 槽位：tackle 槽 22% × 32 ≈ 7 槽/场（检查失败 force_fail 仍产），多 seed 平均 4-12
         let cfg = MatchConfig::default_();
         let mut total = 0usize;
         let n = 20usize;
@@ -2430,8 +2507,8 @@ mod tests {
             total += c.get("tackle").unwrap_or(&0);
         }
         let avg = total as f64 / n as f64;
-        assert!(avg >= 10.0, "tackle 频率过低（平均 {:.1}/场），应落在目标 16-30 附近", avg);
-        assert!(avg <= 40.0, "tackle 频率过高（平均 {:.1}/场），应落在目标 16-30 附近", avg);
+        assert!(avg >= 3.0, "tackle 频率过低（平均 {:.1}/场），应 ~7 槽/场", avg);
+        assert!(avg <= 14.0, "tackle 频率过高（平均 {:.1}/场），应 ~7 槽/场", avg);
     }
 
     #[test]
@@ -2660,7 +2737,7 @@ mod tests {
         // repulsion：两个同队球员放在同一位置、球在远处 → compute_movers 应把目标推开（不贴脸）。
         // 内部单测（构造 MatchState）——直接验证 repulsion 目标层逻辑。
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup);
+        let mut st = MatchState::new(&lineup, 5400.0);
         st.ball_pos = (0.8, 0.5);
         st.possession = 0; // home 持球
         st.carrier = 9;
@@ -2994,7 +3071,8 @@ mod tests {
 
     #[test]
     fn p6_pass_h_classification() {
-        // 普通传球 h 分类：短传 ≤20m h=0；中长传 >20m h>0（0.2-0.4）
+        // 普通传球 h 分类（P7 槽位）：普通 pass 是短传（nearest 队友）→ h=0；
+        // 长传（>20m）由角球/门球（h 0.5-0.8）覆盖（p6_h_field_serialization）。这里验证短传 h=0。
         let cfg = MatchConfig::default_();
         let mut saw_short = false;
         let mut saw_long = false;
@@ -3003,13 +3081,13 @@ mod tests {
             let evts = json_events(&s);
             for e in evts {
                 if type_of(&e) != "pass" { continue; }
-                if json_num(&e, "to").is_none() { continue; } // 跳过重开 pass（角球/门球/界外球）
-                if json_field(&e, "detail").is_some() { continue; } // 跳过出界 pass
-                let x = json_num(&e, "x").unwrap();
+                if json_num(&e, "to").is_none() { continue; } // 跳过重开 pass（角球/门球）
+                if json_field(&e, "detail").is_some() { continue; } // 跳过出界/掷球 pass
                 let y = json_num(&e, "y").unwrap();
-                if x < 0.2 || x > 0.8 { continue; } // 跳过禁区起点（头球摆渡等低平传球，非普通传球）
+                if y < 0.05 || y > 0.95 { continue; } // 跳过边线起点（掷球/边线传球）
                 let x2 = json_num(&e, "x2").unwrap();
                 let y2 = json_num(&e, "y2").unwrap();
+                let (x, y) = (json_num(&e, "x").unwrap(), y);
                 let meters = distance_meters((x, y), (x2, y2));
                 let h = h_of(&e).expect("普通 pass 应有 h");
                 if meters <= 20.0 {
@@ -3158,24 +3236,48 @@ mod tests {
     }
 
     #[test]
-    fn p7_frequency_90min_in_range() {
-        // 90 分钟频率目标：角球 6-9、界外球 17-21、进球 3-3.5（多 seed 平均）
-        let cfg = MatchConfig::default_();
-        let mut corner = 0;
-        let mut out_sideline = 0;
-        let mut goal = 0;
-        let n = 15usize;
+    fn p7_frequency_5min_vs_90min_consistent() {
+        // P7 核心：5 分钟与 90 分钟比赛产出相同数量级的核心精彩事件（槽位机制，不随时长漂移）。
+        // 核心事件 = shot + corner 发球 + throw_in 掷球 + tackle + 进球。
+        // 断言 5min 与 90min 各项 ratio < 2.5（同一数量级）。
+        let mut count = |dur: f64, seed: u64| -> [usize; 5] {
+            let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false });
+            let evts = json_events(&s);
+            let mut shot = 0;
+            let mut corner = 0;
+            let mut throw_in = 0;
+            let mut tackle = 0;
+            let mut goal = 0;
+            for e in &evts {
+                if type_of(e) == "shot" {
+                    shot += 1;
+                    if e.contains("\"result\":\"goal\"") { goal += 1; }
+                } else if type_of(e) == "tackle" {
+                    tackle += 1;
+                } else if type_of(e) == "pass" {
+                    if json_field(e, "detail").as_deref() == Some("\"corner\"") { corner += 1; }
+                    else if json_field(e, "detail").as_deref() == Some("\"throw_in\"") { throw_in += 1; }
+                }
+            }
+            [shot, corner, throw_in, tackle, goal]
+        };
+        let n = 10usize;
+        let mut a5 = [0usize; 5];
+        let mut a90 = [0usize; 5];
         for seed in 1..=n as u64 {
-            let s = simulate(seed, cfg);
-            corner += count_detail(&s, "corner");
-            out_sideline += count_detail(&s, "out_sideline");
-            goal += count_goals(&s);
+            let c5 = count(300.0, seed);
+            let c90 = count(5400.0, seed);
+            for i in 0..5 { a5[i] += c5[i]; a90[i] += c90[i]; }
         }
-        let avg_corner = corner as f64 / n as f64;
-        let avg_out = out_sideline as f64 / n as f64;
-        let avg_goal = goal as f64 / n as f64;
-        assert!(avg_corner >= 4.0 && avg_corner <= 11.0, "角球频率异常：{:.1}/场（目标 ~6-9）", avg_corner);
-        assert!(avg_out >= 12.0 && avg_out <= 30.0, "界外球频率异常：{:.1}/场（目标 ~17-21）", avg_out);
-        assert!(avg_goal >= 1.5 && avg_goal <= 6.0, "进球频率异常：{:.1}/场（目标 ~3）", avg_goal);
+        let names = ["shot", "corner", "throw_in", "tackle", "goal"];
+        for i in 0..5 {
+            let v5 = a5[i] as f64 / n as f64;
+            let v90 = a90[i] as f64 / n as f64;
+            let ratio = v90 / v5.max(0.5);
+            assert!(ratio < 2.5, "{} 数量级不一致：5min {:.1} vs 90min {:.1}（ratio {:.2}）", names[i], v5, v90, ratio);
+        }
+        // 5min 也要有足够的精彩内容（集锦）：进球 ≥0.5、shot ≥4
+        assert!(a5[4] as f64 / n as f64 >= 0.5, "5min 进球过少（{:.1}）", a5[4] as f64 / n as f64);
+        assert!(a5[0] as f64 / n as f64 >= 4.0, "5min 射门过少（{:.1}）", a5[0] as f64 / n as f64);
     }
 }
