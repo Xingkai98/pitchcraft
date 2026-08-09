@@ -1027,16 +1027,18 @@ fn emit_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
     let (lx, ly) = lead_point(from_pos, to_pos, lead);
     // 出界 roll（8-10%，P7）：仅普通传球掷，落点 x/y 超出 [0,1]（≤0.05），事件坐标钳制。
-    // 出界以边线为主（65%）→ 界外球 17-21 次/场（90min 基准）
+    // 出底线仅当传球朝对方半场（home lx>0.5 / away lx<0.5）——避免"出自家底线"错误重开；
+    // 否则出边线（界外球）。出界以边线为主（65%）。
     let out_roll = rng.next_u64() % 100;
     let out_goal_line = if out_roll < (8 + rng.next_u64() % 3) {
-        rng.next_u64() % 100 >= 65 // 35% 出底线 / 65% 出边线
+        let toward_opp_half = if home { lx > 0.5 } else { lx < 0.5 };
+        toward_opp_half && rng.next_u64() % 100 >= 65 // 朝对方半场且 35% 出底线 / 否则边线
     } else {
         return normal_pass_highlight(st, rng, events, t, from, from_pos, home, to, to_pos, rx, ry, lead, lx, ly);
     };
-    // 出界落点：出底线 x 越界 / 出边线 y 越界（界外 0.01-0.05）
+    // 出界落点：出底线 x 越界（攻方方向：home 出对方底线 x>1 / away 出 x<0） / 出边线 y 越界（界外 0.01-0.05）
     let (raw_x, raw_y) = if out_goal_line {
-        let x = if lx > 0.5 { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
+        let x = if home { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
         (x, ly)
     } else {
         let y = if ly > 0.5 { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
