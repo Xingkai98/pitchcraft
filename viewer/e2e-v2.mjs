@@ -85,7 +85,12 @@ function checkNoSnap(seed, duration) {
     if (parsed[i].type === 'whistle') {
       allowedTeleportTimes.add(parsed[i].t);
     } else if (parsed[i].type === 'pass' && parsed[i].detail === 'corner') {
-      for (let k = 0; k <= 10; k++) allowedTeleportTimes.add(parsed[i].t - k);
+      // 角球准备期 = 前一非 beat 事件（射门/出界）到 corner pass 之间，球瞬移到角旗。
+      // 向前跳过 beat 找准备期起点，豁免 [start, cornerPass] 覆盖球到角旗的瞬移时刻
+      let j = i - 1;
+      while (j >= 0 && parsed[j].type === 'beat') j--;
+      const startT = j >= 0 ? parsed[j].t : parsed[i].t - 20;
+      for (let k = 0; parsed[i].t - k >= startT; k++) allowedTeleportTimes.add(parsed[i].t - k);
     } else if (parsed[i].type === 'pass' && parsed[i].to === undefined
         && (parsed[i].subject === 0 || parsed[i].subject === 21)) {
       allowedTeleportTimes.add(parsed[i].t);

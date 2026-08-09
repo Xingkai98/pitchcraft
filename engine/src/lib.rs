@@ -331,6 +331,8 @@ pub const HIGHLIGHTS_PER_MATCH: u32 = 24;
 pub const SLOT_HOLD_MIN_TICKS: u32 = 3;
 /// P7：高亮事件平均时长（tick，含 corner 准备期/发球/battle 等）——hold 间距减去它，保证 5 分钟能塞下全部槽
 pub const SLOT_AVG_EVENT_TICKS: f64 = 4.0;
+/// P7 观感：角球准备期最短持续（tick）——发球者到角旗后继续等攻方球员跑进禁区包抄，再发球
+pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
 
 // ---- P5 队形/攻防转换参数 ----
 /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
@@ -559,6 +561,7 @@ struct RestartPrep {
     player: i32,
     target: (f64, f64), // 角旗区 / 出界点（边线）
     kind: RestartKind,
+    ticks: u32, // 已等待 tick（角球：发球者到角旗后继续等攻方包抄到位）
 }
 
 /// 死球阶段（进球庆祝 / off_target，随后 kickoff 重开）
@@ -1440,7 +1443,7 @@ fn start_corner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event
     st.possession = attacking;
     st.carrier = -1;
     st.ball_pos = flag;
-    st.restart_prep = Some(RestartPrep { player, target: flag, kind: RestartKind::Corner });
+    st.restart_prep = Some(RestartPrep { player, target: flag, kind: RestartKind::Corner, ticks: 0 });
     let _ = rng;
     let _ = events;
     let _ = t;
@@ -1460,7 +1463,7 @@ fn start_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     st.possession = throwing;
     st.carrier = -1;
     st.ball_pos = target;
-    st.restart_prep = Some(RestartPrep { player, target, kind: RestartKind::ThrowIn });
+    st.restart_prep = Some(RestartPrep { player, target, kind: RestartKind::ThrowIn, ticks: 0 });
     let _ = rng;
     let _ = events;
     let _ = t;
@@ -1472,32 +1475,42 @@ fn throw_in_spot(out_pos: (f64, f64)) -> (f64, f64) {
     (clamp01(out_pos.0), y)
 }
 
-/// 重开准备期 tick：发球者/掷球者走位到固定点（球停固定点，产 beat.ball 静止锚点），到点触发发球高亮
+/// 重开准备期 tick：发球者/掷球者走位到固定点（球停固定点，产 beat.ball 静止锚点）。
+/// 角球：发球者到角旗后继续等攻方包抄到位（CORNER_SETUP_MIN_TICKS）再发球——发球时攻方已在禁区。
 fn advance_restart_prep(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    let (player, target, kind) = {
+    let (player, target, kind, ticks) = {
         let r = st.restart_prep.as_ref().unwrap();
-        (r.player, r.target, r.kind)
+        (r.player, r.target, r.kind, r.ticks)
     };
     let pp = st.pos[player as usize];
     let d_mid = dist_norm(pp, target);
+    // 发球者尚未到位：继续走位（其他球员同时跑位到站位）
     if d_mid > norm_step(1.0) {
         let step = d_mid.min(norm_step(8.0 * TICK_SECONDS)); // 快走 8m/s（同 DeadBall preparing）
         let (nx, ny) = move_toward(pp, target, step);
         st.pos[player as usize] = (nx, ny);
         st.last_emitted[player as usize] = (nx, ny);
-        // 其他球员站位（角球：攻方禁区包抄、防方回防；界外球：常规队形）
         let mut movers = compute_movers(st, rng, t, &[player]);
         movers.push(Mover {
             id: player, from_x: pp.0, from_y: pp.1, to_x: nx, to_y: ny,
             speed: 8.0, action: "run".to_string(),
         });
         for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
-        // 球停固定点（静止锚点，loose:true 且 x==x2）
         let ball = BallState { x: target.0, y: target.1, x2: target.0, y2: target.1, speed: 0.1, loose: true };
         events.push(beat_event(t, None, Some(ball), movers));
         return;
     }
-    // 到固定点 → 触发发球高亮
+    // 发球者已到位：角球需继续等攻方包抄（min ticks），期间其他球员继续跑位
+    let min_ticks = if kind == RestartKind::Corner { CORNER_SETUP_MIN_TICKS } else { 0 };
+    if ticks < min_ticks {
+        st.restart_prep.as_mut().unwrap().ticks += 1;
+        let movers = compute_movers(st, rng, t, &[player]);
+        for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+        let ball = BallState { x: target.0, y: target.1, x2: target.0, y2: target.1, speed: 0.1, loose: true };
+        events.push(beat_event(t, None, Some(ball), movers));
+        return;
+    }
+    // 包抄到位 → 触发发球高亮
     st.restart_prep = None;
     match kind {
         RestartKind::Corner => emit_corner_kick(st, rng, events, t),
