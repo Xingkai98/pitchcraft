@@ -962,14 +962,19 @@ fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
         HighlightSlot::Corner => emit_pass_out_play_slot(st, rng, events, t, HighlightSlot::Corner),
         HighlightSlot::ThrowIn => emit_pass_out_play_slot(st, rng, events, t, HighlightSlot::ThrowIn),
         HighlightSlot::Tackle => {
-            let victim = st.carrier;
-            let victim_pos = st.pos[victim as usize];
-            let def_home = st.possession != 0;
-            let (def_id, _, dist) = nearest_defender(&st.pos, victim_pos, def_home);
-            let same_pair = st.last_tackle_pair == Some((def_id, victim));
-            let far = dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng);
-            // 总是产 tackle（数量稳定）；same_pair 强制 fail、far 降成功率（15%）、贴防正常 50/50
-            emit_tackle_highlight_impl(st, rng, events, t, same_pair, far);
+            // 门将不被抢断（同 Shot 槽 GK 守卫）——门将持球时改普通传球
+            if st.carrier == 0 || st.carrier == 21 {
+                emit_pass_highlight(st, rng, events, t);
+            } else {
+                let victim = st.carrier;
+                let victim_pos = st.pos[victim as usize];
+                let def_home = st.possession != 0;
+                let (def_id, _, dist) = nearest_defender(&st.pos, victim_pos, def_home);
+                let same_pair = st.last_tackle_pair == Some((def_id, victim));
+                let far = dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng);
+                // 总是产 tackle（数量稳定）；same_pair 强制 fail、far 降成功率（15%）、贴防正常 50/50
+                emit_tackle_highlight_impl(st, rng, events, t, same_pair, far);
+            }
         }
         HighlightSlot::Pass => emit_pass_highlight(st, rng, events, t),
     }
