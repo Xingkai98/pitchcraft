@@ -5,17 +5,19 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260808-10';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-10';
-import { createGame } from './game.js?v=20260808-10';
-import { mockEventStream } from './mock-event-stream.js?v=20260808-10';
-import { resetMicroMotion } from './micro-motion.js?v=20260808-10';
+import { config } from './config.js?v=20260808-11';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-11';
+import { createGame } from './game.js?v=20260808-11';
+import { mockEventStream } from './mock-event-stream.js?v=20260808-11';
+import { resetMicroMotion } from './micro-motion.js?v=20260808-11';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const scoreEl = document.getElementById('score');
 const btnToggle = document.getElementById('btn-toggle');
+const btnDuration = document.getElementById('btn-duration');
+const btnSkip = document.getElementById('btn-skip');
 const btnSpeed = document.getElementById('btn-speed');
 const btnReplay = document.getElementById('btn-replay');
 const btnPrevEvent = document.getElementById('btn-prev-event');
@@ -36,10 +38,20 @@ function showNotice(msg) {
   _noticeTimer = setTimeout(() => { noticeEl.textContent = ''; }, 2500);
 }
 
+// 比赛时钟格式化（P7）：playTime 秒 → MM:SS（比赛时间，0-90:00）
+function formatMatchClock(seconds) {
+  const s = Math.max(0, Math.floor(seconds));
+  const m = Math.floor(s / 60);
+  const sec = s % 60;
+  return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
 // 固定种子（Q8：固定种子 + 刷新重播）
 const FIXED_SEED = 42;
-// config：连续比赛（demo_mode: false）产整场事件流（Phase C，事件驱动高密度）
-const MATCH_CONFIG = { match_duration_seconds: 2700, demo_mode: false };
+// config：连续比赛（demo_mode: false）产整场事件流；比赛时长可调（P7：默认 90 分钟）
+const MATCH_CONFIG = { demo_mode: false };
+let durationIndex = config.playback.matchDurations.indexOf(config.playback.matchDuration);
+if (durationIndex < 0) durationIndex = config.playback.matchDurations.length - 1;
 
 let game = null;
 let renderer = null;
@@ -101,7 +113,15 @@ function frame(ts) {
     // 比分显示（简单：从事件流里找最近一次 goal）
     updateScore();
     // 拖动进度条时 status 由 input handler 显示"已暂停"，不被帧循环覆盖
-    if (!_seeking) statusEl.textContent = `t=${game.playTime.toFixed(1)}s 速度=${game.getSpeed()}x`;
+    if (!_seeking) {
+      const skipping = game.isSkipping();
+      if (skipping) {
+        const detail = game.skipMode === 'fast' ? `${game.getSkipChoice()}x快进` : '跳转';
+        statusEl.textContent = `比赛 ${formatMatchClock(game.playTime)} 跳过中(${detail})`;
+      } else {
+        statusEl.textContent = `比赛 ${formatMatchClock(game.playTime)} 播放率=${game.getPlaybackRate().toFixed(0)}x`;
+      }
+    }
     updateEventIndicator();
     updateProgress();
   }
@@ -114,7 +134,7 @@ function updateProgress() {
   if (_seeking) return;
   const pct = game.getProgress() * 100;
   progressBar.value = String(pct);
-  progressTime.textContent = `${game.playTime.toFixed(1)}s / ${game.matchEnd.toFixed(1)}s`;
+  progressTime.textContent = `${formatMatchClock(game.playTime)} / ${formatMatchClock(game.matchEnd)}`;
 }
 
 let _seeking = false;
@@ -125,7 +145,7 @@ progressBar.addEventListener('input', () => {
   game.seekTo(t);
   resetMicroMotion(); // seek 后 micro-motion 相位不连续，从 fade 0 重新渐入（避免 snap）
   renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height);
-  statusEl.textContent = `t=${game.playTime.toFixed(1)}s（已暂停，拖动进度条）`;
+  statusEl.textContent = `比赛 ${formatMatchClock(game.playTime)}（已暂停，拖动进度条）`;
   updateEventIndicator();
 });
 progressBar.addEventListener('change', () => {
@@ -198,14 +218,15 @@ async function tryLoadEngine() {
   }
 }
 
-// 初始化：加载引擎（或 mock）→ 建 Game
+// 初始化：加载引擎（或 mock）→ 建 Game（当前时长）
 async function init() {
   statusEl.textContent = '加载引擎…';
   try {
     let streamStr = null;
     if (engine) {
       statusEl.textContent = '模拟中…';
-      streamStr = engine.simulate(FIXED_SEED, MATCH_CONFIG);
+      const durMin = config.playback.matchDurations[durationIndex] ?? 90;
+      streamStr = engine.simulate(FIXED_SEED, { ...MATCH_CONFIG, match_duration_seconds: durMin * 60 });
       statusEl.textContent = '解析事件流…';
     } else {
       statusEl.textContent = '使用 mock 事件流…';
@@ -215,13 +236,23 @@ async function init() {
     renderer = createRenderer();
     lastFrameTime = null;
     statusEl.textContent = `事件数: ${game.events.length} | ${engine ? 'WASM 引擎' : 'mock 数据'}`;
-    // 重置速度按钮与跳转输入（新 game 回到 1x、事件 0）
-    btnSpeed.textContent = `速度 ${game.getSpeed()}x`;
+    // 重置时长/跳过/速度按钮与跳转输入（新 game 回到当前时长、快速跳过、1x、事件 0）
+    const durMin = config.playback.matchDurations[durationIndex] ?? 90;
+    btnDuration.textContent = `比赛 ${durMin}min`;
+    btnSkip.textContent = game.skipMode === 'fast' ? `跳过:快进${game.getSkipChoice()}x` : '跳过:直接跳';
+    btnSpeed.textContent = `倍速 ${game.getSpeed()}x`;
     eventIdInput.value = '0';
   } catch (err) {
     statusEl.textContent = `错误: ${err.message}`;
     console.error(err);
   }
+}
+
+// 重新建 Game（时长改变后重新 simulate）
+async function rebuildGame() {
+  await init();
+  resetMicroMotion();
+  showNotice(`已切换为 ${config.playback.matchDurations[durationIndex]} 分钟比赛`);
 }
 
 // 控制按钮
@@ -231,10 +262,31 @@ btnToggle.addEventListener('click', () => {
     showNotice(game.playing ? '播放中' : '已暂停');
   }
 });
+btnDuration.addEventListener('click', () => {
+  // 比赛时长选项循环（5/10/45/90 分钟），重新 simulate
+  durationIndex = (durationIndex + 1) % config.playback.matchDurations.length;
+  rebuildGame();
+});
+btnSkip.addEventListener('click', () => {
+  if (game) {
+    if (game.skipMode === 'fast') {
+      // fast → skip
+      game.skipMode = 'skip';
+      btnSkip.textContent = '跳过:直接跳';
+      showNotice('跳过模式：直接跳过非精彩段（切到下一个高亮）');
+    } else {
+      // skip → fast（循环快进倍速）
+      game.skipMode = 'fast';
+      const c = game.cycleSkipChoice();
+      btnSkip.textContent = `跳过:快进${c}x`;
+      showNotice(`跳过模式：非精彩段 ${c}x 快进`);
+    }
+  }
+});
 btnSpeed.addEventListener('click', () => {
   if (game) {
     const s = game.cycleSpeed();
-    btnSpeed.textContent = `速度 ${s}x`;
+    btnSpeed.textContent = `倍速 ${s}x`;
   }
 });
 btnReplay.addEventListener('click', () => {

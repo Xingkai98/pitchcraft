@@ -13,7 +13,7 @@ import { parseEventStream } from './protocol.js';
 
 // 播放器状态机
 export class Game {
-  constructor(events, lineup, mode = 'continuous') {
+  constructor(events, lineup, mode = 'continuous', opts = {}) {
     this.events = events;
     this.lineup = lineup; // 初始站位 [{id, team, x, y}]
     this.mode = mode === 'clip' ? 'clip' : 'continuous';
@@ -33,6 +33,15 @@ export class Game {
     this._matchEnd = this.timeline.length > 0
       ? Math.max(events[events.length - 1]?.t ?? 0, this.timeline[this.timeline.length - 1].t)
       : 0;
+    // P7：跳过机制——高亮段正常播放（baseSpeed=1，球员真实速度），非精彩段（间隙 > 阈值）快进/跳过。
+    // opts.baseSpeed 可覆盖基速（测试用 1x）。
+    this._baseSpeed = opts.baseSpeed ?? 1;
+    // 高亮事件索引（间隙检测用）
+    this._buildHighlightIndex();
+    // 跳过模式：fast（快速播放 skipChoice 倍速）/ skip（直接跳到下一个高亮）
+    this.skipIndex = 0;
+    this.skipMode = config.playback.skipMode === 'skip' ? 'skip' : 'fast';
+    this.skipChoiceIndex = 0;
     // 初始化到第一个事件的初始状态
     this._initToEvent(0);
     this._prevPlayerPos = new Map(); // 调试：球员上一帧位置快照
@@ -40,6 +49,72 @@ export class Game {
       this._prevPlayerPos.set(p.id, { x: p.x, y: p.y });
     }
     this._lastLoggedEventIdx = -1; // 调试：上次日志的事件索引
+  }
+
+  // P7：高亮事件识别（跳过机制）——shot / tackle / pass detail 属精彩集合；
+  // 普通 pass（无 detail）与 beat 是过渡段（可跳过）
+  isHighlightEvent(e) {
+    if (!e) return false;
+    if (e.type === 'shot' || e.type === 'tackle') return true;
+    if (e.type === 'pass' && e.detail) {
+      return ['corner', 'out_sideline', 'out_goal_line', 'clearance', 'throw_in'].includes(e.detail);
+    }
+    return false;
+  }
+
+  // 高亮事件窗口索引：[t, end]（窗口内正常播放，窗口外可跳过）
+  _buildHighlightIndex() {
+    this._highlightWindows = [];
+    if (this._eventEnds) {
+      for (let i = 0; i < this.events.length; i++) {
+        if (this.isHighlightEvent(this.events[i])) {
+          this._highlightWindows.push({ t: this.events[i].t, end: this._eventEnds[i] ?? this.events[i].t });
+        }
+      }
+    }
+  }
+
+  // 当前时间是否在高亮事件窗口内
+  _inHighlightWindow(t) {
+    for (const w of this._highlightWindows) {
+      if (t >= w.t - 0.01 && t <= w.end) return true;
+    }
+    return false;
+  }
+
+  // 下一个高亮事件开始时间（> t），无则 null
+  _nextHighlightTime(t) {
+    for (const w of this._highlightWindows) {
+      if (w.t > t + 0.01) return w.t;
+    }
+    return null;
+  }
+
+  // 当前是否处于跳过段（非高亮窗口且距下一个高亮 > 阈值）
+  isSkipping() {
+    const nextHl = this._nextHighlightTime(this.playTime);
+    const inHl = this._inHighlightWindow(this.playTime);
+    return !inHl && nextHl !== null && (nextHl - this.playTime) > config.playback.skipThresholdSeconds;
+  }
+
+  // P7：循环跳过模式（快速播放/直接跳过）
+  cycleSkipMode() {
+    this.skipMode = this.skipMode === 'fast' ? 'skip' : 'fast';
+    return this.skipMode;
+  }
+
+  getSkipMode() {
+    return this.skipMode;
+  }
+
+  // P7：循环快速播放倍速（5x/10x）
+  cycleSkipChoice() {
+    this.skipChoiceIndex = (this.skipChoiceIndex + 1) % config.playback.skipChoices.length;
+    return config.playback.skipChoices[this.skipChoiceIndex];
+  }
+
+  getSkipChoice() {
+    return config.playback.skipChoices[this.skipChoiceIndex];
   }
 
   // 计算每个事件的结束时间：该事件所有锚点里最大的 t
@@ -73,9 +148,20 @@ export class Game {
   // clip：只在当前事件片段内推进，播完自动停。
   step(dt) {
     if (!this.playing) return;
-    const speed = config.playback.speeds[this.speedIndex] || 1;
+    // P7：高亮段基速 × 倍速；非精彩段（间隙 > 阈值）跳过（快速播放 × skipChoice 或直接跳）
+    const speed = this._baseSpeed * (config.playback.speeds[this.speedIndex] || 1);
     if (this.mode === 'continuous') {
-      this.playTime += dt * speed;
+      const nextHl = this._nextHighlightTime(this.playTime);
+      const inHl = this._inHighlightWindow(this.playTime);
+      if (!inHl && nextHl !== null && (nextHl - this.playTime) > config.playback.skipThresholdSeconds) {
+        if (this.skipMode === 'skip') {
+          this.playTime = nextHl; // 直接跳过非精彩段（切到下一个高亮起点）
+        } else {
+          this.playTime += dt * speed * this.getSkipChoice(); // 快速播放（比赛时钟快跳）
+        }
+      } else {
+        this.playTime += dt * speed; // 高亮段正常播放
+      }
       if (this.playTime >= this._matchEnd) {
         this.playTime = this._matchEnd;
         this.playing = false;
@@ -372,6 +458,11 @@ export class Game {
 
   getSpeed() {
     return config.playback.speeds[this.speedIndex];
+  }
+
+  // 当前高亮段播放速率（比赛秒 / 真实秒）：基速 × 倍速
+  getPlaybackRate() {
+    return this._baseSpeed * (config.playback.speeds[this.speedIndex] || 1);
   }
 
   // 比赛总时长（秒）：进度条分母/seek 上限用

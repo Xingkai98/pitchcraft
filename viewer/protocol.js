@@ -109,7 +109,7 @@ function validateBaseEvent(e) {
   // detail 枚举按事件类型限定（P6 批次1）：pass 校验出界/角球/解围，shot 校验头球；
   // 其他类型 detail（whistle 的 kickoff_again/half_time 等）不校验。
   if (e.detail !== undefined && e.detail !== null) {
-    const passDetails = ['out_sideline', 'out_goal_line', 'corner', 'clearance'];
+    const passDetails = ['out_sideline', 'out_goal_line', 'corner', 'clearance', 'throw_in'];
     const shotDetails = ['header'];
     if (e.type === 'pass' && !passDetails.includes(e.detail)) {
       throw new Error(`pass detail must be one of ${passDetails.join('/')}: ${JSON.stringify(e.detail)}`);

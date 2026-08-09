@@ -7,6 +7,8 @@ import { Game } from './game.js';
 
 // 关闭调试日志（e2e 只输出结果断言）
 config.debug.enabled = false;
+// 关闭跳过机制（跳过导致 playTime 跳变是设计行为；e2e 验证引擎→viewer 事件流连续性，不验证跳过）
+config.playback.skipThresholdSeconds = Number.MAX_SAFE_INTEGER;
 
 const wasmPath = new URL('./engine.wasm', import.meta.url).pathname;
 const bytes = readFileSync(wasmPath);

@@ -27,10 +27,16 @@ export const config = {
     runSpeed: 6, // 无球跑动 / 逼近
   },
 
-  // 播放：1 比赛秒 = playbackSpeedFactor × 真实秒
+  // 播放（P7）：比赛时长参数（引擎模拟范围）+ 跳过机制（非精彩段快进/跳过）+ 倍速。
+  // 跳过机制借鉴 FM：高亮事件（射门/角球/界外球/头球/抢断）正常播放，非精彩段（普通传球+beat）
+  // 检测间隙后快速播放或直接跳过——比赛时钟照常走（快跳/瞬跳），跳过的时间段也跳过显示。
   playback: {
-    baseSpeed: 1.0, // 1 比赛秒对应 1 真实秒
-    speeds: [1, 2, 4], // 可选倍速
+    matchDurations: [5, 10, 45, 90], // 比赛时长选项（分钟，引擎 match_duration_seconds）
+    matchDuration: 90,               // 默认 90 分钟比赛
+    skipMode: 'fast',                // 'fast'=快速播放（skipChoice 倍速）| 'skip'=直接跳过（切到下一个高亮）
+    skipChoices: [5, 10],            // 快速播放倍速档位（在基速上再乘）
+    skipThresholdSeconds: 5,         // 间隙阈值（比赛秒）：距下一个高亮超过此值进入跳过模式
+    speeds: [1, 2, 4],               // 高亮段倍速档位
   },
 
   // 演绎节奏（所有时长单位：真实秒）
