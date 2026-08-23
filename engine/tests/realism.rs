@@ -1,0 +1,656 @@
+//! 真实性统计测试套件（p8-realism-test-suite，A 档 L1 + L2 + golden master）
+//!
+//! 分层验证中"真实性"层的自动化守护（研究报告 research/2026-08-23-match-realism-testability）：
+//! - L1 规格一致性：引擎硬编码概率多 seed 聚合按带断言
+//!   （普通射门 15/35/50、头球 12/38/50 chi-square、tackle 稀释模型、槽位相对 mix、角球派生带）
+//!   ——`#[ignore]`，verify.sh 第 4 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
+//! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、
+//!   速度上界、门将贴门线、事件 t 范围）——默认 `cargo test` 就跑（15 场）
+//! - golden master：10 个 canary seed 的统计摘要 + 事件流哈希，防静默漂移——默认跑（10 场）
+//!   （L2+golden 共 25 场，debug 实测 ~9s；L1 200 场 release 实测 ~16s）
+//!
+//! 确定性引擎（同 seed 同事件流）→ 统计断言永不 flaky。零新依赖：JSON 提取器手写，
+//! 风格对齐 lib.rs tests 内的 helper。
+
+use fm_engine::{
+    simulate, MatchConfig, TICK_SECONDS, CARRIER_SPEED_MS, PITCH_LENGTH_M, PITCH_WIDTH_M,
+    TACKLE_DISTANCE_THRESHOLD_METERS,
+};
+
+/// L1/L2/golden 统一比赛时长（90 分钟，default_() 同值）。
+const DUR: f64 = 5400.0;
+/// L1 统计聚合场数。200 场：普通射门 n≈1200、头球 n≈240。
+/// 头球样本量决定此值——100 场时 n≈124 的 chi-sq 距 13.82 阈值仅 0.88（固定 seed 1..=100 是 2.9σ 偏样本），
+/// 200 场实测 chi-sq=6.32（余量 >7），不再贴边。
+const SEEDS_L1: u32 = 200;
+/// L2 不变量循环 seed 数（不变量应处处成立，10-20 个 seed 足够暴露违规）。
+const SEEDS_L2: u32 = 15;
+/// golden master canary seed 集（固定，防对特定 seed 过拟合）。
+const GOLDEN_SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
+
+// ==== JSON 提取器（深度感知 split + 顶层字段提取；beat 的嵌套 main/movers 单独取）====
+
+/// 把 "[{...},{...}]" 按顶层 `}` 深度感知拆分（正确处理 beat 的嵌套 movers/main/ball）。
+fn split_events(s: &str) -> Vec<String> {
+    let inner = s.trim_start_matches('[').trim_end_matches(']');
+    let mut out = Vec::new();
+    let mut depth = 0i32;
+    let mut cur = String::new();
+    for c in inner.chars() {
+        match c {
+            '{' => depth += 1,
+            '}' => depth -= 1,
+            _ => {}
+        }
+        cur.push(c);
+        if c == '}' && depth == 0 {
+            let trimmed = cur.trim().trim_start_matches(',').trim().to_string();
+            if !trimmed.is_empty() {
+                out.push(trimmed);
+            }
+            cur.clear();
+        }
+    }
+    out.retain(|e| !e.trim().is_empty());
+    out
+}
+
+/// 取事件顶层 type（第一个 "type":" 后到下一个引号）。
+fn event_type(e: &str) -> String {
+    let needle = "\"type\":\"";
+    match e.find(needle) {
+        Some(i) => {
+            let rest = &e[i + needle.len()..];
+            rest.split('"').next().unwrap_or("?").to_string()
+        }
+        None => "?".to_string(),
+    }
+}
+
+/// 取顶层字段值（数字或字符串）。非 beat 事件无嵌套对象，首个匹配即顶层字段。
+fn field_str(e: &str, name: &str) -> Option<String> {
+    let needle = format!("\"{}\":", name);
+    let idx = e.find(&needle)?;
+    let rest = &e[idx + needle.len()..];
+    let rest = rest.trim_start();
+    if let Some(inner) = rest.strip_prefix('"') {
+        let end = inner.find('"')?;
+        Some(inner[..end].to_string())
+    } else {
+        let end = rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len());
+        Some(rest[..end].trim().to_string())
+    }
+}
+
+fn field_num(e: &str, name: &str) -> Option<f64> {
+    field_str(e, name)?.parse().ok()
+}
+
+/// beat 的 main 对象（无则 None）。
+fn main_object(e: &str) -> Option<&str> {
+    let i = e.find("\"main\":{")?;
+    let rest = &e[i + 7..];
+    let end = rest.find('}')?;
+    Some(&rest[..end])
+}
+
+fn main_speed(e: &str) -> Option<f64> {
+    let obj = main_object(e)?;
+    let needle = "\"speed\":";
+    let i = obj.find(needle)?;
+    let rest = &obj[i + needle.len()..];
+    let end = rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len());
+    rest[..end].trim().parse().ok()
+}
+
+/// beat 的 movers 数组内所有 speed（重开走位 8 m/s 也在内）。
+fn mover_speeds(e: &str) -> Vec<f64> {
+    let needle = "\"movers\":[";
+    let i = match e.find(needle) {
+        Some(i) => i,
+        None => return vec![],
+    };
+    let rest = &e[i + needle.len()..];
+    let end = match rest.find(']') {
+        Some(e) => e,
+        None => return vec![],
+    };
+    let arr = &rest[..end];
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while let Some(pos) = arr[idx..].find("\"speed\":") {
+        let start = idx + pos + 8;
+        let num: String = arr[start..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '.' || *c == '-')
+            .collect();
+        if let Ok(v) = num.parse::<f64>() {
+            out.push(v);
+        }
+        idx = start + num.len();
+    }
+    out
+}
+
+fn parse_score(s: &str) -> Option<(u32, u32)> {
+    let (h, a) = s.split_once('-')?;
+    Some((h.parse().ok()?, a.parse().ok()?))
+}
+
+/// FNV-1a 64（事件流哈希，golden master 防漂移）。
+fn fnv1a(s: &str) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in s.as_bytes() {
+        h ^= *b as u64;
+        h = h.wrapping_mul(0x100_0000_01b3);
+    }
+    h
+}
+
+// ==== 单场聚合 ====
+
+#[derive(Default)]
+struct MatchStats {
+    seed: u64,
+    n_events: usize,
+    n_beats: usize,
+    // shot（普通射门：无 detail=header）
+    n_shot: usize,
+    n_shot_goal: usize,
+    n_shot_saved: usize,
+    n_shot_off: usize,
+    // header shot（detail=header，角球争抢派生）
+    n_header: usize,
+    n_header_goal: usize,
+    n_header_saved: usize,
+    n_header_off: usize,
+    // tackle
+    n_tackle: usize,
+    n_tackle_success: usize,
+    n_tackle_close: usize,
+    n_tackle_close_success: usize,
+    n_tackle_far: usize,
+    n_tackle_far_success: usize,
+    // pass
+    n_pass: usize,
+    n_corner_kick: usize,   // pass detail="corner"（角球发球）
+    n_out_goal_line: usize, // pass detail="out_goal_line"
+    n_out_sideline: usize,  // pass detail="out_sideline"
+    // 比分（由 shot[result=goal] 按射手队计数得出）
+    home_score: u32,
+    away_score: u32,
+    // L2 违例计数
+    score_mismatch: Option<String>,
+    shot_target_violations: usize,
+    beat_gap_violations: usize,
+    max_beat_gap: f64,
+    speed_violations: Vec<String>,
+    gk_violations: usize,
+    t_out_of_range: usize,
+    // golden
+    stream_hash: u64,
+}
+
+/// 跑一场 90 分钟比赛并聚合统计 + 收集 L2 违例。
+fn aggregate(seed: u64) -> MatchStats {
+    let cfg = MatchConfig { match_duration_seconds: DUR, demo_mode: false };
+    let json = simulate(seed, cfg);
+    let events = split_events(&json);
+    let mut st = MatchStats {
+        seed,
+        stream_hash: fnv1a(&json),
+        max_beat_gap: 0.0,
+        ..Default::default()
+    };
+    st.n_events = events.len();
+
+    let mut prev_beat_t: Option<f64> = None;
+    let mut whistle_score: Option<(u32, u32)> = None;
+    let mut goal_home = 0u32;
+    let mut goal_away = 0u32;
+
+    for e in &events {
+        let ty = event_type(e);
+        let t = field_num(e, "t").unwrap_or(f64::NAN);
+        if t.is_nan() || t < -0.001 || t > DUR + 0.001 {
+            st.t_out_of_range += 1;
+        }
+        match ty.as_str() {
+            "beat" => {
+                st.n_beats += 1;
+                if let Some(prev) = prev_beat_t {
+                    let dt = t - prev;
+                    // 间隙契约：1.0s 每 tick 一拍；2.0s 出现在重开准备 tick——角球/界外球
+                    // 判定（finalize 只设 restart_prep 不产 beat）与进球后 kickoff 发球
+                    // tick（advance_dead_ball 只发 kickoff 事件不产 beat）。>2s 即违例。
+                    let ok_step = (dt - TICK_SECONDS).abs() <= 0.001
+                        || (dt - 2.0 * TICK_SECONDS).abs() <= 0.001;
+                    if !ok_step {
+                        st.beat_gap_violations += 1;
+                    }
+                    if dt > st.max_beat_gap {
+                        st.max_beat_gap = dt;
+                    }
+                }
+                prev_beat_t = Some(t);
+                if let Some(spd) = main_speed(e) {
+                    if spd > CARRIER_SPEED_MS + 0.1 {
+                        st.speed_violations
+                            .push(format!("main speed {:.2} (cap {})", spd, CARRIER_SPEED_MS));
+                    }
+                }
+                for spd in mover_speeds(e) {
+                    // 8 m/s = 重开走位（dead-ball/restart prep 快走）上限；正常跑位 ≤ RUN_SPEED_MS(4)
+                    if spd > 8.1 {
+                        st.speed_violations.push(format!("mover speed {:.2} (cap 8.1)", spd));
+                    }
+                }
+            }
+            "shot" => {
+                let result = field_str(e, "result").unwrap_or_default();
+                let is_header = field_str(e, "detail").as_deref() == Some("header");
+                let subject = field_num(e, "subject").unwrap_or(-1.0) as i32;
+                let spd = field_num(e, "speed").unwrap_or(-1.0);
+                let x2 = field_num(e, "x2").unwrap_or(-1.0);
+                let y2 = field_num(e, "y2").unwrap_or(-1.0);
+                let kx = field_num(e, "keeper_x").unwrap_or(-1.0);
+                st.n_shot += 1;
+                if is_header {
+                    st.n_header += 1;
+                    match result.as_str() {
+                        "goal" => st.n_header_goal += 1,
+                        "saved" => st.n_header_saved += 1,
+                        "off_target" => st.n_header_off += 1,
+                        _ => {}
+                    }
+                    if spd >= 0.0 && (spd < 15.0 || spd >= 20.0) {
+                        st.speed_violations
+                            .push(format!("header shot speed {:.2} (want [15,20))", spd));
+                    }
+                } else {
+                    match result.as_str() {
+                        "goal" => st.n_shot_goal += 1,
+                        "saved" => st.n_shot_saved += 1,
+                        "off_target" => st.n_shot_off += 1,
+                        _ => {}
+                    }
+                    if spd >= 0.0 && (spd < 22.0 || spd >= 30.0) {
+                        st.speed_violations
+                            .push(format!("shot speed {:.2} (want [22,30))", spd));
+                    }
+                }
+                if result == "goal" {
+                    if subject <= 10 {
+                        goal_home += 1;
+                    } else {
+                        goal_away += 1;
+                    }
+                }
+                // 射门落点：x2 = 攻方门线（shot_target 精确 0.98/0.02）；y2 按 result 分档
+                let expected_x = if subject <= 10 { 0.98 } else { 0.02 };
+                if (x2 - expected_x).abs() > 1e-6 {
+                    st.shot_target_violations += 1;
+                }
+                match result.as_str() {
+                    "goal" | "saved" => {
+                        // 瞄准球门范围内 y ∈ [0.455, 0.545]
+                        if y2 < 0.4549 || y2 > 0.5451 {
+                            st.shot_target_violations += 1;
+                        }
+                    }
+                    "off_target" => {
+                        // 贴柱偏出：偏低 [0.40,0.445] / 偏高 [0.555,0.60]
+                        let in_low = y2 >= 0.399 && y2 <= 0.446;
+                        let in_high = y2 >= 0.554 && y2 <= 0.601;
+                        if !in_low && !in_high {
+                            st.shot_target_violations += 1;
+                        }
+                    }
+                    _ => {}
+                }
+                // 门将贴门线：keeper_x < 0.15 或 > 0.85（gk 0 在左门线 0.02 / gk 21 在右门线 0.98）
+                if kx >= 0.0 && kx >= 0.15 && kx <= 0.85 {
+                    st.gk_violations += 1;
+                }
+            }
+            "pass" => {
+                let spd = field_num(e, "speed").unwrap_or(-1.0);
+                st.n_pass += 1;
+                match field_str(e, "detail").as_deref() {
+                    Some("corner") => st.n_corner_kick += 1,
+                    Some("out_goal_line") => st.n_out_goal_line += 1,
+                    Some("out_sideline") => st.n_out_sideline += 1,
+                    _ => {}
+                }
+                // pass 速度区间：普通 12-24.9 / 角球 18-21.9 / 界外 12-13.9 / 门球 16-19.9 /
+                // 头球摆渡 10-13.9 / 解围 14-17.9 → 统一 [10, 25)
+                if spd >= 0.0 && (spd < 10.0 || spd >= 25.0) {
+                    st.speed_violations.push(format!("pass speed {:.2} (want [10,25))", spd));
+                }
+            }
+            "tackle" => {
+                let result = field_str(e, "result").unwrap_or_default();
+                let x = field_num(e, "x").unwrap_or(0.0);
+                let y = field_num(e, "y").unwrap_or(0.0);
+                let x2 = field_num(e, "x2").unwrap_or(0.0);
+                let y2 = field_num(e, "y2").unwrap_or(0.0);
+                st.n_tackle += 1;
+                let success = result == "success";
+                if success {
+                    st.n_tackle_success += 1;
+                }
+                // 防守者(def, x/y) → 被铲者(victim, x2/y2) 距离（米）：区分 close/far
+                let dx = (x - x2) * PITCH_LENGTH_M;
+                let dy = (y - y2) * PITCH_WIDTH_M;
+                let dist = (dx * dx + dy * dy).sqrt();
+                if dist <= TACKLE_DISTANCE_THRESHOLD_METERS {
+                    st.n_tackle_close += 1;
+                    if success {
+                        st.n_tackle_close_success += 1;
+                    }
+                } else {
+                    st.n_tackle_far += 1;
+                    if success {
+                        st.n_tackle_far_success += 1;
+                    }
+                }
+            }
+            "whistle" => {
+                if let Some(sc) = field_str(e, "score") {
+                    if let Some((h, a)) = parse_score(&sc) {
+                        whistle_score = Some((h, a));
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    st.home_score = goal_home;
+    st.away_score = goal_away;
+    if let Some((h, a)) = whistle_score {
+        if h != goal_home || a != goal_away {
+            st.score_mismatch =
+                Some(format!("whistle {}-{} vs goals {}-{}", h, a, goal_home, goal_away));
+        }
+    }
+    st
+}
+
+fn run_many(n: u32) -> Vec<MatchStats> {
+    (1..=n).map(|seed| aggregate(seed as u64)).collect()
+}
+
+/// L1 两个测试共享同一批模拟（OnceLock 线程安全缓存），避免 run_many(200) 跑两次。
+fn l1_stats() -> &'static Vec<MatchStats> {
+    static STATS: std::sync::OnceLock<Vec<MatchStats>> = std::sync::OnceLock::new();
+    STATS.get_or_init(|| run_many(SEEDS_L1))
+}
+
+/// chi-square 拟合优度（3 桶，df=2）。返回统计量。
+/// 阈值用 13.82（α=0.001）：单测试、联合检验三桶，能容忍 n≈124 的采样坏样本，
+/// 同时捕获分布翻转等大偏差（30/40/30 在 n=124 下 chi-sq≈43）。
+fn chi_sq_gof(observed: &[usize; 3], expected_p: &[f64; 3]) -> f64 {
+    let n = observed.iter().sum::<usize>() as f64;
+    assert!(n > 0.0);
+    observed
+        .iter()
+        .enumerate()
+        .map(|(i, &o)| {
+            let e = n * expected_p[i];
+            if e <= 0.0 {
+                return 0.0;
+            }
+            let d = o as f64 - e;
+            d * d / e
+        })
+        .sum()
+}
+
+// ==== L1：规格一致性（多 seed 统计分布）====
+
+/// `#[ignore]`：L1 是独立统计 gate（verify.sh 第 4 步以 `--release -- --ignored` 显式运行）。
+/// 默认 `cargo test` 跳过——debug 下 200 场统计聚合 ~40s，不应拖慢日常单测（L2/golden 不 ignore）。
+#[test]
+#[ignore]
+fn l1_shot_result_distributions() {
+    let stats = l1_stats();
+    let (g, sv, off) = (
+        stats.iter().map(|s| s.n_shot_goal).sum::<usize>(),
+        stats.iter().map(|s| s.n_shot_saved).sum::<usize>(),
+        stats.iter().map(|s| s.n_shot_off).sum::<usize>(),
+    );
+    let regular = g + sv + off;
+    assert!(regular >= 800, "普通射门样本不足：{}（200 场应 ~1200）", regular);
+    let (rg, rsv, roff) = (
+        g as f64 / regular as f64,
+        sv as f64 / regular as f64,
+        off as f64 / regular as f64,
+    );
+    // 声明概率 15/35/50（emit_shot_highlight）。带 = p0 ± 3σ（n≈1200 时 σ≈1-1.4pp，此处取更宽的
+    // [±4,±6]pp），保证 CI 门不 flaky，同时捕获分布翻转等大偏差。
+    assert!((0.11..=0.19).contains(&rg), "普通射门 goal 比例 {:.3} ∉ [0.11,0.19]", rg);
+    assert!((0.29..=0.41).contains(&rsv), "普通射门 saved 比例 {:.3} ∉ [0.29,0.41]", rsv);
+    assert!((0.44..=0.56).contains(&roff), "普通射门 off_target 比例 {:.3} ∉ [0.44,0.56]", roff);
+
+    // 头球射门（emit_header_shot）：goal 12 / saved 38 / off 50
+    let (hg, hsv, hoff) = (
+        stats.iter().map(|s| s.n_header_goal).sum::<usize>(),
+        stats.iter().map(|s| s.n_header_saved).sum::<usize>(),
+        stats.iter().map(|s| s.n_header_off).sum::<usize>(),
+    );
+    let header = hg + hsv + hoff;
+    assert!(header >= 100, "头球射门样本不足：{}（200 场应 ~240）", header);
+    // 用 chi-square GOF（df=2，阈值 13.82 = α=0.001）做联合检验：单测试、容采样波动、抓大偏差。
+    // SEEDS_L1=100 时 n≈124 的 chi-sq=12.94 距阈值仅 0.88（固定 seed 1..=100 是 2.9σ 偏样本）；
+    // 200 场实测 chi-sq≈6.3，余量充足。
+    let chi = chi_sq_gof(&[hg, hsv, hoff], &[0.12, 0.38, 0.50]);
+    assert!(
+        chi < 13.82,
+        "头球射门结果分布偏离声明 12/38/50（chi-sq={:.2}，df=2）：goal {} saved {} off {} total {}",
+        chi,
+        hg,
+        hsv,
+        hoff,
+        header
+    );
+}
+
+#[test]
+#[ignore]
+fn l1_tackle_dilution_and_slot_mix() {
+    let stats = l1_stats();
+    let tackles: usize = stats.iter().map(|s| s.n_tackle).sum();
+    let successes: usize = stats.iter().map(|s| s.n_tackle_success).sum();
+    assert!(tackles >= 400, "tackle 样本不足：{}", tackles);
+    let overall = successes as f64 / tackles as f64;
+    // 稀释模型：贴防且 eager → 50%；not-eager（一半的贴防）→ 15%；same_pair → 0%。
+    // close（dist≤12m）期望 ≈ (1−sp)×(0.5×0.5 + 0.5×0.15)，sp 为 same_pair 占比 → 实测 ~28-32%。
+    assert!(
+        (0.20..=0.45).contains(&overall),
+        "tackle 整体 success {:.3} ∉ [0.20,0.45]",
+        overall
+    );
+
+    let close: usize = stats.iter().map(|s| s.n_tackle_close).sum();
+    let close_succ: usize = stats.iter().map(|s| s.n_tackle_close_success).sum();
+    assert!(close >= 400, "close tackle 样本不足：{}", close);
+    let close_r = close_succ as f64 / close as f64;
+    assert!(
+        (0.24..=0.46).contains(&close_r),
+        "close tackle success {:.3} ∉ [0.24,0.46]",
+        close_r
+    );
+    // far 计数保留但不断言 close>far：tackle 槽总是取最近防守者，事件内 dist>12m 的 far 实测恒为 0
+    //（引擎内部 far 的另一种来源 !should_tackle 无事件内可见代理）。
+    // 注意：overall/close 带只捕获整体大偏差（成功率崩塌/暴涨）；TACKLE_EAGERNESS=0.5 使 15% 与 50%
+    // 两路严格 50/50，互换后加权均值不变 → 分支间互换由 golden master 全流哈希守护（结果改变级联改流）。
+
+    // 槽位相对 mix：纯普通射门（槽位射门，排除角球派生头球）vs 抢断 ≈ 30/22 ≈ 1.36。
+    // 死球/重开占用使绝对槽位数不固定 → 断言比值。用普通射门计数避免头球灌水。
+    let shots_regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
+    assert!(shots_regular >= 800, "普通射门总数不足：{}", shots_regular);
+    let ratio = shots_regular as f64 / tackles as f64;
+    assert!(
+        (1.0..=1.8).contains(&ratio),
+        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]（声明 30/22≈1.36）",
+        ratio
+    );
+
+    // 角球派生带：detail="corner" 的 pass 来自角球槽(12%) + 扑出越线(90%) + 解围出底线。
+    // 断言场均（spec：场均 ∈ [2,9]）；单场硬上界兜数量级漂移（0 角球场次正常，spec 不逐场断言）。
+    let corners: usize = stats.iter().map(|s| s.n_corner_kick).sum();
+    let per_match = corners as f64 / SEEDS_L1 as f64;
+    assert!((2.0..=9.0).contains(&per_match), "场均角球 {:.2} ∉ [2,9]", per_match);
+    let max_single = stats.iter().map(|s| s.n_corner_kick).max().unwrap_or(0);
+    assert!(max_single <= 12, "单场角球 {} 超硬上界 12", max_single);
+}
+
+// ==== L2：过程真实性（跨事件不变量，任意 seed 成立）====
+
+// L2/golden 不 `#[ignore]`：只有 15+10 场，debug 下 ~3s，是「应处处成立」的快速不变量，
+// 默认 `cargo test` 就该跑（L1 统计聚合才需要 ignore + release 显式跑）。
+
+#[test]
+fn l2_cross_event_invariants() {
+    for seed in 1..=SEEDS_L2 {
+        let st = aggregate(seed as u64);
+        assert!(
+            st.score_mismatch.is_none(),
+            "seed {} 比分与进球计数不一致：{}",
+            seed,
+            st.score_mismatch.clone().unwrap_or_default()
+        );
+        assert_eq!(
+            st.shot_target_violations, 0,
+            "seed {} 射门落点违例（不在球门矩形/门线）",
+            seed
+        );
+        assert_eq!(
+            st.beat_gap_violations, 0,
+            "seed {} beat 间隙违例（应 ∈ {{1,2}}s）",
+            seed
+        );
+        assert!(
+            st.max_beat_gap <= 2.0,
+            "seed {} 最大 beat 间隙 {:.2} > 2s",
+            seed,
+            st.max_beat_gap
+        );
+        assert!(
+            st.speed_violations.is_empty(),
+            "seed {} 速度违例：{:?}",
+            seed,
+            st.speed_violations
+        );
+        assert_eq!(st.gk_violations, 0, "seed {} 门将位置违例", seed);
+        assert_eq!(st.t_out_of_range, 0, "seed {} 事件 t 越界", seed);
+    }
+}
+
+// ==== golden master：10 canary seed 防漂移 ====
+
+fn golden_path(seed: u64) -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/golden")
+        .join(format!("seed-{}.json", seed))
+}
+
+fn golden_summary_json(st: &MatchStats) -> String {
+    format!(
+        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_corner_kick\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"stream_hash\": {}\n}}",
+        st.seed,
+        st.home_score,
+        st.away_score,
+        st.n_events,
+        st.n_beats,
+        st.n_shot,
+        st.n_shot_goal,
+        st.n_shot_saved,
+        st.n_shot_off,
+        st.n_header,
+        st.n_tackle,
+        st.n_tackle_success,
+        st.n_pass,
+        st.n_corner_kick,
+        st.n_out_goal_line,
+        st.n_out_sideline,
+        st.stream_hash,
+    )
+}
+
+fn golden_from_str(s: &str) -> MatchStats {
+    let mut st = MatchStats::default();
+    st.seed = field_num(s, "seed").unwrap_or(-1.0) as u64;
+    st.home_score = field_num(s, "home_score").unwrap_or(-1.0) as u32;
+    st.away_score = field_num(s, "away_score").unwrap_or(-1.0) as u32;
+    st.n_events = field_num(s, "n_events").unwrap_or(-1.0) as usize;
+    st.n_beats = field_num(s, "n_beats").unwrap_or(-1.0) as usize;
+    st.n_shot = field_num(s, "n_shot").unwrap_or(-1.0) as usize;
+    st.n_shot_goal = field_num(s, "n_shot_goal").unwrap_or(-1.0) as usize;
+    st.n_shot_saved = field_num(s, "n_shot_saved").unwrap_or(-1.0) as usize;
+    st.n_shot_off = field_num(s, "n_shot_off").unwrap_or(-1.0) as usize;
+    st.n_header = field_num(s, "n_header").unwrap_or(-1.0) as usize;
+    st.n_tackle = field_num(s, "n_tackle").unwrap_or(-1.0) as usize;
+    st.n_tackle_success = field_num(s, "n_tackle_success").unwrap_or(-1.0) as usize;
+    st.n_pass = field_num(s, "n_pass").unwrap_or(-1.0) as usize;
+    st.n_corner_kick = field_num(s, "n_corner_kick").unwrap_or(-1.0) as usize;
+    st.n_out_goal_line = field_num(s, "n_out_goal_line").unwrap_or(-1.0) as usize;
+    st.n_out_sideline = field_num(s, "n_out_sideline").unwrap_or(-1.0) as usize;
+    // stream_hash 是 u64，>2^53 用 f64 解析会丢精度 → 必须字符串解析
+    st.stream_hash = field_str(s, "stream_hash")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    st
+}
+
+#[test]
+fn gm_canary_seeds() {
+    let accept = std::env::var("ACCEPT_GOLDEN").as_deref() == Ok("1");
+    for seed in GOLDEN_SEEDS {
+        let st = aggregate(seed);
+        let path = golden_path(seed);
+        if accept {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, golden_summary_json(&st)).unwrap();
+            eprintln!("已重基线 seed {} → {}（提交前请人工审查 git diff，防洗白回归）", seed, path.display());
+            continue;
+        }
+        let content = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+            panic!(
+                "golden 缺失：{}（首次运行用 ACCEPT_GOLDEN=1 生成基线）",
+                path.display()
+            )
+        });
+        let gold = golden_from_str(&content);
+        let fields = [
+            ("home_score", gold.home_score as usize, st.home_score as usize),
+            ("away_score", gold.away_score as usize, st.away_score as usize),
+            ("n_events", gold.n_events, st.n_events),
+            ("n_beats", gold.n_beats, st.n_beats),
+            ("n_shot", gold.n_shot, st.n_shot),
+            ("n_shot_goal", gold.n_shot_goal, st.n_shot_goal),
+            ("n_shot_saved", gold.n_shot_saved, st.n_shot_saved),
+            ("n_shot_off", gold.n_shot_off, st.n_shot_off),
+            ("n_header", gold.n_header, st.n_header),
+            ("n_tackle", gold.n_tackle, st.n_tackle),
+            ("n_tackle_success", gold.n_tackle_success, st.n_tackle_success),
+            ("n_pass", gold.n_pass, st.n_pass),
+            ("n_corner_kick", gold.n_corner_kick, st.n_corner_kick),
+            ("n_out_goal_line", gold.n_out_goal_line, st.n_out_goal_line),
+            ("n_out_sideline", gold.n_out_sideline, st.n_out_sideline),
+        ];
+        for (name, g, cur) in fields {
+            assert_eq!(
+                g, cur,
+                "seed {} {} 漂移: golden={} current={}（审阅后用 ACCEPT_GOLDEN=1 重基线）",
+                seed, name, g, cur
+            );
+        }
+        assert_eq!(
+            gold.stream_hash, st.stream_hash,
+            "seed {} 事件流哈希漂移（任何静默改动）",
+            seed
+        );
+    }
+}

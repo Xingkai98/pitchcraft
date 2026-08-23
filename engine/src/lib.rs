@@ -1729,7 +1729,7 @@ fn battle_attack_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     }
 }
 
-/// 头球射门：shot 高亮（subject=攻方 chaser，detail=header、h=0），result=goal(~10%)/saved(~40%)/off_target(~50%)
+/// 头球射门：shot 高亮（subject=攻方 chaser，detail=header、h=0），result=goal 12% / saved 38% / off_target 50%
 fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, header: i32, pos: (f64, f64)) {
     let home = st.possession == 0;
     let speed = 15.0 + (rng.next_u64() % 50) as f64 / 10.0;

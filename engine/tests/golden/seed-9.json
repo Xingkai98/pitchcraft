@@ -1,0 +1,19 @@
+{
+  "seed": 9,
+  "home_score": 2,
+  "away_score": 2,
+  "n_events": 5810,
+  "n_beats": 5387,
+  "n_shot": 11,
+  "n_shot_goal": 3,
+  "n_shot_saved": 3,
+  "n_shot_off": 1,
+  "n_header": 4,
+  "n_tackle": 6,
+  "n_tackle_success": 2,
+  "n_pass": 395,
+  "n_corner_kick": 6,
+  "n_out_goal_line": 3,
+  "n_out_sideline": 2,
+  "stream_hash": 10837201459462114628
+}
