@@ -79,3 +79,27 @@
 - 探针 `engine/tests/l3_probe.rs`（临时，已删）：200 seed 聚合，指标从事件流直接计数。
 - 传球数含定位球发球（角球/门球/界外/解围都算 pass 事件）；真实「传球」通常不含定位球——可比口径下引擎开放比赛传球更少。
 - 控球按 beat.main 持球者队归属计数（松散球时间未计入）。
+
+## 五、参考带来源明细（逐指标核对用）
+
+> 全部为**公开聚合统计**（非逐事件授权数据）。数值随赛季/联赛波动，**用作测试断言带前须各自核对原始来源并注明赛季**；下表列出来源 URL 与已核对的赛季口径。完整 33 来源见 `report.md` §来源。
+
+| 指标 | 精确参考值 | 赛季口径 | 来源 |
+|---|---|---|---|
+| 总进球 2.75（主 1.53 / 客 1.22） | 2.75 | 近期完整赛季（Kopacak）；StatMuse 2025-26 | [Kopacak](https://kopacak.com/soutez/statistiky-souteze?id=287&soutez=premier-league)、[StatMuse](https://www.statmuse.com/fc/ask?q=premier+league+teams+average+corners%2C+average+goals%2C+average+sot%2C+average+shots...) |
+| 总射门 24.97-27.6（每队 ~12.5-13.8） | 24.97（主 13.82/客 11.15）；2023-24 为 27.6 | Kopacak；The Athletic 2023-24 | [The Athletic](https://www.nytimes.com/athletic/5728926/2024/08/30/more-shots-more-victories-premier-league/)、[Kopacak](同上) |
+| 射正 8.37 ≈ 射门 1/3 | 8.37（主 4.50 / 客 3.87） | Kopacak | 同上 |
+| 射门转化 ~10% / 射正 ~30% | 禁区外 4.2%（2024-25）/ 近十年 3.5%；禁区内 14.7%（2024-25）/ 近十年 15.2% | PL 官方 2024-25；Opta Analyst | [PL 官方](https://www.premierleague.com/en/news/4272809)、[Opta Analyst](https://theanalyst.com/articles/premier-league-2024-25-shot-data) |
+| 禁区内进球占比 ~85-88% | 2024-25 禁区外进球 11.7%；~42-45% 射门来自禁区外 | PL 官方；StatsBomb | [StatsBomb](https://blogarchive.statsbomb.com/articles/soccer/premier-league-shot-benchmarks/) |
+| 传球成功率 ~80-90% | 队级 78.7%（森林，最低）~ 89.9%（曼城，最高）；BBC 口径曼城 90.6% | FotMob 2024/25；BBC/Opta 2024 | [FotMob](https://www.fotmob.com/leagues/47/stats/season/23685/teams/accurate_pass_team/team)、[BBC](https://www.bbc.com/sport/football/articles/c4g3yp9j80go) |
+| 控球 50.8/49.2 | 联赛场均主 50.78 / 客 49.22；队级 ~42%-64.5% | Kopacak；BBC/Opta；StatMuse | 同上 |
+| 抢断 ~15-17/队 | 两例 15.9、16.6 | WhoScored 2025/26 | [WhoScored](https://www.whoscored.com/) |
+| 角球 ~10 | ~10（双方） | Kopacak | [Kopacak](同上) |
+| 犯规 ~21 / 黄牌 ~3.8 / 红牌 0.12 | 双方每场 | Kopacak | [Kopacak](同上) |
+| xG 位置参考（若做射门质量模型） | 6 码区 ~0.80；点球 ~0.75-0.79；禁区中央 ~0.10-0.30；禁区弧 ~0.05-0.10；禁区外 ~0.02-0.05 | 多源 | [Liverpool.com](https://www.liverpool.com/liverpool-fc-news/features/liverpool-jurgen-klopp-goals-shots-17696491)、[Kiqiq](https://kiqiq.com/blog/football-shot-maps)、[Tactiq](https://www.tactiq.club/en/blog/xg-calculator-shot-types-deep-dive/)、[PSSA](https://thepssa.us/blog/understanding-expected-goals-xg-in-soccer) |
+| 物理量：射门速度 / 带球 / 跑动 | 硬射 ~30 m/s；带球 ~7 m/s、无球冲刺 ~9-10 m/s；全场 ~10-12 km/人 | 常数量纲（非赛季数据） | report.md §6 汇总 |
+
+**使用注意**：
+1. 单赛季数字波动明显（如射门 12.5↔13.8/队），断言带必须用**区间**并注明赛季口径。
+2. xG 位置表可直接作为「射门质量模型」（A 档第一项）的概率分桶依据——按起脚距离/角度分桶给 goal/saved/off 概率。
+3. 若某数字要升级为 CI 断言带，先回原始来源核对一次精确值与赛季，再落到 `realism.rs` 的 L3 gate（另立，当前不 gate）。
