@@ -159,7 +159,22 @@ struct MatchStats {
     n_shot_goal: usize,
     n_shot_saved: usize,
     n_shot_off: usize,
-    // header shot（detail=header，角球争抢派生）
+    // P9 分桶（普通射门按起脚距离）：禁区内 / 禁区弧 / 远射
+    n_box: usize,
+    n_box_goal: usize,
+    n_box_saved: usize,
+    n_box_off: usize,
+    n_arc: usize,
+    n_arc_goal: usize,
+    n_arc_saved: usize,
+    n_arc_off: usize,
+    n_far: usize,
+    n_far_goal: usize,
+    n_far_saved: usize,
+    n_far_off: usize,
+    // 起脚位置守卫
+    n_shot_far45: usize, // 距门 >45m 射门（应消除）
+    // header shot（detail=header，角球争抢派生，全部在禁区）
     n_header: usize,
     n_header_goal: usize,
     n_header_saved: usize,
@@ -254,6 +269,12 @@ fn aggregate(seed: u64) -> MatchStats {
                 let x2 = field_num(e, "x2").unwrap_or(-1.0);
                 let y2 = field_num(e, "y2").unwrap_or(-1.0);
                 let kx = field_num(e, "keeper_x").unwrap_or(-1.0);
+                // 起脚距离（P9）：home 攻右（x=1），away 攻左（x=0）
+                let sx = field_num(e, "x").unwrap_or(0.5);
+                let dist_m = if subject <= 10 { (1.0 - sx) * PITCH_LENGTH_M } else { sx * PITCH_LENGTH_M };
+                if dist_m > 45.0 {
+                    st.n_shot_far45 += 1;
+                }
                 st.n_shot += 1;
                 if is_header {
                     st.n_header += 1;
@@ -277,6 +298,21 @@ fn aggregate(seed: u64) -> MatchStats {
                     if spd >= 0.0 && (spd < 22.0 || spd >= 30.0) {
                         st.speed_violations
                             .push(format!("shot speed {:.2} (want [22,30))", spd));
+                    }
+                    // 分桶（禁区内 ≤16.5m / 禁区弧 16.5-25m / 远射 >25m）
+                    let (b, bg, bsv, bof) = if dist_m <= 16.5 {
+                        (&mut st.n_box, &mut st.n_box_goal, &mut st.n_box_saved, &mut st.n_box_off)
+                    } else if dist_m <= 25.0 {
+                        (&mut st.n_arc, &mut st.n_arc_goal, &mut st.n_arc_saved, &mut st.n_arc_off)
+                    } else {
+                        (&mut st.n_far, &mut st.n_far_goal, &mut st.n_far_saved, &mut st.n_far_off)
+                    };
+                    *b += 1;
+                    match result.as_str() {
+                        "goal" => *bg += 1,
+                        "saved" => *bsv += 1,
+                        "off_target" => *bof += 1,
+                        _ => {}
                     }
                 }
                 if result == "goal" {
@@ -415,39 +451,73 @@ fn chi_sq_gof(observed: &[usize; 3], expected_p: &[f64; 3]) -> f64 {
 #[ignore]
 fn l1_shot_result_distributions() {
     let stats = l1_stats();
-    let (g, sv, off) = (
-        stats.iter().map(|s| s.n_shot_goal).sum::<usize>(),
-        stats.iter().map(|s| s.n_shot_saved).sum::<usize>(),
-        stats.iter().map(|s| s.n_shot_off).sum::<usize>(),
-    );
-    let regular = g + sv + off;
-    assert!(regular >= 800, "普通射门样本不足：{}（200 场应 ~1200）", regular);
-    let (rg, rsv, roff) = (
-        g as f64 / regular as f64,
-        sv as f64 / regular as f64,
-        off as f64 / regular as f64,
-    );
-    // 声明概率 15/35/50（emit_shot_highlight）。带 = p0 ± 3σ（n≈1200 时 σ≈1-1.4pp，此处取更宽的
-    // [±4,±6]pp），保证 CI 门不 flaky，同时捕获分布翻转等大偏差。
-    assert!((0.11..=0.19).contains(&rg), "普通射门 goal 比例 {:.3} ∉ [0.11,0.19]", rg);
-    assert!((0.29..=0.41).contains(&rsv), "普通射门 saved 比例 {:.3} ∉ [0.29,0.41]", rsv);
-    assert!((0.44..=0.56).contains(&roff), "普通射门 off_target 比例 {:.3} ∉ [0.44,0.56]", roff);
+    let n = SEEDS_L1 as f64;
 
-    // 头球射门（emit_header_shot）：goal 12 / saved 38 / off 50
+    // P9 三桶分布（普通射门按起脚距离）：box/arc/far
+    let (b, bg, bsv, bof) = (
+        stats.iter().map(|s| s.n_box).sum::<usize>(),
+        stats.iter().map(|s| s.n_box_goal).sum::<usize>(),
+        stats.iter().map(|s| s.n_box_saved).sum::<usize>(),
+        stats.iter().map(|s| s.n_box_off).sum::<usize>(),
+    );
+    let (a, ag, asv, aof) = (
+        stats.iter().map(|s| s.n_arc).sum::<usize>(),
+        stats.iter().map(|s| s.n_arc_goal).sum::<usize>(),
+        stats.iter().map(|s| s.n_arc_saved).sum::<usize>(),
+        stats.iter().map(|s| s.n_arc_off).sum::<usize>(),
+    );
+    let (f, fg, fsv, fof) = (
+        stats.iter().map(|s| s.n_far).sum::<usize>(),
+        stats.iter().map(|s| s.n_far_goal).sum::<usize>(),
+        stats.iter().map(|s| s.n_far_saved).sum::<usize>(),
+        stats.iter().map(|s| s.n_far_off).sum::<usize>(),
+    );
+    let regular = b + a + f;
+    assert!(regular >= 800, "普通射门样本不足：{}（200 场应 ~1400）", regular);
+
+    // 各桶至少 150 样本
+    for (name, cnt) in [("禁区内", b), ("禁区弧", a), ("远射", f)] {
+        assert!(cnt >= 150, "{}桶样本不足：{}", name, cnt);
+    }
+
+    // 禁区内声明 15/30/55
+    let (bg_r, bsv_r, bof_r) = (bg as f64 / b as f64, bsv as f64 / b as f64, bof as f64 / b as f64);
+    assert!((0.10..=0.20).contains(&bg_r), "禁区内 goal 比例 {:.3} ∉ [0.10,0.20]", bg_r);
+    assert!((0.24..=0.36).contains(&bsv_r), "禁区内 saved 比例 {:.3} ∉ [0.24,0.36]", bsv_r);
+    assert!((0.48..=0.60).contains(&bof_r), "禁区内 off 比例 {:.3} ∉ [0.48,0.60]", bof_r);
+    // 禁区弧声明 7/22/71
+    let (ag_r, asv_r, aof_r) = (ag as f64 / a as f64, asv as f64 / a as f64, aof as f64 / a as f64);
+    assert!((0.03..=0.12).contains(&ag_r), "禁区弧 goal 比例 {:.3} ∉ [0.03,0.12]", ag_r);
+    assert!((0.14..=0.30).contains(&asv_r), "禁区弧 saved 比例 {:.3} ∉ [0.14,0.30]", asv_r);
+    assert!((0.61..=0.75).contains(&aof_r), "禁区弧 off 比例 {:.3} ∉ [0.61,0.75]", aof_r);
+    // 远射声明 4/11/85
+    let (fg_r, fsv_r, fof_r) = (fg as f64 / f as f64, fsv as f64 / f as f64, fof as f64 / f as f64);
+    assert!((0.0..=0.08).contains(&fg_r), "远射 goal 比例 {:.3} ∉ [0.0,0.08]", fg_r);
+    assert!((0.04..=0.18).contains(&fsv_r), "远射 saved 比例 {:.3} ∉ [0.04,0.18]", fsv_r);
+    assert!((0.78..=0.92).contains(&fof_r), "远射 off 比例 {:.3} ∉ [0.78,0.92]", fof_r);
+
+    // 起脚位置分布（P9）：禁区内占比 ∈ [45%,65%]，无 >45m 射门
+    let box_share = b as f64 / regular as f64;
+    assert!((0.45..=0.65).contains(&box_share), "禁区内射门占比 {:.3} ∉ [0.45,0.65]", box_share);
+    let far45: usize = stats.iter().map(|s| s.n_shot_far45).sum();
+    assert_eq!(far45, 0, "存在距门 >45m 射门（{}），应已消除", far45);
+
+    // 射门/场（P9 射门槽 35%）
+    let shots_per = regular as f64 / n;
+    assert!((6.0..=11.0).contains(&shots_per), "普通射门/场 {:.2} ∉ [6,11]", shots_per);
+
+    // 头球射门（emit_header_shot）：对齐禁区桶 goal 15 / saved 30 / off 55
     let (hg, hsv, hoff) = (
         stats.iter().map(|s| s.n_header_goal).sum::<usize>(),
         stats.iter().map(|s| s.n_header_saved).sum::<usize>(),
         stats.iter().map(|s| s.n_header_off).sum::<usize>(),
     );
     let header = hg + hsv + hoff;
-    assert!(header >= 100, "头球射门样本不足：{}（200 场应 ~240）", header);
-    // 用 chi-square GOF（df=2，阈值 13.82 = α=0.001）做联合检验：单测试、容采样波动、抓大偏差。
-    // SEEDS_L1=100 时 n≈124 的 chi-sq=12.94 距阈值仅 0.88（固定 seed 1..=100 是 2.9σ 偏样本）；
-    // 200 场实测 chi-sq≈6.3，余量充足。
-    let chi = chi_sq_gof(&[hg, hsv, hoff], &[0.12, 0.38, 0.50]);
+    assert!(header >= 100, "头球射门样本不足：{}（200 场应 ~200）", header);
+    let chi = chi_sq_gof(&[hg, hsv, hoff], &[0.15, 0.30, 0.55]);
     assert!(
         chi < 13.82,
-        "头球射门结果分布偏离声明 12/38/50（chi-sq={:.2}，df=2）：goal {} saved {} off {} total {}",
+        "头球射门结果分布偏离声明 15/30/55（chi-sq={:.2}，df=2）：goal {} saved {} off {} total {}",
         chi,
         hg,
         hsv,
@@ -486,14 +556,14 @@ fn l1_tackle_dilution_and_slot_mix() {
     // 注意：overall/close 带只捕获整体大偏差（成功率崩塌/暴涨）；TACKLE_EAGERNESS=0.5 使 15% 与 50%
     // 两路严格 50/50，互换后加权均值不变 → 分支间互换由 golden master 全流哈希守护（结果改变级联改流）。
 
-    // 槽位相对 mix：纯普通射门（槽位射门，排除角球派生头球）vs 抢断 ≈ 30/22 ≈ 1.36。
+    // 槽位相对 mix：纯普通射门（槽位射门，排除角球派生头球）vs 抢断 ≈ 35/22 ≈ 1.59（P9 射门槽 30→35）。
     // 死球/重开占用使绝对槽位数不固定 → 断言比值。用普通射门计数避免头球灌水。
     let shots_regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
     assert!(shots_regular >= 800, "普通射门总数不足：{}", shots_regular);
     let ratio = shots_regular as f64 / tackles as f64;
     assert!(
         (1.0..=1.8).contains(&ratio),
-        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]（声明 30/22≈1.36）",
+        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]（声明 35/22≈1.59）",
         ratio
     );
 
@@ -504,6 +574,29 @@ fn l1_tackle_dilution_and_slot_mix() {
     assert!((2.0..=9.0).contains(&per_match), "场均角球 {:.2} ∉ [2,9]", per_match);
     let max_single = stats.iter().map(|s| s.n_corner_kick).max().unwrap_or(0);
     assert!(max_single <= 12, "单场角球 {} 超硬上界 12", max_single);
+}
+
+// ==== L3 gate：射门相关比率对齐真实参考带（p9 启用）====
+
+#[test]
+#[ignore]
+fn l3_shot_ratios() {
+    let stats = l1_stats();
+    let regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
+    let header: usize = stats.iter().map(|s| s.n_header_goal + s.n_header_saved + s.n_header_off).sum();
+    let shots = regular + header;
+    let goals: usize = stats.iter().map(|s| s.n_shot_goal + s.n_header_goal).sum();
+    let saved: usize = stats.iter().map(|s| s.n_shot_saved + s.n_header_saved).sum();
+    let box_goals: usize = stats.iter().map(|s| s.n_box_goal + s.n_header_goal).sum();
+    assert!(shots >= 1000, "射门样本不足：{}", shots);
+    let sot_r = (goals + saved) as f64 / shots as f64;
+    let conv_r = goals as f64 / shots as f64;
+    let inside_r = box_goals as f64 / goals as f64;
+    // 真实参考带（report.md §五）：射正率 ~33%、转化 ~10%、禁区内进球 ~85%。
+    // 实测（200 场）：38.3% / 13.1% / 86.9%，带留余量。
+    assert!((0.28..=0.39).contains(&sot_r), "射正率 {:.3} ∉ [0.28,0.39]", sot_r);
+    assert!((0.08..=0.14).contains(&conv_r), "射门转化率 {:.3} ∉ [0.08,0.14]", conv_r);
+    assert!((0.72..=0.92).contains(&inside_r), "禁区内进球占比 {:.3} ∉ [0.72,0.92]", inside_r);
 }
 
 // ==== L2：过程真实性（跨事件不变量，任意 seed 成立）====
@@ -558,7 +651,7 @@ fn golden_path(seed: u64) -> std::path::PathBuf {
 
 fn golden_summary_json(st: &MatchStats) -> String {
     format!(
-        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_corner_kick\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"stream_hash\": {}\n}}",
+        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_box\": {},\n  \"n_arc\": {},\n  \"n_far\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_corner_kick\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"stream_hash\": {}\n}}",
         st.seed,
         st.home_score,
         st.away_score,
@@ -568,6 +661,9 @@ fn golden_summary_json(st: &MatchStats) -> String {
         st.n_shot_goal,
         st.n_shot_saved,
         st.n_shot_off,
+        st.n_box,
+        st.n_arc,
+        st.n_far,
         st.n_header,
         st.n_tackle,
         st.n_tackle_success,
@@ -590,6 +686,9 @@ fn golden_from_str(s: &str) -> MatchStats {
     st.n_shot_goal = field_num(s, "n_shot_goal").unwrap_or(-1.0) as usize;
     st.n_shot_saved = field_num(s, "n_shot_saved").unwrap_or(-1.0) as usize;
     st.n_shot_off = field_num(s, "n_shot_off").unwrap_or(-1.0) as usize;
+    st.n_box = field_num(s, "n_box").unwrap_or(-1.0) as usize;
+    st.n_arc = field_num(s, "n_arc").unwrap_or(-1.0) as usize;
+    st.n_far = field_num(s, "n_far").unwrap_or(-1.0) as usize;
     st.n_header = field_num(s, "n_header").unwrap_or(-1.0) as usize;
     st.n_tackle = field_num(s, "n_tackle").unwrap_or(-1.0) as usize;
     st.n_tackle_success = field_num(s, "n_tackle_success").unwrap_or(-1.0) as usize;
@@ -632,6 +731,9 @@ fn gm_canary_seeds() {
             ("n_shot_goal", gold.n_shot_goal, st.n_shot_goal),
             ("n_shot_saved", gold.n_shot_saved, st.n_shot_saved),
             ("n_shot_off", gold.n_shot_off, st.n_shot_off),
+            ("n_box", gold.n_box, st.n_box),
+            ("n_arc", gold.n_arc, st.n_arc),
+            ("n_far", gold.n_far, st.n_far),
             ("n_header", gold.n_header, st.n_header),
             ("n_tackle", gold.n_tackle, st.n_tackle),
             ("n_tackle_success", gold.n_tackle_success, st.n_tackle_success),
