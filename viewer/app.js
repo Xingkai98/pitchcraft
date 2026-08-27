@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260826-12';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260826-12';
-import { createGame } from './game.js?v=20260826-12';
-import { mockEventStream } from './mock-event-stream.js?v=20260826-12';
-import { resetMicroMotion } from './micro-motion.js?v=20260826-12';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260826-12';
+import { config } from './config.js?v=20260826-14';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260826-14';
+import { createGame } from './game.js?v=20260826-14';
+import { mockEventStream } from './mock-event-stream.js?v=20260826-14';
+import { resetMicroMotion } from './micro-motion.js?v=20260826-14';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260826-14';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260826-12';
+} from './audit-report.js?v=20260826-14';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -34,7 +34,20 @@ import {
   summarizeStatement,
   loadList,
   saveList,
-} from './observation-list.js?v=20260826-12';
+} from './observation-list.js?v=20260826-14';
+import {
+  normalizeProblem,
+  normalizeProblems,
+  filterProblems,
+  triageBadgeClass,
+  problemSourceLabel,
+  formatProblemTime,
+  summarizeProblemTitle,
+  problemDetailToRender,
+  validateProblemAction,
+  buildProblemPatch,
+  createProblemApi,
+} from './problem-view.js?v=20260826-14';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -82,7 +95,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260826-12';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260826-14';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -506,10 +519,13 @@ function renderEntryCard(entry) {
       report.textContent = entry.findingsDetail.reportText;
       body.appendChild(report);
     }
-    // triage 徽章 + 按类别的后续动作面板（bug/design/discuss）。
+    // triage 徽章 + 按类别的后续动作面板（bug/design/discuss）+ 创建问题按钮。
     const actions = document.createElement('div');
     actions.className = 'obs-entry-actions';
-    renderReportActions(actions, entry.findingsDetail.report, entry.statement);
+    renderReportActions(actions, entry.findingsDetail.report, entry.statement, {
+      taskId: entry.task_id,
+      onCreateProblem: createProblemFromEntry,
+    });
     body.appendChild(actions);
   } else if (entry.task_id != null && isTerminalStatus(entry.status)) {
     // 终态但结果尚未同步（刷新恢复中/服务未返回）
@@ -675,7 +691,8 @@ async function pollTask(entryId, taskId) {
 
 // triage 徽章 + 按类别的后续动作面板（bug → change 草稿复制/下载；design →
 // open questions；discuss → 需确认问题清单）。所有展示文本先 redactText。
-function renderReportActions(container, report, statement = '') {
+// opts.taskId + opts.onCreateProblem 时追加「创建问题」按钮（诊断终态一键建 Problem）。
+function renderReportActions(container, report, statement = '', opts = {}) {
   container.innerHTML = '';
   const t = formatTriage(report);
   if (!t) return;
@@ -746,6 +763,13 @@ function renderReportActions(container, report, statement = '') {
       item.textContent = `- ${redactText(q)}`;
       panel.appendChild(item);
     }
+  }
+  // P11：诊断终态（有 task_id）追加「创建问题」→ POST /problems {task_id}。
+  if (opts?.taskId && opts.onCreateProblem) {
+    const createBtn = document.createElement('button');
+    createBtn.textContent = '创建问题';
+    createBtn.addEventListener('click', () => opts.onCreateProblem(opts.taskId));
+    panel.appendChild(createBtn);
   }
   container.appendChild(panel);
 }
@@ -835,6 +859,442 @@ btnCapture.addEventListener('click', captureCurrentObservation);
 btnExportBundle.addEventListener('click', downloadBundle);
 btnSubmit.addEventListener('click', submitObservation);
 btnImport.addEventListener('click', importAuditReport);
+
+// --- P11 问题管理视图（task 4.1/4.2）---
+
+const tabMatch = document.getElementById('tab-match');
+const tabProblems = document.getElementById('tab-problems');
+const matchViewEl = document.getElementById('match-view');
+const problemViewEl = document.getElementById('problem-view');
+const problemListEl = document.getElementById('problem-list');
+const problemDetailEl = document.getElementById('problem-detail');
+const problemFilterTriage = document.getElementById('problem-filter-triage');
+const problemFilterStatus = document.getElementById('problem-filter-status');
+const problemRefreshBtn = document.getElementById('problem-refresh');
+const problemStatusEl = document.getElementById('problem-status');
+
+// 复用观察诊断端点（POST /observations 与 /problems 同服务）。
+const problemApi = createProblemApi({ endpoint: OBSERVATION_ENDPOINT });
+let currentProblems = [];
+let currentProblemDetailId = null;
+
+function showProblemStatus(msg) {
+  problemStatusEl.textContent = msg;
+}
+
+// 视图切换：比赛 / 问题。切到问题时自动拉取列表。
+function switchView(view) {
+  const isProblems = view === 'problems';
+  matchViewEl.hidden = isProblems;
+  problemViewEl.hidden = !isProblems;
+  tabMatch.classList.toggle('active', !isProblems);
+  tabProblems.classList.toggle('active', isProblems);
+  if (isProblems) refreshProblemList();
+}
+
+// 拉取 /problems 列表；服务不可达时回退提示（不阻塞诊断链路）。
+async function refreshProblemList() {
+  showProblemStatus('加载中…');
+  try {
+    const res = await problemApi.list();
+    if (!res.ok) {
+      showProblemStatus(`加载问题失败：${res.data?.error ?? `HTTP ${res.status}`}`);
+      currentProblems = [];
+    } else {
+      currentProblems = normalizeProblems(res.data?.problems);
+    }
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}），请确认 service 已启动`);
+    currentProblems = [];
+  }
+  renderProblemList();
+}
+
+function renderProblemList() {
+  const filtered = filterProblems(currentProblems, {
+    triage: problemFilterTriage.value || undefined,
+    status: problemFilterStatus.value || undefined,
+  });
+  problemListEl.innerHTML = '';
+  if (filtered.length === 0) {
+    problemListEl.textContent = '(暂无匹配的问题 — 在「观察采集 / 诊断」面板对已诊断结果点「创建问题」)';
+    return;
+  }
+  for (const p of filtered) problemListEl.appendChild(buildProblemCard(p));
+}
+
+function buildProblemCard(p) {
+  const card = document.createElement('div');
+  card.className = 'problem-card';
+  card.dataset.problemId = p.id;
+  const head = document.createElement('div');
+  head.className = 'problem-card-head';
+  const badge = document.createElement('span');
+  badge.className = `problem-triage-badge ${triageBadgeClass(p.triage)}`;
+  badge.textContent = p.triage;
+  const title = document.createElement('span');
+  title.className = 'problem-card-title';
+  title.textContent = redactText(summarizeProblemTitle(p.title));
+  title.title = redactText(p.title);
+  const status = document.createElement('span');
+  status.className = `problem-status-badge problem-status-${p.status}`;
+  status.textContent = p.status;
+  const source = document.createElement('span');
+  source.className = 'problem-source';
+  source.textContent = problemSourceLabel(p);
+  head.append(badge, title, status, source);
+  card.appendChild(head);
+
+  const meta = document.createElement('div');
+  meta.className = 'problem-card-meta';
+  if (p.github?.issue_number) {
+    const url = p.github.url ?? '';
+    const safeUrl = /^https?:\/\//i.test(url) ? url : null;
+    const a = document.createElement('a');
+    a.className = 'problem-issue-link';
+    if (safeUrl) {
+      a.href = safeUrl;
+      a.target = '_blank';
+      a.rel = 'noopener';
+      // 卡片整体可点击打开详情；链接点击只导航，不冒泡触发详情。
+      a.addEventListener('click', (e) => e.stopPropagation());
+    }
+    a.textContent = `#${p.github.issue_number}`;
+    meta.appendChild(a);
+  }
+  if (p.change_ref) {
+    const ref = document.createElement('span');
+    ref.className = 'problem-ref';
+    ref.textContent = `change: ${redactText(p.change_ref)}`;
+    meta.appendChild(ref);
+  }
+  const time = document.createElement('span');
+  time.className = 'problem-time';
+  time.textContent = formatProblemTime(p.created_at);
+  meta.appendChild(time);
+  card.appendChild(meta);
+
+  card.addEventListener('click', () => openProblemDetail(p.id));
+  return card;
+}
+
+// 详情：拉取最新问题并渲染（动作/讨论后刷新用同一路径）。
+async function openProblemDetail(id) {
+  try {
+    const res = await problemApi.get(id);
+    if (!res.ok) {
+      showProblemStatus(`加载问题失败：${res.data?.error ?? `HTTP ${res.status}`}`);
+      return;
+    }
+    const p = normalizeProblem(res.data);
+    if (!p) {
+      showProblemStatus('问题数据无效');
+      return;
+    }
+    currentProblemDetailId = id;
+    problemDetailEl.innerHTML = '';
+    problemDetailEl.appendChild(buildProblemDetail(p));
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+function buildProblemDetail(p) {
+  const r = problemDetailToRender(p);
+  const wrap = document.createElement('div');
+  wrap.className = 'problem-detail';
+
+  const back = document.createElement('button');
+  back.textContent = '← 返回列表';
+  back.addEventListener('click', () => {
+    problemDetailEl.innerHTML = '';
+    currentProblemDetailId = null;
+  });
+  wrap.appendChild(back);
+
+  const head = document.createElement('div');
+  head.className = 'problem-detail-head';
+  const badge = document.createElement('span');
+  badge.className = `problem-triage-badge ${triageBadgeClass(p.triage)}`;
+  badge.textContent = p.triage;
+  const status = document.createElement('span');
+  status.className = `problem-status-badge problem-status-${p.status}`;
+  status.textContent = p.status;
+  const source = document.createElement('span');
+  source.className = 'problem-source';
+  source.textContent = `来源: ${r.source}`;
+  const time = document.createElement('span');
+  time.className = 'problem-time';
+  time.textContent = `创建 ${formatProblemTime(p.created_at)}`;
+  head.append(badge, status, source, time);
+  wrap.appendChild(head);
+
+  const title = document.createElement('div');
+  title.className = 'problem-detail-title';
+  title.textContent = r.title;
+  wrap.appendChild(title);
+
+  if (r.description) {
+    const desc = document.createElement('div');
+    desc.className = 'problem-detail-desc';
+    desc.textContent = r.description;
+    wrap.appendChild(desc);
+  }
+
+  const ghUrl = r.github?.url ?? '';
+  if (r.github && /^https?:\/\//i.test(ghUrl)) {
+    const a = document.createElement('a');
+    a.className = 'problem-issue-link';
+    a.href = ghUrl;
+    a.target = '_blank';
+    a.rel = 'noopener';
+    a.textContent = `GitHub issue #${r.github.issue_number}`;
+    wrap.appendChild(a);
+  }
+
+  if (r.reportText) {
+    const report = document.createElement('pre');
+    report.className = 'problem-report';
+    report.textContent = r.reportText;
+    wrap.appendChild(report);
+  }
+
+  if (r.decisions.length) {
+    const dec = document.createElement('div');
+    dec.className = 'problem-decisions';
+    const heading = document.createElement('div');
+    heading.className = 'problem-section-heading';
+    heading.textContent = '决策轨迹';
+    dec.appendChild(heading);
+    for (const d of r.decisions) {
+      const row = document.createElement('div');
+      row.className = 'problem-decision-row';
+      row.textContent = `${d.at}  ${d.action}${d.reason ? ` — ${d.reason}` : ''} (${d.by})`;
+      dec.appendChild(row);
+    }
+    wrap.appendChild(dec);
+  }
+
+  wrap.appendChild(buildChangeRefEditor(p));
+  wrap.appendChild(buildProblemActions(p));
+  wrap.appendChild(buildDiscussionArea(p));
+  return wrap;
+}
+
+function buildChangeRefEditor(p) {
+  const row = document.createElement('div');
+  row.className = 'problem-action-row';
+  const label = document.createElement('label');
+  label.textContent = 'change_ref';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = '如 p12-fix（留空 = 清除）';
+  input.value = p.change_ref ?? '';
+  const save = document.createElement('button');
+  save.textContent = '保存';
+  save.addEventListener('click', () => patchProblemAndRefresh(p.id, buildProblemPatch({ change_ref: input.value })));
+  row.append(label, input, save);
+  return row;
+}
+
+function buildProblemActions(p) {
+  const wrap = document.createElement('div');
+  wrap.className = 'problem-actions';
+  const heading = document.createElement('div');
+  heading.className = 'problem-section-heading';
+  heading.textContent = '动作';
+  wrap.appendChild(heading);
+
+  const triageRow = document.createElement('div');
+  triageRow.className = 'problem-action-row';
+  triageRow.appendChild(document.createTextNode('分类:'));
+  for (const t of ['bug', 'design', 'discuss']) {
+    const b = document.createElement('button');
+    b.textContent = t;
+    b.disabled = p.triage === t;
+    b.addEventListener('click', () => patchProblemAndRefresh(p.id, buildProblemPatch({ triage: t })));
+    triageRow.appendChild(b);
+  }
+  const deferBtn = document.createElement('button');
+  deferBtn.textContent = 'defer';
+  deferBtn.addEventListener('click', () => requestReasonedAction(p.id, 'defer'));
+  const wontfixBtn = document.createElement('button');
+  wontfixBtn.textContent = 'wontfix';
+  wontfixBtn.addEventListener('click', () => requestReasonedAction(p.id, 'wontfix'));
+  triageRow.appendChild(deferBtn);
+  triageRow.appendChild(wontfixBtn);
+  if (p.triage === 'defer' || p.triage === 'wontfix') {
+    const reopenBtn = document.createElement('button');
+    reopenBtn.textContent = '重开';
+    reopenBtn.addEventListener('click', () =>
+      patchProblemAndRefresh(p.id, buildProblemPatch({ triage: 'discuss', reason: 'reopen' }))
+    );
+    triageRow.appendChild(reopenBtn);
+  }
+  wrap.appendChild(triageRow);
+
+  const statusRow = document.createElement('div');
+  statusRow.className = 'problem-action-row';
+  statusRow.appendChild(document.createTextNode('状态:'));
+  for (const s of ['in_progress', 'fixed', 'closed']) {
+    const b = document.createElement('button');
+    b.textContent = s;
+    b.disabled = p.status === s;
+    b.addEventListener('click', () => patchProblemAndRefresh(p.id, buildProblemPatch({ status: s })));
+    statusRow.appendChild(b);
+  }
+  wrap.appendChild(statusRow);
+
+  const ghRow = document.createElement('div');
+  ghRow.className = 'problem-action-row';
+  const ghBtn = document.createElement('button');
+  if (p.triage === 'defer' || p.triage === 'wontfix') {
+    // 废弃/暂停的问题不落 issue。
+    ghBtn.textContent = '提交 GitHub issue';
+    ghBtn.disabled = true;
+    ghBtn.title = 'defer/wontfix 问题不提交 issue';
+  } else {
+    ghBtn.textContent = p.triage === 'discuss' ? '转为 issue' : '提交 GitHub issue';
+    ghBtn.addEventListener('click', () => submitGithubIssue(p.id));
+  }
+  ghRow.appendChild(ghBtn);
+  wrap.appendChild(ghRow);
+  return wrap;
+}
+
+// defer/wontfix 弹输入框要求 reason（必填校验）。
+function requestReasonedAction(id, triage) {
+  const reason = window.prompt(`填写「${triage}」理由（必填）：`, '');
+  if (reason === null) return; // 用户取消
+  const check = validateProblemAction({ triage, reason });
+  if (!check.ok) {
+    showProblemStatus(check.error);
+    return;
+  }
+  patchProblemAndRefresh(id, buildProblemPatch({ triage, reason }));
+}
+
+// 动作 → PATCH → 刷新列表 + 重渲染详情。
+async function patchProblemAndRefresh(id, patch) {
+  const check = validateProblemAction(patch);
+  if (!check.ok) {
+    showProblemStatus(check.error);
+    return;
+  }
+  try {
+    const res = await problemApi.patch(id, patch);
+    if (!res.ok) {
+      showProblemStatus(`更新失败：${res.data?.error ?? `HTTP ${res.status}`}`);
+      return;
+    }
+    await refreshProblemList();
+    await openProblemDetail(id);
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// 提交 GitHub issue：成功回写 github 引用；失败展示明确错误，本地 problem 不变。
+async function submitGithubIssue(id) {
+  try {
+    const res = await problemApi.github(id, {});
+    if (!res.ok) {
+      showProblemStatus(`GitHub 提交失败：${res.data?.error ?? `HTTP ${res.status}`}`);
+      return;
+    }
+    if (res.data?.dryRun) {
+      showProblemStatus('dryRun：未实际创建 issue');
+      return;
+    }
+    const num = res.data?.github?.issue_number;
+    showProblemStatus(num ? `已提交 GitHub issue #${num}` : '已提交 GitHub issue');
+    await refreshProblemList();
+    await openProblemDetail(id);
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+function buildDiscussionArea(p) {
+  const wrap = document.createElement('div');
+  wrap.className = 'problem-discussion';
+  const heading = document.createElement('div');
+  heading.className = 'problem-section-heading';
+  heading.textContent = `讨论（${p.discussion.length}）`;
+  wrap.appendChild(heading);
+
+  const list = document.createElement('div');
+  list.className = 'problem-discussion-list';
+  for (const d of problemDetailToRender(p).discussion) {
+    const row = document.createElement('div');
+    row.className = 'problem-discussion-row';
+    const meta = document.createElement('span');
+    meta.className = 'problem-discussion-meta';
+    meta.textContent = `${d.author} @ ${d.at}`;
+    const text = document.createElement('div');
+    text.className = 'problem-discussion-text';
+    text.textContent = d.text;
+    row.append(meta, text);
+    list.appendChild(row);
+  }
+  wrap.appendChild(list);
+
+  const inputRow = document.createElement('div');
+  inputRow.className = 'problem-action-row';
+  const authorInput = document.createElement('input');
+  authorInput.type = 'text';
+  authorInput.placeholder = '作者（留空 = 匿名）';
+  authorInput.value = 'user';
+  const textInput = document.createElement('input');
+  textInput.type = 'text';
+  textInput.placeholder = '留言…';
+  const sendBtn = document.createElement('button');
+  sendBtn.textContent = '留言';
+  sendBtn.addEventListener('click', async () => {
+    const text = textInput.value.trim();
+    if (!text) {
+      showProblemStatus('留言内容不能为空');
+      return;
+    }
+    const author = authorInput.value.trim() || '匿名';
+    try {
+      const res = await problemApi.discuss(p.id, { author, text });
+      if (!res.ok) {
+        showProblemStatus(`留言失败：${res.data?.error ?? `HTTP ${res.status}`}`);
+        return;
+      }
+      textInput.value = '';
+      await openProblemDetail(p.id);
+    } catch (err) {
+      showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+    }
+  });
+  inputRow.append(authorInput, textInput, sendBtn);
+  wrap.appendChild(inputRow);
+  return wrap;
+}
+
+// 观察面板「创建问题」按钮 → POST /problems {task_id} → 切问题视图。服务不可达
+// 回退提示，不阻塞诊断链路（轮询/CLI 回退照常）。
+async function createProblemFromEntry(taskId) {
+  try {
+    const res = await problemApi.create({ task_id: taskId });
+    if (!res.ok) {
+      showNotice(`创建问题失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    showNotice(`已创建问题 ${res.data?.id ?? ''}，切到问题视图`);
+    switchView('problems');
+  } catch (err) {
+    showNotice(`创建问题失败：本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+tabMatch.addEventListener('click', () => switchView('match'));
+tabProblems.addEventListener('click', () => switchView('problems'));
+problemFilterTriage.addEventListener('change', renderProblemList);
+problemFilterStatus.addEventListener('change', renderProblemList);
+problemRefreshBtn.addEventListener('click', refreshProblemList);
 
 // 启动：先尝试 WASM，再 init
 tryLoadEngine().then(() => init());

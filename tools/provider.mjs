@@ -287,3 +287,35 @@ export function redactKey(text, secret) {
   );
   return out;
 }
+
+// 凭证键名判定（与 viewer/audit-report.js redactText 同口径）：归一化 key 为小写
+// 字母数字后，包含 apikey/token/secret/authorization 任一即视为凭证键
+// （ANTHROPIC_API_KEY、my_api_key、accessToken、clientSecret、authToken 等）。
+export function hasCredentialTerm(key) {
+  const n = String(key).toLowerCase().replace(/[^a-z0-9]/g, '');
+  return n.includes('apikey') || n.includes('token') || n.includes('secret') || n.includes('authorization');
+}
+
+// 抹除通用凭证形状（服务端落盘/响应 final safety net，与 viewer redactText 同规则）：
+// 已知凭证形值（sk-ant-*/sk-proj-*/ghp_*/github_pat_*）+ JSON 风格键值对
+// `"any_credential_key":"value"`（键名允许前缀/后缀与分隔符 - _ .）+ 未加引号的
+// `KEY: value` / `KEY = value`（值须像秘密：8+ 个字母数字/符号或引号包裹，避免误伤
+// "token: of the month" 这类短语）。过度抹除是安全方向。
+export function redactCredentialText(text) {
+  let s = String(text ?? '');
+  s = s.replace(
+    /sk-ant-[A-Za-z0-9_-]+|sk-proj-[A-Za-z0-9_-]+|ghp_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}/g,
+    '[REDACTED]'
+  );
+  // JSON 风格键值对："client_secret":"x" / 'access-token':"y"。
+  s = s.replace(
+    /(["'])([A-Za-z0-9_.-]+)\1\s*:\s*(")([^"]*)(")/g,
+    (m, q, key, vq, value, ve) => (hasCredentialTerm(key) ? `${q}${key}${q}: ${vq}[REDACTED]${ve}` : m)
+  );
+  // 未加引号 `KEY: value` / `KEY = value`：键名含凭证词且值像秘密才抹除。
+  s = s.replace(
+    /\b([A-Za-z0-9_.-]+)\s*[:=]\s*("[^"]*"|'[^']*'|[A-Za-z0-9_\-./+=]{8,})/g,
+    (m, key) => (hasCredentialTerm(key) ? `${key}: [REDACTED]` : m)
+  );
+  return s;
+}
