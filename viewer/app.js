@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260826-14';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260826-14';
-import { createGame } from './game.js?v=20260826-14';
-import { mockEventStream } from './mock-event-stream.js?v=20260826-14';
-import { resetMicroMotion } from './micro-motion.js?v=20260826-14';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260826-14';
+import { config } from './config.js?v=20260826-16';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260826-16';
+import { createGame } from './game.js?v=20260826-16';
+import { mockEventStream } from './mock-event-stream.js?v=20260826-16';
+import { resetMicroMotion } from './micro-motion.js?v=20260826-16';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260826-16';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260826-14';
+} from './audit-report.js?v=20260826-16';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -34,7 +34,7 @@ import {
   summarizeStatement,
   loadList,
   saveList,
-} from './observation-list.js?v=20260826-14';
+} from './observation-list.js?v=20260826-16';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -47,7 +47,9 @@ import {
   validateProblemAction,
   buildProblemPatch,
   createProblemApi,
-} from './problem-view.js?v=20260826-14';
+  summarizeImportResult,
+  pollRerunTask,
+} from './problem-view.js?v=20260826-16';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -95,7 +97,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260826-14';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260826-16';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -871,6 +873,7 @@ const problemDetailEl = document.getElementById('problem-detail');
 const problemFilterTriage = document.getElementById('problem-filter-triage');
 const problemFilterStatus = document.getElementById('problem-filter-status');
 const problemRefreshBtn = document.getElementById('problem-refresh');
+const problemImportBtn = document.getElementById('problem-import');
 const problemStatusEl = document.getElementById('problem-status');
 
 // 复用观察诊断端点（POST /observations 与 /problems 同服务）。
@@ -1159,6 +1162,21 @@ function buildProblemActions(p) {
   }
   ghRow.appendChild(ghBtn);
   wrap.appendChild(ghRow);
+
+  // P12：重跑诊断（有关联任务时）与删除（confirm 确认）。
+  const opsRow = document.createElement('div');
+  opsRow.className = 'problem-action-row';
+  if (p.source?.task_id) {
+    const rerunBtn = document.createElement('button');
+    rerunBtn.textContent = '重跑诊断';
+    rerunBtn.addEventListener('click', () => rerunProblemDiagnosis(p.id));
+    opsRow.appendChild(rerunBtn);
+  }
+  const deleteBtn = document.createElement('button');
+  deleteBtn.textContent = '删除';
+  deleteBtn.addEventListener('click', () => deleteProblemConfirm(p.id));
+  opsRow.appendChild(deleteBtn);
+  wrap.appendChild(opsRow);
   return wrap;
 }
 
@@ -1210,6 +1228,72 @@ async function submitGithubIssue(id) {
     showProblemStatus(num ? `已提交 GitHub issue #${num}` : '已提交 GitHub issue');
     await refreshProblemList();
     await openProblemDetail(id);
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// 重跑诊断：POST rerun → 202 {task_id} → 轮询新任务终态 → diagnosed 刷新详情拿新报告；
+// 其它终态（failed/insufficient_evidence/provider_unavailable）提示失败，不当作成功。
+async function rerunProblemDiagnosis(id) {
+  try {
+    const res = await problemApi.rerun(id, {});
+    if (!res.ok) {
+      showProblemStatus(`重跑失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    const taskId = res.data?.task_id;
+    if (!taskId) {
+      showProblemStatus('重跑失败：服务未返回 task_id');
+      return;
+    }
+    showProblemStatus('重跑诊断已提交，等待完成…');
+    const poll = await pollRerunTask(taskId, {
+      endpoint: OBSERVATION_ENDPOINT,
+      pollMs: OBSERVATION_POLL_MS,
+      maxMs: OBSERVATION_POLL_MAX_MS,
+    });
+    if (!poll.ok) {
+      showProblemStatus(poll.error);
+      return;
+    }
+    showProblemStatus('重跑完成，已刷新问题详情');
+    await openProblemDetail(id);
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// 删除：confirm 确认后 DELETE；若正显示该详情则回到列表。
+async function deleteProblemConfirm(id) {
+  if (!window.confirm(`确定删除问题 ${id}？此操作不可撤销。`)) return;
+  try {
+    const res = await problemApi.remove(id);
+    if (!res.ok) {
+      showProblemStatus(`删除失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    showProblemStatus('已删除问题');
+    if (currentProblemDetailId === id) {
+      problemDetailEl.innerHTML = '';
+      currentProblemDetailId = null;
+    }
+    await refreshProblemList();
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// 导入历史任务：POST /problems/import → 刷新列表 + notice 显示 created/skipped 摘要。
+async function importHistoryProblems() {
+  try {
+    const res = await problemApi.importProblems({});
+    if (!res.ok) {
+      showProblemStatus(`导入失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    showNotice(summarizeImportResult(res.data));
+    await refreshProblemList();
   } catch (err) {
     showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
   }
@@ -1295,6 +1379,7 @@ tabProblems.addEventListener('click', () => switchView('problems'));
 problemFilterTriage.addEventListener('change', renderProblemList);
 problemFilterStatus.addEventListener('change', renderProblemList);
 problemRefreshBtn.addEventListener('click', refreshProblemList);
+problemImportBtn.addEventListener('click', importHistoryProblems);
 
 // 启动：先尝试 WASM，再 init
 tryLoadEngine().then(() => init());

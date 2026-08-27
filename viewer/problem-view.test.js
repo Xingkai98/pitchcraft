@@ -17,6 +17,9 @@ import {
   discussionToRender,
   problemDetailToRender,
   createProblemApi,
+  summarizeImportResult,
+  rerunTerminalState,
+  pollRerunTask,
 } from './problem-view.js';
 
 const FAKE_KEY = 'sk-ant-fake-secret-value-0001';
@@ -56,6 +59,7 @@ const jsonResponse = (status, data) => ({
   ok: status >= 200 && status < 300,
   status,
   text: async () => JSON.stringify(data),
+  json: async () => data,
 });
 
 const fakeFetch = (handler) => {
@@ -290,4 +294,126 @@ test('problemApi propagates fetch rejections (service unreachable)', async () =>
   });
   const api = createProblemApi({ endpoint: 'http://svc:8787', fetchImpl });
   await assert.rejects(() => api.list(), /network down/);
+});
+
+// --- P12 problem ops（rerun / delete / import）---
+
+test('problemApi.rerun/remove/importProblems hit the P12 endpoints', async () => {
+  const calls = [];
+  const fetchImpl = fakeFetch(async (url, opts) => {
+    calls.push({ url, method: opts.method, body: opts.body ? JSON.parse(opts.body) : null });
+    return jsonResponse(202, { task_id: 'run-2' });
+  });
+  const api = createProblemApi({ endpoint: 'http://svc:8787', fetchImpl });
+  await api.rerun('prob-1', { reason: 'engine changed' });
+  await api.remove('prob-1');
+  await api.importProblems({ task_ids: ['t-1'] });
+  assert.deepEqual(calls, [
+    { url: 'http://svc:8787/problems/prob-1/rerun', method: 'POST', body: { reason: 'engine changed' } },
+    { url: 'http://svc:8787/problems/prob-1', method: 'DELETE', body: null },
+    { url: 'http://svc:8787/problems/import', method: 'POST', body: { task_ids: ['t-1'] } },
+  ]);
+});
+
+test('problemApi.rerun without a reason body sends an empty object', async () => {
+  const fetchImpl = fakeFetch(async (url, opts) => {
+    assert.equal(url, 'http://svc:8787/problems/prob-1/rerun');
+    assert.deepEqual(JSON.parse(opts.body), {});
+    return jsonResponse(202, { task_id: 'run-2' });
+  });
+  const api = createProblemApi({ endpoint: 'http://svc:8787', fetchImpl });
+  const res = await api.rerun('prob-1');
+  assert.equal(res.status, 202);
+  assert.equal(res.data.task_id, 'run-2');
+});
+
+test('summarizeImportResult builds a redacted summary from created/skipped/failed', () => {
+  const s = summarizeImportResult({
+    created: ['prob-1', 'prob-2'],
+    skipped: ['t-1'],
+    failed: [{ task_id: 't-x', error: `see ${FAKE_KEY} attached` }],
+  });
+  assert.match(s, /新建 2/);
+  assert.match(s, /跳过 1/);
+  assert.match(s, /失败 1/);
+  assert.doesNotMatch(s, new RegExp(FAKE_KEY));
+  assert.match(s, /\[REDACTED\]/);
+  // 空/非法输入安全兜底（失败 0 时不带「失败」后缀）。
+  assert.match(summarizeImportResult(null), /新建 0/);
+  assert.match(summarizeImportResult({}), /新建 0/);
+  assert.equal(summarizeImportResult({ failed: 'not-an-array' }), '导入完成：新建 0，跳过 0');
+});
+
+// --- 重跑轮询终态判定 / 轮询（P12 review 修复）---
+
+test('rerunTerminalState: diagnosed is success; other terminals are failures', () => {
+  assert.deepEqual(rerunTerminalState('diagnosed', { errors: [] }), { ok: true, status: 'diagnosed' });
+  const failed = rerunTerminalState('failed', {
+    failure_kind: 'provider_error',
+    errors: [`see ${FAKE_KEY} attached`],
+  });
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /重跑结束/);
+  assert.match(failed.error, /provider_error/);
+  assert.match(failed.error, /\[REDACTED\]/);
+  assert.doesNotMatch(failed.error, new RegExp(FAKE_KEY));
+  // 无 failure_kind → 用 status；无 errors → 无详情括号。
+  const ie = rerunTerminalState('insufficient_evidence', {});
+  assert.equal(ie.ok, false);
+  assert.match(ie.error, /insufficient_evidence/);
+  assert.doesNotMatch(ie.error, /（/);
+  const pa = rerunTerminalState('provider_unavailable', { failure_kind: null, errors: [] });
+  assert.equal(pa.ok, false);
+  assert.match(pa.error, /provider_unavailable/);
+});
+
+test('pollRerunTask returns ok for a diagnosed terminal and failure for other terminals', async () => {
+  // fake fetch 依次返回 auditing → failed（带错误摘要）。
+  const states = [
+    { status: 'auditing', errors: [] },
+    { status: 'failed', failure_kind: 'provider_error', errors: [`see ${FAKE_KEY}`] },
+  ];
+  let calls = 0;
+  const fetchImpl = async (url) => {
+    calls += 1;
+    assert.equal(url, 'http://svc:8787/tasks/run-2');
+    return jsonResponse(200, states[Math.min(calls - 1, states.length - 1)]);
+  };
+  const failed = await pollRerunTask('run-2', {
+    endpoint: 'http://svc:8787',
+    fetchImpl,
+    pollMs: 1,
+    maxMs: 1000,
+  });
+  assert.equal(failed.ok, false);
+  assert.match(failed.error, /重跑结束/);
+  assert.doesNotMatch(failed.error, new RegExp(FAKE_KEY));
+  assert.match(failed.error, /\[REDACTED\]/);
+
+  // diagnosed 终态 → ok。
+  const fetchOk = fakeFetch(async () => jsonResponse(200, { status: 'diagnosed', errors: [] }));
+  const ok = await pollRerunTask('run-3', { endpoint: 'http://svc:8787', fetchImpl: fetchOk, pollMs: 1, maxMs: 1000 });
+  assert.deepEqual(ok, { ok: true, status: 'diagnosed' });
+});
+
+test('pollRerunTask surfaces network / HTTP / bad-JSON failures', async () => {
+  const network = await pollRerunTask('run-2', {
+    endpoint: 'http://svc:8787',
+    fetchImpl: async () => {
+      throw new Error('network down');
+    },
+    pollMs: 1,
+    maxMs: 1000,
+  });
+  assert.equal(network.ok, false);
+  assert.match(network.error, /网络|不可达|network down/);
+
+  const http = await pollRerunTask('run-2', {
+    endpoint: 'http://svc:8787',
+    fetchImpl: async () => jsonResponse(500, { error: 'x' }),
+    pollMs: 1,
+    maxMs: 1000,
+  });
+  assert.equal(http.ok, false);
+  assert.match(http.error, /HTTP 500/);
 });

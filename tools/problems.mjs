@@ -8,7 +8,7 @@
 // contract. All user-controlled text is scrubbed at persist time as a final
 // safety net (redactKey), mirroring the runner's persistTask.
 
-import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, renameSync, mkdirSync, readdirSync, existsSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { redactKey, redactCredentialText, hasCredentialTerm } from './provider.mjs';
 
@@ -339,4 +339,183 @@ export function setGithubRef(id, github, { tasksDir, now = defaultNow, envKey } 
   problem.updated_at = at;
   persistProblem(problem, tasksDir, envKey);
   return problem;
+}
+
+// --- P12 problem ops（delete / rerun / import）--------------------------------
+
+// 删除 Problem（幂等 404 语义）：文件删除；id 缺失/非法返回 null（服务层映射 404）。
+// 返回 true 表示已删除。文件系统删除无回收站——调用方负责确认。
+export function deleteProblem(id, { tasksDir } = {}) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  if (!getProblem(id, { tasksDir })) return null;
+  try {
+    unlinkSync(problemPath(tasksDir, id));
+  } catch {
+    return null;
+  }
+  return true;
+}
+
+// 重跑：把 problem.source.task_id 指向新 runId 并追加 decisions 审计记录
+// `{ action: 'rerun', by, at, reason, prev_task_id }`（reason 可空；prev_task_id =
+// 被替换的旧 task_id，供 import 去重——脱链的旧任务不会被二次导入重建）。旧报告
+// 保留到新诊断写回（setProblemReport）。返回更新后的 Problem；id 缺失返回 null。
+// 重跑编排（读 bundle / runDiagnosis / 终态写回）在服务层。
+export function rerunProblem(id, { task_id, reason = null } = {}, { tasksDir, now = defaultNow, by = 'user', envKey } = {}) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  const problem = getProblem(id, { tasksDir });
+  if (!problem) return null;
+  if (typeof task_id !== 'string' || !task_id) {
+    throw new ProblemError('BAD_REQUEST', 'task_id is required for rerun');
+  }
+  const at = now();
+  const prevTaskId = problem.source?.task_id ?? null;
+  const decision = { action: 'rerun', by, at, reason: reason ?? null };
+  if (prevTaskId) decision.prev_task_id = prevTaskId;
+  problem.source = { ...(problem.source ?? {}), task_id };
+  problem.decisions.push(decision);
+  problem.updated_at = at;
+  persistProblem(problem, tasksDir, envKey);
+  return problem;
+}
+
+// 终态诊断报告写回 problem.source.report（重跑完成后旧报告被覆盖）；保留 source
+// 链上其它字段（task_id/observation_id）。`runId` 传当前任务的 run_id：若与
+// problem.source.task_id 不一致（并发 rerun 已把问题指向更新的任务），丢弃本次
+// 写回（no-op，返回未改动的 problem），避免旧诊断覆盖新结果。返回更新后的
+// Problem；id 缺失返回 null。
+export function setProblemReport(id, report, { tasksDir, now = defaultNow, envKey, runId = null } = {}) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  const problem = getProblem(id, { tasksDir });
+  if (!problem) return null;
+  if (!report || typeof report !== 'object' || Array.isArray(report)) {
+    throw new ProblemError('BAD_REQUEST', 'report must be an object');
+  }
+  if (runId != null && problem.source?.task_id !== runId) {
+    return problem; // 并发保护：run_id 不匹配当前 source → no-op
+  }
+  const at = now();
+  problem.source = { ...(problem.source ?? {}), report };
+  problem.updated_at = at;
+  persistProblem(problem, tasksDir, envKey);
+  return problem;
+}
+
+// 从诊断任务构造 createProblem 输入（POST /problems 与 POST /problems/import 共用
+// 的 create-from-report 路径，从服务层抽出的公共纯函数）。task 须已归一化
+// （status=diagnosed 且带 report）；bundle 为原观察 bundle（可空，读失败传 null）。
+// overrides 覆盖 title/description/triage/status/reason。bundle.statement 先
+// redactKey 再进描述。
+export function problemInputFromDiagnosis({ task_id, task, bundle = null, envKey, overrides = {} } = {}) {
+  const report = task?.report;
+  const phenomenon =
+    typeof report?.phenomenon_summary === 'string' && report.phenomenon_summary.trim()
+      ? report.phenomenon_summary.trim()
+      : '未命名问题';
+  let userStatement = '';
+  if (bundle && typeof bundle.statement === 'string' && bundle.statement.trim()) {
+    userStatement = redactKey(bundle.statement.trim(), envKey);
+  }
+  const descLines = [`现象: ${phenomenon}`];
+  if (userStatement) descLines.push(`用户描述: ${userStatement}`);
+  if (report?.root_cause) descLines.push(`根因: ${report.root_cause}`);
+  if (report?.proposed_fix) descLines.push(`建议修复: ${report.proposed_fix}`);
+  if (report?.verification) descLines.push(`验证: ${report.verification}`);
+  const source = { task_id, report };
+  if (bundle && typeof bundle.observation_id === 'string' && bundle.observation_id) {
+    source.observation_id = bundle.observation_id;
+  }
+  return {
+    title: overrides.title ?? phenomenon,
+    description: overrides.description ?? descLines.join('\n'),
+    source,
+    triage: overrides.triage ?? report?.triage?.category ?? 'discuss',
+    status: overrides.status ?? 'open',
+    reason: overrides.reason,
+  };
+}
+
+// 批量导入历史诊断任务为 Problem。`task_ids` 显式给定（调用方已做 TASK_ID_RE 校验）；
+// 缺省 = 扫描 listTaskIds() 中 status=diagnosed 且带 report 的全部任务（未诊断任务
+// 不是候选，不计入 failed）。已有关联 Problem 的任务跳过：existing 集合 = 所有
+// problem 的 source.task_id ∪ 所有 decisions 里的 task_id/prev_task_id（重跑脱链的旧
+// 任务也被跳过，避免二次导入重建重复 Problem）。readTask/readBundle/listTaskIds 由
+// 调用方注入（服务层接 runner 持久化文件），本模块保持纯逻辑可测。返回
+// `{ created: [ids], skipped: [task_ids], failed: [{task_id, error}] }`。
+export function importProblems(
+  { tasksDir, task_ids = null, readTask = null, listTaskIds = null, readBundle = null },
+  { now = defaultNow, newId = defaultProblemId, by = 'user', envKey, createFn = createProblem } = {}
+) {
+  if (!tasksDir) throw new ProblemError('BAD_REQUEST', 'tasksDir is required');
+  // existing：source.task_id + decisions 里的 task_id/prev_task_id（递归扫 decisions）。
+  const existing = new Set();
+  for (const p of listProblems({ tasksDir })) {
+    if (p?.source?.task_id) existing.add(p.source.task_id);
+    for (const d of Array.isArray(p?.decisions) ? p.decisions : []) {
+      if (!d || typeof d !== 'object') continue;
+      if (typeof d.task_id === 'string' && d.task_id) existing.add(d.task_id);
+      if (typeof d.prev_task_id === 'string' && d.prev_task_id) existing.add(d.prev_task_id);
+    }
+  }
+  const created = [];
+  const skipped = [];
+  const failed = [];
+  const seen = new Set();
+  const process = (id, task) => {
+    if (seen.has(id)) {
+      skipped.push(id); // 同一批内重复的 task_ids 计入 skipped，不静默消失
+      return;
+    }
+    seen.add(id);
+    if (existing.has(id)) {
+      skipped.push(id);
+      return;
+    }
+    if (!task || task.status !== 'diagnosed' || !task.report) {
+      failed.push({ task_id: id, error: 'task not diagnosed or missing' });
+      return;
+    }
+    let bundle = null;
+    try {
+      bundle = readBundle ? readBundle(id) : null;
+    } catch {
+      bundle = null;
+    }
+    try {
+      const input = problemInputFromDiagnosis({ task_id: id, task, bundle, envKey });
+      const problem = createFn(input, { tasksDir, now, newId, by, envKey });
+      created.push(problem.id);
+      existing.add(id); // 同一批内后续重复（task_ids 重复）不再创建
+    } catch (e) {
+      failed.push({ task_id: id, error: e?.message ?? String(e) });
+    }
+  };
+  if (Array.isArray(task_ids)) {
+    for (const id of task_ids) {
+      if (typeof id !== 'string' || !id) {
+        failed.push({ task_id: String(id), error: 'invalid task_id' });
+        continue;
+      }
+      let task = null;
+      try {
+        task = readTask ? readTask(id) : null;
+      } catch (e) {
+        failed.push({ task_id: id, error: e?.message ?? String(e) });
+        continue;
+      }
+      process(id, task);
+    }
+  } else {
+    const all = listTaskIds ? listTaskIds() : [];
+    for (const id of all) {
+      let task = null;
+      try {
+        task = readTask ? readTask(id) : null;
+      } catch {
+        continue; // 扫描路径下不可读任务直接跳过（不是显式候选）
+      }
+      if (task && task.status === 'diagnosed' && task.report) process(id, task);
+    }
+  }
+  return { created, skipped, failed };
 }

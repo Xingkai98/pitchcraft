@@ -3,7 +3,7 @@
 // runDiagnosis + env:{} 走 provider_unavailable（不 spawn，无 API 调用）。
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, unlinkSync } from 'node:fs';
 import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -322,7 +322,7 @@ test('OPTIONS preflight echoes a localhost Origin with 204', async () => {
     const res = await fetch(`${base}/observations`, { method: 'OPTIONS', headers: { Origin: LOCAL_ORIGIN } });
     assert.equal(res.status, 204);
     assert.equal(res.headers.get('access-control-allow-origin'), LOCAL_ORIGIN);
-    assert.equal(res.headers.get('access-control-allow-methods'), 'GET, POST, PATCH, OPTIONS');
+    assert.equal(res.headers.get('access-control-allow-methods'), 'GET, POST, PATCH, DELETE, OPTIONS');
     assert.equal(res.headers.get('access-control-allow-headers'), 'Content-Type');
   } finally {
     await closeServer(server);
@@ -938,6 +938,389 @@ test('POST /problems/:id/github dryRun returns ok without writing the ref', asyn
     // 未回写 github 引用。
     const detail = await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
     assert.equal((await detail.json()).github, null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+// --- P12 problem ops endpoints（rerun / delete / import）-----------------------
+
+// 直接写一个终态 diagnosed 任务（bundle + task 文件），供 import / rerun 复用。
+function writeDiagnosedTask(dir, taskId, report) {
+  writeFileSync(join(dir, `${taskId}.bundle.json`), JSON.stringify(validBundle()));
+  writeFileSync(join(dir, `${taskId}.task.json`), JSON.stringify({
+    run_id: taskId,
+    status: 'diagnosed',
+    report,
+    errors: [],
+    status_history: [
+      { status: 'auditing', at: 't0' },
+      { status: 'diagnosed', at: 't1' },
+    ],
+  }));
+}
+
+// fake runDiagnosis：落一个新 task 文件并返回带新 report 的任务（服务端据此写回
+// problem.source.report）。记录收到的 args。
+function fakeRerunDiagnosing(newReport) {
+  const calls = [];
+  const fake = async (args) => {
+    calls.push(args);
+    const task = {
+      run_id: args.runId,
+      status: 'diagnosed',
+      report: newReport,
+      errors: [],
+      status_history: [
+        { status: 'auditing', at: 't0' },
+        { status: 'diagnosed', at: 't1' },
+      ],
+    };
+    writeFileSync(join(args.tasksDir, `${args.runId}.task.json`), JSON.stringify(task));
+    writeFileSync(args.auditPath, JSON.stringify({ findings: [] }));
+    return task;
+  };
+  return { fake, calls };
+}
+
+test('DELETE /problems/:id removes the problem (200) and 404s when missing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    const post = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'to delete' }),
+    });
+    const problem = await post.json();
+    const del = await fetch(`${base}/problems/${problem.id}`, {
+      method: 'DELETE',
+      headers: { Origin: LOCAL_ORIGIN },
+    });
+    assert.equal(del.status, 200);
+    assert.equal(del.headers.get('access-control-allow-origin'), LOCAL_ORIGIN);
+    assert.deepEqual(await del.json(), { ok: true });
+    // 列表不再包含；详情 404。
+    const list = await fetch(`${base}/problems`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal((await list.json()).problems.length, 0);
+    assert.equal(
+      (await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } })).status,
+      404
+    );
+    // 幂等：再次删除 → 404。
+    const del2 = await fetch(`${base}/problems/${problem.id}`, {
+      method: 'DELETE',
+      headers: { Origin: LOCAL_ORIGIN },
+    });
+    assert.equal(del2.status, 404);
+    // 未知 / 非法 id → 404。
+    assert.equal(
+      (await fetch(`${base}/problems/nope`, { method: 'DELETE', headers: { Origin: LOCAL_ORIGIN } })).status,
+      404
+    );
+    assert.equal(
+      (await fetch(`${base}/problems/..%2Fx`, { method: 'DELETE', headers: { Origin: LOCAL_ORIGIN } })).status,
+      404
+    );
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/rerun returns 202, repoints the problem, and writes the new report back', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const oldReport = validReport({ phenomenon_summary: 'old phenomenon' });
+  const newReport = validReport({ phenomenon_summary: 'new phenomenon' });
+  writeDiagnosedTask(dir, 'task-a', oldReport);
+  const { fake, calls } = fakeRerunDiagnosing(newReport);
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: fake,
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-a' }),
+    });
+    assert.equal(create.status, 201);
+    const problem = await create.json();
+    assert.equal(problem.source.task_id, 'task-a');
+    assert.equal(problem.source.report.phenomenon_summary, 'old phenomenon');
+
+    const rerun = await fetch(`${base}/problems/${problem.id}/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ reason: 'engine changed' }),
+    });
+    assert.equal(rerun.status, 202);
+    assert.equal(rerun.headers.get('access-control-allow-origin'), LOCAL_ORIGIN);
+    const { task_id } = await rerun.json();
+    assert.ok(task_id);
+    assert.notEqual(task_id, 'task-a');
+
+    // 关联立即更新为新任务 + decisions 追加 rerun（含 reason）。
+    const detail = await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    const updated = await detail.json();
+    assert.equal(updated.source.task_id, task_id);
+    assert.equal(updated.decisions.at(-1).action, 'rerun');
+    assert.equal(updated.decisions.at(-1).reason, 'engine changed');
+
+    // 后台 fake 收到新 runId，bundle 内容来自旧任务。
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0].runId, task_id);
+    assert.equal(calls[0].bundlePath, join(dir, `${task_id}.bundle.json`));
+    const saved = JSON.parse(readFileSync(calls[0].bundlePath, 'utf8'));
+    assert.equal(saved.observation_id, 'obs-1');
+
+    // 终态后新报告写回 problem（轮询直到写回完成）。
+    let latest = null;
+    for (let i = 0; i < 20; i++) {
+      const r = await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+      latest = await r.json();
+      if (latest.source?.report?.phenomenon_summary === 'new phenomenon') break;
+      await new Promise((r2) => setTimeout(r2, 25));
+    }
+    assert.equal(latest.source.report.phenomenon_summary, 'new phenomenon');
+    assert.equal(latest.source.task_id, task_id);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/rerun returns 400 when the source task has no bundle', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    // 人工创建 → 无 source.task_id → 400。
+    const manual = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'manual' }),
+    });
+    const manualProblem = await manual.json();
+    const res1 = await fetch(`${base}/problems/${manualProblem.id}/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res1.status, 400);
+    assert.match((await res1.json()).error, /no bundle for rerun/);
+    // 问题不变。
+    const unchanged = await fetch(`${base}/problems/${manualProblem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal((await unchanged.json()).source, null);
+
+    // 从诊断任务创建后删除 bundle → 400。
+    writeDiagnosedTask(dir, 'task-b', validReport());
+    const created = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-b' }),
+    });
+    const p = await created.json();
+    unlinkSync(join(dir, 'task-b.bundle.json'));
+    const res2 = await fetch(`${base}/problems/${p.id}/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res2.status, 400);
+    assert.match((await res2.json()).error, /no bundle for rerun/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/rerun returns 404 for an unknown problem', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: async () => {} });
+  try {
+    const res = await fetch(`${base}/problems/nope/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/rerun rejects a path-traversal source task id with 400', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: async () => {} });
+  try {
+    mkdirSync(join(dir, 'problems'), { recursive: true });
+    writeFileSync(
+      join(dir, 'problems', 'prob-x.json'),
+      JSON.stringify({
+        id: 'prob-x',
+        title: 'x',
+        source: { task_id: '../evil' },
+        triage: 'bug',
+        status: 'open',
+        decisions: [],
+        discussion: [],
+        github: null,
+        change_ref: null,
+        created_at: 't',
+        updated_at: 't',
+      })
+    );
+    const res = await fetch(`${base}/problems/prob-x/rerun`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /no bundle for rerun/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/import scans diagnosed tasks, skips linked, and creates the rest', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 't-1', validReport({ phenomenon_summary: 'pheno one' }));
+  writeDiagnosedTask(dir, 't-2', validReport({ phenomenon_summary: 'pheno two' }));
+  writeDiagnosedTask(dir, 't-3', validReport({ phenomenon_summary: 'pheno three' }));
+  // t-failed 不是候选（不导入也不报失败）。
+  writeFileSync(
+    join(dir, 't-failed.task.json'),
+    JSON.stringify({ run_id: 't-failed', status: 'failed', report: null, errors: ['x'], status_history: [] })
+  );
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    // 先手工把 t-1 关联到问题。
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 't-1' }),
+    });
+    assert.equal(create.status, 201);
+
+    const res = await fetch(`${base}/problems/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('access-control-allow-origin'), LOCAL_ORIGIN);
+    const data = await res.json();
+    assert.equal(data.created.length, 2);
+    assert.deepEqual(data.skipped, ['t-1']);
+    assert.deepEqual(data.failed, []);
+
+    const list = await fetch(`${base}/problems`, { headers: { Origin: LOCAL_ORIGIN } });
+    const { problems } = await list.json();
+    assert.equal(problems.length, 3);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/import with explicit task_ids reports failed for missing/undiagnosed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 't-1', validReport());
+  writeFileSync(
+    join(dir, 't-failed.task.json'),
+    JSON.stringify({ run_id: 't-failed', status: 'failed', report: null, errors: [], status_history: [] })
+  );
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    const res = await fetch(`${base}/problems/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_ids: ['t-1', 't-failed', 't-missing'] }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.created.length, 1);
+    assert.deepEqual(data.skipped, []);
+    assert.deepEqual(data.failed, [
+      { task_id: 't-failed', error: 'task not diagnosed or missing' },
+      { task_id: 't-missing', error: 'task not diagnosed or missing' },
+    ]);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/import validates task_ids and rejects bad shapes', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    // 非法 task_id 格式 → 400。
+    const badId = await fetch(`${base}/problems/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_ids: ['../x'] }),
+    });
+    assert.equal(badId.status, 400);
+    // task_ids 不是数组 → 400。
+    const notArray = await fetch(`${base}/problems/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_ids: 't-1' }),
+    });
+    assert.equal(notArray.status, 400);
+    // 空 body → 缺省扫描（无任务 → created 空）。
+    const empty = await fetch(`${base}/problems/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(empty.status, 200);
+    assert.deepEqual(await empty.json(), { created: [], skipped: [], failed: [] });
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/import skips tasks linked by a previous import (no duplicates)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 't-1', validReport());
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    const first = await fetch(`${base}/problems/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(first.status, 200);
+    assert.equal((await first.json()).created.length, 1);
+
+    const second = await fetch(`${base}/problems/import`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.deepEqual(await second.json(), { created: [], skipped: ['t-1'], failed: [] });
   } finally {
     await closeServer(server);
   }
