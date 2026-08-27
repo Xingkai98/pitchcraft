@@ -20,6 +20,8 @@ import {
   summarizeImportResult,
   rerunTerminalState,
   pollRerunTask,
+  formatDecisionText,
+  fixRefToRender,
 } from './problem-view.js';
 
 const FAKE_KEY = 'sk-ant-fake-secret-value-0001';
@@ -416,4 +418,133 @@ test('pollRerunTask surfaces network / HTTP / bad-JSON failures', async () => {
   });
   assert.equal(http.ok, false);
   assert.match(http.error, /HTTP 500/);
+});
+
+// --- P13 problem actions（verify / fix / merge-fix 渲染 + API）----------------
+
+test('normalizeProblem carries fix_ref and tolerates its absence', () => {
+  const withRef = normalizeProblem(
+    sampleProblem({ fix_ref: { worktree: '/tmp/fix-x', branch: 'fix/prob-1/t', status: 'pending_confirm' } })
+  );
+  assert.deepEqual(withRef.fix_ref, { worktree: '/tmp/fix-x', branch: 'fix/prob-1/t', status: 'pending_confirm' });
+  const without = normalizeProblem(sampleProblem());
+  assert.equal(without.fix_ref, null);
+  // 非法 fix_ref → null。
+  assert.equal(normalizeProblem({ id: 'x', fix_ref: 'not-an-object' }).fix_ref, null);
+});
+
+test('fixRefToRender redacts worktree/branch and formats status timestamps', () => {
+  const r = fixRefToRender({ worktree: `/tmp/fix-${FAKE_KEY}`, branch: 'fix/prob-1/t', status: 'merged', merged_at: '2026-08-27T12:34:56.000Z' });
+  assert.equal(r.status, 'merged');
+  assert.doesNotMatch(r.worktree, new RegExp(FAKE_KEY));
+  assert.match(r.worktree, /\[REDACTED\]/);
+  assert.equal(r.merged_at, '2026-08-27 12:34');
+  assert.equal(r.rejected_at, '—');
+  assert.equal(fixRefToRender(null), null);
+  assert.equal(fixRefToRender('x'), null);
+});
+
+test('problemDetailToRender carries verify/fix decision fields and redacts nested text', () => {
+  const p = sampleProblem({
+    fix_ref: { worktree: '/tmp/fix-x', branch: 'fix/prob-1/t', status: 'pending_confirm' },
+    decisions: [
+      { action: 'create', by: 'user', at: '2026-08-27T12:00:00.000Z', reason: 'from diagnosis report' },
+      {
+        action: 'verify',
+        by: 'user',
+        at: '2026-08-27T12:10:00.000Z',
+        command: 'cargo test',
+        exit_code: 0,
+        summary: `all pass but check ${FAKE_KEY}`,
+      },
+      {
+        action: 'fix',
+        by: 'user',
+        at: '2026-08-27T12:20:00.000Z',
+        outcome: 'succeeded',
+        worktree: `/tmp/w-${FAKE_KEY}`,
+        branch: 'fix/prob-1/t',
+        summary: 'lowered threshold',
+        changed_files: ['engine/src/lib.rs', `docs/${FAKE_KEY}.md`],
+        verification_results: [
+          { command: 'cargo test', exit_code: 0, summary: 'pass' },
+          { command: 'cargo test -- --ignored', exit_code: 1, summary: 'fail' },
+        ],
+      },
+      { action: 'merge-fix', by: 'user', at: '2026-08-27T12:30:00.000Z', change_ref: 'fix/prob-1' },
+    ],
+  });
+  const r = problemDetailToRender(p);
+  assert.equal(r.fix_ref.status, 'pending_confirm');
+  assert.equal(r.decisions.length, 4);
+  const verify = r.decisions[1];
+  assert.equal(verify.action, 'verify');
+  assert.equal(verify.command, 'cargo test');
+  assert.equal(verify.exit_code, 0);
+  assert.doesNotMatch(verify.summary, new RegExp(FAKE_KEY));
+  assert.match(verify.summary, /\[REDACTED\]/);
+  const fix = r.decisions[2];
+  assert.equal(fix.outcome, 'succeeded');
+  assert.doesNotMatch(fix.worktree, new RegExp(FAKE_KEY));
+  assert.match(fix.worktree, /\[REDACTED\]/);
+  assert.deepEqual(fix.changed_files.map((f) => (f.includes('[REDACTED]') ? 'redacted' : f)), ['engine/src/lib.rs', 'redacted']);
+  assert.equal(fix.verification_results[1].exit_code, 1);
+  assert.equal(fix.verification_results[0].command, 'cargo test');
+  assert.equal(r.decisions[3].change_ref, 'fix/prob-1');
+});
+
+test('formatDecisionText renders multi-line detail for verify/fix/merge-fix decisions', () => {
+  const text = formatDecisionText({
+    action: 'fix',
+    by: 'user',
+    at: '2026-08-27 12:20',
+    outcome: 'succeeded',
+    branch: 'fix/prob-1/t',
+    worktree: '/tmp/w',
+    summary: 'lowered threshold',
+    changed_files: ['engine/src/lib.rs'],
+    verification_results: [{ command: 'cargo test', exit_code: 0, summary: 'pass' }],
+  });
+  assert.match(text, /fix/);
+  assert.match(text, /结果: succeeded/);
+  assert.match(text, /分支: fix\/prob-1\/t/);
+  assert.match(text, /改动文件: engine\/src\/lib\.rs/);
+  assert.match(text, /cargo test → exit 0/);
+  // 长 summary 截断。
+  const clipped = formatDecisionText({
+    action: 'verify',
+    at: 't',
+    command: 'cargo test',
+    exit_code: 0,
+    summary: 'x'.repeat(500),
+  }, 100);
+  assert.match(clipped, /…/);
+});
+
+test('problemApi.verify/fix/mergeFix hit the P13 endpoints', async () => {
+  const calls = [];
+  const fetchImpl = fakeFetch(async (url, opts) => {
+    calls.push({ url, method: opts.method, body: opts.body ? JSON.parse(opts.body) : null });
+    return jsonResponse(200, sampleProblem());
+  });
+  const api = createProblemApi({ endpoint: 'http://svc:8787', fetchImpl });
+  await api.verify('prob-1', { mark_fixed: true, command: 'cargo test' });
+  await api.fix('prob-1', { extra_instructions: 'bump version' });
+  await api.mergeFix('prob-1', {});
+  await api.mergeFix('prob-1', { reject: true, reason: 'wrong' });
+  assert.deepEqual(calls, [
+    { url: 'http://svc:8787/problems/prob-1/verify', method: 'POST', body: { mark_fixed: true, command: 'cargo test' } },
+    { url: 'http://svc:8787/problems/prob-1/fix', method: 'POST', body: { extra_instructions: 'bump version' } },
+    { url: 'http://svc:8787/problems/prob-1/merge-fix', method: 'POST', body: {} },
+    { url: 'http://svc:8787/problems/prob-1/merge-fix', method: 'POST', body: { reject: true, reason: 'wrong' } },
+  ]);
+});
+
+test('problemApi.verify/fix/mergeFix surface non-ok responses', async () => {
+  const fetchImpl = fakeFetch(async () => jsonResponse(400, { error: 'command not allowed' }));
+  const api = createProblemApi({ endpoint: 'http://svc:8787', fetchImpl });
+  const res = await api.verify('prob-1', { command: 'rm -rf /' });
+  assert.equal(res.ok, false);
+  assert.equal(res.status, 400);
+  assert.equal(res.data.error, 'command not allowed');
 });

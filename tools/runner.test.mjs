@@ -395,6 +395,40 @@ test('ClaudeCodeAdapter spawns the child with a sanitized env (session vars stri
   assert.equal(result.status, 'success');
 });
 
+test('ClaudeCodeAdapter passes cwd through to spawn when provided (P13 fix worktree)', async () => {
+  let spawnedCwd = null;
+  const child = fakeChild();
+  const adapter = new ClaudeCodeAdapter({}, {
+    spawn: (_cmd, _args, opts) => {
+      spawnedCwd = opts.cwd;
+      return child;
+    },
+    readEnv: () => ({}),
+  });
+  const pending = adapter.run('prompt', {
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    cwd: '/tmp/p13-fix/fix-prob-1-t',
+  });
+  assert.equal(spawnedCwd, '/tmp/p13-fix/fix-prob-1-t');
+  child.emit('close', 0);
+  const result = await pending;
+  assert.equal(result.status, 'success');
+  // 不传 cwd 时不带该选项（向后兼容）。
+  let spawnedWithoutCwd = 'sentinel';
+  const child2 = fakeChild();
+  const adapter2 = new ClaudeCodeAdapter({}, {
+    spawn: (_cmd, _args, opts) => {
+      spawnedWithoutCwd = opts.cwd;
+      return child2;
+    },
+    readEnv: () => ({}),
+  });
+  const pending2 = adapter2.run('prompt', { env: { ANTHROPIC_API_KEY: FAKE_KEY } });
+  child2.emit('close', 0);
+  await pending2;
+  assert.equal(spawnedWithoutCwd, undefined);
+});
+
 test('ClaudeCodeAdapter still refuses to spawn when the env has session vars but no API key', async () => {
   let spawned = false;
   const adapter = new ClaudeCodeAdapter({}, {

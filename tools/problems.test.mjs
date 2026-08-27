@@ -18,6 +18,11 @@ import {
   setProblemReport,
   problemInputFromDiagnosis,
   importProblems,
+  recordVerify,
+  recordFix,
+  recordFixFailure,
+  recordMergeFix,
+  recordRejectFix,
   ProblemError,
   PROBLEM_ID_RE,
   TRIAGE_VALUES,
@@ -862,4 +867,165 @@ test('setProblemReport discards write-back when run_id no longer matches the cur
   const updated = setProblemReport(problem.id, staleReport, { tasksDir: dir, runId: 'run-1' });
   assert.equal(updated.source.report.phenomenon_summary, 'stale result');
   assert.equal(getProblem(problem.id, { tasksDir: dir }).source.report.phenomenon_summary, 'stale result');
+});
+
+// --- P13 problem actions（recordVerify / recordFix / recordFixFailure / recordMergeFix / recordRejectFix）---
+
+test('recordVerify appends a verify decision and marks fixed when exit 0 + markFixed', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  const updated = recordVerify(
+    problem.id,
+    { command: 'cargo test', exit_code: 0, summary: 'all pass', markFixed: true },
+    { tasksDir: dir, now: laterNow(1000), by: 'user' }
+  );
+  assert.equal(updated.status, 'fixed');
+  const decision = updated.decisions.at(-1);
+  assert.equal(decision.action, 'verify');
+  assert.equal(decision.command, 'cargo test');
+  assert.equal(decision.exit_code, 0);
+  assert.equal(decision.summary, 'all pass');
+  assert.equal(decision.at, laterNow(1000)());
+  // status:fixed 决策追加在 verify 之前。
+  assert.equal(updated.decisions.at(-2).action, 'status:fixed');
+  assert.equal(getProblem(problem.id, { tasksDir: dir }).status, 'fixed');
+});
+
+test('recordVerify does not change status when exit is non-zero even with markFixed', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  const updated = recordVerify(
+    problem.id,
+    { command: 'cargo test', exit_code: 1, summary: 'fail', markFixed: true },
+    { tasksDir: dir, now: NOW }
+  );
+  assert.equal(updated.status, 'open');
+  assert.equal(updated.decisions.at(-1).exit_code, 1);
+  assert.ok(!updated.decisions.some((d) => d.action === 'status:fixed'));
+});
+
+test('recordVerify without markFixed leaves status untouched', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  const updated = recordVerify(problem.id, { command: 'cargo test', exit_code: 0, summary: 'ok' }, { tasksDir: dir, now: NOW });
+  assert.equal(updated.status, 'open');
+  assert.equal(updated.decisions.at(-1).action, 'verify');
+});
+
+test('recordVerify rejects markFixed on closed-triage problems atomically', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem(
+    { title: 'x', triage: 'defer', reason: 'later' },
+    { tasksDir: dir, newId: freshId, now: NOW }
+  );
+  assert.throws(
+    () => recordVerify(problem.id, { command: 'cargo test', exit_code: 0, summary: 'ok', markFixed: true }, { tasksDir: dir, now: NOW }),
+    (e) => e instanceof ProblemError && /status=closed/.test(e.message)
+  );
+  // 记录不写入：问题不变。
+  const after = getProblem(problem.id, { tasksDir: dir });
+  assert.ok(!after.decisions.some((d) => d.action === 'verify'));
+  assert.equal(after.status, 'closed');
+});
+
+test('recordFix writes fix_ref pending_confirm, sets status in_progress, and appends the fix decision', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  const updated = recordFix(
+    problem.id,
+    {
+      worktree: '/tmp/p13-fix/fix-prob-1-t',
+      branch: 'fix/prob-1/20260827T1530000',
+      summary: 'lowered threshold',
+      changed_files: ['engine/src/lib.rs'],
+      verification_results: [{ command: 'cargo test', exit_code: 0, summary: 'pass' }],
+    },
+    { tasksDir: dir, now: NOW }
+  );
+  assert.equal(updated.status, 'in_progress');
+  assert.deepEqual(updated.fix_ref, { worktree: '/tmp/p13-fix/fix-prob-1-t', branch: 'fix/prob-1/20260827T1530000', status: 'pending_confirm' });
+  const decision = updated.decisions.at(-1);
+  assert.equal(decision.action, 'fix');
+  assert.equal(decision.outcome, 'succeeded');
+  assert.deepEqual(decision.changed_files, ['engine/src/lib.rs']);
+  assert.equal(decision.verification_results[0].exit_code, 0);
+  // status:in_progress 决策在 fix 之前。
+  assert.equal(updated.decisions.at(-2).action, 'status:in_progress');
+  // 持久化。
+  assert.deepEqual(getProblem(problem.id, { tasksDir: dir }).fix_ref.status, 'pending_confirm');
+});
+
+test('recordFix requires worktree and branch', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  assert.throws(
+    () => recordFix(problem.id, { worktree: '/w', summary: 's' }, { tasksDir: dir, now: NOW }),
+    (e) => e instanceof ProblemError && /worktree and branch/.test(e.message)
+  );
+});
+
+test('recordFixFailure appends a failure decision without touching status or fix_ref', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x', status: 'open' }, { tasksDir: dir, newId: freshId, now: NOW });
+  const updated = recordFixFailure(
+    problem.id,
+    { error: 'provider timed out', worktree: '/tmp/x/fix-prob-1-t', branch: 'fix/prob-1/t' },
+    { tasksDir: dir, now: NOW }
+  );
+  assert.equal(updated.status, 'open');
+  assert.equal(updated.fix_ref, undefined);
+  const decision = updated.decisions.at(-1);
+  assert.equal(decision.action, 'fix');
+  assert.equal(decision.outcome, 'failed');
+  assert.equal(decision.error, 'provider timed out');
+  assert.equal(decision.worktree, '/tmp/x/fix-prob-1-t');
+});
+
+test('recordMergeFix closes the problem, fills change_ref, and marks fix_ref merged', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  recordFix(
+    problem.id,
+    { worktree: '/w', branch: 'fix/prob-1/t', summary: 's', changed_files: [], verification_results: [] },
+    { tasksDir: dir, now: NOW }
+  );
+  const updated = recordMergeFix(problem.id, { changeRef: 'fix/prob-1', worktree: '/w', branch: 'fix/prob-1/t' }, { tasksDir: dir, now: NOW });
+  assert.equal(updated.status, 'closed');
+  assert.equal(updated.change_ref, 'fix/prob-1');
+  assert.equal(updated.fix_ref.status, 'merged');
+  assert.ok(updated.fix_ref.merged_at);
+  const decision = updated.decisions.at(-1);
+  assert.equal(decision.action, 'merge-fix');
+  assert.equal(decision.change_ref, 'fix/prob-1');
+});
+
+test('recordMergeFix defaults change_ref to fix/<id> and keeps closed-triage status', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem(
+    { title: 'x', triage: 'defer', reason: 'later' },
+    { tasksDir: dir, newId: freshId, now: NOW }
+  );
+  // closed-triage 问题本来 status=closed：合入不追加 status:closed 决策。
+  const updated = recordMergeFix(problem.id, { worktree: '/w', branch: 'fix/p/t' }, { tasksDir: dir, now: NOW });
+  assert.equal(updated.status, 'closed');
+  assert.equal(updated.change_ref, `fix/${problem.id}`);
+  assert.ok(!updated.decisions.some((d) => d.action === 'status:closed'));
+});
+
+test('recordRejectFix marks fix_ref rejected and keeps the worktree; problem not closed', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  recordFix(
+    problem.id,
+    { worktree: '/w', branch: 'fix/prob-1/t', summary: 's', changed_files: [], verification_results: [] },
+    { tasksDir: dir, now: NOW }
+  );
+  const updated = recordRejectFix(problem.id, { reason: 'wrong approach', worktree: '/w', branch: 'fix/prob-1/t' }, { tasksDir: dir, now: NOW });
+  assert.equal(updated.status, 'in_progress');
+  assert.equal(updated.fix_ref.status, 'rejected');
+  assert.ok(updated.fix_ref.rejected_at);
+  const decision = updated.decisions.at(-1);
+  assert.equal(decision.action, 'reject-fix');
+  assert.equal(decision.reason, 'wrong approach');
+  assert.equal(decision.worktree, '/w');
 });

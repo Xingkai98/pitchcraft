@@ -43,9 +43,16 @@ import {
   PROBLEM_ID_RE,
   TRIAGE_VALUES,
   STATUS_VALUES,
+  CLOSED_TRIAGE,
   defaultProblemId,
+  recordVerify,
+  recordFix,
+  recordFixFailure,
+  recordMergeFix,
+  recordRejectFix,
 } from './problems.mjs';
 import { createGithubIssue } from './github.mjs';
+import { verifyProblem, runFix, gitRun } from './actions.mjs';
 
 export const DEFAULT_PORT = 8787;
 export const DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -184,12 +191,22 @@ export function createService({
   allowedOrigins = [],
   createGithubIssueFn = createGithubIssue,
   newProblemId = defaultProblemId,
+  // P13 动作注入：verify 执行器 / fix 编排 / git 执行（测试用 fake）。
+  verifyProblemFn = verifyProblem,
+  runFixFn = runFix,
+  gitExec = gitRun,
   log = () => {},
 } = {}) {
   if (!tasksDir) throw new Error('createService: tasksDir is required');
   mkdirSync(tasksDir, { recursive: true });
   const envKey = env.ANTHROPIC_API_KEY;
   const checkoutRevision = sourceRevision ?? readRepoRevision() ?? null;
+
+  // fix 下发互斥（进程内 Set）：同一 problem 同一时刻只允许一个 fix 在跑。持久化守卫
+  // （fix_ref pending_confirm）要等 agent 完成后才写入，存在 check-then-act 窗口——
+  // 双击/并发请求会双双通过。进程内互斥在 add 与 check 之间无 await，竞态消除；
+  // 服务重启后锁自然消失（残留 worktree 由 fix_ref 不建的失败语义兜底）。
+  const fixDispatchInFlight = new Set();
 
   // 用户可控文本的组合净化：redactKey（存活 key + 凭证形值）+ redactCredentialText
   // （通用 `KEY=value`/`KEY: value`/`"KEY":"value"` 键值对）。problem 响应组合用
@@ -403,6 +420,9 @@ export function createService({
     const problemDiscussion = /^\/problems\/([^/]+)\/discussion$/.exec(pathname);
     const problemGithub = /^\/problems\/([^/]+)\/github$/.exec(pathname);
     const problemRerun = /^\/problems\/([^/]+)\/rerun$/.exec(pathname);
+    const problemVerify = /^\/problems\/([^/]+)\/verify$/.exec(pathname);
+    const problemFix = /^\/problems\/([^/]+)\/fix$/.exec(pathname);
+    const problemMergeFix = /^\/problems\/([^/]+)\/merge-fix$/.exec(pathname);
     // 领域错误映射：MISSING_REASON/BAD_REQUEST → 400，NOT_FOUND → 404，其他 500。
     // 500 分支的 message 一律净化，绝不外泄凭证。
     const problemError = (e) => {
@@ -544,6 +564,255 @@ export function createService({
           log(`problem ${id} rerun background run failed: ${redactKey(err?.message ?? String(err), envKey)}`);
         });
       sendJSON(res, 202, { task_id: runId }, corsOrigin);
+      return;
+    }
+
+    // --- P13 problem actions（verify / fix / merge-fix）-------------------------
+
+    // POST /problems/:id/verify —— 下发验证命令（白名单）。缺省命令取报告
+    // verification 首条白名单命令；无命令/白名单外 → 400。decisions 追加 verify
+    // 记录；body mark_fixed:true 且 exit 0 → status fixed（recordVerify 原子处理）。
+    if (req.method === 'POST' && problemVerify) {
+      const id = problemVerify[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      const problem = getProblem(id, { tasksDir });
+      if (!problem) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const command =
+        typeof parsed.body.command === 'string' && parsed.body.command.trim()
+          ? parsed.body.command.trim()
+          : undefined;
+      // closed-triage 问题不可能 mark_fixed：命令还没跑就拒绝，避免白跑一次验证。
+      if (parsed.body.mark_fixed === true && CLOSED_TRIAGE.includes(problem.triage)) {
+        sendJSON(res, 400, { error: `${problem.triage} problems are status=closed (cannot mark fixed)` }, corsOrigin);
+        return;
+      }
+      let result;
+      try {
+        result = await verifyProblemFn(problem, { command, cwd: repoRoot, envKey });
+      } catch (e) {
+        problemError(e);
+        return;
+      }
+      if (!result.ok) {
+        sendJSON(res, 400, { error: result.error }, corsOrigin);
+        return;
+      }
+      try {
+        const updated = recordVerify(
+          id,
+          {
+            command: result.command,
+            exit_code: result.exit_code,
+            summary: result.summary,
+            markFixed: parsed.body.mark_fixed === true,
+          },
+          { tasksDir, envKey }
+        );
+        if (!updated) {
+          sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+          return;
+        }
+        sendJSON(res, 200, redactProblemJSON(updated), corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
+      return;
+    }
+
+    // POST /problems/:id/fix —— 在隔离 worktree 启动修复 agent（bypass）。同步等待
+    // provider 完成；结果一律回写 decisions（成功建 fix_ref + status in_progress，
+    // 失败只记录），响应 200 携带更新后的 problem。前置校验：closed-triage 问题与
+    // 已有 pending fix 拒绝（400，问题不变）。
+    if (req.method === 'POST' && problemFix) {
+      const id = problemFix[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      const problem = getProblem(id, { tasksDir });
+      if (!problem) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      if (CLOSED_TRIAGE.includes(problem.triage)) {
+        sendJSON(res, 400, { error: `${problem.triage} problems are closed; cannot dispatch a fix` }, corsOrigin);
+        return;
+      }
+      if (problem.fix_ref && problem.fix_ref.status === 'pending_confirm') {
+        sendJSON(res, 400, { error: 'fix already pending; confirm or reject before dispatching another' }, corsOrigin);
+        return;
+      }
+      // 进程内互斥：agent 运行期间（可达 600s）同一 problem 的重复下发直接 400。
+      if (fixDispatchInFlight.has(id)) {
+        sendJSON(res, 400, { error: 'fix already in progress; wait for it to finish' }, corsOrigin);
+        return;
+      }
+      const extraRaw = typeof parsed.body.extra_instructions === 'string' ? parsed.body.extra_instructions : '';
+      const extraInstructions = redactProblemText(extraRaw);
+      fixDispatchInFlight.add(id);
+      let result;
+      try {
+        result = await runFixFn({ problem, extraInstructions, env });
+      } catch (e) {
+        fixDispatchInFlight.delete(id);
+        problemError(e);
+        return;
+      }
+      fixDispatchInFlight.delete(id);
+      try {
+        let updated;
+        if (!result.ok) {
+          updated = recordFixFailure(
+            id,
+            {
+              error: result.error ?? 'fix failed',
+              worktree: result.worktree ?? null,
+              branch: result.branch ?? null,
+              summary: result.summary ?? null,
+            },
+            { tasksDir, envKey }
+          );
+        } else {
+          updated = recordFix(
+            id,
+            {
+              worktree: result.worktree,
+              branch: result.branch,
+              summary: result.summary,
+              changed_files: result.changed_files,
+              verification_results: result.verification_results,
+            },
+            { tasksDir, envKey }
+          );
+        }
+        if (!updated) {
+          sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+          return;
+        }
+        sendJSON(res, 200, redactProblemJSON(updated), corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
+      return;
+    }
+
+    // POST /problems/:id/merge-fix —— 确认合入或拒绝修复。
+    // 合入：校验 fix_ref pending_confirm + 分支有提交 + 验证记录全过（force 豁免）→
+    // git merge --no-ff 入主 checkout → worktree 清理 → problem closed + change_ref +
+    // fix_ref.status='merged'。
+    // 拒绝（body reject:true）：fix_ref.status='rejected'，worktree 保留，problem 不闭环。
+    if (req.method === 'POST' && problemMergeFix) {
+      const id = problemMergeFix[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      const problem = getProblem(id, { tasksDir });
+      if (!problem) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const fixRef = problem.fix_ref;
+      if (!fixRef || typeof fixRef !== 'object' || Array.isArray(fixRef) || fixRef.status !== 'pending_confirm') {
+        sendJSON(res, 400, { error: 'no pending fix to merge or reject' }, corsOrigin);
+        return;
+      }
+      const branch = typeof fixRef.branch === 'string' ? fixRef.branch : '';
+      const worktree = typeof fixRef.worktree === 'string' ? fixRef.worktree : '';
+      if (!branch) {
+        sendJSON(res, 400, { error: 'fix_ref missing branch' }, corsOrigin);
+        return;
+      }
+
+      if (parsed.body.reject === true) {
+        const reasonRaw = typeof parsed.body.reason === 'string' ? parsed.body.reason.trim() : '';
+        try {
+          const updated = recordRejectFix(
+            id,
+            { reason: reasonRaw ? redactProblemText(reasonRaw) : null, worktree, branch },
+            { tasksDir, envKey }
+          );
+          if (!updated) {
+            sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+            return;
+          }
+          sendJSON(res, 200, redactProblemJSON(updated), corsOrigin);
+        } catch (e) {
+          problemError(e);
+        }
+        return;
+      }
+
+      // 合入路径：分支必须有提交。
+      const rev = await gitExec(['rev-parse', '--verify', `${branch}^{commit}`], { cwd: repoRoot });
+      if (!rev.ok) {
+        sendJSON(res, 400, { error: `fix branch ${redactKey(branch, envKey)} has no commits` }, corsOrigin);
+        return;
+      }
+      // 验证记录必须全过（exit 0）；force:true 豁免。验证结果存在最近一条成功的 fix
+      // 决策里（fix_ref 只记 worktree/branch/status，验证记录在审计轨迹）。
+      const force = parsed.body.force === true;
+      const fixDecisions = problem.decisions.filter(
+        (d) => d && d.action === 'fix' && d.outcome === 'succeeded'
+      );
+      const lastFix = fixDecisions[fixDecisions.length - 1];
+      const vrs = Array.isArray(lastFix?.verification_results) ? lastFix.verification_results : [];
+      // 验证记录必须非空且全过（exit 0）；空列表 = agent 未跑验证，不满足「必须存在验证
+      // 记录」，需 force 豁免。
+      if (!force && (vrs.length === 0 || !vrs.every((v) => v && typeof v === 'object' && v.exit_code === 0))) {
+        sendJSON(res, 400, { error: 'fix verification did not all pass (use force to override)' }, corsOrigin);
+        return;
+      }
+      const title = typeof problem.title === 'string' && problem.title.trim() ? problem.title.trim() : id;
+      const merge = await gitExec(['merge', '--no-ff', branch, '-m', `fix ${id}: ${title}`], { cwd: repoRoot });
+      if (!merge.ok) {
+        sendJSON(
+          res,
+          500,
+          { error: `merge failed: ${redactKey(String(merge.stderr || merge.stdout || '').trim() || 'unknown git error', envKey)}` },
+          corsOrigin
+        );
+        return;
+      }
+      // worktree 清理（best-effort；失败不阻塞闭环，fix_ref 保留 worktree 路径）。
+      if (worktree) {
+        await gitExec(['worktree', 'remove', '--force', worktree], { cwd: repoRoot });
+      }
+      const changeRef =
+        typeof parsed.body.change_ref === 'string' && parsed.body.change_ref.trim()
+          ? parsed.body.change_ref.trim()
+          : `fix/${id}`;
+      try {
+        const updated = recordMergeFix(id, { changeRef, worktree, branch }, { tasksDir, envKey });
+        if (!updated) {
+          sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+          return;
+        }
+        sendJSON(res, 200, redactProblemJSON(updated), corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
       return;
     }
 

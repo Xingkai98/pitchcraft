@@ -22,6 +22,10 @@ export const PROBLEM_ID_RE = /^[A-Za-z0-9_-]+$/;
 
 const CLOSED_TRIAGE = ['defer', 'wontfix'];
 
+// P13：closed-triage（defer/wontfix）问题不允许状态流转到非 closed，端点据此拒绝
+// 下发 fix / mark_fixed。导出供服务层复用（不重定义枚举）。
+export { CLOSED_TRIAGE };
+
 // 带稳定 code 的领域错误；服务层映射到 HTTP 状态（BAD_REQUEST/MISSING_REASON → 400）。
 export class ProblemError extends Error {
   constructor(code, message) {
@@ -518,4 +522,143 @@ export function importProblems(
     }
   }
   return { created, skipped, failed };
+}
+
+// --- P13 problem actions（verify / fix / merge-close）-------------------------
+
+// 记录一次 verify 动作：decisions 追加 `{ action:'verify', by, at, command,
+// exit_code, summary }`；exit 0 且 markFixed 时置 status fixed（追加 status:fixed
+// 决策）。closed-triage（defer/wontfix）问题拒绝 markFixed（400，verify 记录不写入
+// ——保持原子）。返回更新后的 Problem；id 缺失返回 null。
+export function recordVerify(
+  id,
+  { command, exit_code, summary, markFixed = false } = {},
+  { tasksDir, now = defaultNow, by = 'user', envKey } = {}
+) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  const problem = getProblem(id, { tasksDir });
+  if (!problem) return null;
+  const at = now();
+  if (markFixed === true && exit_code === 0) {
+    if (CLOSED_TRIAGE.includes(problem.triage)) {
+      throw new ProblemError('BAD_REQUEST', `${problem.triage} problems are status=closed (cannot mark fixed)`);
+    }
+    if (problem.status !== 'fixed') {
+      problem.decisions.push({ action: 'status:fixed', from: problem.status, by, at, reason: 'verification passed' });
+      problem.status = 'fixed';
+    }
+  }
+  problem.decisions.push({ action: 'verify', by, at, command, exit_code, summary });
+  problem.updated_at = at;
+  persistProblem(problem, tasksDir, envKey);
+  return problem;
+}
+
+// 记录一次 fix 成功结果：decisions 追加 fix 记录（含 outcome/worktree/branch/
+// summary/changed_files/verification_results）；status → in_progress；fix_ref =
+// { worktree, branch, status:'pending_confirm' }（人工确认合入前不动主 checkout）。
+// 返回更新后的 Problem；id 缺失返回 null。
+export function recordFix(id, fixInfo = {}, { tasksDir, now = defaultNow, by = 'user', envKey } = {}) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  const problem = getProblem(id, { tasksDir });
+  if (!problem) return null;
+  if (
+    !fixInfo ||
+    typeof fixInfo !== 'object' ||
+    Array.isArray(fixInfo) ||
+    typeof fixInfo.worktree !== 'string' ||
+    typeof fixInfo.branch !== 'string'
+  ) {
+    throw new ProblemError('BAD_REQUEST', 'fix result requires worktree and branch');
+  }
+  const at = now();
+  const decision = {
+    action: 'fix',
+    by,
+    at,
+    outcome: 'succeeded',
+    worktree: fixInfo.worktree,
+    branch: fixInfo.branch,
+    summary: typeof fixInfo.summary === 'string' ? fixInfo.summary : '',
+    changed_files: Array.isArray(fixInfo.changed_files) ? fixInfo.changed_files : [],
+    verification_results: Array.isArray(fixInfo.verification_results) ? fixInfo.verification_results : [],
+  };
+  if (!CLOSED_TRIAGE.includes(problem.triage) && problem.status !== 'in_progress') {
+    problem.decisions.push({ action: 'status:in_progress', from: problem.status, by, at, reason: 'fix dispatched' });
+    problem.status = 'in_progress';
+  }
+  problem.decisions.push(decision);
+  problem.fix_ref = { worktree: fixInfo.worktree, branch: fixInfo.branch, status: 'pending_confirm' };
+  problem.updated_at = at;
+  persistProblem(problem, tasksDir, envKey);
+  return problem;
+}
+
+// 记录 fix 失败（provider 失败/超时/无效输出/agent 自报 failed）：只追加 decisions
+// 失败记录（action:'fix' + outcome:'failed'），problem 状态与字段不变，fix_ref 不建。
+// 返回更新后的 Problem；id 缺失返回 null。
+export function recordFixFailure(
+  id,
+  { error, worktree = null, branch = null, summary = null } = {},
+  { tasksDir, now = defaultNow, by = 'user', envKey } = {}
+) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  const problem = getProblem(id, { tasksDir });
+  if (!problem) return null;
+  const at = now();
+  const decision = { action: 'fix', by, at, outcome: 'failed', error: String(error ?? '') };
+  if (worktree) decision.worktree = worktree;
+  if (branch) decision.branch = branch;
+  if (summary != null) decision.summary = summary;
+  problem.decisions.push(decision);
+  problem.updated_at = at;
+  persistProblem(problem, tasksDir, envKey);
+  return problem;
+}
+
+// 记录确认合入：status → closed（closed-triage 已是 closed 不再动）、change_ref 填
+// changeRef、fix_ref.status → 'merged'（merged_at 时间戳）、decisions 追加 merge-fix。
+// 返回更新后的 Problem；id 缺失返回 null。
+export function recordMergeFix(
+  id,
+  { changeRef, worktree, branch } = {},
+  { tasksDir, now = defaultNow, by = 'user', envKey } = {}
+) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  const problem = getProblem(id, { tasksDir });
+  if (!problem) return null;
+  const at = now();
+  const from = problem.status;
+  if (!CLOSED_TRIAGE.includes(problem.triage) && problem.status !== 'closed') {
+    problem.status = 'closed';
+    problem.decisions.push({ action: 'status:closed', from, by, at, reason: 'fix merged' });
+  }
+  problem.change_ref = typeof changeRef === 'string' && changeRef.trim() ? changeRef.trim() : `fix/${id}`;
+  problem.fix_ref = { ...(problem.fix_ref ?? {}), status: 'merged', merged_at: at };
+  problem.decisions.push({ action: 'merge-fix', by, at, branch, worktree, change_ref: problem.change_ref });
+  problem.updated_at = at;
+  persistProblem(problem, tasksDir, envKey);
+  return problem;
+}
+
+// 记录拒绝修复：fix_ref.status → 'rejected'（rejected_at 时间戳；worktree 保留供
+// 检查），decisions 追加 reject-fix（reason 可空）。problem 不闭环。返回更新后的
+// Problem；id 缺失返回 null。
+export function recordRejectFix(
+  id,
+  { reason = null, worktree = null, branch = null } = {},
+  { tasksDir, now = defaultNow, by = 'user', envKey } = {}
+) {
+  if (!tasksDir || !PROBLEM_ID_RE.test(id)) return null;
+  const problem = getProblem(id, { tasksDir });
+  if (!problem) return null;
+  const at = now();
+  problem.fix_ref = { ...(problem.fix_ref ?? {}), status: 'rejected', rejected_at: at };
+  const decision = { action: 'reject-fix', by, at, reason };
+  if (worktree) decision.worktree = worktree;
+  if (branch) decision.branch = branch;
+  problem.decisions.push(decision);
+  problem.updated_at = at;
+  persistProblem(problem, tasksDir, envKey);
+  return problem;
 }
