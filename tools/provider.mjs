@@ -137,7 +137,11 @@ export class ClaudeCodeAdapter {
 
   async run(
     prompt,
-    { env = this.readEnv(), timeoutMs = (this.config.timeout_seconds ?? 300) * 1000 } = {}
+    {
+      env = this.readEnv(),
+      timeoutMs = (this.config.timeout_seconds ?? 300) * 1000,
+      cwd = null,
+    } = {}
   ) {
     // Authentication exists only in the process environment. If it is absent we
     // do not spawn the provider and never fabricate a run.
@@ -156,12 +160,14 @@ export class ClaudeCodeAdapter {
     const key = env.ANTHROPIC_API_KEY;
     // Strip Claude Code session/auth overrides before spawning: the child must
     // run in `--bare` mode (direct key auth to the default endpoint), not inherit
-    // the parent's child-session / proxy-auth environment.
+    // the parent's child-session / proxy-auth environment. `cwd` (optional) lets
+    // the caller run the provider inside an isolated worktree (P13 fix flow).
     const sanitizedEnv = sanitizeChildEnv(env);
     const args = this.buildArgs(env);
+    const spawnOpts = { env: sanitizedEnv, ...(cwd ? { cwd } : {}) };
     let child;
     try {
-      child = this.spawn(this.config.command || 'claude', args, { env: sanitizedEnv });
+      child = this.spawn(this.config.command || 'claude', args, spawnOpts);
     } catch (e) {
       return {
         ok: false,

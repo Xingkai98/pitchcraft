@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260826-16';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260826-16';
-import { createGame } from './game.js?v=20260826-16';
-import { mockEventStream } from './mock-event-stream.js?v=20260826-16';
-import { resetMicroMotion } from './micro-motion.js?v=20260826-16';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260826-16';
+import { config } from './config.js?v=20260826-17';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260826-17';
+import { createGame } from './game.js?v=20260826-17';
+import { mockEventStream } from './mock-event-stream.js?v=20260826-17';
+import { resetMicroMotion } from './micro-motion.js?v=20260826-17';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260826-17';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260826-16';
+} from './audit-report.js?v=20260826-17';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -34,7 +34,7 @@ import {
   summarizeStatement,
   loadList,
   saveList,
-} from './observation-list.js?v=20260826-16';
+} from './observation-list.js?v=20260826-17';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -49,7 +49,9 @@ import {
   createProblemApi,
   summarizeImportResult,
   pollRerunTask,
-} from './problem-view.js?v=20260826-16';
+  formatDecisionText,
+  fixRefToRender,
+} from './problem-view.js?v=20260826-17';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -97,7 +99,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260826-16';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260826-17';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -1062,6 +1064,10 @@ function buildProblemDetail(p) {
     wrap.appendChild(report);
   }
 
+  if (r.fix_ref) {
+    wrap.appendChild(buildFixRefSection(r.fix_ref));
+  }
+
   if (r.decisions.length) {
     const dec = document.createElement('div');
     dec.className = 'problem-decisions';
@@ -1072,7 +1078,7 @@ function buildProblemDetail(p) {
     for (const d of r.decisions) {
       const row = document.createElement('div');
       row.className = 'problem-decision-row';
-      row.textContent = `${d.at}  ${d.action}${d.reason ? ` — ${d.reason}` : ''} (${d.by})`;
+      row.textContent = formatDecisionText(d);
       dec.appendChild(row);
     }
     wrap.appendChild(dec);
@@ -1082,6 +1088,29 @@ function buildProblemDetail(p) {
   wrap.appendChild(buildProblemActions(p));
   wrap.appendChild(buildDiscussionArea(p));
   return wrap;
+}
+
+// fix_ref 摘要区块：worktree / branch / status（pending_confirm 展示合入与拒绝按钮，
+// merged/rejected 展示时间）。全部 textContent + redactText（渲染数据已净化）。
+function buildFixRefSection(fr) {
+  const sec = document.createElement('div');
+  sec.className = 'problem-fixref';
+  const heading = document.createElement('div');
+  heading.className = 'problem-section-heading';
+  heading.textContent = '修复 (fix_ref)';
+  sec.appendChild(heading);
+  const lines = [
+    `状态: ${fr.status}`,
+    fr.branch ? `分支: ${fr.branch}` : null,
+    fr.worktree ? `worktree: ${fr.worktree}` : null,
+    fr.status === 'merged' && fr.merged_at ? `合入时间: ${fr.merged_at}` : null,
+    fr.status === 'rejected' && fr.rejected_at ? `拒绝时间: ${fr.rejected_at}` : null,
+  ].filter(Boolean);
+  const text = document.createElement('div');
+  text.className = 'problem-decision-row';
+  text.textContent = lines.join('\n');
+  sec.appendChild(text);
+  return sec;
 }
 
 function buildChangeRefEditor(p) {
@@ -1177,6 +1206,45 @@ function buildProblemActions(p) {
   deleteBtn.addEventListener('click', () => deleteProblemConfirm(p.id));
   opsRow.appendChild(deleteBtn);
   wrap.appendChild(opsRow);
+
+  // P13：验证下发（白名单命令，可勾选「验证并标记 fixed」）。
+  const verifyRow = document.createElement('div');
+  verifyRow.className = 'problem-action-row';
+  verifyRow.appendChild(document.createTextNode('验证:'));
+  const verifyCmdInput = document.createElement('input');
+  verifyCmdInput.type = 'text';
+  verifyCmdInput.placeholder = '验证命令（留空 = 报告默认）';
+  const verifyFixedBox = document.createElement('label');
+  const verifyFixedCheck = document.createElement('input');
+  verifyFixedCheck.type = 'checkbox';
+  verifyFixedBox.append(verifyFixedCheck, document.createTextNode('并标记 fixed'));
+  const verifyBtn = document.createElement('button');
+  verifyBtn.textContent = '验证';
+  verifyBtn.addEventListener('click', () => runVerify(p.id, verifyCmdInput.value, verifyFixedCheck.checked));
+  verifyRow.append(verifyCmdInput, verifyFixedBox, verifyBtn);
+  wrap.appendChild(verifyRow);
+
+  // P13：修复下发（隔离 worktree + bypass agent）。已有 pending fix 时禁用。
+  const fixRow = document.createElement('div');
+  fixRow.className = 'problem-action-row';
+  fixRow.appendChild(document.createTextNode('修复:'));
+  const fixBtn = document.createElement('button');
+  fixBtn.textContent = '修复';
+  const pendingConfirm = p.fix_ref?.status === 'pending_confirm';
+  fixBtn.disabled = pendingConfirm;
+  fixBtn.title = pendingConfirm ? '已有待确认的修复' : '在隔离 worktree 启动修复 agent';
+  fixBtn.addEventListener('click', () => dispatchFix(p.id));
+  fixRow.appendChild(fixBtn);
+  if (pendingConfirm) {
+    const mergeBtn = document.createElement('button');
+    mergeBtn.textContent = '确认合入';
+    mergeBtn.addEventListener('click', () => confirmMergeFix(p.id));
+    const rejectBtn = document.createElement('button');
+    rejectBtn.textContent = '拒绝修复';
+    rejectBtn.addEventListener('click', () => rejectFix(p.id));
+    fixRow.append(mergeBtn, rejectBtn);
+  }
+  wrap.appendChild(fixRow);
   return wrap;
 }
 
@@ -1279,6 +1347,85 @@ async function deleteProblemConfirm(id) {
       currentProblemDetailId = null;
     }
     await refreshProblemList();
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// P13 验证下发：POST verify（command 可空 = 服务端取报告默认白名单命令；mark_fixed
+// 勾选时 exit 0 自动置 fixed）。完成后刷新详情看决策与状态。
+async function runVerify(id, command, markFixed) {
+  const body = { mark_fixed: markFixed === true };
+  if (command && command.trim()) body.command = command.trim();
+  try {
+    showProblemStatus('验证中…（可能耗时）');
+    const res = await problemApi.verify(id, body);
+    if (!res.ok) {
+      showProblemStatus(`验证失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    showProblemStatus(res.data?.status === 'fixed' ? '验证通过，已标记 fixed' : '验证完成');
+    await openProblemDetail(id);
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// P13 修复下发：POST fix（同步等待 provider 完成）。成功建 fix_ref pending_confirm，
+// 失败只记决策。主 checkout 零改动。
+async function dispatchFix(id) {
+  if (!window.confirm('将在隔离 worktree 启动修复 agent（bypass，可能耗时数分钟）。主 checkout 不受影响；完成后需人工确认合入。继续？')) {
+    return;
+  }
+  try {
+    showProblemStatus('修复中…（可能耗时数分钟，请勿关闭页面）');
+    const res = await problemApi.fix(id, {});
+    if (!res.ok) {
+      showProblemStatus(`修复失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    if (res.data?.fix_ref?.status === 'pending_confirm') {
+      showProblemStatus('修复完成：已生成隔离修复分支，等待确认合入');
+    } else {
+      showProblemStatus('修复未成功（见决策轨迹）');
+    }
+    await openProblemDetail(id);
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// P13 确认合入：POST merge-fix（git merge --no-ff + worktree 清理 + problem closed）。
+async function confirmMergeFix(id) {
+  if (!window.confirm('确认将修复分支合入主 checkout？合入后问题将关闭（change_ref 自动填写）。')) {
+    return;
+  }
+  try {
+    const res = await problemApi.mergeFix(id, {});
+    if (!res.ok) {
+      showProblemStatus(`合入失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    showProblemStatus('修复已合入，问题已关闭');
+    await refreshProblemList();
+    await openProblemDetail(id);
+  } catch (err) {
+    showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
+  }
+}
+
+// P13 拒绝修复：POST merge-fix {reject:true}（worktree 保留，fix_ref rejected）。
+async function rejectFix(id) {
+  const reason = window.prompt('拒绝理由（可选）：', '');
+  if (reason === null) return;
+  try {
+    const res = await problemApi.mergeFix(id, { reject: true, reason });
+    if (!res.ok) {
+      showProblemStatus(`拒绝失败：${redactText(res.data?.error ?? `HTTP ${res.status}`)}`);
+      return;
+    }
+    showProblemStatus('已拒绝修复（worktree 保留，问题未闭环）');
+    await openProblemDetail(id);
   } catch (err) {
     showProblemStatus(`本地诊断服务不可达（${redactText(String(err.message))}）`);
   }

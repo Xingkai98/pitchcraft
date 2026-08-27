@@ -8,6 +8,7 @@ import { request as httpRequest } from 'node:http';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createService, main, parseArgs } from './service.mjs';
+import { verifyProblem, REPO_ROOT } from './actions.mjs';
 
 const FAKE_KEY = 'sk-ant-fake-secret-value-0001';
 const LOCAL_ORIGIN = 'http://localhost:8000';
@@ -1321,6 +1322,757 @@ test('POST /problems/import skips tasks linked by a previous import (no duplicat
       body: '{}',
     });
     assert.deepEqual(await second.json(), { created: [], skipped: ['t-1'], failed: [] });
+  } finally {
+    await closeServer(server);
+  }
+});
+
+// --- P13 problem action endpoints（verify / fix / merge-fix）-------------------
+
+// 真实 verifyProblem + fake exec（不 spawn 子进程）：verify 端点全链路可测。
+const verifyWithExec = (exec) => async (problem, opts) =>
+  verifyProblem(problem, { ...opts, exec });
+
+const verifyExecOk = (stdout = 'ok') => async () => ({ stdout, stderr: '', code: 0, error: null, timedOut: false, signal: null });
+const verifyExecFail = (code = 1, stderr = 'boom') => async () => ({ stdout: '', stderr, code, error: `exited with code ${code}`, timedOut: false, signal: null });
+
+// 带白名单验证命令的诊断任务：verification 首行为可执行命令。
+const whitelistedReport = (over = {}) =>
+  validReport({ verification: 'cargo test\nrun the engine tests to prove the fix', ...over });
+
+const fakeRunFix = (result) => {
+  const calls = [];
+  const fn = async (opts) => {
+    calls.push(opts);
+    return typeof result === 'function' ? result(opts) : result;
+  };
+  fn.calls = calls;
+  return fn;
+};
+
+const fakeGitExec = (handler) => {
+  const calls = [];
+  const fn = async (args, opts) => {
+    calls.push({ args, opts });
+    return handler ? handler(calls.length - 1, { args, opts }) : { ok: true, stdout: '', stderr: '', code: 0 };
+  };
+  fn.calls = calls;
+  return fn;
+};
+
+const fixSuccessResult = (over = {}) => ({
+  ok: true,
+  outcome: 'fixed',
+  worktree: '/tmp/p13-fix/fix-prob-svc-1-t',
+  branch: 'fix/prob-svc-1/20260827T1530000',
+  summary: 'lowered the threshold',
+  changed_files: ['engine/src/lib.rs'],
+  verification_results: [{ command: 'cargo test', exit_code: 0, summary: 'all pass' }],
+  ...over,
+});
+
+test('POST /problems/:id/verify runs the report default command and marks fixed on exit 0 + mark_fixed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-v', whitelistedReport());
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    verifyProblemFn: verifyWithExec(verifyExecOk()),
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-v' }),
+    });
+    const problem = await create.json();
+
+    const res = await fetch(`${base}/problems/${problem.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ mark_fixed: true }),
+    });
+    assert.equal(res.status, 200);
+    const updated = await res.json();
+    assert.equal(updated.status, 'fixed');
+    const decision = updated.decisions.at(-1);
+    assert.equal(decision.action, 'verify');
+    assert.equal(decision.command, 'cargo test');
+    assert.equal(decision.exit_code, 0);
+    assert.equal(decision.summary, 'ok');
+    // status:fixed 决策在 verify 之前。
+    assert.equal(updated.decisions.at(-2).action, 'status:fixed');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/verify rejects a whitelist-violating command with 400 and no decision', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-v', whitelistedReport());
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    verifyProblemFn: verifyWithExec(verifyExecOk()),
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-v' }),
+    });
+    const problem = await create.json();
+    const res = await fetch(`${base}/problems/${problem.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ command: 'rm -rf /' }),
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /command not allowed/);
+    const detail = await (await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } })).json();
+    assert.ok(!detail.decisions.some((d) => d.action === 'verify'));
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/verify returns 400 when no whitelisted command is available', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-v', validReport()); // verification 不是白名单命令
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    verifyProblemFn: verifyWithExec(verifyExecOk()),
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-v' }),
+    });
+    const problem = await create.json();
+    const res = await fetch(`${base}/problems/${problem.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /no verification command/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/verify does not mark fixed on a non-zero exit', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-v', whitelistedReport());
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    verifyProblemFn: verifyWithExec(verifyExecFail(1)),
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-v' }),
+    });
+    const problem = await create.json();
+    const res = await fetch(`${base}/problems/${problem.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ mark_fixed: true }),
+    });
+    const updated = await res.json();
+    assert.equal(updated.status, 'open');
+    assert.equal(updated.decisions.at(-1).exit_code, 1);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/verify redacts credentials from the persisted decision', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-v', whitelistedReport());
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    verifyProblemFn: verifyWithExec(verifyExecOk(`please see ${FAKE_KEY} attached`)),
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-v' }),
+    });
+    const problem = await create.json();
+    const res = await fetch(`${base}/problems/${problem.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    const updated = await res.json();
+    assert.match(updated.decisions.at(-1).summary, /\[REDACTED\]/);
+    assert.doesNotMatch(updated.decisions.at(-1).summary, new RegExp(FAKE_KEY));
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/verify returns 404 for an unknown problem', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    verifyProblemFn: verifyWithExec(verifyExecOk()),
+  });
+  try {
+    const res = await fetch(`${base}/problems/nope/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/fix dispatches the fix agent and writes fix_ref pending_confirm', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-f', validReport());
+  const fix = fakeRunFix(fixSuccessResult());
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fix,
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-f' }),
+    });
+    const problem = await create.json();
+
+    const res = await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ extra_instructions: 'also bump the version' }),
+    });
+    assert.equal(res.status, 200);
+    const updated = await res.json();
+    assert.equal(updated.status, 'in_progress');
+    assert.deepEqual(updated.fix_ref, { worktree: fixSuccessResult().worktree, branch: fixSuccessResult().branch, status: 'pending_confirm' });
+    const decision = updated.decisions.at(-1);
+    assert.equal(decision.action, 'fix');
+    assert.equal(decision.outcome, 'succeeded');
+    assert.deepEqual(decision.changed_files, ['engine/src/lib.rs']);
+    assert.equal(decision.verification_results[0].command, 'cargo test');
+    // runFix 收到 problem 与净化后的 extra_instructions。
+    assert.equal(fix.calls.length, 1);
+    assert.equal(fix.calls[0].problem.id, problem.id);
+    assert.equal(fix.calls[0].extraInstructions, 'also bump the version');
+    assert.equal(fix.calls[0].env.ANTHROPIC_API_KEY, FAKE_KEY);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/fix failure records the decision without changing status or creating fix_ref', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-f', validReport());
+  const fix = fakeRunFix({ ok: false, outcome: 'provider_unavailable', error: 'ANTHROPIC_API_KEY is not set' });
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fix,
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-f' }),
+    });
+    const problem = await create.json();
+
+    const res = await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 200);
+    const updated = await res.json();
+    assert.equal(updated.status, 'open'); // 状态不变
+    assert.equal(updated.fix_ref, undefined); // fix_ref 不建
+    const decision = updated.decisions.at(-1);
+    assert.equal(decision.action, 'fix');
+    assert.equal(decision.outcome, 'failed');
+    assert.equal(decision.error, 'ANTHROPIC_API_KEY is not set');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/fix rejects closed-triage problems and pending fixes with 400', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    runFixFn: fakeRunFix(fixSuccessResult()),
+  });
+  try {
+    const closed = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'later', triage: 'defer', reason: 'later' }),
+    });
+    const closedProblem = await closed.json();
+    const res1 = await fetch(`${base}/problems/${closedProblem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res1.status, 400);
+    assert.match((await res1.json()).error, /closed/);
+
+    // 已有 pending fix → 拒绝新 fix。
+    const open = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'open one' }),
+    });
+    const openProblem = await open.json();
+    await fetch(`${base}/problems/${openProblem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    const res2 = await fetch(`${base}/problems/${openProblem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res2.status, 400);
+    assert.match((await res2.json()).error, /pending/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/fix redacts extra_instructions before they reach the fix runner', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-f', validReport());
+  const fix = fakeRunFix(fixSuccessResult());
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fix,
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-f' }),
+    });
+    const problem = await create.json();
+    await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ extra_instructions: `please see ${FAKE_KEY}` }),
+    });
+    assert.doesNotMatch(fix.calls[0].extraInstructions, new RegExp(FAKE_KEY));
+    assert.match(fix.calls[0].extraInstructions, /\[REDACTED\]/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/merge-fix merges the branch, closes the problem, and cleans the worktree', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-f', validReport());
+  const git = fakeGitExec();
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fakeRunFix(fixSuccessResult()),
+    gitExec: git,
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-f' }),
+    });
+    const problem = await create.json();
+    // 先 fix（写入 fix_ref pending_confirm）。
+    await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+
+    const res = await fetch(`${base}/problems/${problem.id}/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ change_ref: 'fix/custom' }),
+    });
+    assert.equal(res.status, 200);
+    const updated = await res.json();
+    assert.equal(updated.status, 'closed');
+    assert.equal(updated.change_ref, 'fix/custom');
+    assert.equal(updated.fix_ref.status, 'merged');
+    assert.equal(updated.decisions.at(-1).action, 'merge-fix');
+
+    // git 操作顺序：rev-parse → merge --no-ff → worktree remove。
+    assert.deepEqual(git.calls[0].args, ['rev-parse', '--verify', 'fix/prob-svc-1/20260827T1530000^{commit}']);
+    assert.deepEqual(git.calls[1].args[0], 'merge');
+    assert.equal(git.calls[1].args[1], '--no-ff');
+    assert.equal(git.calls[1].args[2], 'fix/prob-svc-1/20260827T1530000');
+    assert.deepEqual(git.calls[2].args, ['worktree', 'remove', '--force', '/tmp/p13-fix/fix-prob-svc-1-t']);
+    assert.equal(git.calls[1].opts.cwd, REPO_ROOT); // 主 checkout（repoRoot）
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/merge-fix reject keeps the worktree and marks fix_ref rejected', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-f', validReport());
+  const git = fakeGitExec();
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fakeRunFix(fixSuccessResult()),
+    gitExec: git,
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-f' }),
+    });
+    const problem = await create.json();
+    await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+
+    const res = await fetch(`${base}/problems/${problem.id}/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ reject: true, reason: 'wrong approach' }),
+    });
+    assert.equal(res.status, 200);
+    const updated = await res.json();
+    assert.equal(updated.status, 'in_progress'); // 不闭环
+    assert.equal(updated.fix_ref.status, 'rejected');
+    assert.equal(updated.decisions.at(-1).action, 'reject-fix');
+    assert.equal(updated.decisions.at(-1).reason, 'wrong approach');
+    // 不执行 merge / worktree remove。
+    assert.deepEqual(git.calls, []);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/merge-fix guards: no pending fix / no commits / failed verification', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-f', validReport());
+  const gitNoCommit = fakeGitExec((i) => (i === 0 ? { ok: false, stdout: '', stderr: 'unknown revision', code: 128 } : { ok: true, stdout: '', stderr: '', code: 0 }));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fakeRunFix(fixSuccessResult()),
+    gitExec: gitNoCommit,
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-f' }),
+    });
+    const problem = await create.json();
+
+    // 无 pending fix → 400。
+    const res0 = await fetch(`${base}/problems/${problem.id}/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res0.status, 400);
+    assert.match((await res0.json()).error, /no pending fix/);
+
+    // 先 fix，但分支无提交 → 400。
+    await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    const res1 = await fetch(`${base}/problems/${problem.id}/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res1.status, 400);
+    assert.match((await res1.json()).error, /no commits/);
+
+    // 验证记录未全过 → 400；force → 通过（独立 tasksDir + git 全成功）。
+    const dir2 = mkdtempSync(join(tmpdir(), 'service-test-'));
+    const gitFailV = fakeGitExec();
+    const badVr = fakeRunFix({ ...fixSuccessResult(), verification_results: [{ command: 'cargo test', exit_code: 1, summary: 'fail' }] });
+    const { server: s2, base: b2 } = await startService({
+      tasksDir: dir2,
+      runDiagnosisFn: async () => {},
+      newProblemId: problemIdFactory(),
+      env: { ANTHROPIC_API_KEY: FAKE_KEY },
+      runFixFn: badVr,
+      gitExec: gitFailV,
+    });
+    try {
+      const create2 = await fetch(`${b2}/problems`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+        body: JSON.stringify({ title: 'second' }),
+      });
+      const problem2 = await create2.json();
+      await fetch(`${b2}/problems/${problem2.id}/fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+        body: '{}',
+      });
+      const res2 = await fetch(`${b2}/problems/${problem2.id}/merge-fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+        body: '{}',
+      });
+      assert.equal(res2.status, 400);
+      assert.match((await res2.json()).error, /did not all pass/);
+      // force:true → 合入成功。
+      const res3 = await fetch(`${b2}/problems/${problem2.id}/merge-fix`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+        body: JSON.stringify({ force: true }),
+      });
+      assert.equal(res3.status, 200);
+      assert.equal((await res3.json()).status, 'closed');
+    } finally {
+      await closeServer(s2);
+    }
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/merge-fix reports a git merge failure without closing the problem', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  writeDiagnosedTask(dir, 'task-f', validReport());
+  const git = fakeGitExec((i) => {
+    if (i === 0) return { ok: true, stdout: '', stderr: '', code: 0 }; // rev-parse ok
+    return { ok: false, stdout: '', stderr: 'conflict in engine/src/lib.rs', code: 1 }; // merge fail
+  });
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fakeRunFix(fixSuccessResult()),
+    gitExec: git,
+  });
+  try {
+    const create = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'task-f' }),
+    });
+    const problem = await create.json();
+    await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    const res = await fetch(`${base}/problems/${problem.id}/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 500);
+    assert.match((await res.json()).error, /merge failed/);
+    // problem 不闭环：status 保持 in_progress，fix_ref 保持 pending_confirm。
+    const detail = await (await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } })).json();
+    assert.equal(detail.status, 'in_progress');
+    assert.equal(detail.fix_ref.status, 'pending_confirm');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/merge-fix returns 404 for an unknown problem', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    gitExec: fakeGitExec(),
+  });
+  try {
+    const res = await fetch(`${base}/problems/nope/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 404);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/verify rejects mark_fixed early for closed-triage problems without running the command', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  let called = false;
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    verifyProblemFn: async () => {
+      called = true;
+      return { ok: true, command: 'cargo test', exit_code: 0, summary: 'ok' };
+    },
+  });
+  try {
+    const created = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'later', triage: 'defer', reason: 'later' }),
+    });
+    const problem = await created.json();
+    const res = await fetch(`${base}/problems/${problem.id}/verify`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ mark_fixed: true }),
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /status=closed/);
+    assert.equal(called, false); // 命令未执行
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/merge-fix rejects when the fix has no verification records (force required)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const git = fakeGitExec();
+  const noVr = fakeRunFix({ ...fixSuccessResult(), verification_results: [] });
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: noVr,
+    gitExec: git,
+  });
+  try {
+    const created = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'no vr' }),
+    });
+    const problem = await created.json();
+    await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    // 无验证记录 → 400（必须 force）。
+    const res = await fetch(`${base}/problems/${problem.id}/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 400);
+    assert.match((await res.json()).error, /did not all pass/);
+    // force → 合入。
+    const res2 = await fetch(`${base}/problems/${problem.id}/merge-fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ force: true }),
+    });
+    assert.equal(res2.status, 200);
+    assert.equal((await res2.json()).status, 'closed');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/fix rejects a concurrent dispatch while one fix is in flight', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  let releaseRun;
+  const gate = new Promise((r) => { releaseRun = r; });
+  const fix = fakeRunFix(async () => {
+    await gate;
+    return fixSuccessResult();
+  });
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runFixFn: fix,
+  });
+  try {
+    const created = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'race' }),
+    });
+    const problem = await created.json();
+    // 第一个 fix 挂起（agent 运行中）。
+    const p1 = fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    // 等 p1 进入互斥区后，第二次下发 → 400 in progress。
+    await new Promise((r) => setTimeout(r, 30));
+    const res2 = await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res2.status, 400);
+    assert.match((await res2.json()).error, /in progress/);
+    // 放行第一个 → 正常成功。
+    releaseRun();
+    const res1 = await p1;
+    assert.equal(res1.status, 200);
+    assert.equal((await res1.json()).fix_ref.status, 'pending_confirm');
+    // 互斥释放后，pending_confirm 守卫接管：再次下发 → 400 pending。
+    const res3 = await fetch(`${base}/problems/${problem.id}/fix`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res3.status, 400);
+    assert.match((await res3.json()).error, /pending/);
   } finally {
     await closeServer(server);
   }

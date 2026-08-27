@@ -72,6 +72,7 @@ export function normalizeProblem(raw) {
     discussion: Array.isArray(raw.discussion) ? raw.discussion : [],
     github: raw.github && typeof raw.github === 'object' && !Array.isArray(raw.github) ? raw.github : null,
     change_ref: typeof raw.change_ref === 'string' && raw.change_ref ? raw.change_ref : null,
+    fix_ref: raw.fix_ref && typeof raw.fix_ref === 'object' && !Array.isArray(raw.fix_ref) ? raw.fix_ref : null,
     created_at: typeof raw.created_at === 'string' ? raw.created_at : '',
     updated_at: typeof raw.updated_at === 'string' ? raw.updated_at : '',
   };
@@ -112,8 +113,60 @@ export function discussionToRender(discussion) {
   }));
 }
 
-// 详情 → 渲染数据：完整报告文本（复用 formatReportSummary）+ 决策轨迹 + 讨论区，
-// 全部文本渲染前 redactText。
+// 单条决策 → 展示行（多行文本）。verify/fix/merge-fix 决策携带的结构化字段
+// （command/exit_code/summary/changed_files/verification_results/outcome/worktree/
+// branch/change_ref）全部渲染前 redactText；summary 展示时截断到 displayMax。
+export function formatDecisionText(d, displayMax = 400) {
+  const at = d?.at ?? '';
+  const action = d?.action ?? '';
+  const by = d?.by ?? '';
+  const reason = d?.reason ?? '';
+  const parts = [`${at}  ${action}${reason ? ` — ${reason}` : ''} (${by})`];
+  const clip = (t) => {
+    const s = String(t ?? '');
+    return s.length <= displayMax ? s : `${s.slice(0, displayMax)}…`;
+  };
+  if (action === 'verify') {
+    if (d.command) parts.push(`  命令: ${d.command}`);
+    parts.push(`  退出码: ${d.exit_code ?? '—'}`);
+    if (d.summary) parts.push(`  输出摘要: ${clip(d.summary)}`);
+  }
+  if (action === 'fix') {
+    parts.push(`  结果: ${d.outcome ?? 'succeeded'}`);
+    if (d.branch) parts.push(`  分支: ${d.branch}`);
+    if (d.worktree) parts.push(`  worktree: ${d.worktree}`);
+    if (d.summary) parts.push(`  摘要: ${clip(d.summary)}`);
+    if (d.changed_files && d.changed_files.length > 0) {
+      parts.push(`  改动文件: ${d.changed_files.join(', ')}`);
+    }
+    if (d.verification_results && d.verification_results.length > 0) {
+      parts.push('  验证结果:');
+      for (const v of d.verification_results) {
+        const vs = v?.summary ? `：${clip(v.summary)}` : '';
+        parts.push(`    ${v?.command ?? ''} → exit ${v?.exit_code ?? '—'}${vs}`);
+      }
+    }
+    if (d.error) parts.push(`  失败: ${redactText(d.error)}`);
+  }
+  if (action === 'merge-fix' && d.change_ref) parts.push(`  change_ref: ${d.change_ref}`);
+  if (action === 'reject-fix' && d.worktree) parts.push(`  worktree: ${d.worktree}（保留）`);
+  return parts.join('\n');
+}
+
+// fix_ref → 渲染数据（worktree/branch/status + 合入/拒绝时间），文本 redactText。
+export function fixRefToRender(fixRef) {
+  if (!fixRef || typeof fixRef !== 'object' || Array.isArray(fixRef)) return null;
+  return {
+    worktree: redactText(fixRef.worktree ?? ''),
+    branch: redactText(fixRef.branch ?? ''),
+    status: typeof fixRef.status === 'string' ? fixRef.status : '',
+    merged_at: formatProblemTime(fixRef.merged_at),
+    rejected_at: formatProblemTime(fixRef.rejected_at),
+  };
+}
+
+// 详情 → 渲染数据：完整报告文本（复用 formatReportSummary）+ 决策轨迹 + 讨论区 +
+// fix_ref，全部文本渲染前 redactText。
 export function problemDetailToRender(problem) {
   const p = problem ?? {};
   const report = p.source?.report ?? null;
@@ -127,11 +180,30 @@ export function problemDetailToRender(problem) {
     reportText: report && typeof report === 'object' ? formatReportSummary(report) : '',
     github: p.github ?? null,
     change_ref: typeof p.change_ref === 'string' && p.change_ref ? redactText(p.change_ref) : null,
+    fix_ref: fixRefToRender(p.fix_ref),
     decisions: (p.decisions ?? []).map((d) => ({
       action: redactText(d?.action ?? ''),
       by: redactText(d?.by ?? ''),
       at: formatProblemTime(d?.at),
       reason: redactText(d?.reason ?? ''),
+      command: typeof d?.command === 'string' ? redactText(d.command) : null,
+      exit_code: typeof d?.exit_code === 'number' ? d.exit_code : null,
+      summary: typeof d?.summary === 'string' ? redactText(d.summary) : '',
+      outcome: typeof d?.outcome === 'string' ? d.outcome : null,
+      worktree: typeof d?.worktree === 'string' ? redactText(d.worktree) : null,
+      branch: typeof d?.branch === 'string' ? redactText(d.branch) : null,
+      error: typeof d?.error === 'string' ? redactText(d.error) : '',
+      change_ref: typeof d?.change_ref === 'string' ? redactText(d.change_ref) : null,
+      changed_files: Array.isArray(d?.changed_files)
+        ? d.changed_files.map((f) => redactText(String(f)))
+        : [],
+      verification_results: Array.isArray(d?.verification_results)
+        ? d.verification_results.map((v) => ({
+            command: redactText(v?.command ?? ''),
+            exit_code: typeof v?.exit_code === 'number' ? v.exit_code : null,
+            summary: redactText(v?.summary ?? ''),
+          }))
+        : [],
     })),
     discussion: discussionToRender(p.discussion),
   };
@@ -175,6 +247,9 @@ export function createProblemApi({ endpoint, fetchImpl = fetch } = {}) {
     rerun: (id, body = {}) => request('POST', `/problems/${encodeURIComponent(id)}/rerun`, body),
     remove: (id) => request('DELETE', `/problems/${encodeURIComponent(id)}`),
     importProblems: (body = {}) => request('POST', '/problems/import', body),
+    verify: (id, body = {}) => request('POST', `/problems/${encodeURIComponent(id)}/verify`, body),
+    fix: (id, body = {}) => request('POST', `/problems/${encodeURIComponent(id)}/fix`, body),
+    mergeFix: (id, body = {}) => request('POST', `/problems/${encodeURIComponent(id)}/merge-fix`, body),
   };
 }
 
