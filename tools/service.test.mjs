@@ -322,7 +322,7 @@ test('OPTIONS preflight echoes a localhost Origin with 204', async () => {
     const res = await fetch(`${base}/observations`, { method: 'OPTIONS', headers: { Origin: LOCAL_ORIGIN } });
     assert.equal(res.status, 204);
     assert.equal(res.headers.get('access-control-allow-origin'), LOCAL_ORIGIN);
-    assert.equal(res.headers.get('access-control-allow-methods'), 'GET, POST, OPTIONS');
+    assert.equal(res.headers.get('access-control-allow-methods'), 'GET, POST, PATCH, OPTIONS');
     assert.equal(res.headers.get('access-control-allow-headers'), 'Content-Type');
   } finally {
     await closeServer(server);
@@ -522,6 +522,422 @@ test('POST rejects a streamed chunked oversized body with 413 (no content-length
     });
     assert.equal(status, 413);
     assert.equal(calls.length, 0);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+// --- P11 problem lifecycle endpoints (tasks 2.1/2.2/3.2) ----------------------
+
+// 确定性 problem id 工厂：每次调用返回递增 id。
+function problemIdFactory() {
+  let seq = 0;
+  return () => `prob-svc-${++seq}`;
+}
+
+// fake gh issue creator：直接返回给定结果（或按 (problem, opts) 计算）。
+function fakeGithubIssue(result) {
+  return async (problem, opts) => {
+    if (typeof result === 'function') return result(problem, opts);
+    return result;
+  };
+}
+
+test('problems CRUD: manual create/list/detail/patch and wontfix requires reason', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    // manual create → discuss/open, source null
+    const post = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'long passes are too accurate', description: 'seen in seed 42' }),
+    });
+    assert.equal(post.status, 201);
+    assert.equal(post.headers.get('access-control-allow-origin'), LOCAL_ORIGIN);
+    const created = await post.json();
+    assert.equal(created.triage, 'discuss');
+    assert.equal(created.status, 'open');
+    assert.equal(created.source, null);
+    assert.equal(created.github, null);
+    assert.equal(created.decisions.length, 1);
+
+    // list
+    const list = await fetch(`${base}/problems`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(list.status, 200);
+    const { problems } = await list.json();
+    assert.equal(problems.length, 1);
+    assert.equal(problems[0].id, created.id);
+
+    // detail
+    const detail = await fetch(`${base}/problems/${created.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(detail.status, 200);
+    const got = await detail.json();
+    assert.equal(got.title, 'long passes are too accurate');
+    assert.equal(got.status, 'open');
+
+    // patch title + status → decisions trail grows
+    const patch = await fetch(`${base}/problems/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'renamed', status: 'in_progress' }),
+    });
+    assert.equal(patch.status, 200);
+    const updated = await patch.json();
+    assert.equal(updated.title, 'renamed');
+    assert.equal(updated.status, 'in_progress');
+    assert.equal(updated.decisions.length, 2);
+    assert.equal(updated.decisions.at(-1).action, 'status:in_progress');
+
+    // wontfix without reason → 400; with reason → 200 closed
+    const noReason = await fetch(`${base}/problems/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ triage: 'wontfix' }),
+    });
+    assert.equal(noReason.status, 400);
+    const withReason = await fetch(`${base}/problems/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ triage: 'wontfix', reason: 'accepted behavior' }),
+    });
+    assert.equal(withReason.status, 200);
+    const wf = await withReason.json();
+    assert.equal(wf.triage, 'wontfix');
+    assert.equal(wf.status, 'closed');
+    assert.equal(wf.decisions.at(-1).action, 'wontfix');
+
+    // invalid triage → 400
+    const badTriage = await fetch(`${base}/problems/${created.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ triage: 'nope' }),
+    });
+    assert.equal(badTriage.status, 400);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems creates from a diagnosed task report', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const fake = async (args) => {
+    const task = {
+      run_id: args.runId,
+      status: 'diagnosed',
+      report: validReport({
+        phenomenon_summary: 'wingers never cut inside',
+        triage: { category: 'design', rationale: 'missing cut-inside mechanism', confidence: 0.8 },
+      }),
+      errors: [],
+      input_summary: { audit_path: args.auditPath },
+      status_history: [
+        { status: 'auditing', at: 't0' },
+        { status: 'diagnosed', at: 't1' },
+      ],
+    };
+    writeFileSync(join(args.tasksDir, `${args.runId}.task.json`), JSON.stringify(task));
+    return task;
+  };
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: fake,
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    const obs = await fetch(`${base}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({
+        ...validBundle(),
+        statement: 'wingers never cut inside on the right flank',
+      }),
+    });
+    const { task_id } = await obs.json();
+    const res = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id }),
+    });
+    assert.equal(res.status, 201);
+    const problem = await res.json();
+    assert.equal(problem.title, 'wingers never cut inside');
+    assert.equal(problem.triage, 'design');
+    assert.equal(problem.status, 'open');
+    assert.equal(problem.source.task_id, task_id);
+    assert.equal(problem.source.observation_id, 'obs-1');
+    assert.equal(problem.source.report.root_cause, 'engine/src/lib.rs: unforced out pressure gate misconfigured');
+    // 描述 = 用户描述 + 现象 + 证据摘要（spec scenario）。
+    assert.match(problem.description, /用户描述: wingers never cut inside on the right flank/);
+    assert.match(problem.description, /现象: wingers never cut inside/);
+    assert.match(problem.description, /根因:/);
+    // 列表里能看到。
+    const list = await fetch(`${base}/problems`, { headers: { Origin: LOCAL_ORIGIN } });
+    const { problems } = await list.json();
+    assert.equal(problems.length, 1);
+
+    // 未知 / 未 diagnosed 的 task_id → 400
+    const missing = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ task_id: 'does-not-exist' }),
+    });
+    assert.equal(missing.status, 400);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems rejects empty bodies and non-object payloads', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    for (const body of ['', '[]', '{"foo":1}']) {
+      const res = await fetch(`${base}/problems`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+        body,
+      });
+      assert.equal(res.status, 400, `body ${JSON.stringify(body)} should 400`);
+    }
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('problems discussion redacts credential-shaped text before storing', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    const post = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'discuss this' }),
+    });
+    const problem = await post.json();
+    const res = await fetch(`${base}/problems/${problem.id}/discussion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ author: 'user', text: `please see sk-ant-fake-secret-value-0001 attached` }),
+    });
+    assert.equal(res.status, 200);
+    const updated = await res.json();
+    assert.equal(updated.discussion.length, 1);
+    assert.match(updated.discussion[0].text, /\[REDACTED\]/);
+    assert.doesNotMatch(updated.discussion[0].text, /sk-ant-fake-secret-value-0001/);
+    // 落盘后读回仍是净化文本。
+    const detail = await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    const got = await detail.json();
+    assert.match(got.discussion[0].text, /\[REDACTED\]/);
+    // 缺 author/text → 400
+    const bad = await fetch(`${base}/problems/${problem.id}/discussion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ author: '', text: '' }),
+    });
+    assert.equal(bad.status, 400);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('problems persist sanitizes generic credential shapes (client_secret) in description and discussion', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    // 人工创建 description 含 JSON 风格 client_secret → 落盘净化（读回已抹值）。
+    const post = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'x', description: 'leak "client_secret":"s3cret-value"' }),
+    });
+    assert.equal(post.status, 201);
+    const created = await post.json();
+    const detail = await fetch(`${base}/problems/${created.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    const got = await detail.json();
+    assert.doesNotMatch(got.description, /s3cret-value/);
+    assert.match(got.description, /\[REDACTED\]/);
+
+    // 讨论 text 含 client_secret → 落盘净化。
+    const disc = await fetch(`${base}/problems/${created.id}/discussion`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ author: 'user', text: '{"client_secret":"topsecret"}' }),
+    });
+    assert.equal(disc.status, 200);
+    const detail2 = await fetch(`${base}/problems/${created.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    const got2 = await detail2.json();
+    assert.doesNotMatch(got2.discussion[0].text, /topsecret/);
+    assert.match(got2.discussion[0].text, /\[REDACTED\]/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('problems endpoints: 404 for unknown ids, 403 for non-localhost origins', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+  });
+  try {
+    assert.equal((await fetch(`${base}/problems/nope`, { headers: { Origin: LOCAL_ORIGIN } })).status, 404);
+    assert.equal(
+      (
+        await fetch(`${base}/problems/nope`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+          body: JSON.stringify({ status: 'fixed' }),
+        })
+      ).status,
+      404
+    );
+    assert.equal(
+      (
+        await fetch(`${base}/problems/nope/discussion`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+          body: JSON.stringify({ author: 'a', text: 't' }),
+        })
+      ).status,
+      404
+    );
+    // 非法 triage/status 筛选 → 400。
+    const badFilter = await fetch(`${base}/problems?triage=nope`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(badFilter.status, 400);
+    // 非本机 origin 一律 403，无 CORS 头。
+    const evil = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: EVIL_ORIGIN },
+      body: JSON.stringify({ title: 'x' }),
+    });
+    assert.equal(evil.status, 403);
+    assert.equal(evil.headers.get('access-control-allow-origin'), null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/github writes the github ref on success', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  let received = null;
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    createGithubIssueFn: fakeGithubIssue(async (problem, { repo, dryRun }) => {
+      received = { problem, repo, dryRun };
+      return { ok: true, issue_number: 42, url: 'https://github.com/owner/repo/issues/42' };
+    }),
+  });
+  try {
+    const post = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'bug one', triage: 'bug' }),
+    });
+    const problem = await post.json();
+    const res = await fetch(`${base}/problems/${problem.id}/github`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ repo: 'owner/repo' }),
+    });
+    assert.equal(res.status, 200);
+    const updated = await res.json();
+    assert.equal(updated.github.issue_number, 42);
+    assert.equal(updated.github.url, 'https://github.com/owner/repo/issues/42');
+    assert.ok(updated.github.synced_at);
+    // fake 收到了 problem 与 repo/dryRun 参数。
+    assert.equal(received.problem.id, problem.id);
+    assert.equal(received.repo, 'owner/repo');
+    assert.equal(received.dryRun, false);
+    // 持久化读回一致。
+    const detail = await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal((await detail.json()).github.issue_number, 42);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/github failure returns an error and keeps the problem unchanged', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    createGithubIssueFn: fakeGithubIssue({ ok: false, error: 'gh 未登录：请先运行 gh auth login' }),
+  });
+  try {
+    const post = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'bug one', triage: 'bug' }),
+    });
+    const problem = await post.json();
+    const res = await fetch(`${base}/problems/${problem.id}/github`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: '{}',
+    });
+    assert.equal(res.status, 502);
+    const data = await res.json();
+    assert.match(data.error, /gh 未登录/);
+    // Problem 保持原状。
+    const detail = await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal((await detail.json()).github, null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('POST /problems/:id/github dryRun returns ok without writing the ref', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  let receivedDryRun = null;
+  const { server, base } = await startService({
+    tasksDir: dir,
+    runDiagnosisFn: async () => {},
+    newProblemId: problemIdFactory(),
+    createGithubIssueFn: fakeGithubIssue(async (problem, { dryRun }) => {
+      receivedDryRun = dryRun;
+      return { ok: true, dryRun: true, repo: 'owner/repo', args: ['issue', 'create'] };
+    }),
+  });
+  try {
+    const post = await fetch(`${base}/problems`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ title: 'bug one', triage: 'bug' }),
+    });
+    const problem = await post.json();
+    const res = await fetch(`${base}/problems/${problem.id}/github`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ dryRun: true }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.dryRun, true);
+    assert.equal(receivedDryRun, true);
+    // 未回写 github 引用。
+    const detail = await fetch(`${base}/problems/${problem.id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal((await detail.json()).github, null);
   } finally {
     await closeServer(server);
   }

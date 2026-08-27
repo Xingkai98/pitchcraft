@@ -1,0 +1,4 @@
+schema: spec-driven
+created: 2026-08-27
+goal: 让每条诊断结果可持久化跟踪：分类流转（bug/design/discuss/defer/wontfix）、讨论沉淀、GitHub issue
+  落库、管理页面全览

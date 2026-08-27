@@ -293,10 +293,88 @@
       color: #9bd2ff;
       font-family: monospace;
     }
+    /* P11 问题管理视图 */
+    #view-tabs { margin-top: 8px; display: flex; gap: 8px; }
+    .view-tab { background: #2a2a44; border: 1px solid #3a3a55; }
+    .view-tab.active { background: #3498db; border-color: #3498db; }
+    #match-view { display: flex; flex-direction: column; align-items: center; width: 100%; }
+    #match-view[hidden] { display: none; }
+    #problem-view[hidden] { display: none; }
+    #problem-view {
+      margin-top: 12px;
+      width: 700px;
+      max-width: 100%;
+      font-size: 0.82rem;
+      text-align: left;
+    }
+    .problem-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+    .problem-toolbar label { color: #bbb; font-size: 0.78rem; }
+    .problem-toolbar select {
+      background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 3px;
+    }
+    #problem-status { color: #ffd27d; font-family: monospace; font-size: 0.75rem; }
+    .problem-card {
+      background: #18182c; border: 1px solid #3a3a55; border-radius: 4px;
+      padding: 6px 8px; margin-bottom: 6px; cursor: pointer;
+    }
+    .problem-card:hover { border-color: #4a4a6a; }
+    .problem-card-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .problem-card-title { flex: 1; color: #ddd; font-size: 0.8rem; min-width: 120px; }
+    .problem-card-meta { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 3px; font-size: 0.72rem; color: #999; }
+    .problem-triage-badge {
+      font-family: monospace; font-size: 0.7rem; padding: 1px 10px; border-radius: 999px;
+      border: 1px solid #555; color: #fff; white-space: nowrap;
+    }
+    .problem-triage-bug { background: #8a2b2b; }
+    .problem-triage-design { background: #2b4a8a; }
+    .problem-triage-discuss { background: #8a7a2b; }
+    .problem-triage-defer { background: #555; }
+    .problem-triage-wontfix { background: #333; }
+    .problem-status-badge {
+      font-family: monospace; font-size: 0.68rem; padding: 1px 8px; border-radius: 999px;
+      border: 1px solid #555; color: #ddd; white-space: nowrap;
+    }
+    .problem-status-open { background: #1c5c2c; color: #8ef0a0; }
+    .problem-status-in_progress { background: #1c3a5c; color: #9bd2ff; }
+    .problem-status-fixed { background: #1c4a44; color: #7fe3c8; }
+    .problem-status-closed { background: #3a2a4a; color: #c9a5f0; }
+    .problem-source { color: #999; font-size: 0.7rem; }
+    .problem-ref { color: #ffd27d; font-size: 0.7rem; font-family: monospace; }
+    .problem-time { color: #999; font-size: 0.7rem; font-family: monospace; white-space: nowrap; }
+    .problem-issue-link { color: #7fe3c8; font-size: 0.72rem; text-decoration: none; }
+    .problem-issue-link:hover { text-decoration: underline; }
+    .problem-detail {
+      background: #18182c; border: 1px solid #3a3a55; border-radius: 4px; padding: 8px 10px;
+    }
+    .problem-detail-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+    .problem-detail-title { font-size: 1rem; font-weight: 600; color: #eee; margin-bottom: 6px; }
+    .problem-detail-desc { white-space: pre-wrap; color: #ddd; margin-bottom: 6px; }
+    .problem-report {
+      background: #0d0d1a; border: 1px solid #3a3a55; border-radius: 4px; padding: 6px;
+      font-size: 0.72rem; white-space: pre-wrap; word-break: break-all; color: #9bd2ff;
+      max-height: 260px; overflow-y: auto; margin-bottom: 6px;
+    }
+    .problem-section-heading { color: #ffd27d; font-size: 0.78rem; font-weight: 600; margin: 8px 0 4px; }
+    .problem-decision-row, .problem-discussion-text { color: #cfe6ff; font-size: 0.76rem; padding: 2px 0; }
+    .problem-action-row {
+      display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 6px;
+    }
+    .problem-action-row label { color: #bbb; font-size: 0.78rem; }
+    .problem-action-row input[type="text"] {
+      background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 4px;
+    }
+    .problem-discussion-row { border-bottom: 1px solid #2a2a44; padding: 3px 0; }
+    .problem-discussion-meta { color: #9bd2ff; font-size: 0.7rem; font-family: monospace; }
+    .problem-decisions { margin-bottom: 6px; }
   </style>
 </head>
 <body>
   <h1>Football Manager Clone — P0</h1>
+  <div id="view-tabs">
+    <button id="tab-match" class="view-tab active">比赛</button>
+    <button id="tab-problems" class="view-tab">问题</button>
+  </div>
+  <div id="match-view">
   <div id="score">0 - 0</div>
   <div id="canvas-wrap"><canvas id="pitch" width="700" height="450"></canvas></div>
   <div id="progress-wrap">
@@ -359,8 +437,37 @@
       <div id="obs-next"></div>
     </details>
   </div>
+  </div>
+
+  <div id="problem-view" hidden>
+    <div class="problem-toolbar">
+      <label>triage
+        <select id="problem-filter-triage">
+          <option value="">全部</option>
+          <option value="bug">bug</option>
+          <option value="design">design</option>
+          <option value="discuss">discuss</option>
+          <option value="defer">defer</option>
+          <option value="wontfix">wontfix</option>
+        </select>
+      </label>
+      <label>status
+        <select id="problem-filter-status">
+          <option value="">全部</option>
+          <option value="open">open</option>
+          <option value="in_progress">in_progress</option>
+          <option value="fixed">fixed</option>
+          <option value="closed">closed</option>
+        </select>
+      </label>
+      <button id="problem-refresh">刷新</button>
+      <span id="problem-status"></span>
+    </div>
+    <div id="problem-list"></div>
+    <div id="problem-detail"></div>
+  </div>
 
   <!-- 版本号强制刷新 JS 模块缓存：改代码后改这里或清浏览器缓存 -->
-  <script type="module" src="./app.js?v=20260826-12"></script>
+  <script type="module" src="./app.js?v=20260826-14"></script>
 </body>
 </html>

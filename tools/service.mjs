@@ -25,8 +25,22 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateObservationBundle } from './bundle.mjs';
 import { runDiagnosis } from './runner.mjs';
-import { redactKey } from './provider.mjs';
+import { redactKey, redactCredentialText } from './provider.mjs';
 import { loadDotEnv } from './dotenv.mjs';
+import {
+  createProblem,
+  updateProblem,
+  getProblem,
+  listProblems,
+  addDiscussion,
+  setGithubRef,
+  ProblemError,
+  PROBLEM_ID_RE,
+  TRIAGE_VALUES,
+  STATUS_VALUES,
+  defaultProblemId,
+} from './problems.mjs';
+import { createGithubIssue } from './github.mjs';
 
 export const DEFAULT_PORT = 8787;
 export const DEFAULT_MAX_BODY_BYTES = 5 * 1024 * 1024;
@@ -94,7 +108,7 @@ function sendJSON(res, status, body, corsOrigin, opts = {}) {
 function sendPreflight(res, origin) {
   res.writeHead(204, {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
   });
@@ -132,9 +146,27 @@ function readBody(req, maxBytes) {
   });
 }
 
+// Parse a JSON request body for the problem endpoints. Empty body → {}. Errors
+// map to 400 (or 413 with tooLarge) via the returned flags.
+async function parseJsonBody(req, maxBytes) {
+  try {
+    const buf = await readBody(req, maxBytes);
+    if (buf.length === 0) return { ok: true, body: {} };
+    const parsed = JSON.parse(buf.toString('utf8'));
+    if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return { ok: false, error: 'request body must be a JSON object' };
+    }
+    return { ok: true, body: parsed };
+  } catch (e) {
+    if (e.code === 'BODY_TOO_LARGE') return { ok: false, tooLarge: true, error: e.message };
+    return { ok: false, error: 'cannot read request body' };
+  }
+}
+
 // Create the http.Server. `runDiagnosisFn` and `validateBundle` are injectable
 // for tests; `env` is passed through to runDiagnosis so the key gate and
-// redaction behave exactly as in the CLI.
+// redaction behave exactly as in the CLI. `createGithubIssueFn`/`newProblemId`
+// are injectable for the problem lifecycle endpoints (tests use fakes).
 export function createService({
   tasksDir,
   runDiagnosisFn = runDiagnosis,
@@ -145,12 +177,20 @@ export function createService({
   sourceRevision = null,
   replayInstructionsFn = buildReplayInstructions,
   allowedOrigins = [],
+  createGithubIssueFn = createGithubIssue,
+  newProblemId = defaultProblemId,
   log = () => {},
 } = {}) {
   if (!tasksDir) throw new Error('createService: tasksDir is required');
   mkdirSync(tasksDir, { recursive: true });
   const envKey = env.ANTHROPIC_API_KEY;
   const checkoutRevision = sourceRevision ?? readRepoRevision() ?? null;
+
+  // 用户可控文本的组合净化：redactKey（存活 key + 凭证形值）+ redactCredentialText
+  // （通用 `KEY=value`/`KEY: value`/`"KEY":"value"` 键值对）。problem 响应组合用
+  // redactProblemJSON（防御性兜底，与 problems.mjs 落盘净化同规则）。
+  const redactProblemText = (text) => redactCredentialText(redactKey(text, envKey));
+  const redactProblemJSON = (obj) => JSON.parse(redactProblemText(JSON.stringify(obj)));
 
   // Compose a redacted task state for GET /tasks/:id. Reads the runner-persisted
   // task file and the audit report it wrote; before the task file exists the
@@ -326,6 +366,222 @@ export function createService({
         return;
       }
       sendJSON(res, 200, task, corsOrigin);
+      return;
+    }
+
+    // --- P11 problem lifecycle endpoints -----------------------------------
+    const problemList = pathname === '/problems';
+    const problemDetail = /^\/problems\/([^/]+)$/.exec(pathname);
+    const problemDiscussion = /^\/problems\/([^/]+)\/discussion$/.exec(pathname);
+    const problemGithub = /^\/problems\/([^/]+)\/github$/.exec(pathname);
+    // 领域错误映射：MISSING_REASON/BAD_REQUEST → 400，NOT_FOUND → 404，其他 500。
+    // 500 分支的 message 一律净化，绝不外泄凭证。
+    const problemError = (e) => {
+      if (e instanceof ProblemError) {
+        sendJSON(res, e.code === 'NOT_FOUND' ? 404 : 400, { error: e.message }, corsOrigin);
+      } else {
+        sendJSON(res, 500, { error: `problem operation failed: ${redactKey(e.message, envKey)}` }, corsOrigin);
+      }
+    };
+
+    if (req.method === 'GET' && problemList) {
+      const url = new URL(req.url ?? '/', 'http://localhost');
+      const triage = url.searchParams.get('triage') ?? undefined;
+      const status = url.searchParams.get('status') ?? undefined;
+      if (
+        (triage && !TRIAGE_VALUES.includes(triage)) ||
+        (status && !STATUS_VALUES.includes(status))
+      ) {
+        sendJSON(res, 400, { error: 'invalid filter' }, corsOrigin);
+        return;
+      }
+      const problems = listProblems({ tasksDir, triage, status });
+      sendJSON(res, 200, redactProblemJSON({ problems }), corsOrigin);
+      return;
+    }
+
+    if (req.method === 'POST' && problemList) {
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      const { task_id, title, description, triage, status, reason } = parsed.body;
+      let input;
+      if (task_id) {
+        // 从诊断报告一键创建：任务须终态 diagnosed 且带 report。
+        if (!TASK_ID_RE.test(task_id)) {
+          sendJSON(res, 400, { error: 'invalid task_id' }, corsOrigin);
+          return;
+        }
+        const task = readTaskState(task_id);
+        if (!task || task.status !== 'diagnosed' || !task.report) {
+          sendJSON(res, 400, { error: 'task not diagnosed or missing' }, corsOrigin);
+          return;
+        }
+        const report = task.report;
+        const phenomenon =
+          typeof report.phenomenon_summary === 'string' && report.phenomenon_summary.trim()
+            ? report.phenomenon_summary.trim()
+            : '未命名问题';
+        // 用户描述/observation_id 来自原 bundle（可选）；凭证净化后再进 description。
+        let bundle = null;
+        try {
+          bundle = JSON.parse(readFileSync(join(tasksDir, `${task_id}.bundle.json`), 'utf8'));
+        } catch {
+          /* bundle 不可读（如手工构造任务）——跳过 statement/observation_id */
+        }
+        let userStatement = '';
+        if (bundle && typeof bundle.statement === 'string' && bundle.statement.trim()) {
+          userStatement = redactKey(bundle.statement.trim(), envKey);
+        }
+        const descLines = [`现象: ${phenomenon}`];
+        if (userStatement) descLines.push(`用户描述: ${userStatement}`);
+        if (report.root_cause) descLines.push(`根因: ${report.root_cause}`);
+        if (report.proposed_fix) descLines.push(`建议修复: ${report.proposed_fix}`);
+        if (report.verification) descLines.push(`验证: ${report.verification}`);
+        const source = { task_id, report };
+        if (bundle && typeof bundle.observation_id === 'string' && bundle.observation_id) {
+          source.observation_id = bundle.observation_id;
+        }
+        input = {
+          title: title ?? phenomenon,
+          description: description ?? descLines.join('\n'),
+          source,
+          triage: triage ?? report.triage?.category ?? 'discuss',
+          status: status ?? 'open',
+          reason,
+        };
+      } else {
+        // 人工创建：title 必填，其余可省略（默认 discuss/open/source null）。
+        input = { title, description, triage, status, reason };
+      }
+      try {
+        const problem = createProblem(input, { tasksDir, newId: newProblemId, envKey });
+        sendJSON(res, 201, redactProblemJSON(problem), corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
+      return;
+    }
+
+    if (req.method === 'GET' && problemDetail) {
+      const id = problemDetail[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const problem = getProblem(id, { tasksDir });
+      if (!problem) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      sendJSON(res, 200, redactProblemJSON(problem), corsOrigin);
+      return;
+    }
+
+    if (req.method === 'PATCH' && problemDetail) {
+      const id = problemDetail[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      try {
+        const updated = updateProblem(id, parsed.body, { tasksDir, envKey });
+        if (!updated) {
+          sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+          return;
+        }
+        sendJSON(res, 200, redactProblemJSON(updated), corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && problemDiscussion) {
+      const id = problemDiscussion[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      // 凭证净化：author/text 先组合 scrub 再落盘（持久化还有 final safety net）。
+      const author = redactProblemText(typeof parsed.body.author === 'string' ? parsed.body.author : '');
+      const text = redactProblemText(typeof parsed.body.text === 'string' ? parsed.body.text : '');
+      try {
+        const updated = addDiscussion(id, { author, text }, { tasksDir, envKey });
+        if (!updated) {
+          sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+          return;
+        }
+        sendJSON(res, 200, redactProblemJSON(updated), corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
+      return;
+    }
+
+    if (req.method === 'POST' && problemGithub) {
+      const id = problemGithub[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const problem = getProblem(id, { tasksDir });
+      if (!problem) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      const repo =
+        typeof parsed.body.repo === 'string' && parsed.body.repo.trim()
+          ? parsed.body.repo.trim()
+          : undefined;
+      const dryRun = parsed.body.dryRun === true;
+      let result;
+      try {
+        result = await createGithubIssueFn(problem, { repo, dryRun });
+      } catch (e) {
+        sendJSON(res, 500, { error: `github issue create failed: ${redactKey(e.message, envKey)}` }, corsOrigin);
+        return;
+      }
+      if (!result.ok) {
+        // gh 缺失/未登录/非零退出 → 明确错误；本地 Problem 保持原状。
+        sendJSON(res, 502, { error: result.error }, corsOrigin);
+        return;
+      }
+      if (result.dryRun) {
+        sendJSON(res, 200, { ok: true, dryRun: true, problem: redactProblemJSON(problem) }, corsOrigin);
+        return;
+      }
+      try {
+        const updated = setGithubRef(
+          id,
+          { issue_number: result.issue_number, url: result.url },
+          { tasksDir, envKey }
+        );
+        if (!updated) {
+          sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+          return;
+        }
+        sendJSON(res, 200, redactProblemJSON(updated), corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
       return;
     }
 
