@@ -6,6 +6,7 @@
 // 对齐（id/title/description/source/triage/status/decisions/discussion/github/change_ref）。
 
 import { redactText, formatReportSummary } from './audit-report.js';
+import { isTerminalStatus, isKnownStatus } from './observation-list.js';
 
 export const PROBLEM_TRIAGE_VALUES = ['bug', 'design', 'discuss', 'defer', 'wontfix'];
 export const PROBLEM_STATUS_VALUES = ['open', 'in_progress', 'fixed', 'closed'];
@@ -171,5 +172,74 @@ export function createProblemApi({ endpoint, fetchImpl = fetch } = {}) {
     patch: (id, body) => request('PATCH', `/problems/${encodeURIComponent(id)}`, body),
     discuss: (id, body) => request('POST', `/problems/${encodeURIComponent(id)}/discussion`, body),
     github: (id, body = {}) => request('POST', `/problems/${encodeURIComponent(id)}/github`, body),
+    rerun: (id, body = {}) => request('POST', `/problems/${encodeURIComponent(id)}/rerun`, body),
+    remove: (id) => request('DELETE', `/problems/${encodeURIComponent(id)}`),
+    importProblems: (body = {}) => request('POST', '/problems/import', body),
   };
+}
+
+// 导入结果 → 一条人类可读摘要（created/skipped/failed 计数 + 失败明细）。
+// failed 的 error/task_id 渲染前 redactText 抹除凭证形片段。
+export function summarizeImportResult(result = {}) {
+  const created = Array.isArray(result?.created) ? result.created : [];
+  const skipped = Array.isArray(result?.skipped) ? result.skipped : [];
+  const failed = Array.isArray(result?.failed) ? result.failed : [];
+  const parts = [`导入完成：新建 ${created.length}，跳过 ${skipped.length}`];
+  if (failed.length > 0) {
+    const msgs = failed
+      .map((f) => `${redactText(f?.task_id ?? '')}: ${redactText(f?.error ?? '')}`)
+      .join('；');
+    parts.push(`失败 ${failed.length}（${msgs}）`);
+  }
+  return parts.join('，');
+}
+
+// 重跑轮询终态判定（纯函数，可测）：diagnosed → 成功；其它终态（failed /
+// insufficient_evidence / provider_unavailable）→ 失败消息，含 status/failure_kind 与
+// 错误摘要（全部 redactText 抹除凭证形片段）。data 为 GET /tasks/:id 的白名单响应。
+export function rerunTerminalState(status, data = {}) {
+  if (status === 'diagnosed') return { ok: true, status };
+  const errors = Array.isArray(data?.errors) && data.errors.length > 0
+    ? data.errors.map((e) => redactText(String(e))).join('；')
+    : '';
+  const kind =
+    typeof data?.failure_kind === 'string' && data.failure_kind ? data.failure_kind : status;
+  const detail = errors ? `（${errors}）` : '';
+  return { ok: false, status, error: `重跑结束：${redactText(kind)}${detail}` };
+}
+
+// 轮询 GET /tasks/:id 直到终态。diagnosed → {ok:true}；其它终态 → {ok:false,error}
+// （rerunTerminalState，页面提示失败、不刷新详情为成功）。网络/超时/非 JSON → 失败。
+// opts 可注入 endpoint/间隔/上限/状态判定/fetch（测试用 fake，参照 problemApi 模式）。
+export async function pollRerunTask(taskId, opts = {}) {
+  const {
+    endpoint = '',
+    fetchImpl = fetch,
+    pollMs = 2000,
+    maxMs = 15 * 60 * 1000,
+    isTerminal = isTerminalStatus,
+    isKnown = isKnownStatus,
+  } = opts;
+  const deadline = Date.now() + maxMs;
+  while (Date.now() < deadline) {
+    let res;
+    try {
+      res = await fetchImpl(`${endpoint}/tasks/${encodeURIComponent(taskId)}`);
+    } catch (err) {
+      return { ok: false, error: `轮询服务不可达（${redactText(String(err.message))}）` };
+    }
+    if (!res.ok) {
+      return { ok: false, error: `轮询任务 HTTP ${res.status}` };
+    }
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      return { ok: false, error: '轮询响应不是 JSON' };
+    }
+    const state = isKnown(data?.status) ? data.status : 'failed';
+    if (isTerminal(state)) return rerunTerminalState(state, data);
+    await new Promise((r) => setTimeout(r, pollMs));
+  }
+  return { ok: false, error: '重跑等待超时' };
 }

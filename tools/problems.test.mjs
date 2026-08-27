@@ -13,6 +13,11 @@ import {
   listProblems,
   addDiscussion,
   setGithubRef,
+  deleteProblem,
+  rerunProblem,
+  setProblemReport,
+  problemInputFromDiagnosis,
+  importProblems,
   ProblemError,
   PROBLEM_ID_RE,
   TRIAGE_VALUES,
@@ -32,7 +37,7 @@ const problemsDirOf = (dir) => join(dir, 'problems');
 let seq = 0;
 const freshId = () => `prob-test-${++seq}`;
 
-const sampleReport = () => ({
+const sampleReport = (over = {}) => ({
   status: 'diagnosed',
   phenomenon_summary: 'pass out of play with no defender pressure',
   layer: 'engine',
@@ -42,6 +47,7 @@ const sampleReport = () => ({
   verification: 'node tools/runner-cli.mjs --bundle obs.json --audit audit.json --replay r',
   confidence: 0.8,
   triage: { category: 'bug', rationale: 'clear root cause', confidence: 0.9 },
+  ...over,
 });
 
 const envKey = 'sk-ant-fake-live-secret-0000';
@@ -591,4 +597,269 @@ test('createProblem avoids id collisions by re-asking newId', () => {
   const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: collidingId, now: NOW });
   assert.equal(problem.id, 'prob-collide-3');
   assert.equal(calls, 3);
+});
+
+// --- P12 problem ops（delete / rerun / import）---
+
+test('deleteProblem removes the file and returns true; missing id returns null', () => {
+  const dir = mkTasksDir();
+  const problem = createProblem({ title: 'x' }, { tasksDir: dir, newId: freshId, now: NOW });
+  const file = join(problemsDirOf(dir), `${problem.id}.json`);
+  assert.equal(existsSync(file), true);
+  assert.equal(deleteProblem(problem.id, { tasksDir: dir }), true);
+  assert.equal(existsSync(file), false);
+  assert.equal(getProblem(problem.id, { tasksDir: dir }), null);
+  assert.equal(listProblems({ tasksDir: dir }).length, 0);
+  // 幂等 404 语义：再次删除返回 null，不影响其它问题。
+  assert.equal(deleteProblem(problem.id, { tasksDir: dir }), null);
+  assert.equal(deleteProblem('does-not-exist', { tasksDir: dir }), null);
+  // 非法 / 穿越 id 拒绝。
+  assert.equal(deleteProblem('../evil', { tasksDir: dir }), null);
+  assert.equal(deleteProblem('a/b', { tasksDir: dir }), null);
+  // 未删除的其它问题原样保留。
+  const keep = createProblem({ title: 'keep' }, { tasksDir: dir, newId: freshId, now: NOW });
+  assert.equal(listProblems({ tasksDir: dir }).length, 1);
+  assert.equal(getProblem(keep.id, { tasksDir: dir }).title, 'keep');
+});
+
+test('rerunProblem points source.task_id at the new run and records the rerun decision', () => {
+  const dir = mkTasksDir();
+  const report = sampleReport();
+  const problem = createProblem(
+    { title: 'x', source: { task_id: 'task-1', observation_id: 'obs-1', report } },
+    { tasksDir: dir, newId: freshId, now: NOW }
+  );
+  const updated = rerunProblem(problem.id, { task_id: 'run-2' }, { tasksDir: dir, now: laterNow(1000) });
+  assert.equal(updated.source.task_id, 'run-2');
+  // 其它 source 字段（observation_id / 旧 report）保留到新报告写回。
+  assert.equal(updated.source.observation_id, 'obs-1');
+  assert.deepEqual(updated.source.report, report);
+  assert.equal(updated.updated_at, laterNow(1000)());
+  assert.equal(updated.decisions.length, 2);
+  // rerun 决策带 prev_task_id（旧 task_id，供 import 去重）。
+  assert.deepEqual(updated.decisions[1], {
+    action: 'rerun',
+    by: 'user',
+    at: laterNow(1000)(),
+    reason: null,
+    prev_task_id: 'task-1',
+  });
+  // 持久化读回一致。
+  const stored = getProblem(problem.id, { tasksDir: dir });
+  assert.equal(stored.source.task_id, 'run-2');
+  assert.equal(stored.decisions[1].action, 'rerun');
+  // reason 可空 / 可填。
+  const again = rerunProblem(
+    problem.id,
+    { task_id: 'run-3', reason: 'engine changed' },
+    { tasksDir: dir, now: laterNow(2000) }
+  );
+  assert.equal(again.source.task_id, 'run-3');
+  assert.equal(again.decisions[2].reason, 'engine changed');
+  // 缺 id → null；非法 id → null；缺 task_id → BAD_REQUEST。
+  assert.equal(rerunProblem('missing', { task_id: 'r' }, { tasksDir: dir }), null);
+  assert.equal(rerunProblem('../x', { task_id: 'r' }, { tasksDir: dir }), null);
+  assert.throws(() => rerunProblem(problem.id, {}, { tasksDir: dir }), (e) => e.code === 'BAD_REQUEST');
+});
+
+test('setProblemReport writes the new diagnosis report back, preserving the source chain', () => {
+  const dir = mkTasksDir();
+  const oldReport = sampleReport();
+  const problem = createProblem(
+    { title: 'x', source: { task_id: 'task-1', observation_id: 'obs-1', report: oldReport } },
+    { tasksDir: dir, newId: freshId, now: NOW }
+  );
+  const newReport = sampleReport({ phenomenon_summary: 'after rerun' });
+  const updated = setProblemReport(problem.id, newReport, { tasksDir: dir, now: laterNow(1000) });
+  assert.equal(updated.source.report.phenomenon_summary, 'after rerun');
+  assert.equal(updated.source.task_id, 'task-1');
+  assert.equal(updated.source.observation_id, 'obs-1');
+  assert.equal(updated.updated_at, laterNow(1000)());
+  assert.equal(getProblem(problem.id, { tasksDir: dir }).source.report.phenomenon_summary, 'after rerun');
+  // 缺 id → null；非法 report → 拒绝。
+  assert.equal(setProblemReport('missing', newReport, { tasksDir: dir }), null);
+  assert.throws(() => setProblemReport(problem.id, 'not-an-object', { tasksDir: dir }), (e) => e.code === 'BAD_REQUEST');
+});
+
+test('problemInputFromDiagnosis builds createProblem input from a diagnosed task', () => {
+  const report = sampleReport({
+    phenomenon_summary: 'wingers never cut inside',
+    triage: { category: 'design', rationale: 'missing cut-inside mechanism', confidence: 0.8 },
+  });
+  const bundle = { observation_id: 'obs-9', statement: 'wingers never cut inside on the right flank' };
+  const input = problemInputFromDiagnosis({
+    task_id: 'task-9',
+    task: { status: 'diagnosed', report },
+    bundle,
+    envKey,
+  });
+  assert.equal(input.title, 'wingers never cut inside');
+  assert.match(input.description, /现象: wingers never cut inside/);
+  assert.match(input.description, /用户描述: wingers never cut inside on the right flank/);
+  assert.match(input.description, /根因:/);
+  assert.match(input.description, /建议修复:/);
+  assert.match(input.description, /验证:/);
+  assert.equal(input.triage, 'design');
+  assert.equal(input.status, 'open');
+  assert.equal(input.source.task_id, 'task-9');
+  assert.equal(input.source.observation_id, 'obs-9');
+  assert.equal(input.source.report, report);
+});
+
+test('problemInputFromDiagnosis applies overrides and redacts the bundle statement', () => {
+  const report = sampleReport();
+  const bundle = { observation_id: 'obs-1', statement: `see ${envKey} attached` };
+  const input = problemInputFromDiagnosis({
+    task_id: 't1',
+    task: { status: 'diagnosed', report },
+    bundle,
+    envKey,
+    overrides: { title: 'custom title', triage: 'discuss', status: 'in_progress', description: 'custom desc' },
+  });
+  assert.equal(input.title, 'custom title');
+  assert.equal(input.description, 'custom desc');
+  assert.equal(input.triage, 'discuss');
+  assert.equal(input.status, 'in_progress');
+  // overrides 只覆盖顶层，source 链仍是 task_id/report。
+  assert.equal(input.source.task_id, 't1');
+  assert.equal(input.source.report, report);
+  // bundle.statement 已抹除凭证形值。
+  assert.doesNotMatch(input.description, new RegExp(envKey));
+});
+
+test('problemInputFromDiagnosis falls back for missing fields and no bundle', () => {
+  const report = { status: 'diagnosed' };
+  const input = problemInputFromDiagnosis({
+    task_id: 't1',
+    task: { status: 'diagnosed', report },
+    bundle: null,
+    envKey,
+  });
+  assert.equal(input.title, '未命名问题');
+  assert.equal(input.description, '现象: 未命名问题');
+  assert.equal(input.triage, 'discuss');
+  assert.equal(input.status, 'open');
+  assert.equal(input.source.observation_id, undefined);
+  assert.equal(input.source.report, report);
+});
+
+test('importProblems scans diagnosed tasks, skips linked tasks, and creates the rest', () => {
+  const dir = mkTasksDir();
+  // 已有一个 Problem 指向 t-diagnosed-1。
+  createProblem(
+    { title: 'existing', source: { task_id: 't-diagnosed-1', report: sampleReport() } },
+    { tasksDir: dir, newId: freshId, now: NOW }
+  );
+  const tasks = {
+    't-diagnosed-1': { status: 'diagnosed', report: sampleReport() },
+    't-diagnosed-2': { status: 'diagnosed', report: sampleReport({ phenomenon_summary: 'second' }) },
+    't-failed': { status: 'failed', errors: ['x'] },
+    't-auditing': { status: 'auditing' },
+  };
+  const listTaskIds = () => Object.keys(tasks);
+  const readTask = (id) => tasks[id] ?? null;
+  const readBundle = (id) => ({ observation_id: `obs-${id}` });
+  const result = importProblems(
+    { tasksDir: dir, readTask, listTaskIds, readBundle },
+    { newId: freshId, now: NOW }
+  );
+  // 只有 t-diagnosed-2 被创建（t-diagnosed-1 已关联，failed/auditing 不是候选）。
+  assert.equal(result.created.length, 1);
+  assert.deepEqual(result.skipped, ['t-diagnosed-1']);
+  assert.deepEqual(result.failed, []);
+  const created = getProblem(result.created[0], { tasksDir: dir });
+  assert.equal(created.source.task_id, 't-diagnosed-2');
+  assert.equal(created.source.observation_id, 'obs-t-diagnosed-2');
+});
+
+test('importProblems with explicit task_ids fails missing/undiagnosed tasks', () => {
+  const dir = mkTasksDir();
+  const tasks = {
+    't-good': { status: 'diagnosed', report: sampleReport() },
+    't-failed': { status: 'failed' },
+  };
+  const readTask = (id) => tasks[id] ?? null;
+  const readBundle = () => null;
+  const result = importProblems(
+    { tasksDir: dir, task_ids: ['t-good', 't-failed', 't-missing'], readTask, readBundle },
+    { newId: freshId, now: NOW }
+  );
+  assert.equal(result.created.length, 1);
+  assert.deepEqual(result.skipped, []);
+  assert.deepEqual(result.failed, [
+    { task_id: 't-failed', error: 'task not diagnosed or missing' },
+    { task_id: 't-missing', error: 'task not diagnosed or missing' },
+  ]);
+});
+
+test('importProblems creates each task once and reports read/create failures', () => {
+  const dir = mkTasksDir();
+  const tasks = {
+    t1: { status: 'diagnosed', report: sampleReport() },
+    boom: { status: 'diagnosed', report: sampleReport({ phenomenon_summary: 'boom' }) },
+  };
+  const readTask = (id) => {
+    if (id === 't-broken') throw new Error('read error');
+    return tasks[id] ?? null;
+  };
+  const readBundle = () => null;
+  const createFn = (input, opts) => {
+    if (input.title === 'boom') throw new Error('create error');
+    return createProblem(input, { ...opts, newId: freshId, now: NOW });
+  };
+  const result = importProblems(
+    { tasksDir: dir, task_ids: ['t1', 't1', 't-broken', 'boom'], readTask, readBundle },
+    { newId: freshId, now: NOW, createFn }
+  );
+  // t1 只创建一次；同批重复的第二个 t1 计入 skipped（不静默消失）；t-broken/boom 各自失败。
+  assert.equal(result.created.length, 1);
+  assert.deepEqual(result.skipped, ['t1']);
+  assert.equal(result.failed.length, 2);
+  assert.ok(result.failed.some((f) => f.task_id === 't-broken' && /read error/.test(f.error)));
+  assert.ok(result.failed.some((f) => f.task_id === 'boom' && /create error/.test(f.error)));
+});
+
+test('importProblems skips old task ids superseded by a rerun (decisions prev_task_id)', () => {
+  const dir = mkTasksDir();
+  const tasks = {
+    't-orig': { status: 'diagnosed', report: sampleReport() },
+    't-new': { status: 'diagnosed', report: sampleReport() },
+  };
+  // 问题从 t-orig 创建后重跑 → source.task_id 指向 t-new，decision 带 prev_task_id t-orig。
+  const problem = createProblem(
+    { title: 'x', source: { task_id: 't-orig', report: sampleReport() } },
+    { tasksDir: dir, newId: freshId, now: NOW }
+  );
+  rerunProblem(problem.id, { task_id: 't-new' }, { tasksDir: dir, now: laterNow(1000) });
+  const readTask = (id) => tasks[id] ?? null;
+  const readBundle = () => null;
+  const result = importProblems(
+    { tasksDir: dir, readTask, listTaskIds: () => ['t-orig', 't-new'], readBundle },
+    { newId: freshId, now: NOW }
+  );
+  // t-new 是当前 source.task_id；t-orig 已脱链但 decisions 里 prev_task_id 仍标记 → 都跳过。
+  assert.equal(result.created.length, 0);
+  assert.deepEqual(result.skipped.sort(), ['t-new', 't-orig']);
+  assert.deepEqual(result.failed, []);
+});
+
+test('setProblemReport discards write-back when run_id no longer matches the current source', () => {
+  const dir = mkTasksDir();
+  const oldReport = sampleReport();
+  const problem = createProblem(
+    { title: 'x', source: { task_id: 'run-1', report: oldReport } },
+    { tasksDir: dir, newId: freshId, now: NOW }
+  );
+  const staleReport = sampleReport({ phenomenon_summary: 'stale result' });
+  // run_id 不匹配当前 source.task_id（并发 rerun 已指向更新的任务）→ no-op，报告不覆盖。
+  const unchanged = setProblemReport(problem.id, staleReport, { tasksDir: dir, runId: 'run-2' });
+  assert.equal(unchanged.source.report.phenomenon_summary, 'pass out of play with no defender pressure');
+  assert.equal(
+    getProblem(problem.id, { tasksDir: dir }).source.report.phenomenon_summary,
+    'pass out of play with no defender pressure'
+  );
+  // run_id 匹配 → 正常写回。
+  const updated = setProblemReport(problem.id, staleReport, { tasksDir: dir, runId: 'run-1' });
+  assert.equal(updated.source.report.phenomenon_summary, 'stale result');
+  assert.equal(getProblem(problem.id, { tasksDir: dir }).source.report.phenomenon_summary, 'stale result');
 });

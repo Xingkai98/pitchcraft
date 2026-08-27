@@ -19,7 +19,7 @@
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -34,6 +34,11 @@ import {
   listProblems,
   addDiscussion,
   setGithubRef,
+  deleteProblem,
+  rerunProblem,
+  setProblemReport,
+  problemInputFromDiagnosis,
+  importProblems,
   ProblemError,
   PROBLEM_ID_RE,
   TRIAGE_VALUES,
@@ -108,7 +113,7 @@ function sendJSON(res, status, body, corsOrigin, opts = {}) {
 function sendPreflight(res, origin) {
   res.writeHead(204, {
     'Access-Control-Allow-Origin': origin,
-    'Access-Control-Allow-Methods': 'GET, POST, PATCH, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers': 'Content-Type',
     'Access-Control-Max-Age': '86400',
   });
@@ -244,6 +249,28 @@ export function createService({
     return JSON.parse(redactKey(JSON.stringify(response), envKey));
   };
 
+  // 读任务关联的原始 bundle（可空）：create-from-report / rerun / import 复用。
+  // bundle 是观察采集快照（含 statement/observation_id），用户文本在进 description
+  // 前由 problemInputFromDiagnosis 做 redactKey。
+  const readBundle = (taskId) => {
+    try {
+      return JSON.parse(readFileSync(join(tasksDir, `${taskId}.bundle.json`), 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+
+  // 列出 tasks 目录里全部任务 id（*.task.json 文件名）。import 缺省扫描用。
+  const listTaskIds = () => {
+    let files;
+    try {
+      files = readdirSync(tasksDir);
+    } catch {
+      return [];
+    }
+    return files.filter((f) => f.endsWith('.task.json')).map((f) => f.slice(0, -'.task.json'.length));
+  };
+
   const server = createServer((req, res) => {
     // A malformed request must never crash the service: an unhandled rejection
     // in an async request listener terminates Node and loses every in-flight
@@ -371,9 +398,11 @@ export function createService({
 
     // --- P11 problem lifecycle endpoints -----------------------------------
     const problemList = pathname === '/problems';
+    const problemImport = pathname === '/problems/import';
     const problemDetail = /^\/problems\/([^/]+)$/.exec(pathname);
     const problemDiscussion = /^\/problems\/([^/]+)\/discussion$/.exec(pathname);
     const problemGithub = /^\/problems\/([^/]+)\/github$/.exec(pathname);
+    const problemRerun = /^\/problems\/([^/]+)\/rerun$/.exec(pathname);
     // 领域错误映射：MISSING_REASON/BAD_REQUEST → 400，NOT_FOUND → 404，其他 500。
     // 500 分支的 message 一律净化，绝不外泄凭证。
     const problemError = (e) => {
@@ -383,6 +412,140 @@ export function createService({
         sendJSON(res, 500, { error: `problem operation failed: ${redactKey(e.message, envKey)}` }, corsOrigin);
       }
     };
+
+    // --- P12 problem ops（rerun / delete / import）---------------------------
+
+    if (req.method === 'POST' && problemImport) {
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      // body 可选 task_ids（TASK_ID_RE 校验，非法 400）；缺省 = 扫描全部 diagnosed 任务。
+      let taskIds = null;
+      if (parsed.body.task_ids !== undefined) {
+        if (!Array.isArray(parsed.body.task_ids)) {
+          sendJSON(res, 400, { error: 'task_ids must be an array' }, corsOrigin);
+          return;
+        }
+        for (const t of parsed.body.task_ids) {
+          if (typeof t !== 'string' || !TASK_ID_RE.test(t)) {
+            sendJSON(res, 400, { error: 'invalid task_id' }, corsOrigin);
+            return;
+          }
+        }
+        taskIds = parsed.body.task_ids;
+      }
+      try {
+        const result = importProblems(
+          { tasksDir, task_ids: taskIds, readTask: readTaskState, listTaskIds, readBundle },
+          { newId: newProblemId, envKey }
+        );
+        sendJSON(res, 200, result, corsOrigin);
+      } catch (e) {
+        problemError(e);
+      }
+      return;
+    }
+
+    if (req.method === 'DELETE' && problemDetail) {
+      const id = problemDetail[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const deleted = deleteProblem(id, { tasksDir });
+      if (!deleted) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      sendJSON(res, 200, { ok: true }, corsOrigin);
+      return;
+    }
+
+    if (req.method === 'POST' && problemRerun) {
+      const id = problemRerun[1];
+      if (!PROBLEM_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      // reason 可空；用户可控文本先组合净化（redactKey + redactCredentialText）。
+      const reasonRaw = typeof parsed.body.reason === 'string' ? parsed.body.reason.trim() : '';
+      const reason = reasonRaw ? redactProblemText(reasonRaw) : null;
+      const problem = getProblem(id, { tasksDir });
+      if (!problem) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      // 关联任务的 bundle 是重跑输入；无 source.task_id / 非法 task_id / bundle
+      // 缺失 → 400，问题不变。
+      const oldTaskId = problem.source?.task_id;
+      if (typeof oldTaskId !== 'string' || !TASK_ID_RE.test(oldTaskId)) {
+        sendJSON(res, 400, { error: 'no bundle for rerun' }, corsOrigin);
+        return;
+      }
+      const bundle = readBundle(oldTaskId);
+      if (!bundle) {
+        sendJSON(res, 400, { error: 'no bundle for rerun' }, corsOrigin);
+        return;
+      }
+      const runId = newId();
+      const bundlePath = join(tasksDir, `${runId}.bundle.json`);
+      const auditPath = join(tasksDir, `${runId}.audit.json`);
+      try {
+        writeFileSync(bundlePath, JSON.stringify(bundle));
+      } catch (e) {
+        sendJSON(res, 500, { error: `cannot persist bundle: ${e.code ?? e.message}` }, corsOrigin);
+        return;
+      }
+      // 先落 bundle（202 前持久化），再把 problem 关联指向新任务。
+      try {
+        const updated = rerunProblem(id, { task_id: runId, reason }, { tasksDir, envKey });
+        if (!updated) {
+          sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+          return;
+        }
+      } catch (e) {
+        problemError(e);
+        return;
+      }
+      const serviceRevision = checkoutRevision ?? bundle.source_revision ?? '<unknown>';
+      const replay = replayInstructionsFn(bundle);
+      // 后台诊断与 POST /observations 同一模式；终态带 report 时写回 problem
+      //（旧报告被覆盖，页面刷新详情拿到新报告）。
+      Promise.resolve()
+        .then(() =>
+          runDiagnosisFn({
+            bundlePath,
+            auditPath,
+            replayInstructions: replay,
+            sourceRevision: serviceRevision,
+            tasksDir,
+            runId,
+            env,
+          })
+        )
+        .then((task) => {
+          if (task && task.report && typeof task.report === 'object') {
+            try {
+              // runId 校验：写回只对当前 source.task_id 生效（并发 rerun 时丢弃旧诊断写回）。
+              setProblemReport(id, task.report, { tasksDir, envKey, runId: task.run_id ?? runId });
+            } catch (e) {
+              log(`problem ${id} rerun report write-back failed: ${redactKey(e?.message ?? String(e), envKey)}`);
+            }
+          }
+        })
+        .catch((err) => {
+          log(`problem ${id} rerun background run failed: ${redactKey(err?.message ?? String(err), envKey)}`);
+        });
+      sendJSON(res, 202, { task_id: runId }, corsOrigin);
+      return;
+    }
 
     if (req.method === 'GET' && problemList) {
       const url = new URL(req.url ?? '/', 'http://localhost');
@@ -419,39 +582,14 @@ export function createService({
           sendJSON(res, 400, { error: 'task not diagnosed or missing' }, corsOrigin);
           return;
         }
-        const report = task.report;
-        const phenomenon =
-          typeof report.phenomenon_summary === 'string' && report.phenomenon_summary.trim()
-            ? report.phenomenon_summary.trim()
-            : '未命名问题';
-        // 用户描述/observation_id 来自原 bundle（可选）；凭证净化后再进 description。
-        let bundle = null;
-        try {
-          bundle = JSON.parse(readFileSync(join(tasksDir, `${task_id}.bundle.json`), 'utf8'));
-        } catch {
-          /* bundle 不可读（如手工构造任务）——跳过 statement/observation_id */
-        }
-        let userStatement = '';
-        if (bundle && typeof bundle.statement === 'string' && bundle.statement.trim()) {
-          userStatement = redactKey(bundle.statement.trim(), envKey);
-        }
-        const descLines = [`现象: ${phenomenon}`];
-        if (userStatement) descLines.push(`用户描述: ${userStatement}`);
-        if (report.root_cause) descLines.push(`根因: ${report.root_cause}`);
-        if (report.proposed_fix) descLines.push(`建议修复: ${report.proposed_fix}`);
-        if (report.verification) descLines.push(`验证: ${report.verification}`);
-        const source = { task_id, report };
-        if (bundle && typeof bundle.observation_id === 'string' && bundle.observation_id) {
-          source.observation_id = bundle.observation_id;
-        }
-        input = {
-          title: title ?? phenomenon,
-          description: description ?? descLines.join('\n'),
-          source,
-          triage: triage ?? report.triage?.category ?? 'discuss',
-          status: status ?? 'open',
-          reason,
-        };
+        // 公共 create-from-report 路径（P12 与 /problems/import 共用）。
+        input = problemInputFromDiagnosis({
+          task_id,
+          task,
+          bundle: readBundle(task_id),
+          envKey,
+          overrides: { title, description, triage, status, reason },
+        });
       } else {
         // 人工创建：title 必填，其余可省略（默认 discuss/open/source null）。
         input = { title, description, triage, status, reason };
