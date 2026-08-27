@@ -110,6 +110,189 @@
       color: #ffd27d;
       min-height: 1.1em;
     }
+    #observation {
+      margin-top: 12px;
+      width: 700px;
+      max-width: 100%;
+      font-size: 0.82rem;
+      text-align: left;
+      border: 1px solid #3a3a55;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+    #observation summary {
+      cursor: pointer;
+      font-weight: 600;
+      color: #9bd2ff;
+    }
+    .obs-row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 8px;
+    }
+    .obs-row label {
+      color: #bbb;
+      font-size: 0.78rem;
+    }
+    .obs-row input[type="number"] { width: 60px; }
+    .obs-row input[type="text"] { width: 140px; }
+    .obs-row textarea {
+      width: 100%;
+      background: #222;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 4px;
+      font-family: inherit;
+      resize: vertical;
+    }
+    .obs-row input {
+      background: #222;
+      color: #eee;
+      border: 1px solid #555;
+      border-radius: 4px;
+      padding: 4px;
+    }
+    #obs-status {
+      font-family: monospace;
+      color: #ffd27d;
+    }
+    #obs-findings, #obs-report {
+      margin-top: 8px;
+      font-size: 0.8rem;
+    }
+    #obs-list {
+      margin-top: 8px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .obs-entry {
+      background: #18182c;
+      border: 1px solid #3a3a55;
+      border-radius: 4px;
+      padding: 6px 8px;
+    }
+    .obs-entry-head {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .obs-entry-time {
+      font-family: monospace;
+      color: #9bd2ff;
+      font-size: 0.75rem;
+      white-space: nowrap;
+    }
+    .obs-entry-statement {
+      flex: 1;
+      color: #ddd;
+      font-size: 0.78rem;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 120px;
+    }
+    .obs-entry-badge {
+      font-family: monospace;
+      font-size: 0.68rem;
+      padding: 1px 8px;
+      border-radius: 999px;
+      border: 1px solid #555;
+      color: #ddd;
+      white-space: nowrap;
+    }
+    .obs-badge-captured { background: #2a2a3a; color: #ccc; }
+    .obs-badge-auditing { background: #1c3a5c; color: #9bd2ff; }
+    .obs-badge-audit_ready { background: #1c4a44; color: #7fe3c8; }
+    .obs-badge-diagnosing { background: #5c3a1c; color: #ffd27d; }
+    .obs-badge-diagnosed { background: #1c5c2c; color: #8ef0a0; }
+    .obs-badge-insufficient_evidence { background: #5c541c; color: #f5e37a; }
+    .obs-badge-provider_unavailable { background: #3a2a5c; color: #c9a5f0; }
+    .obs-badge-failed { background: #5c1c1c; color: #ff9d9d; }
+    .obs-entry-body { margin-top: 4px; }
+    .obs-entry-hint, .obs-entry-error, .obs-entry-progress {
+      font-size: 0.75rem;
+      color: #ffd27d;
+      margin-top: 2px;
+    }
+    .obs-entry-error { color: #ff9d9d; }
+    .obs-entry-cli {
+      margin-top: 6px;
+      background: #0d0d1a;
+      border: 1px solid #3a3a55;
+      border-radius: 4px;
+      padding: 6px;
+      font-size: 0.7rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #9fd6a9;
+    }
+    .obs-entry-findings { margin-top: 6px; }
+    .obs-entry-report {
+      margin-top: 6px;
+      white-space: pre-wrap;
+      color: #9bd2ff;
+      font-family: monospace;
+      font-size: 0.75rem;
+    }
+    .obs-entry-actions { margin-top: 6px; }
+    .triage-head { margin-top: 6px; display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+    .triage-badge {
+      font-family: monospace;
+      font-size: 0.7rem;
+      padding: 1px 10px;
+      border-radius: 999px;
+      border: 1px solid #555;
+      color: #fff;
+      white-space: nowrap;
+    }
+    .triage-bug { background: #8a2b2b; }
+    .triage-design { background: #2b4a8a; }
+    .triage-discuss { background: #8a7a2b; }
+    .triage-rationale { color: #ddd; font-size: 0.78rem; }
+    .next-steps-panel {
+      margin-top: 6px;
+      background: #10101f;
+      border: 1px solid #3a3a55;
+      border-radius: 4px;
+      padding: 6px 8px;
+    }
+    .next-steps-heading { color: #ffd27d; font-size: 0.78rem; font-weight: 600; margin-bottom: 4px; }
+    .next-steps-item { color: #cfe6ff; font-size: 0.76rem; padding: 2px 0; }
+    .next-steps-draft {
+      margin: 4px 0;
+      background: #0d0d1a;
+      border: 1px solid #3a3a55;
+      border-radius: 4px;
+      padding: 6px;
+      font-size: 0.7rem;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #9fd6a9;
+      max-height: 220px;
+      overflow-y: auto;
+    }
+    #obs-next { margin-top: 8px; }
+    .finding-item {
+      background: #1e1e33;
+      border-radius: 4px;
+      padding: 4px 8px;
+      margin-top: 4px;
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      justify-content: space-between;
+    }
+    .finding-item .jump-btn { font-size: 0.7rem; padding: 2px 8px; }
+    #obs-report {
+      white-space: pre-wrap;
+      color: #9bd2ff;
+      font-family: monospace;
+    }
   </style>
 </head>
 <body>
@@ -137,7 +320,45 @@
   <div id="notice"></div>
   <div id="status">加载中…</div>
 
+  <div id="observation">
+    <details>
+      <summary>观察采集 / 诊断 (P10)</summary>
+      <div class="obs-row">
+        <button id="btn-capture">⏸ 采集当前观察</button>
+        <span id="obs-status">未采集</span>
+      </div>
+      <div class="obs-row">
+        <label>自然语言描述</label>
+        <textarea id="obs-statement" rows="2" placeholder="例如：传球时防守队员完全不干扰"></textarea>
+      </div>
+      <div class="obs-row">
+        <label>before (s)</label>
+        <input id="obs-before" type="number" min="0" value="5" />
+        <label>after (s)</label>
+        <input id="obs-after" type="number" min="0" value="5" />
+        <label>选中实体 ids</label>
+        <input id="obs-entities" type="text" placeholder="如 9,5（留空 = 当前事件参与者）" />
+      </div>
+      <div class="obs-row">
+        <button id="btn-export-bundle">⬇ 导出 bundle</button>
+        <button id="btn-submit">提交诊断</button>
+      </div>
+      <div class="obs-row">
+        <label>观察列表（每次采集/提交一条；刷新后恢复，终态自动回填反馈）</label>
+      </div>
+      <div id="obs-list"></div>
+      <div class="obs-row">
+        <label>导入 audit/报告 JSON（CLI 回退）</label>
+        <textarea id="obs-import" rows="3" placeholder="粘贴已保存的 audit / task / report JSON"></textarea>
+        <button id="btn-import">导入</button>
+      </div>
+      <div id="obs-findings"></div>
+      <div id="obs-report"></div>
+      <div id="obs-next"></div>
+    </details>
+  </div>
+
   <!-- 版本号强制刷新 JS 模块缓存：改代码后改这里或清浏览器缓存 -->
-  <script type="module" src="./app.js?v=20260808-9"></script>
+  <script type="module" src="./app.js?v=20260826-12"></script>
 </body>
 </html>

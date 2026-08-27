@@ -5,3 +5,5 @@ viewer/engine.wasm
 # 编辑器
 .DS_Store
 *.swp
+# 本地诊断凭证（.env 仅本机使用；.env.example 是提交的模板，不受此规则影响）
+.env
