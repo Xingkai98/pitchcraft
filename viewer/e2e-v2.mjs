@@ -7,6 +7,9 @@ import { Game } from './game.js';
 
 // 关闭调试日志（e2e 只输出结果断言）
 config.debug.enabled = false;
+// 关闭跳过机制（跳过导致 playTime 跳变是设计行为；e2e 验证引擎→viewer 事件流连续性，不验证跳过）
+// 用 Infinity（game.js 的禁用哨兵）而非 MAX_SAFE_INTEGER，避免尾部 nextHl=null 仍触发跳过
+config.playback.skipThresholdSeconds = Infinity;
 
 const wasmPath = new URL('./engine.wasm', import.meta.url).pathname;
 const bytes = readFileSync(wasmPath);
@@ -27,7 +30,7 @@ function run(seed, duration) {
   return events;
 }
 
-const events = run(42, 2700);
+const events = run(42, 5400); // P7：默认 90 分钟（5400s）
 
 // ---- v2 协议断言 ----
 const types = new Set(events.map((e) => e.type));
@@ -60,56 +63,72 @@ const last60 = e60[e60.length - 1].t;
 const last2700 = events[events.length - 1].t;
 if (last60 > 61 || last2700 < 2699) throw new Error(`config 时长未生效: t=${last60}/${last2700}`);
 
-// ---- viewer 端到端：连续播放无 snap（覆盖高亮边界）----
-// 步进 300s（18000 帧）：覆盖首 pass(~23s)、首 tackle(~98s)、首 shot(~291s seed42)——高亮边界是 snap 高发区
-const { events: parsed, lineup } = parseEventStream(events);
-const game = new Game(parsed, lineup, 'continuous');
-game.playing = true;
-let prevBall = { ...game.ball };
-let maxBallJump = 0;
-let maxBallJumpT = 0;
-const prevPlayers = new Map(game.players.map((p) => [p.id, { x: p.x, y: p.y }]));
-let maxPlayerJump = 0;
-// 预计算 spec 允许的球瞬移时刻（P6）：
-// 1) 进球确认（whistle，前一动作是 goal shot）→ 球直接回中圈
-// 2) 门球（off_target → 门将开大脚 pass）→ 球瞬移到门将
-const allowedTeleportTimes = new Set();
-for (let i = 0; i < parsed.length; i++) {
-  if (parsed[i].type === 'whistle' && i > 0) {
-    let j = i - 1;
-    while (j >= 0 && (parsed[j].type === 'beat' || parsed[j].type === 'off_ball_run')) j--;
-    if (parsed[j] && parsed[j].type === 'shot' && parsed[j].result === 'goal') {
+// ---- viewer 端到端：连续播放无 snap（覆盖高亮边界 + 角球/界外球/门球重开）----
+// 单 seed 无 snap 验证（P6 批次1 重开路径是 snap 高发区）；另跑多 seed 确认豁免窗口覆盖（P7）
+function checkNoSnap(seed, duration) {
+  const evts = run(seed, duration);
+  const { events: parsed, lineup } = parseEventStream(evts);
+  const game = new Game(parsed, lineup, 'continuous');
+  game.playing = true;
+  let prevBall = { ...game.ball };
+  let maxBallJump = 0;
+  let maxBallJumpT = 0;
+  const prevPlayers = new Map(game.players.map((p) => [p.id, { x: p.x, y: p.y }]));
+  let maxPlayerJump = 0;
+  // 预计算 spec 允许的球瞬移时刻：只豁免设计接受的重开瞬移
+  // 1) whistle（进球回中圈/半场/终场落定）→ 球位置合法变化
+  // 2) 角球发球前准备期（detail=corner pass 的 t-10..t）→ 球从射门终点/出界点瞬移到角旗
+  // 3) 门球开大脚（pass subject=门将、to=None）→ 球瞬移到门将
+  // 界外球无瞬移（出界落点=边线出界点，球停那连续到掷球），不需豁免。
+  const allowedTeleportTimes = new Set();
+  for (let i = 0; i < parsed.length; i++) {
+    if (parsed[i].type === 'whistle') {
+      allowedTeleportTimes.add(parsed[i].t);
+    } else if (parsed[i].type === 'pass' && parsed[i].detail === 'corner') {
+      // 角球准备期 = 前一非 beat 事件（射门/出界）到 corner pass 之间，球瞬移到角旗。
+      // 向前跳过 beat 找准备期起点，豁免 [start, cornerPass] 覆盖球到角旗的瞬移时刻
+      let j = i - 1;
+      while (j >= 0 && parsed[j].type === 'beat') j--;
+      const startT = j >= 0 ? parsed[j].t : parsed[i].t - 20;
+      for (let k = 0; parsed[i].t - k >= startT; k++) allowedTeleportTimes.add(parsed[i].t - k);
+    } else if (parsed[i].type === 'pass' && parsed[i].to === undefined
+        && (parsed[i].subject === 0 || parsed[i].subject === 21)) {
       allowedTeleportTimes.add(parsed[i].t);
     }
-  } else if (parsed[i].type === 'pass' && parsed[i].to === undefined) {
-    // 门球开大脚：球瞬移到门将（开大脚起点 = 门线，球从出界处瞬移）
-    allowedTeleportTimes.add(parsed[i].t);
   }
+  const isAllowedTeleport = (t) => {
+    for (const at of allowedTeleportTimes) {
+      if (Math.abs(at - t) < 0.1) return true;
+    }
+    return false;
+  };
+  let frames = 0;
+  const maxFrames = Math.ceil(game.matchEnd * 60) + 60;
+  while (game.playing && frames < maxFrames) {
+    game.step(1 / 60);
+    frames++;
+    const bj = Math.hypot(game.ball.x - prevBall.x, game.ball.y - prevBall.y);
+    if (!isAllowedTeleport(game.playTime) && bj > maxBallJump) {
+      maxBallJump = bj;
+      maxBallJumpT = game.playTime;
+    }
+    prevBall = { ...game.ball };
+    for (const p of game.players) {
+      const prev = prevPlayers.get(p.id);
+      const pj = Math.hypot(p.x - prev.x, p.y - prev.y);
+      if (!isAllowedTeleport(game.playTime) && pj > maxPlayerJump) maxPlayerJump = pj;
+      prev.x = p.x;
+      prev.y = p.y;
+    }
+  }
+  if (maxBallJump > 0.05) throw new Error(`seed${seed} 球事件边界跳变过大 maxBallJump=${maxBallJump} at t=${maxBallJumpT.toFixed(1)}`);
+  // 球员阈值 0.1：角球争抢防方胜"移动到位"（拾取瞬移 ~6.7m）是设计行为
+  if (maxPlayerJump > 0.1) throw new Error(`seed${seed} 球员事件边界跳变过大 maxPlayerJump=${maxPlayerJump}`);
+  return { maxBallJump, maxPlayerJump };
 }
-const isAllowedTeleport = (t) => {
-  for (const at of allowedTeleportTimes) {
-    if (Math.abs(at - t) < 0.1) return true;
-  }
-  return false;
-};
-for (let i = 0; i < 18000; i++) {
-  game.step(1 / 60);
-  const bj = Math.hypot(game.ball.x - prevBall.x, game.ball.y - prevBall.y);
-  if (!isAllowedTeleport(game.playTime) && bj > maxBallJump) {
-    maxBallJump = bj;
-    maxBallJumpT = game.playTime;
-  }
-  prevBall = { ...game.ball };
-  for (const p of game.players) {
-    const prev = prevPlayers.get(p.id);
-    const pj = Math.hypot(p.x - prev.x, p.y - prev.y);
-    if (pj > maxPlayerJump) maxPlayerJump = pj;
-    prev.x = p.x;
-    prev.y = p.y;
-  }
-}
-if (maxBallJump > 0.05) throw new Error(`球事件边界跳变过大 maxBallJump=${maxBallJump} at t=${maxBallJumpT.toFixed(1)}`);
-if (maxPlayerJump > 0.05) throw new Error(`球员事件边界跳变过大 maxPlayerJump=${maxPlayerJump}`);
+// 多 seed 验证（覆盖不同角球/重开分布，防单 seed 侥幸）
+const snapResults = [];
+for (const seed of [1, 7, 15, 42]) snapResults.push(checkNoSnap(seed, 5400));
 
 const stats = {
   beat: beats.length,
@@ -121,4 +140,5 @@ const stats = {
   tackle: events.filter((e) => e.type === 'tackle').length,
   goal: events.filter((e) => e.type === 'shot' && e.result === 'goal').length,
 };
-console.log(`E2E v2 OK：${events.length} 事件 | ${JSON.stringify(stats)} | 无顶层 dribble | config 生效 | 无 snap(球 ${maxBallJump.toFixed(4)}, 球员 ${maxPlayerJump.toFixed(4)})`);
+const worstSnap = snapResults.reduce((acc, r) => ({ maxBallJump: Math.max(acc.maxBallJump, r.maxBallJump), maxPlayerJump: Math.max(acc.maxPlayerJump, r.maxPlayerJump) }), { maxBallJump: 0, maxPlayerJump: 0 });
+console.log(`E2E v2 OK：${events.length} 事件 | ${JSON.stringify(stats)} | 无顶层 dribble | config 生效 | 无 snap(${snapResults.length} seed: 球 ${worstSnap.maxBallJump.toFixed(4)}, 球员 ${worstSnap.maxPlayerJump.toFixed(4)})`);

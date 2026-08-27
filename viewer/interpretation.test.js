@@ -422,3 +422,55 @@ test('P6 interpretShot: off_target 越底线偏出，saved 停门线', () => {
   // y 不同（off_target 偏离球门 vs saved 球门内）
   assert.notEqual(offBallEnd.y, savedBallEnd.y);
 });
+
+// ---- P6 批次1：角球/界外球/头球/出界/h 字段 ----
+
+test('P6 批次1 interpretPass: 事件 h 字段优先（h>0 球放大）', () => {
+  // 角球发球带 h=0.6：中间锚点 h 应为 0.6（协议值，viewer 球大小表示高度）
+  const e = { t: 100, type: 'pass', from: 10, subject: 10, x: 1, y: 0, x2: 0.9, y2: 0.5, speed: 18, h: 0.6, detail: 'corner' };
+  const anchors = interpretEvent(e);
+  const mid = anchors.filter((a) => a.kind === 'ball' && a.h > 0);
+  assert.ok(mid.length >= 1, '应有带 h 的球锚点');
+  assert.ok(mid.every((a) => Math.abs(a.h - 0.6) < 1e-6), `h 应透传事件值 0.6，实际 ${mid[0].h}`);
+});
+
+test('P6 批次1 interpretPass: h 缺失 → 按飞行时长默认插值（向后兼容）', () => {
+  // 旧事件流（无 h）：默认插值 0.08-0.2
+  const e = { t: 100, type: 'pass', from: 10, subject: 10, x: 0.5, y: 0.5, x2: 0.7, y2: 0.5, speed: 12 };
+  const anchors = interpretEvent(e);
+  const mid = anchors.filter((a) => a.kind === 'ball' && a.h > 0);
+  assert.ok(mid.length >= 1, '缺 h 时应默认插值出弧线');
+  assert.ok(mid[0].h >= 0.08 && mid[0].h <= 0.2, `默认插值应在 0.08-0.2（实际 ${mid[0].h}）`);
+});
+
+test('P6 批次1 interpretPass: h=0 → 无高度（球不放大）', () => {
+  // 界外球掷球 h=0：所有球锚点 h=0
+  const e = { t: 100, type: 'pass', from: 5, subject: 5, to: 1, x: 0.47, y: 0, x2: 0.3, y2: 0.25, speed: 12, h: 0 };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.every((a) => a.h === 0), `h=0 时球锚点应全为 0（实际 ${balls.map((b) => b.h)}）`);
+});
+
+test('P6 批次1 interpretShot: 头球射门 h=0 低空（不放大）', () => {
+  const e = { t: 200, type: 'shot', subject: 10, x: 0.9, y: 0.5, x2: 0.98, y2: 0.5, speed: 15, result: 'goal', detail: 'header', h: 0 };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.every((a) => a.h === 0), `头球射门 h=0 时球锚点应全为 0（实际 ${balls.map((b) => b.h)}）`);
+});
+
+test('P6 批次1 interpretPass: 出界 pass 球飞向边界（落点钳制到边缘）', () => {
+  // 传球出边线：落点 y=0（边线），球飞向边界
+  const e = { t: 100, type: 'pass', from: 12, subject: 12, x: 0.25, y: 0.33, x2: 0.47, y2: 0, speed: 14, result: 'contested', detail: 'out_sideline' };
+  const anchors = interpretEvent(e);
+  const ballEnd = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t).pop();
+  assert.equal(ballEnd.y, 0, '出界 pass 球应飞到边线（y=0）');
+  assert.ok(ballEnd.x > 0, 'x 应保持界内钳制值');
+});
+
+test('P6 批次1 interpretPass: 角球发球从角旗飞向禁区（detail=corner 起点角旗）', () => {
+  const e = { t: 100, type: 'pass', from: 13, subject: 13, x: 0, y: 1, x2: 0.14, y2: 0.6, speed: 18, h: 0.6, detail: 'corner' };
+  const anchors = interpretEvent(e);
+  const ballStart = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t)[0];
+  assert.equal(ballStart.x, 0, '角球发球起点 x=0（角旗）');
+  assert.equal(ballStart.y, 1, '角球发球起点 y=1（角旗）');
+});

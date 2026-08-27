@@ -59,8 +59,9 @@ function interpretPass(e, out) {
   const speed = e.speed ?? config.defaults.passSpeed;
   const ballDur = durationFromSpeed(meters, speed);
 
-  // 球：起点 → 弧线顶点 → 终点（h=高度，表现抛物线；飞行越长越高）
-  const h = Math.min(0.08 + ballDur * 0.03, 0.2); // 高度随飞行时长（0.08-0.2 归一化屏幕高度）
+  // 球：起点 → 弧线顶点 → 终点。h 语义（P6 批次1）：事件带 h 用事件值（协议 0-1，球大小表示高度）；
+  // h 缺失 → 按飞行时长/距离默认插值（向后兼容，P6 首批现有行为）；h=0 → 基础半径（无高度）
+  const h = e.h !== undefined ? e.h : Math.min(0.08 + ballDur * 0.03, 0.2);
   const midX = (e.x + e.x2) / 2;
   const midY = (e.y + e.y2) / 2;
   out.push({ t: t0, kind: 'ball', x: e.x, y: e.y, h: 0 });
@@ -100,8 +101,8 @@ function interpretShot(e, out) {
   //   saved → 停门线（x2）
   const ballEndX = isGoal ? (e.x2 >= 0.5 ? 1.005 : -0.005) : (isOff ? (e.x2 >= 0.5 ? 1.02 : -0.02) : e.x2);
   const ballEndY = e.y2 ?? 0.5;
-  // 弧线（h=高度）：射门飞行短而快，高度略低（0.05-0.12）
-  const h = Math.min(0.05 + flightDur * 0.04, 0.12);
+  // 弧线（h=高度）：事件带 h 用事件值（头球射门 h=0 低空）；缺失 → 飞行短而快，高度略低（0.05-0.12）
+  const h = e.h !== undefined ? e.h : Math.min(0.05 + flightDur * 0.04, 0.12);
   const midX = (e.x + ballEndX) / 2;
   const midY = (e.y + ballEndY) / 2;
   out.push({ t: t0, kind: 'ball', x: e.x, y: e.y, h: 0 });

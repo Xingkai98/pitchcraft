@@ -147,7 +147,7 @@ const TACKLE_LINEUP = [
 ];
 
 test('step: tackle 事件播完，防守者与球在弹开点重合（拿到球）', () => {
-  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP, 'clip');
+  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP, 'clip', { baseSpeed: 1 });
   // 弹开点 = 球最后锚点位置（从演绎层推导，而非硬编码）
   const anchors = interpretEvent(TACKLE_EVENT);
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
@@ -162,7 +162,7 @@ test('step: tackle 事件播完，防守者与球在弹开点重合（拿到球�
 });
 
 test('step: tackle 中间态——球先到弹开点，捡球人还在路上', () => {
-  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP, 'clip');
+  const g = new Game([TACKLE_EVENT], TACKLE_LINEUP, 'clip', { baseSpeed: 1 });
   const anchors = interpretEvent(TACKLE_EVENT);
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
   const loose = balls[balls.length - 1];
@@ -189,7 +189,7 @@ test('step: tackle fail——原持球人拿回球，防守者停在接触点', 
     { id: 10, team: 'home', x: 0.43, y: 0.51 },
     { id: 11, team: 'away', x: 0.45, y: 0.5 },
   ];
-  const g = new Game([evt], lineup, 'clip');
+  const g = new Game([evt], lineup, 'clip', { baseSpeed: 1 });
   g.jumpToEvent(0);
   g.playing = true;
   for (let i = 0; i < 300; i++) g.step(0.1);
@@ -217,7 +217,8 @@ function makeContinuousGame() {
     { id: 4, team: 'home', x: 0.40, y: 0.25 },
     { id: 7, team: 'home', x: 0.62, y: 0.15 },
   ];
-  return new Game(events, lineup, 'continuous');
+  // P7：无高亮事件流，关闭跳过（保持既有 1:1 断言语义）
+  return new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
 }
 
 test('continuous: 默认模式是 continuous，playTime 从 0 到 matchEnd', () => {
@@ -283,7 +284,7 @@ function makeV2Game() {
     { t: 3, type: 'beat', movers: [{ id: 5, from_x: 0.45, from_y: 0.43, to_x: 0.47, to_y: 0.43, speed: 4, action: 'run' }], main: { type: 'dribble', subject: 10, x: 0.6, y: 0.51, x2: 0.62, y2: 0.51, speed: 5, touch_freq: 1.5 } },
     { t: 4, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '0-0' },
   ];
-  return new Game(events, lineup, 'continuous');
+  return new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
 }
 
 test('v2 continuous: beat 跨拍推进，球员与球并行移动', () => {
@@ -318,4 +319,116 @@ test('v2 continuous: beat 事件边界无 snap（球 + 球员位置连续）', (
   // 跨拍连续：from(N+1)==to(N)，位移平滑（阈值宽松：单拍位移 ~0.02 归一化）
   assert.ok(maxBallJump < 0.1, `球事件边界跳变过大 maxBallJump=${maxBallJump}`);
   assert.ok(maxPlayerJump < 0.1, `球员事件边界跳变过大 maxPlayerJump=${maxPlayerJump}`);
+});
+
+// ---- P7：跳过机制（高亮识别 + 间隙检测 + 跳过模式）----
+
+function makeSkipGame() {
+  // 构造：beat 过渡 + 高亮 shot（t=30）+ 尾部 beat（t=40，非精彩段）
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [{ id: 5, team: 'home', x: 0.4, y: 0.5 }, { id: 10, team: 'home', x: 0.55, y: 0.5 }] },
+    { t: 1, type: 'beat', movers: [], main: { type: 'dribble', subject: 10, x: 0.55, y: 0.5, x2: 0.58, y2: 0.5, speed: 5, touch_freq: 1.5 } },
+    // 高亮 shot（t=30，间隙 29s > 阈值 5s）
+    { t: 30, type: 'shot', subject: 10, x: 0.6, y: 0.5, x2: 0.98, y2: 0.5, speed: 20, result: 'goal' },
+    // 尾部非精彩段（shot 后到 t=40 无高亮）
+    { t: 40, type: 'beat', movers: [], main: { type: 'dribble', subject: 10, x: 0.6, y: 0.5, x2: 0.6, y2: 0.5, speed: 5, touch_freq: 1.5 } },
+    { t: 40, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0' },
+  ];
+  const lineup = [{ id: 5, team: 'home', x: 0.4, y: 0.5 }, { id: 10, team: 'home', x: 0.55, y: 0.5 }];
+  return new Game(events, lineup, 'continuous', { baseSpeed: 1 });
+}
+
+test('P7 isHighlightEvent: shot/tackle/精彩 detail 为真，普通 pass 为假', () => {
+  const g = makeSkipGame();
+  assert.equal(g.isHighlightEvent({ type: 'shot' }), true);
+  assert.equal(g.isHighlightEvent({ type: 'tackle' }), true);
+  assert.equal(g.isHighlightEvent({ type: 'pass', detail: 'corner' }), true);
+  assert.equal(g.isHighlightEvent({ type: 'pass', detail: 'throw_in' }), true);
+  assert.equal(g.isHighlightEvent({ type: 'pass', detail: 'out_sideline' }), true);
+  assert.equal(g.isHighlightEvent({ type: 'pass', to: 5 }), false, '普通 pass 非高亮');
+  assert.equal(g.isHighlightEvent({ type: 'beat', movers: [] }), false);
+});
+
+test('P7 isSkipping: 非高亮窗口且距下一个高亮 > 阈值 → 跳过', () => {
+  const g = makeSkipGame();
+  g.playTime = 5; // 在 t=1 beat 后、t=30 shot 前，间隙 25s > 阈值
+  assert.equal(g.isSkipping(), true);
+  g.playTime = 29.5; // 接近高亮
+  assert.equal(g.isSkipping(), false, '距高亮 < 阈值不应跳过');
+  g.playTime = 30; // 高亮窗口内
+  assert.equal(g.isSkipping(), false, '高亮窗口内不应跳过');
+});
+
+test('P7 skip 模式: 直接跳到下一个高亮起点', () => {
+  const g = makeSkipGame();
+  g.skipMode = 'skip';
+  g.playing = true;
+  g.playTime = 5;
+  g.step(1 / 60);
+  assert.equal(g.playTime, 30, 'skip 模式应直接跳到下一个高亮 t=30');
+});
+
+test('P7 fast 模式: 快进（跳过量 > 正常步进）', () => {
+  const g = makeSkipGame();
+  g.skipMode = 'fast';
+  g.playing = true;
+  g.playTime = 5;
+  g.step(1 / 60);
+  // fast 模式 = 基速 × skipChoice（默认 5），1 帧 1/60s × 5 ≈ 0.083s 比赛时间
+  assert.ok(g.playTime > 5.02, `fast 模式应快进（实际 ${g.playTime}）`);
+  assert.ok(g.playTime < 30, 'fast 模式不应越过高亮');
+});
+
+test('P7 时间显示格式: formatMatchClock 跟随 matchEnd', () => {
+  // formatMatchClock 在 app.js（DOM 依赖），这里验证 game.matchEnd 反映时长参数
+  const g5 = new Game([{ t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [] }], [], 'continuous', { baseSpeed: 1 });
+  // matchEnd = 最后事件 t（无锚点 → 0）——用有锚点的事件
+  const g = makeSkipGame();
+  assert.ok(g.matchEnd >= 30, `matchEnd 应 ≥ 最后事件 t（实际 ${g.matchEnd}）`);
+});
+
+test('P7 skip 模式: 尾部（最后一个高亮后）也跳过到比赛结束', () => {
+  const g = makeSkipGame();
+  g.skipMode = 'skip';
+  g.playing = true;
+  g.playTime = 35; // 尾部（shot 窗口 [30,~31] 之后、t=40 无高亮）
+  g.step(1 / 60);
+  assert.equal(g.playTime, g.matchEnd, '尾部应跳过到比赛结束');
+  assert.equal(g.playing, false, '跳过结束后应停止');
+});
+
+test('P7 fast 模式: dt 钳制（大 dt 不整段跳过高亮窗口）', () => {
+  const g = makeSkipGame();
+  g.skipMode = 'fast';
+  g.playing = true;
+  g.playTime = 5; // 间隙中
+  // 模拟帧尖峰 dt=2s：应被钳制到 0.1s，不会直接越过高亮 t=30
+  g.step(2);
+  assert.ok(g.playTime < 30, `dt 钳制后不应越过高亮（实际 ${g.playTime}）`);
+  assert.ok(g.playTime > 5, 'fast 应快进');
+});
+
+test('P7 高亮窗口合并级联：相邻高亮（间隔 < 阈值）合并成连续窗口', () => {
+  // 构造：角球发球（corner）→ battle beat → 头球（header shot），间隔 < 阈值 → 应合并
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [{ id: 10, team: 'home', x: 0.55, y: 0.5 }] },
+    { t: 10, type: 'pass', from: 10, subject: 10, to: undefined, x: 1, y: 0, x2: 0.9, y2: 0.5, speed: 18, detail: 'corner', h: 0.6 },
+    { t: 11, type: 'beat', movers: [] }, // battle
+    { t: 12, type: 'shot', subject: 10, x: 0.9, y: 0.5, x2: 0.98, y2: 0.5, speed: 15, result: 'goal', detail: 'header', h: 0 },
+  ];
+  const lineup = [{ id: 10, team: 'home', x: 0.55, y: 0.5 }];
+  const g = new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: 5 });
+  // corner pass(t=10) 与 header shot(t=12) 间隔 2s < 阈值 5s → 合并成一个窗口
+  assert.equal(g._highlightWindows.length, 1, '角球→头球应合并成单个连续窗口');
+  assert.ok(g._highlightWindows[0].t <= 10 && g._highlightWindows[0].end >= 12, '窗口应覆盖角球到头球');
+});
+
+test('P7 跳过模式循环：fast → skip → off → fast', () => {
+  const g = makeSkipGame();
+  assert.equal(g.skipMode, 'fast'); // config 默认 fast
+  assert.equal(g.cycleSkipMode(), 'skip');
+  assert.equal(g.cycleSkipMode(), 'off');
+  assert.equal(g.isSkipEnabled(), false, 'off 模式跳过禁用');
+  assert.equal(g.cycleSkipMode(), 'fast');
+  assert.equal(g.isSkipEnabled(), true);
 });

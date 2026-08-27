@@ -41,7 +41,7 @@ wayfinder 决策票据迁移到 **GitHub issues**（`github.com/Xingkai98/pitchc
 # 1. 编译 WASM 引擎并拷到 viewer
 cd engine
 cargo build --target wasm32-unknown-unknown --release
-cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/
+cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm
 
 # 2. 启动本地 HTTP server（file:// 下 fetch .wasm 会失败）
 #    用 serve.py（带 no-cache 头，避免浏览器缓存 JS/HTML）
@@ -56,7 +56,7 @@ python3 serve.py 8000
 ## 怎么验证
 
 ```bash
-./verify.sh   # 一键跑全部测试（引擎 9 + viewer 52 + WASM 端到端）
+./verify.sh   # 一键跑全部测试（引擎单测 + viewer 120 + WASM 端到端 + 真实性统计套件）
 ```
 
 分层验证（无视觉依赖）：
@@ -64,7 +64,11 @@ python3 serve.py 8000
 - 协议：字段/类型/lineup/坐标校验
 - 动画逻辑：传跑配合、踢-追周期、射门（纯函数单测）
 - 渲染：坐标映射、像素位置（MockCanvas 断言）
-- 最终观感：浏览器人工验收
+- **真实性统计套件**（`engine/tests/realism.rs`）：
+  - L1 规格一致性（`#[ignore]`，verify.sh 第 4 步 release 显式跑）：射门 15/35/50、头球 12/38/50（chi-square GOF）、tackle 稀释模型、槽位相对 mix、角球场均带（200 seed 聚合）
+  - L2 过程真实性（默认 `cargo test` 就跑）：比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、速度上界、门将贴门线、事件 t 范围（任意 seed）
+  - golden master（默认跑）：10 canary seed 统计摘要 + 事件流哈希，防静默漂移（`ACCEPT_GOLDEN=1` 显式重基线）
+- 最终观感：浏览器人工验收（真实性最后一层，结构化抽查）
 
 ## P0 范围（已确认）
 

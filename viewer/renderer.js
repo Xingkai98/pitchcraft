@@ -94,13 +94,13 @@ export function drawPlayer(ctx, x, y, id, width, height) {
 }
 
 // 绘制球（isBall=true 允许越界渲染：进球/打偏越底线时球心进入球门框/界外）。
-// h 高度（0=地面，0-0.2 屏幕比例）：2D 里 z 轴高度看不出，借鉴 FM 用球大小表示高度——
-// 球越高越大（幅度小），球落回地面时恢复正常大小（P6 抛物线高度感）。
+// h 高度（协议 0-1，P6 批次1）：2D 里 z 轴高度看不出，借鉴 FM 用球大小表示高度——
+// 球越高越大，球落回地面时恢复正常大小（P6 抛物线高度感；角球/门球大脚 h>0 球放大明显）。
 export function drawBall(ctx, x, y, width, height, h = 0) {
   const margin = config.pitchMargin;
   const r = config.render;
   const p = normalizedToPixels(x, y, width, height, margin, true);
-  // 球大小 = 基础半径 × (1 + h × 1.5)：h∈[0,0.2] → 半径放大 1.0-1.3 倍（小幅，可感知但不突兀）
+  // 球大小 = 基础半径 × (1 + h × 1.5)：h∈[0,1] → 半径放大 1.0-2.5 倍（h=0 基础半径/无高度）
   const radius = r.ballRadius * (1 + h * 1.5);
   ctx.fillStyle = r.ballColor;
   ctx.beginPath();
