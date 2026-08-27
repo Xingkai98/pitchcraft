@@ -5,11 +5,36 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260808-16';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260808-16';
-import { createGame } from './game.js?v=20260808-16';
-import { mockEventStream } from './mock-event-stream.js?v=20260808-16';
-import { resetMicroMotion } from './micro-motion.js?v=20260808-16';
+import { config } from './config.js?v=20260826-12';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260826-12';
+import { createGame } from './game.js?v=20260826-12';
+import { mockEventStream } from './mock-event-stream.js?v=20260826-12';
+import { resetMicroMotion } from './micro-motion.js?v=20260826-12';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260826-12';
+import {
+  parseAuditImport,
+  formatFinding,
+  findingMarkers,
+  formatReportSummary,
+  redactText,
+  taskResultToRender,
+  formatTriage,
+  buildChangeDraft,
+  openQuestionsFromReport,
+  confirmQuestionsFromReport,
+} from './audit-report.js?v=20260826-12';
+import {
+  OBSERVATION_STATUSES,
+  isTerminalStatus,
+  isKnownStatus,
+  createListEntry,
+  addListEntry,
+  updateListEntry,
+  formatMatchTime,
+  summarizeStatement,
+  loadList,
+  saveList,
+} from './observation-list.js?v=20260826-12';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -29,6 +54,40 @@ const eventIdInput = document.getElementById('event-id-input');
 const noticeEl = document.getElementById('notice');
 const progressBar = document.getElementById('progress-bar');
 const progressTime = document.getElementById('progress-time');
+
+// 观察采集（P10 viewer 切片）
+const btnCapture = document.getElementById('btn-capture');
+const btnExportBundle = document.getElementById('btn-export-bundle');
+const btnSubmit = document.getElementById('btn-submit');
+const btnImport = document.getElementById('btn-import');
+const obsStatusEl = document.getElementById('obs-status');
+const obsStatementEl = document.getElementById('obs-statement');
+const obsBeforeEl = document.getElementById('obs-before');
+const obsAfterEl = document.getElementById('obs-after');
+const obsEntitiesEl = document.getElementById('obs-entities');
+const obsListEl = document.getElementById('obs-list');
+const obsImportEl = document.getElementById('obs-import');
+const obsFindingsEl = document.getElementById('obs-findings');
+const obsReportEl = document.getElementById('obs-report');
+const obsNextEl = document.getElementById('obs-next');
+
+// P10：诊断任务状态（对应 match-observation spec）。browser 只显示状态/错误摘要，绝不显示凭证。
+const OBSERVATION_STATUS_STATES = OBSERVATION_STATUSES;
+// 本地诊断服务端点：由页面来源 hostname 推导（localhost/127.0.0.1 → 本机
+// loopback；tailscale 等网内 hostname → 同一 hostname 的 8787 端口，自动指向
+// 服务所在机器，无需手工配置）。提交 → POST /observations → 轮询 GET /tasks/:id；
+// 未配置或不可达时回退为「导出 bundle + CLI 模板」。browser 永不接触 API key。
+const OBSERVATION_ENDPOINT = deriveDiagnosisEndpoint(location.hostname);
+const OBSERVATION_POLL_MS = 2000;
+const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
+// 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
+// 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260826-12';
+let lastBundle = null;
+// 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
+const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
+let observationList = [];
+let currentEntryId = null;
 
 // 瞬时操作反馈（跳转/播放状态/错误）——显示在 notice，避免被帧循环的 status 时钟覆盖
 let _noticeTimer = null;
@@ -336,6 +395,449 @@ document.addEventListener('keydown', (e) => {
   }
 });
 
+// --- P10 观察采集 / 诊断展示 ---
+
+function setObsStatus(state, detail = '') {
+  const s = OBSERVATION_STATUS_STATES.includes(state) ? state : 'failed';
+  obsStatusEl.textContent = detail ? `${s} — ${detail}` : s;
+}
+
+// 从当前 UI 输入构建窗口/选中实体/陈述
+function readObservationInputs() {
+  const before = Number(obsBeforeEl.value) || 0;
+  const after = Number(obsAfterEl.value) || 0;
+  const rawEntities = (obsEntitiesEl.value || '').split(',').map((s) => s.trim()).filter(Boolean);
+  const selectedEntities = rawEntities
+    .map((s) => Number(s))
+    .filter((n) => Number.isInteger(n) && n >= 0 && n <= 21);
+  return {
+    statement: obsStatementEl.value.trim(),
+    selectedEntities,
+    window: { before, after },
+  };
+}
+
+// 选中实体为空时回退到当前事件参与者（highlight/current event ids），
+// 让观察更好地锚定到正在发生的动作（纯逻辑在 observation.js，可测）。
+function resolveEntitiesForCapture(selectedEntities) {
+  return resolveObservationSelection(selectedEntities, game);
+}
+
+// --- 观察列表（每次采集/提交一条；localStorage 持久化元数据 + task_id）---
+
+// 更新内存列表 + 持久化 + 重渲染。findingsDetail（轮询派生的渲染状态）只留内存。
+function updateEntry(entryId, patch) {
+  observationList = updateListEntry(observationList, entryId, patch);
+  saveList(obsStorage, observationList);
+  renderObservationList();
+}
+
+function markEntrySyncError(entryId, message) {
+  updateEntry(entryId, { sync_error: true, detail_error: redactText(message) });
+}
+
+function renderObservationList() {
+  obsListEl.innerHTML = '';
+  if (!observationList.length) {
+    obsListEl.textContent = '(暂无观察 — 点击「采集当前观察」后条目显示在这里)';
+    return;
+  }
+  for (const entry of observationList) {
+    obsListEl.appendChild(renderEntryCard(entry));
+  }
+}
+
+function buildCliTemplateNode(entry) {
+  const cli = document.createElement('pre');
+  cli.className = 'obs-entry-cli';
+  cli.textContent = buildCliCommandTemplate({ revision: '<source-revision>', statement: entry.statement });
+  return cli;
+}
+
+function renderEntryCard(entry) {
+  const card = document.createElement('div');
+  card.className = 'obs-entry';
+  card.dataset.entryId = entry.id;
+
+  const head = document.createElement('div');
+  head.className = 'obs-entry-head';
+
+  const time = document.createElement('span');
+  time.className = 'obs-entry-time';
+  time.textContent =
+    entry.match_time != null
+      ? `${formatMatchTime(entry.match_time)} / event #${entry.event_index ?? '?'}`
+      : '—';
+
+  const statement = document.createElement('span');
+  statement.className = 'obs-entry-statement';
+  statement.textContent = summarizeStatement(entry.statement);
+  statement.title = entry.statement || '';
+
+  const badge = document.createElement('span');
+  badge.className = `obs-entry-badge obs-badge-${entry.status}`;
+  badge.textContent = entry.status;
+
+  head.appendChild(time);
+  head.appendChild(statement);
+  head.appendChild(badge);
+  card.appendChild(head);
+
+  const body = document.createElement('div');
+  body.className = 'obs-entry-body';
+  if (entry.sync_error || (entry.task_id == null && entry.status === 'failed')) {
+    // 服务不可达 / 提交失败 → 原因 + CLI 回退模板
+    const err = document.createElement('div');
+    err.className = 'obs-entry-error';
+    err.textContent = entry.sync_error
+      ? `本地诊断端点不可用（${redactText(entry.detail_error ?? '请求失败')}），已回退到 CLI`
+      : redactText(entry.detail_error ?? '提交失败');
+    body.appendChild(err);
+    body.appendChild(buildCliTemplateNode(entry));
+  } else if (entry.task_id != null && entry.findingsDetail) {
+    // 终态：findings 红点可跳转 + 结构化报告
+    const findings = document.createElement('div');
+    findings.className = 'obs-entry-findings';
+    renderFindingsInto(findings, entry.findingsDetail.markers);
+    body.appendChild(findings);
+    if (entry.findingsDetail.reportText) {
+      const report = document.createElement('pre');
+      report.className = 'obs-entry-report';
+      report.textContent = entry.findingsDetail.reportText;
+      body.appendChild(report);
+    }
+    // triage 徽章 + 按类别的后续动作面板（bug/design/discuss）。
+    const actions = document.createElement('div');
+    actions.className = 'obs-entry-actions';
+    renderReportActions(actions, entry.findingsDetail.report, entry.statement);
+    body.appendChild(actions);
+  } else if (entry.task_id != null && isTerminalStatus(entry.status)) {
+    // 终态但结果尚未同步（刷新恢复中/服务未返回）
+    const syncing = document.createElement('div');
+    syncing.className = 'obs-entry-progress';
+    syncing.textContent = `已结束（${entry.status}），正在同步结果…`;
+    body.appendChild(syncing);
+  } else if (entry.task_id == null) {
+    // 已采集未提交：提示 + CLI 模板
+    const hint = document.createElement('div');
+    hint.className = 'obs-entry-hint';
+    hint.textContent = '已采集（未提交）。可点击「提交诊断」发到本地服务，或用 CLI 审计：';
+    body.appendChild(hint);
+    body.appendChild(buildCliTemplateNode(entry));
+  } else {
+    // 处理中（auditing / audit_ready / diagnosing）
+    const progress = document.createElement('div');
+    progress.className = 'obs-entry-progress';
+    progress.textContent = `处理中…（${entry.status}）${entry.detail_error ? redactText(entry.detail_error) : ''}`;
+    body.appendChild(progress);
+  }
+  card.appendChild(body);
+  return card;
+}
+
+function captureCurrentObservation() {
+  if (!game) {
+    setObsStatus('failed', '比赛未就绪');
+    return;
+  }
+  game.playing = false; // 采集即暂停在当前时刻
+  const { statement, selectedEntities, window } = readObservationInputs();
+  lastBundle = captureObservation({
+    game,
+    statement,
+    selectedEntities: resolveEntitiesForCapture(selectedEntities),
+    window,
+    seed: FIXED_SEED,
+    config: MATCH_CONFIG,
+    sourceRevision: VIEWER_SOURCE_REVISION,
+  });
+  const entry = createListEntry({
+    id: `obs-${lastBundle.observation_id}`,
+    statement,
+    match_time: lastBundle.match_time,
+    event_index: lastBundle.viewer_snapshot?.current_event_index ?? null,
+    status: 'captured',
+    task_id: null,
+  });
+  currentEntryId = entry.id;
+  observationList = addListEntry(observationList, entry);
+  saveList(obsStorage, observationList);
+  renderObservationList();
+  setObsStatus('captured', `match_time=${lastBundle.match_time}s 事件 #${lastBundle.viewer_snapshot.current_event_index}`);
+  showNotice('已采集观察，可导出 bundle 或提交诊断');
+}
+
+function downloadBundle() {
+  if (!lastBundle) {
+    setObsStatus('captured', '请先采集观察');
+    return;
+  }
+  // 导出前深度抹除凭证（browser 侧第一道网；runner 校验仍权威）。
+  const safeBundle = redactBundleForExport(lastBundle);
+  const blob = new Blob([JSON.stringify(safeBundle, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `observation-${lastBundle.observation_id}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// 提交当前观察到本地服务；不可达时回退「导出 + CLI」。browser 永远看不到 API key。
+async function submitObservation() {
+  if (!lastBundle || !currentEntryId) {
+    setObsStatus('captured', '请先采集观察');
+    return;
+  }
+  if (!OBSERVATION_ENDPOINT) {
+    updateEntry(currentEntryId, { sync_error: true, detail_error: '未配置本地诊断端点' });
+    setObsStatus('provider_unavailable', '未配置本地诊断端点，已回退到 CLI 审计');
+    showNotice('回退：导出 bundle + 用 CLI 审计/诊断');
+    return;
+  }
+  try {
+    setObsStatus('auditing', '提交 bundle 到本地服务…');
+    // 提交前深度抹除凭证（browser 侧第一道网；runner 校验仍权威）。
+    const safeBundle = redactBundleForExport(lastBundle);
+    const res = await fetch(`${OBSERVATION_ENDPOINT}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(safeBundle),
+    });
+    if (!res.ok) {
+      let detail = `endpoint HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body?.error) detail += `: ${redactText(String(body.error))}`;
+        if (Array.isArray(body?.errors) && body.errors.length > 0) {
+          detail += ` (${body.errors.map((e) => redactText(String(e))).join('; ')})`;
+        }
+      } catch { /* non-JSON error body */ }
+      updateEntry(currentEntryId, { status: 'failed', detail_error: detail, findingsDetail: null });
+      setObsStatus('failed', redactText(detail));
+      return;
+    }
+    const data = await res.json();
+    if (!data?.task_id) throw new Error('本地服务未返回 task_id');
+    updateEntry(currentEntryId, {
+      task_id: data.task_id,
+      status: 'auditing',
+      sync_error: false,
+      detail_error: null,
+      findingsDetail: null,
+    });
+    setObsStatus('auditing', `已提交，task=${data.task_id.slice(0, 8)}…`);
+    await pollTask(currentEntryId, data.task_id);
+  } catch (err) {
+    // 网络失败 → 回退 CLI，条目保留上次已知状态。
+    updateEntry(currentEntryId, { sync_error: true, detail_error: redactText(String(err.message)) });
+    setObsStatus('provider_unavailable', `本地诊断端点不可用（${redactText(String(err.message))}），已回退到 CLI`);
+  }
+}
+
+// 轮询 GET /tasks/:id，状态变化实时更新徽章；终态渲染该条目的最终反馈。
+async function pollTask(entryId, taskId) {
+  const deadline = Date.now() + OBSERVATION_POLL_MAX_MS;
+  while (Date.now() < deadline) {
+    let res;
+    try {
+      res = await fetch(`${OBSERVATION_ENDPOINT}/tasks/${encodeURIComponent(taskId)}`);
+    } catch (err) {
+      markEntrySyncError(entryId, err.message);
+      return;
+    }
+    if (!res.ok) {
+      markEntrySyncError(entryId, `轮询任务 HTTP ${res.status}`);
+      return;
+    }
+    let data;
+    try {
+      data = await res.json();
+    } catch {
+      markEntrySyncError(entryId, '轮询响应不是 JSON');
+      return;
+    }
+    const state = isKnownStatus(data?.status) ? data.status : 'failed';
+    // 端点错误文本先抹除再渲染，避免 key 形片段显示在页面。
+    const errors = Array.isArray(data?.errors) && data.errors.length > 0
+      ? data.errors.map((e) => redactText(String(e))).join('; ')
+      : '';
+    updateEntry(entryId, { status: state, sync_error: false, detail_error: errors || null });
+    if (isTerminalStatus(state)) {
+      renderEntryFeedback(entryId, data);
+      return;
+    }
+    await new Promise((r) => setTimeout(r, OBSERVATION_POLL_MS));
+  }
+  // 长时间未到终态：不再无限等待，标记同步错误并回退 CLI。
+  markEntrySyncError(entryId, '等待诊断超时');
+}
+
+// triage 徽章 + 按类别的后续动作面板（bug → change 草稿复制/下载；design →
+// open questions；discuss → 需确认问题清单）。所有展示文本先 redactText。
+function renderReportActions(container, report, statement = '') {
+  container.innerHTML = '';
+  const t = formatTriage(report);
+  if (!t) return;
+  const head = document.createElement('div');
+  head.className = 'triage-head';
+  const badge = document.createElement('span');
+  badge.className = `triage-badge triage-${t.category}`;
+  badge.textContent = t.category;
+  const rationale = document.createElement('span');
+  rationale.className = 'triage-rationale';
+  rationale.textContent = redactText(t.rationale);
+  head.appendChild(badge);
+  head.appendChild(rationale);
+  container.appendChild(head);
+
+  const panel = document.createElement('div');
+  panel.className = 'next-steps-panel';
+  if (t.category === 'bug') {
+    const draft = buildChangeDraft(report, { statement });
+    const heading = document.createElement('div');
+    heading.className = 'next-steps-heading';
+    heading.textContent = '后续动作：生成 OpenSpec change 草稿（确认后进入 change 流程）';
+    panel.appendChild(heading);
+    const pre = document.createElement('pre');
+    pre.className = 'next-steps-draft';
+    pre.textContent = draft;
+    panel.appendChild(pre);
+    const copy = document.createElement('button');
+    copy.textContent = '复制草稿';
+    copy.addEventListener('click', () => {
+      navigator.clipboard?.writeText(draft).then(
+        () => showNotice('change 草稿已复制'),
+        () => showNotice('复制失败，请手动选择复制')
+      );
+    });
+    const download = document.createElement('button');
+    download.textContent = '下载草稿(.md)';
+    download.addEventListener('click', () => {
+      const blob = new Blob([draft], { type: 'text/markdown' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `change-draft-${Date.now()}.md`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+    panel.appendChild(copy);
+    panel.appendChild(download);
+  } else if (t.category === 'design') {
+    const heading = document.createElement('div');
+    heading.className = 'next-steps-heading';
+    heading.textContent = '后续动作：open questions（进入设计讨论，讨论后再立 change）';
+    panel.appendChild(heading);
+    for (const q of openQuestionsFromReport(report)) {
+      const item = document.createElement('div');
+      item.className = 'next-steps-item';
+      item.textContent = `- ${redactText(q)}`;
+      panel.appendChild(item);
+    }
+  } else {
+    const heading = document.createElement('div');
+    heading.className = 'next-steps-heading';
+    heading.textContent = '后续动作：需用户确认的问题（答复后重新评估）';
+    panel.appendChild(heading);
+    for (const q of confirmQuestionsFromReport(report)) {
+      const item = document.createElement('div');
+      item.className = 'next-steps-item';
+      item.textContent = `- ${redactText(q)}`;
+      panel.appendChild(item);
+    }
+  }
+  container.appendChild(panel);
+}
+
+// 终态轮询响应 → 复用导入渲染路径（taskResultToRender + findingMarkers + formatReportSummary）。
+function renderEntryFeedback(entryId, data) {
+  const parsed = taskResultToRender(data);
+  const markers = findingMarkers(parsed.findings);
+  let reportText = parsed.report ? formatReportSummary(parsed.report) : '';
+  if (parsed.errors.length > 0) reportText += `\n[errors] ${parsed.errors.join('; ')}`;
+  updateEntry(entryId, { findingsDetail: { markers, reportText, report: parsed.report } });
+}
+
+// 刷新后恢复：localStorage 条目 + task_id → 从服务重新拉任务状态同步最新进度。
+function restoreObservationList() {
+  observationList = loadList(obsStorage);
+  renderObservationList();
+  for (const entry of observationList) {
+    if (entry.task_id) {
+      // 终态条目拉一次刷新最终反馈；非终态持续轮询到终态。
+      pollTask(entry.id, entry.task_id);
+    }
+  }
+}
+
+// 跳转到 finding 证据：优先 event_index，回退 match_time。
+function jumpToFinding(marker) {
+  if (!game) return;
+  if (marker.event_index != null && game.jumpToEvent(marker.event_index)) {
+    updateEventIndicator();
+    showNotice(`已跳转到 finding 证据事件 #${marker.event_index}`);
+  } else if (marker.match_time != null) {
+    game.seekTo(marker.match_time);
+    updateEventIndicator();
+    showNotice(`已跳转到 finding 证据 t=${marker.match_time}s`);
+  } else {
+    showNotice('该 finding 无定位证据');
+  }
+}
+
+// 把 markers 渲染进任意容器（导入路径与列表条目共用）。
+function renderFindingsInto(container, markers) {
+  container.innerHTML = '';
+  if (!markers || markers.length === 0) {
+    container.textContent = '(无 findings)';
+    return;
+  }
+  for (const marker of markers) {
+    const item = document.createElement('div');
+    item.className = 'finding-item';
+    const span = document.createElement('span');
+    span.textContent = marker.label;
+    const btn = document.createElement('button');
+    btn.className = 'jump-btn';
+    btn.textContent = '跳转';
+    btn.addEventListener('click', () => jumpToFinding(marker));
+    item.appendChild(span);
+    item.appendChild(btn);
+    container.appendChild(item);
+  }
+}
+
+function renderFindings(markers) {
+  renderFindingsInto(obsFindingsEl, markers);
+}
+
+function importAuditReport() {
+  const parsed = parseAuditImport(obsImportEl.value);
+  if (parsed.kind === 'invalid' || parsed.kind === 'unknown') {
+    setObsStatus('failed', parsed.errors.join('; ') || '无法识别导入内容');
+    obsFindingsEl.textContent = '';
+    obsReportEl.textContent = '';
+    return;
+  }
+  const markers = findingMarkers(parsed.findings);
+  setObsStatus(parsed.status, `导入 ${parsed.kind}，${markers.length} 条 finding`);
+  renderFindings(markers);
+  obsReportEl.textContent = parsed.report ? formatReportSummary(parsed.report) : '';
+  if (parsed.errors && parsed.errors.length > 0) {
+    obsReportEl.textContent += `\n[errors] ${parsed.errors.join('; ')}`;
+  }
+  // triage 徽章 + 按类别的后续动作面板（导入路径）。
+  renderReportActions(obsNextEl, parsed.report, '');
+}
+
+btnCapture.addEventListener('click', captureCurrentObservation);
+btnExportBundle.addEventListener('click', downloadBundle);
+btnSubmit.addEventListener('click', submitObservation);
+btnImport.addEventListener('click', importAuditReport);
+
 // 启动：先尝试 WASM，再 init
 tryLoadEngine().then(() => init());
+// 恢复观察列表（localStorage 元数据 + task_id → 从服务重新同步状态）
+restoreObservationList();
 requestAnimationFrame(frame);
