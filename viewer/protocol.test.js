@@ -5,9 +5,9 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { parseEvent, parseEventStream, playerTeam, isGoal, EVENT_TYPES } from './protocol.js';
 
-test('EVENT_TYPES 包含 11 类事件（v1 + v2 beat）', () => {
+test('EVENT_TYPES 包含 12 类事件（v1 + v2 beat + foul）', () => {
   assert.deepEqual([...EVENT_TYPES].sort(), [
-    'beat', 'dribble', 'interception', 'kickoff', 'lineup', 'off_ball_run', 'pass', 'shot', 'substitution', 'tackle', 'whistle',
+    'beat', 'dribble', 'foul', 'interception', 'kickoff', 'lineup', 'off_ball_run', 'pass', 'shot', 'substitution', 'tackle', 'whistle',
   ]);
 });
 
@@ -216,4 +216,27 @@ test('P6 批次1: 非 pass/shot 的 detail 不校验（whistle 等既有 detail�
 test('P7: pass detail=throw_in 合法（界外球掷球）', () => {
   const e = parseEvent({ t: 100, type: 'pass', from: 5, subject: 5, to: 1, x: 0.47, y: 0, x2: 0.3, y2: 0.25, speed: 12, h: 0, detail: 'throw_in' });
   assert.equal(e.detail, 'throw_in');
+});
+
+// ---- foul / 纪律牌（本轮试点）----
+
+test('foul: 合法事件（subject/x/y 必填 + foul_ detail + card 可选）', () => {
+  const e = parseEvent({ t: 100, type: 'foul', subject: 15, carrier: 6, x: 0.44, y: 0.42, detail: 'foul_trip', card: 'yellow' });
+  assert.equal(e.type, 'foul');
+  assert.equal(e.detail, 'foul_trip');
+  assert.equal(e.card, 'yellow');
+  assert.equal(e.carrier, 6);
+  const noCard = parseEvent({ t: 101, type: 'foul', subject: 15, x: 0.4, y: 0.5, detail: 'foul_push' });
+  assert.equal(noCard.card, undefined, '无牌犯规不要求 card');
+});
+
+test('foul: 非法 detail/card/carrier 抛错', () => {
+  assert.throws(() => parseEvent({ t: 100, type: 'foul', subject: 15, x: 0.4, y: 0.5, detail: 'trip' }), 'foul detail 应 foul_ 前缀');
+  assert.throws(() => parseEvent({ t: 100, type: 'foul', subject: 15, x: 0.4, y: 0.5, detail: 'foul_trip', card: 'black' }), 'card 应 yellow/red');
+  assert.throws(() => parseEvent({ t: 100, type: 'foul', subject: 15, x: 0.4, y: 0.5, detail: 'foul_trip', carrier: 30 }), 'carrier 应 0-21');
+});
+
+test('foul: pass detail=free_kick 合法', () => {
+  const e = parseEvent({ t: 102, type: 'pass', from: 6, subject: 6, to: 9, x: 0.44, y: 0.42, x2: 0.48, y2: 0.46, speed: 12, result: 'success', detail: 'free_kick' });
+  assert.equal(e.detail, 'free_kick');
 });

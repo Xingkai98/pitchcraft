@@ -34,11 +34,24 @@ const events = run(42, 5400); // P7：默认 90 分钟（5400s）
 
 // ---- v2 协议断言 ----
 const types = new Set(events.map((e) => e.type));
-for (const t of ['lineup', 'kickoff', 'beat', 'pass', 'shot', 'tackle', 'whistle']) {
+for (const t of ['lineup', 'kickoff', 'beat', 'pass', 'shot', 'tackle', 'whistle', 'foul']) {
   if (!types.has(t)) throw new Error(`缺事件类型: ${t}`);
 }
 if (types.has('dribble')) throw new Error('v2 不应有顶层 dribble 事件');
 if (types.has('off_ball_run')) throw new Error('v2 不应有顶层 off_ball_run 事件');
+
+// foul 事件形状：每 seed 有 foul（真实 ~21/场，seed 42 也应有）；card/detail 语义
+const fouls = events.filter((e) => e.type === 'foul');
+if (fouls.length === 0) throw new Error('seed42 应有 foul 事件');
+for (const f of fouls) {
+  if (typeof f.subject !== 'number') throw new Error('foul 缺 subject');
+  if (!/^foul_[a-z]+$/.test(f.detail || '')) throw new Error(`foul detail 非法: ${f.detail}`);
+  if (f.card !== undefined && f.card !== 'yellow' && f.card !== 'red') throw new Error(`foul card 非法: ${f.card}`);
+  if (f.x < 0 || f.x > 1 || f.y < 0 || f.y > 1) throw new Error('foul 坐标越界');
+}
+// 犯规必有任意球重开 pass（detail=free_kick 数量 ≥ 犯规数-1；末段犯规可能无重开）
+const freeKicks = events.filter((e) => e.type === 'pass' && e.detail === 'free_kick');
+if (freeKicks.length < fouls.length - 1) throw new Error(`free_kick 数(${freeKicks.length}) 与 foul 数(${fouls.length}) 不匹配`);
 
 const beats = events.filter((e) => e.type === 'beat');
 if (beats.length < 2000) throw new Error(`beat 数量过少: ${beats.length}`);
@@ -83,6 +96,10 @@ function checkNoSnap(seed, duration) {
   const allowedTeleportTimes = new Set();
   for (let i = 0; i < parsed.length; i++) {
     if (parsed[i].type === 'whistle') {
+      allowedTeleportTimes.add(parsed[i].t);
+    } else if (parsed[i].type === 'foul') {
+      // 犯规：哨停把球从持球者脚下交给死球（任意球点 = 犯规点），球瞬移是设计行为（同 whistle 豁免）。
+      // 犯规者/被犯规者定格锚点也在犯规点——球员无瞬移（他们本就在犯规点附近），此豁免覆盖球瞬移时刻。
       allowedTeleportTimes.add(parsed[i].t);
     } else if (parsed[i].type === 'pass' && parsed[i].detail === 'corner') {
       // 角球准备期 = 前一非 beat 事件（射门/出界）到 corner pass 之间，球瞬移到角旗。

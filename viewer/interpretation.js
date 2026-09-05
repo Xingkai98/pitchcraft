@@ -85,6 +85,23 @@ function interpretPass(e, out) {
     out.push({ t: t0, kind: 'player', id: e.from, x: e.x, y: e.y });
     out.push({ t: t0 + ballDur, kind: 'player', id: e.from, x: e.x, y: e.y });
   }
+  // 任意球重开（detail=free_kick）：to 是接球者、from=发球者（重开方就地从犯规点发出，
+  // 引擎已让发球者走位到犯规点）。接球者照常跑位（上文处理），发球者静止由 from 锚点覆盖。
+}
+
+// ---- 犯规/纪律牌：牌出示（视觉覆盖锚点）----
+// foul 事件（v2 非 demo）：subject=犯规者、x/y=犯规点、carrier=被犯规持球者（可空）、
+// detail=foul_<type>、card 可选（缺省=无牌犯规）。
+// 犯规瞬间画面含义：哨停 + 球交死球点（任意球点 = 犯规点）。引擎在犯规 tick 已把犯规者
+// 位置对账到犯规点、球放犯规点（下个 tick 由 restart_prep beat + free_kick pass 演绎重开），
+// 犯规 tick 无 beat——viewer 保持上拍末态到重开 beat，天然连续，无需额外冻结锚点
+//（额外冻结会与后续 beat mover 跨 evt，触发插值器 hold 跳变，见 snap 调试）。
+// 这里只产牌出示覆盖锚点 kind:'card'（画面层在犯规点画黄/红卡图标，显示窗口由
+// game.activeCards() 控制）。牌位置 = 犯规点（真实裁判跑到犯规点出示）。
+function interpretFoul(e, out) {
+  if (e.card === 'yellow' || e.card === 'red') {
+    out.push({ t: e.t, kind: 'card', id: e.subject, x: e.x, y: e.y, card: e.card });
+  }
 }
 
 // ---- 射门：球加速飞向球门 + 门将先动 ----
@@ -370,6 +387,9 @@ export function interpretEvent(e, dropCarryBeat = false) {
     case 'tackle':
     case 'interception':
       interpretTackle(e, out, dropCarryBeat);
+      break;
+    case 'foul':
+      interpretFoul(e, out);
       break;
     case 'off_ball_run':
       interpretOffBallRun(e, out);

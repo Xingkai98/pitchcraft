@@ -203,6 +203,11 @@ struct MatchStats {
     n_gk_pass: usize,       // 门将开大脚 pass（subject=门将、无 to）
     n_out_goal_line: usize, // pass detail="out_goal_line"
     n_out_sideline: usize,  // pass detail="out_sideline"
+    // foul（本轮试点）：foul 事件计数 + 卡（subject=犯规者；card=yellow/red）
+    n_foul: usize,
+    n_foul_yellow: usize,
+    n_foul_red: usize,
+    n_free_kick: usize,     // pass detail="free_kick"（犯规后任意球重开）
     // 比分（由 shot[result=goal] 按射手队计数得出）
     home_score: u32,
     away_score: u32,
@@ -387,12 +392,21 @@ fn aggregate(seed: u64) -> MatchStats {
                     Some("corner") => st.n_corner_kick += 1,
                     Some("out_goal_line") => st.n_out_goal_line += 1,
                     Some("out_sideline") => st.n_out_sideline += 1,
+                    Some("free_kick") => st.n_free_kick += 1,
                     _ => {}
                 }
                 // pass 速度区间：普通 12-24.9 / 角球 18-21.9 / 界外 12-13.9 / 门球 16-19.9 /
                 // 头球摆渡 10-13.9 / 解围 14-17.9 → 统一 [10, 25)
                 if spd >= 0.0 && (spd < 10.0 || spd >= 25.0) {
                     st.speed_violations.push(format!("pass speed {:.2} (want [10,25))", spd));
+                }
+            }
+            "foul" => {
+                st.n_foul += 1;
+                match field_str(e, "card").as_deref() {
+                    Some("yellow") => st.n_foul_yellow += 1,
+                    Some("red") => st.n_foul_red += 1,
+                    _ => {}
                 }
             }
             "tackle" => {
@@ -639,6 +653,39 @@ fn l1_pass_completion_rate() {
     );
 }
 
+/// L1：犯规 / 纪律牌（本轮试点）。口径：foul 事件计数（一次犯规=一条 foul 事件，含无牌犯规），
+/// 黄牌 = foul[card=yellow]（同人二黄升级红后，二黄那一次按 card=red 计——即"事件展示卡"口径），
+/// 红牌 = foul[card=red]。真实参考带（双方合计，Kopacak）：犯规 ~21 / 黄 ~3.8 / 红 0.12/场
+/// （research/l3-gap-analysis.md §五）。任务目标带：犯规 [14,28]、黄 [2.5,5]、红稀有（0-1/场量级）。
+/// 引擎带：犯规 [16,30]、黄 [2.0,5.0]、红 ≤ 0.8。任意球重开（free_kick pass）计数应等于犯规数。
+/// 副作用量化（传球成功率等）在 p13_side_effect_snapshot 的 foul 扩展 + 探针输出。
+#[test]
+#[ignore]
+fn l1_fouls_and_cards() {
+    let stats = l1_stats();
+    let n = SEEDS_L1 as f64;
+    let fouls: usize = stats.iter().map(|s| s.n_foul).sum();
+    let yellows: usize = stats.iter().map(|s| s.n_foul_yellow).sum();
+    let reds: usize = stats.iter().map(|s| s.n_foul_red).sum();
+    let fk: usize = stats.iter().map(|s| s.n_free_kick).sum();
+    assert!(fouls >= 2000, "犯规样本不足：{}（200 场应 ~4000+）", fouls);
+    let foul_pm = fouls as f64 / n;
+    assert!((16.0..=30.0).contains(&foul_pm), "每场犯规 {:.2} ∉ [16,30]", foul_pm);
+    let yellow_pm = yellows as f64 / n;
+    assert!((2.0..=5.0).contains(&yellow_pm), "每场黄牌 {:.2} ∉ [2.0,5.0]", yellow_pm);
+    let red_pm = reds as f64 / n;
+    assert!(red_pm <= 0.8, "每场红牌 {:.2} > 0.8（应稀有）", red_pm);
+    // 任意球重开数与犯规数几乎一致：每条 foul 进入 restart_prep 后发 free_kick；极少数
+    // 比赛末段犯规（时间不足以走完准备期）无 free_kick，允许 ≤0.5% 短差。
+    let shortfall = fouls.saturating_sub(fk);
+    assert!(
+        shortfall <= (fouls as f64 * 0.005).ceil() as usize,
+        "任意球重开缺失过多：foul {} free_kick {} 短差 {}（允许 ≤0.5%）",
+        fouls, fk, shortfall
+    );
+    println!("[fouls] 每场: foul={:.2} yellow={:.2} red={:.2} free_kick={:.2}", foul_pm, yellow_pm, red_pm, fk as f64 / n);
+}
+
 // ==== L3 gate：射门相关比率对齐真实参考带（p9 启用）====
 
 #[test]
@@ -663,7 +710,7 @@ fn l3_shot_ratios() {
 }
 
 /// P13 fix 副作用量化（report 用，非门禁）：失败传球对控球权/重开数量的连锁影响快照。
-/// 输出每场均值（传球/拦截/传失/射门/抢断/角球/界外球/门球），跑 release --ignored 可见。
+/// 输出每场均值（传球/拦截/传失/射门/抢断/角球/界外球/门球/犯规/牌），跑 release --ignored 可见。
 #[test]
 #[ignore]
 fn p13_side_effect_snapshot() {
@@ -678,8 +725,12 @@ fn p13_side_effect_snapshot() {
     let throw_ins = sum(|s| s.n_out_sideline); // detail=out_sideline 全部 → 界外球
     let gk = sum(|s| s.n_gk_pass);
     let pass_evt = sum(|s| s.n_pass);
-    println!("[P13 副作用] 每场(200 seed 90min): pass_evt={:.1} shot={:.2}(+header {:.2}) tackle={:.2}(succ {:.2}) corner={:.2} throw_in={:.2} goal_kick={:.2}", pass_evt, shots, headers, tackles, succ, corners, throw_ins, gk);
+    let fouls = sum(|s| s.n_foul);
+    let yellows = sum(|s| s.n_foul_yellow);
+    let reds = sum(|s| s.n_foul_red);
+    println!("[P13 副作用] 每场(200 seed 90min): pass_evt={:.1} shot={:.2}(+header {:.2}) tackle={:.2}(succ {:.2}) corner={:.2} throw_in={:.2} goal_kick={:.2} foul={:.2}(yellow {:.2}/red {:.2})", pass_evt, shots, headers, tackles, succ, corners, throw_ins, gk, fouls, yellows, reds);
 }
+
 
 // ==== L2：过程真实性（跨事件不变量，任意 seed 成立）====
 
@@ -733,7 +784,7 @@ fn golden_path(seed: u64) -> std::path::PathBuf {
 
 fn golden_summary_json(st: &MatchStats) -> String {
     format!(
-        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_box\": {},\n  \"n_arc\": {},\n  \"n_far\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_pass_success\": {},\n  \"n_pass_intercepted\": {},\n  \"n_pass_lost\": {},\n  \"n_corner_kick\": {},\n  \"n_gk_pass\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"stream_hash\": {}\n}}",
+        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_box\": {},\n  \"n_arc\": {},\n  \"n_far\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_pass_success\": {},\n  \"n_pass_intercepted\": {},\n  \"n_pass_lost\": {},\n  \"n_corner_kick\": {},\n  \"n_gk_pass\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"n_foul\": {},\n  \"n_foul_yellow\": {},\n  \"n_foul_red\": {},\n  \"n_free_kick\": {},\n  \"stream_hash\": {}\n}}",
         st.seed,
         st.home_score,
         st.away_score,
@@ -757,6 +808,10 @@ fn golden_summary_json(st: &MatchStats) -> String {
         st.n_gk_pass,
         st.n_out_goal_line,
         st.n_out_sideline,
+        st.n_foul,
+        st.n_foul_yellow,
+        st.n_foul_red,
+        st.n_free_kick,
         st.stream_hash,
     )
 }
@@ -786,6 +841,10 @@ fn golden_from_str(s: &str) -> MatchStats {
     st.n_gk_pass = field_num(s, "n_gk_pass").unwrap_or(-1.0) as usize;
     st.n_out_goal_line = field_num(s, "n_out_goal_line").unwrap_or(-1.0) as usize;
     st.n_out_sideline = field_num(s, "n_out_sideline").unwrap_or(-1.0) as usize;
+    st.n_foul = field_num(s, "n_foul").unwrap_or(-1.0) as usize;
+    st.n_foul_yellow = field_num(s, "n_foul_yellow").unwrap_or(-1.0) as usize;
+    st.n_foul_red = field_num(s, "n_foul_red").unwrap_or(-1.0) as usize;
+    st.n_free_kick = field_num(s, "n_free_kick").unwrap_or(-1.0) as usize;
     // stream_hash 是 u64，>2^53 用 f64 解析会丢精度 → 必须字符串解析
     st.stream_hash = field_str(s, "stream_hash")
         .and_then(|v| v.parse::<u64>().ok())
@@ -835,6 +894,10 @@ fn gm_canary_seeds() {
             ("n_gk_pass", gold.n_gk_pass, st.n_gk_pass),
             ("n_out_goal_line", gold.n_out_goal_line, st.n_out_goal_line),
             ("n_out_sideline", gold.n_out_sideline, st.n_out_sideline),
+            ("n_foul", gold.n_foul, st.n_foul),
+            ("n_foul_yellow", gold.n_foul_yellow, st.n_foul_yellow),
+            ("n_foul_red", gold.n_foul_red, st.n_foul_red),
+            ("n_free_kick", gold.n_free_kick, st.n_free_kick),
         ];
         for (name, g, cur) in fields {
             assert_eq!(
