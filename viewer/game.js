@@ -56,9 +56,9 @@ export class Game {
   // 普通 pass（无 detail）与 beat 是过渡段（可跳过）
   isHighlightEvent(e) {
     if (!e) return false;
-    if (e.type === 'shot' || e.type === 'tackle') return true;
+    if (e.type === 'shot' || e.type === 'tackle' || e.type === 'foul') return true;
     if (e.type === 'pass' && e.detail) {
-      return ['corner', 'out_sideline', 'out_goal_line', 'clearance', 'throw_in'].includes(e.detail);
+      return ['corner', 'out_sideline', 'out_goal_line', 'clearance', 'throw_in', 'free_kick'].includes(e.detail);
     }
     return false;
   }
@@ -294,7 +294,23 @@ export class Game {
       return [e.subject, keeper];
     }
     if (e.type === 'tackle') return [e.subject, e.carrier ?? e.to].filter((x) => x !== undefined && x !== null);
+    if (e.type === 'foul') return [e.subject, e.carrier].filter((x) => x !== undefined && x !== null);
     return [];
+  }
+
+  // 当前处于出示中的纪律牌（犯规 card 事件 + 显示窗口内）：供画面层叠加牌图标。
+  // foul ~23/场、card 仅部分 → 线性扫描成本可忽略。
+  activeCards() {
+    const cards = [];
+    const dur = config.interpretation.foul.cardShowDuration;
+    for (const e of this.events) {
+      if (e.type === 'foul' && (e.card === 'yellow' || e.card === 'red')) {
+        if (this.playTime >= e.t && this.playTime <= e.t + dur) {
+          cards.push({ x: e.x, y: e.y, card: e.card, subject: e.subject });
+        }
+      }
+    }
+    return cards;
   }
 
   // 按实体构建时间索引：球一组、每球员一组（timeline 已按 t 排序，分组后仍有序）

@@ -45,6 +45,9 @@ export function mockEventStream() {
     // 抢断（失败）：away 11 逼近 home 10，捅开球但 home 10（原持球人）重新拿回
     { t: 35, type: 'tackle', subject: 11, x: 0.45, y: 0.5, to: 10, x2: 0.43, y2: 0.51,
       carrier_from_x: 0.4277, carrier_from_y: 0.5053, loose_x: 0.4523, loose_y: 0.5547, result: 'fail' },
-    { t: 37, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0', detail: 'half_time' },
+    // 犯规 + 任意球（本轮试点）：away 15 贴身绊倒 home 持球者 9（黄牌）；随后 9 在犯规点短传任意球。
+    { t: 40, type: 'foul', subject: 15, carrier: 9, x: 0.44, y: 0.42, detail: 'foul_trip', card: 'yellow' },
+    { t: 41.5, type: 'pass', subject: 9, from: 9, to: 5, x: 0.44, y: 0.42, x2: 0.48, y2: 0.46, speed: 12, lead: 0.1, result: 'success', detail: 'free_kick' },
+    { t: 44, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '1-0', detail: 'half_time' },
   ];
 }

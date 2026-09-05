@@ -65,6 +65,11 @@ export const config = {
       deflectSpeed: 5, // m/s：球被捅开后的速度
       collectDelay: 0.15, // 捡球人反应停顿（s）：球到弹开点后，人先停一拍再以跑速追球
     },
+    // 犯规（本轮试点）：牌出示显示时长（黄/红卡图标在犯规点停留秒数）。牌显示窗口
+    // 由 game.activeCards() 按此窗口计算；犯规 tick 无 beat，画面保持上拍末态到重开 beat。
+    foul: {
+      cardShowDuration: 1.2,
+    },
     // 通用
     turnDuration: 0.25, // 球员转向时长
   },

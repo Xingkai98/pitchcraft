@@ -496,3 +496,40 @@ test('P6 批次1 interpretPass: 角球发球从角旗飞向禁区（detail=corne
   assert.equal(ballStart.x, 0, '角球发球起点 x=0（角旗）');
   assert.equal(ballStart.y, 1, '角球发球起点 y=1（角旗）');
 });
+
+test('foul: 牌出示 card 覆盖锚点（位置=犯规点、card=yellow）；不产球员冻结锚点', () => {
+  const e = { t: 300, type: 'foul', subject: 15, carrier: 6, x: 0.44, y: 0.42, detail: 'foul_trip', card: 'yellow' };
+  const anchors = interpretEvent(e);
+  // 牌覆盖锚点：kind=card、card=yellow、位置=犯规点、时间=事件 t
+  const cards = anchors.filter((a) => a.kind === 'card');
+  assert.equal(cards.length, 1, '黄牌犯规应产一个 card 覆盖锚点');
+  assert.equal(cards[0].card, 'yellow');
+  assert.equal(cards[0].x, 0.44);
+  assert.equal(cards[0].y, 0.42);
+  assert.equal(cards[0].id, 15);
+  assert.equal(cards[0].t, 300);
+  // 引擎负责位置连续性（犯规 tick 无 beat，viewer 保持上拍末态到重开 beat）——interpret 层不再产冻结锚点
+  const players = anchors.filter((a) => a.kind === 'player');
+  assert.equal(players.length, 0, 'foul 不应产球员冻结锚点（位置由引擎对账 + 后续 beat 保证连续）');
+});
+
+test('foul: 无牌犯规不产 card 锚点；红牌产 red', () => {
+  const noCard = interpretEvent({ t: 300, type: 'foul', subject: 15, carrier: 6, x: 0.4, y: 0.5, detail: 'foul_hold' });
+  assert.equal(noCard.filter((a) => a.kind === 'card').length, 0, '无牌犯规不应有 card 锚点');
+  const red = interpretEvent({ t: 310, type: 'foul', subject: 15, carrier: 6, x: 0.4, y: 0.5, detail: 'foul_tackle', card: 'red' });
+  const c = red.filter((a) => a.kind === 'card');
+  assert.equal(c.length, 1);
+  assert.equal(c[0].card, 'red');
+});
+
+test('foul: 任意球重开 pass（free_kick）复用短传演绎（球飞向接球者）', () => {
+  const e = { t: 301, type: 'pass', from: 6, subject: 6, to: 9, x: 0.44, y: 0.42, x2: 0.48, y2: 0.46, speed: 12, result: 'success', detail: 'free_kick', h: 0 };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.length >= 2, '任意球短传应有球飞行锚点');
+  const ballEnd = balls.sort((a, b) => a.t - b.t).pop();
+  assert.equal(ballEnd.x, 0.48);
+  // 接球者跑向落点
+  const receiver = anchors.filter((a) => a.kind === 'player' && a.id === 9);
+  assert.ok(receiver.length >= 1, '任意球接球者应有跑位锚点');
+});
