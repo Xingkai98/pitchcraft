@@ -17,7 +17,7 @@ TBD - created by archiving change p0-event-to-pitch. Update Purpose after archiv
 
 ### Requirement: 事件字段定义
 
-每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note、interceptor、receiver_x/receiver_y、loose_x/loose_y、carrier_from_x/carrier_from_y、keeper_x/keeper_y、h）按事件类型使用。
+每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note、interceptor、receiver_x/receiver_y、loose_x/loose_y、carrier_from_x/carrier_from_y、keeper_x/keeper_y、h、card）按事件类型使用（card 仅 foul 用：`yellow`/`red`）。
 
 #### Scenario: 基础字段必填
 - **WHEN** 引擎产出一条事件
@@ -37,11 +37,15 @@ TBD - created by archiving change p0-event-to-pitch. Update Purpose after archiv
 
 ### Requirement: 事件类型枚举
 
-事件流 SHALL 支持第一版 8 类事件：kickoff、whistle、pass、dribble、shot、tackle、interception、substitution。goal 不设独立类型，由 shot 的 result=goal 表达。
+事件流 SHALL 支持第一版 8 类事件：kickoff、whistle、pass、dribble、shot、tackle、interception、substitution，另加 foul（犯规/纪律牌）。goal 不设独立类型，由 shot 的 result=goal 表达。
 
 #### Scenario: 枚举覆盖核心动作
 - **WHEN** 画面层遇到事件流中的事件
-- **THEN** 能按 type 识别为 kickoff/whistle/pass/dribble/shot/tackle/interception/substitution 之一
+- **THEN** 能按 type 识别为 kickoff/whistle/pass/dribble/shot/tackle/interception/substitution/foul 之一
+
+#### Scenario: foul 事件字段
+- **WHEN** 引擎产出一条 foul 事件
+- **THEN** 事件含 `subject`（犯规者 id）、`x/y`（犯规点）、`detail`=`foul_<type>`、可选 `carrier`（被犯规持球者 id）与可选 `card`（`yellow`/`red`；缺省=无牌犯规）；任意球重开由 `pass detail=free_kick` 表达
 
 #### Scenario: 进球由射门表达
 - **WHEN** 一次射门得分

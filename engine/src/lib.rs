@@ -15,7 +15,8 @@ mod wasm;
 
 pub use rng::SeededRng;
 
-/// 事件类型枚举（v2：新增 beat 节拍；v1 类型保留；goal 由 shot.result=goal 表达）
+/// 事件类型枚举（v2：新增 beat 节拍；v1 类型保留；goal 由 shot.result=goal 表达；
+/// 本轮试点：新增 foul——犯规/纪律牌，随后任意球由 detail="free_kick" 的 pass 表达）
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EventType {
     Lineup,
@@ -29,6 +30,7 @@ pub enum EventType {
     Substitution,
     OffBallRun,
     Beat,
+    Foul,
 }
 
 impl EventType {
@@ -45,6 +47,7 @@ impl EventType {
             EventType::Substitution => "substitution",
             EventType::OffBallRun => "off_ball_run",
             EventType::Beat => "beat",
+            EventType::Foul => "foul",
         }
     }
 }
@@ -113,6 +116,7 @@ pub struct Event {
     pub keeper_y: Option<f64>,   // 门将当前位置 y
     pub score: Option<String>, // 比分（whistle/goal 时）
     pub detail: Option<String>, // 附加说明
+    pub card: Option<String>, // 纪律牌（foul 事件：无牌缺省 / "yellow" / "red"）
     pub h: Option<f64>,         // 球高度（归一化 0-1，P6 批次1；pass/shot 高亮带弧线高度，viewer 用球大小表示）
     pub players: Option<Vec<(i32, f64, f64)>>, // lineup 事件的 22 球员站位 (id, x, y)
     // v2 beat 专用字段：beat 事件只输出 movers/main/ball，无顶层 subject/x/y。
@@ -129,7 +133,7 @@ impl Default for Event {
             speed: None, touch_freq: None, lead: None,
             receiver_x: None, receiver_y: None, loose_x: None, loose_y: None,
             carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None,
-            score: None, detail: None, h: None, players: None,
+            score: None, detail: None, card: None, h: None, players: None,
             movers: None, main: None, ball: None,
         }
     }
@@ -183,6 +187,7 @@ impl Event {
         if let Some(y) = self.keeper_y { parts.push(format!("\"keeper_y\":{:.4}", y)); }
         if let Some(s) = &self.score { parts.push(format!("\"score\":\"{}\"", s)); }
         if let Some(d) = &self.detail { parts.push(format!("\"detail\":\"{}\"", d)); }
+        if let Some(c) = &self.card { parts.push(format!("\"card\":\"{}\"", c)); }
         if let Some(h) = self.h { parts.push(format!("\"h\":{:.2}", h)); }
         if let Some(players) = &self.players {
             let inner: Vec<String> = players.iter().map(|(id, x, y)| {
@@ -240,6 +245,34 @@ pub const LONG_PASS_INTERCEPT_BONUS: f64 = 7.0;
 pub const VERY_LONG_PASS_INTERCEPT_BONUS: f64 = 8.0;
 /// 传失概率（%）：有压力传球中失准（落点变松散球，双方可争，不直接丢球权）。
 pub const PASS_MISS_P: f64 = 2.5;
+
+// ---- 犯规 / 纪律牌参数（本轮试点：fouls-cards）----
+/// 犯规来源：开放比赛持球段派生（槽位模型只有 24 槽/场，真实 ~21 犯规/场不可能全由槽位承担；
+/// 犯规须从 ~370 次/场的过渡传球之间的 carrier 持球段产生）。触发条件：防守方有球员
+/// ≤ FOUL_PRESS_DIST_M 贴身持球者（真实犯规多发生在逼抢/缠斗），carrier 非门将、
+/// 距所攻球门 > BOX_DIST_M（禁区内防守犯规 = 点球，本试点不做点球 → 禁区内不产犯规）。
+/// 频率由 FOUL_OPEN_TICK_P（每个满足条件的开放持球 tick 的犯规概率）标定。
+pub const FOUL_PRESS_DIST_M: f64 = 8.0;
+/// 每个"贴身持球 tick"的犯规概率（fraction）。§标定（200 seed 90min 实测，SEEDS_L1_START 窗口）：
+/// 贴身持球 tick ≈ 开放比赛的多数（队形让防线贴近持球者，贴身率很高），0.028 → 犯规 50.7/场，
+/// 线性回缩到 0.0115 → ~24/场（任务目标带 [14,28]，真实 ~21）。吃黄威慑折扣使最终 ~23/场。
+pub const FOUL_OPEN_TICK_P: f64 = 0.0115;
+/// 黄牌率（无牌犯规中）：犯规 ~24/场 × 13% ≈ ~3.1 黄事件/场（带 [2.5,5]；真实 3.8）。
+/// 同人第二黄自动升级红（真实规则）——威慑折扣把二黄升级压到 ~0.2 红/场量级。
+pub const CARD_YELLOW_P: f64 = 0.13;
+/// 红牌率（直红，‰档独立于黄）：犯规 ~25/场 × 0.35% ≈ ~0.09 直红/场（真实 0.12）；另有二黄累计红。
+pub const CARD_RED_P: f64 = 0.0035;
+/// 吃黄球员的犯规率折扣（真实：吃黄后收敛，避免再吃一黄罚下）。折扣只影响其犯规频率，
+/// 不影响黄牌/红牌自身概率（已吃黄者若再犯规，二黄升级红照常判定）。
+pub const FOUL_YELLOWED_DETERRENCE: f64 = 0.35;
+/// 犯规类型分布（roll 百分比分档，事件 detail=foul_<type>）：tackle(抢截犯规)/hold(拉拽)/
+/// push(推人)/trip(绊人)/handball(手球)。真实构成以 tackle 型为主（~60%），handball 最少。
+pub const FOUL_TYPE_TACKLE_P: u64 = 55;
+pub const FOUL_TYPE_HOLD_P: u64 = 15;
+pub const FOUL_TYPE_PUSH_P: u64 = 12;
+pub const FOUL_TYPE_TRIP_P: u64 = 13;
+/// 任意球由 detail="free_kick" 的 pass 表达（复用 pass 演绎层；发球者就地从犯规点发出）。
+/// 犯规主体恒为防守方、球权保留给被犯规方 → 任意球重开给当前 possession 方。
 
 // ---- 事件驱动时间推进参数（grill Q11b 确认）----
 /// 有球动作之间的"控球/决策间隔"（秒）：持球者控球观察、队友跑位的时间。
@@ -316,6 +349,7 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
         keeper_x: None, keeper_y: None,
         score: None,
         detail: None,
+        card: None,
         h: None,
         players: Some(lineup.iter().map(|p| (p.id, p.x, p.y)).collect()),
         movers: None, main: None, ball: None,
@@ -435,26 +469,31 @@ fn roll_highlight_slot(rng: &mut SeededRng) -> HighlightSlot {
     }
 }
 
-/// 找指定队中离 target 最近的外场球员（松散球追逐者；tackle 弹开限定抢断方）
-fn nearest_in_team(pos: &[(f64, f64)], target: (f64, f64), team: u32) -> i32 {
+/// 找指定队中离 target 最近的外场球员（松散球追逐者；tackle 弹开限定抢断方）。
+/// 罚下球员（红牌/二黄）不参与追逐/发球（P 试点：罚下后从比赛进程中淡出）。
+fn nearest_in_team(st: &MatchState, target: (f64, f64), team: u32) -> i32 {
+    let pos = &st.pos;
     let mut best = -1;
     let mut best_d = f64::MAX;
     for (id, &p) in pos.iter().enumerate() {
         let is_team = if team == 0 { id <= 10 } else { id >= 11 };
         if !is_team { continue; }
         if id == 0 || id == 21 { continue; } // 门将不追松散球
+        if st.sent_off[id] { continue; }
         let d = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
         if d < best_d { best_d = d; best = id as i32; }
     }
     best
 }
 
-/// 找离 target 最近的球员（save-rebound 双方可争）
-fn nearest_any(pos: &[(f64, f64)], target: (f64, f64)) -> i32 {
+/// 找离 target 最近的球员（save-rebound 双方可争）。罚下球员不参与。
+fn nearest_any(st: &MatchState, target: (f64, f64)) -> i32 {
+    let pos = &st.pos;
     let mut best = -1;
     let mut best_d = f64::MAX;
     for (id, &p) in pos.iter().enumerate() {
         if id == 0 || id == 21 { continue; }
+        if st.sent_off[id] { continue; }
         let d = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
         if d < best_d { best_d = d; best = id as i32; }
     }
@@ -491,7 +530,16 @@ struct MatchState {
     shot_setup: Option<ShotSetup>,
     // P9：射门槽产向前传球后，该传球完成即接射门（pass → shoot/drive 桥接）
     shot_pending_after_pass: bool,
+    // 犯规/纪律牌（本轮试点）：球员级黄牌（同人二黄→红罚下）、红牌/罚下；短冷却防连发
+    //（真实裁判不连续吹；冷却复用 RNG 序列防 golden 漂移）。
+    has_yellow: [bool; 22],    // 球员是否已吃黄（二黄同人 → 升级红牌罚下）
+    sent_off: [bool; 22],      // 罚下球员（红牌 / 二黄）；此后其所在队按"少一人"处理（本试点仅屏蔽其成为 carrier/chaser）
+    foul_cooldown_ticks: u32,  // 距上次犯规 tick（≤ FOUL_MIN_GAP_TICKS 内不产犯规）
 }
+
+/// 两犯规之间的最短间隔（tick）。犯规后哨停/任意球重开在槽位模型中表现为后续事件重排，
+/// 过度连发观感差且挤压槽位——>11 tick（≥11s）才允许下一次犯规。
+pub const FOUL_MIN_GAP_TICKS: u32 = 11;
 
 /// P9 射门推进（带球向球门推进；到目标射门距离或步数上限后射门）
 struct ShotSetup {
@@ -569,6 +617,9 @@ impl MatchState {
             transition: None,
             shot_setup: None,
             shot_pending_after_pass: false,
+            has_yellow: [false; 22],
+            sent_off: [false; 22],
+            foul_cooldown_ticks: 0,
         }
     }
 }
@@ -618,11 +669,12 @@ struct LooseBall {
     battle: Option<(i32, i32)>, // (攻方 chaser, 防方 chaser)；None=普通松散球
 }
 
-/// 重开准备期类型（角球发球 / 界外球掷球）
+/// 重开准备期类型（角球发球 / 界外球掷球 / 任意球）
 #[derive(Clone, Copy, PartialEq)]
 enum RestartKind {
     Corner,
     ThrowIn,
+    FreeKick,
 }
 
 /// 重开准备期（独立轻量状态，非 DeadBall）：发球者/掷球者走向固定点，球停固定点等待发球
@@ -763,6 +815,10 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     } else {
         st.hold_ticks += 1;
         st.slot_clock += 1;
+        // 犯规（本轮试点）：犯规冷却递减；冷却结束且本 tick 不触发槽位高亮时评估贴身犯规。
+        if st.foul_cooldown_ticks > 0 {
+            st.foul_cooldown_ticks -= 1;
+        }
         if st.slot_clock >= st.slot_interval {
             // 槽位高亮：固定间隔（比赛时长 / 高亮总数），保证精彩事件不随时长漂移
             roll_highlight(st, rng, events, t);
@@ -772,10 +828,52 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
             // 避免 90 分钟比赛 carrier 在球门旁停 200+ tick（前锋来回小幅运动很久）。
             // 普通传球不出界（指标稳定），不重置槽位时钟（finalize 后 hold_ticks 归零，槽位仍按间隔触发）。
             emit_pass_highlight_no_out(st, rng, events, t);
+        } else if maybe_open_foul(st, rng, events, t) {
+            // 贴身持球段犯规（任意球重开已由 emit_foul_and_free_kick 进入 restart_prep，本 tick 到此为止）
         } else {
             emit_beat_with_main(st, rng, events, t);
         }
     }
+}
+
+/// 犯规判定（开放持球段，槽位高亮不触发时评估）：
+/// 防守方有球员 ≤ FOUL_PRESS_DIST_M 贴身持球者、carrier 非门将且非罚下、犯规点距所攻球门
+/// > BOX_DIST_M（禁区内防守犯规=点球，本试点不做点球 → 禁区内不产犯规）时，以 FOUL_OPEN_TICK_P
+/// 掷犯规。命中 → emit_foul_and_free_kick（进入任意球重开）；未命中本 tick 照常产 main。
+fn maybe_open_foul(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) -> bool {
+    let carrier = st.carrier;
+    if carrier < 0 || carrier == 0 || carrier == 21 {
+        return false; // 无持球者 / 门将持球不产犯规（门将持球多在后场短传，真实极少被犯规）
+    }
+    if st.sent_off[carrier as usize] {
+        return false; // 罚下球员不可能再持球（外围守卫）
+    }
+    if st.foul_cooldown_ticks > 0 {
+        return false; // 犯规短冷却（哨停后重开需要时间，防连续 tick 连吹）
+    }
+    let carrier_pos = st.pos[carrier as usize];
+    let def_home = st.possession != 0; // 防守方 = 对方
+    // 禁区内（距所攻球门 ≤ BOX_DIST_M）不产防守犯规（防守犯规=点球，本试点不做点球语义）。
+    if dist_to_goal_m(st, carrier) <= BOX_DIST_M {
+        return false;
+    }
+    // 犯规主体选择（真实：谁贴身谁犯规；吃黄球员收敛——偏好无黄贴身者，降低二黄连红概率）。
+    let (def_id, _, def_dist_m) = nearest_defender_avail(st, carrier_pos, def_home);
+    if def_id < 0 || def_dist_m > FOUL_PRESS_DIST_M {
+        return false; // 无贴身防守：犯规来自逼抢缠斗，无人贴身不产
+    }
+    // 威慑：已吃黄球员的犯规倾向打折（真实球员吃黄后收敛；模型上压低二黄升级红）
+    let foul_rate = if st.has_yellow[def_id as usize] {
+        FOUL_OPEN_TICK_P * FOUL_YELLOWED_DETERRENCE
+    } else {
+        FOUL_OPEN_TICK_P
+    };
+    let roll = rng.next_u64() % 1000;
+    if (roll as f64) < foul_rate * 1000.0 {
+        emit_foul_and_free_kick(st, rng, events, t, carrier, carrier_pos, def_id);
+        return true;
+    }
+    false
 }
 
 /// 高亮期间球位置（队形目标用）：按结局的球终点推导
@@ -1002,8 +1100,8 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     };
     let mut anticipate_ids: Vec<i32> = Vec::new();
     if let Some(land) = goal_kick_anticipate {
-        anticipate_ids.push(nearest_in_team(&st.pos, land, 0));
-        anticipate_ids.push(nearest_in_team(&st.pos, land, 1));
+        anticipate_ids.push(nearest_in_team(st, land, 0));
+        anticipate_ids.push(nearest_in_team(st, land, 1));
         anticipate_ids.retain(|id| *id >= 0 && !excluded.contains(id));
     }
     // 角球 battle：防方 chaser chase 落点（loose 启动时固定，避免胜者身份漂移）
@@ -1766,7 +1864,7 @@ fn start_goal_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Ev
 /// attacking 由调用方显式传入（CornerAward → 射门方；Clearance 解围出底线 → 进攻方 = 1-防方）
 fn start_corner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, out_pos: (f64, f64), attacking: u32) {
     let flag = corner_flag(out_pos);
-    let player = nearest_in_team(&st.pos, flag, attacking);
+    let player = nearest_in_team(st, flag, attacking);
     st.possession = attacking;
     st.carrier = -1;
     st.ball_pos = flag;
@@ -1786,7 +1884,7 @@ fn corner_flag(out_pos: (f64, f64)) -> (f64, f64) {
 /// 开始界外球：掷球者 = 接球方离出界点最近外场球员（非门将），进入 RestartPrep 准备期
 fn start_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, out_pos: (f64, f64), throwing: u32) {
     let target = throw_in_spot(out_pos);
-    let player = nearest_in_team(&st.pos, target, throwing);
+    let player = nearest_in_team(st, target, throwing);
     st.possession = throwing;
     st.carrier = -1;
     st.ball_pos = target;
@@ -1842,6 +1940,7 @@ fn advance_restart_prep(st: &mut MatchState, rng: &mut SeededRng, events: &mut V
     match kind {
         RestartKind::Corner => emit_corner_kick(st, rng, events, t),
         RestartKind::ThrowIn => emit_throw_in(st, rng, events, t),
+        RestartKind::FreeKick => emit_free_kick(st, rng, events, t),
     }
 }
 
@@ -1850,7 +1949,7 @@ fn emit_corner_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     let flag = st.ball_pos; // 角旗（发球者已走位到角旗）
     let attacking = st.possession;
     let home = attacking == 0;
-    let kicker = nearest_in_team(&st.pos, flag, attacking); // 发球者（在角旗）
+    let kicker = nearest_in_team(st, flag, attacking); // 发球者（在角旗）
     // 落点：禁区附近（x 贴近门线、y 球门范围）
     let land_x = if home { 0.84 + (rng.next_u64() % 10) as f64 / 100.0 } else { 0.06 + (rng.next_u64() % 10) as f64 / 100.0 };
     let land_y = 0.35 + (rng.next_u64() % 30) as f64 / 100.0; // 0.35-0.65
@@ -1885,7 +1984,7 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     let out_pos = st.ball_pos; // 出界点（掷球者已走位到边线）
     let throwing = st.possession;
     let home = throwing == 0;
-    let thrower = nearest_in_team(&st.pos, out_pos, throwing); // 掷球者（非门将，在边线）
+    let thrower = nearest_in_team(st, out_pos, throwing); // 掷球者（非门将，在边线）
     let (to, to_pos) = nearest_teammate(&st.pos, out_pos, home, thrower);
     let rx = st.pos[to as usize].0;
     let ry = st.pos[to as usize].1;
@@ -1913,12 +2012,47 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     events.push(beat_event(t, None, None, movers));
 }
 
+/// 任意球发球高亮（犯规后重开）：犯规点 → 就近队友（pass 短传 h=0、detail=free_kick、subject=发球者），
+/// 接球者持球（复用 PassCaught）。发球者 = 重开方离犯规点最近外场球员（已走位到犯规点）。
+/// 语义对齐"快发任意球"：不发不可见的摆球/等待，直接短传恢复比赛，保持节奏。
+fn emit_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let spot = st.ball_pos; // 犯规点（发球者已走位到犯规点）
+    let kicking = st.possession; // 犯规后球权方（被犯规方）
+    let home = kicking == 0;
+    let kicker = nearest_in_team(st, spot, kicking);
+    let (to, to_pos) = nearest_teammate(&st.pos, spot, home, kicker);
+    let rx = st.pos[to as usize].0;
+    let ry = st.pos[to as usize].1;
+    let lead = 0.1 + (rng.next_u64() % 20) as f64 / 100.0;
+    let (x2, y2) = lead_point(spot, to_pos, lead);
+    let speed = 12.0 + (rng.next_u64() % 20) as f64 / 10.0; // 任意球短传 12-13.9 m/s（同掷球）
+    let flight = distance_meters(spot, (x2, y2)) / speed;
+    let t_end = t + flight;
+    events.push(Event {
+        t, type_: EventType::Pass, subject: kicker, from: Some(kicker), to: Some(to),
+        x: spot.0, y: spot.1, x2: Some(x2), y2: Some(y2),
+        result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
+        h: Some(0.0), // 任意球短传无高度
+        detail: Some("free_kick".to_string()),
+        receiver_x: Some(rx), receiver_y: Some(ry),
+        ..Event::default()
+    });
+    st.highlight = Some(Highlight {
+        t_end,
+        participants: vec![(kicker, spot), (to, (x2, y2))],
+        outcome: HighlightOutcome::PassCaught { receiver: to, catch_pos: (x2, y2) },
+    });
+    let movers = compute_movers(st, rng, t, &[kicker, to]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    events.push(beat_event(t, None, None, movers));
+}
+
 /// 开始松散球（D11）：选追逐者，记录滚动方向
 fn start_loose_ball(st: &mut MatchState, from: (f64, f64), dir: (f64, f64), winning_team: Option<u32>) {
     let chaser = if let Some(team) = winning_team {
-        nearest_in_team(&st.pos, from, team)
+        nearest_in_team(st, from, team)
     } else {
-        nearest_any(&st.pos, from)
+        nearest_any(st, from)
     };
     st.loose = Some(LooseBall { pos: from, dir, speed: 3.0, chaser, ticks: 0, battle: None });
 }
@@ -1926,8 +2060,8 @@ fn start_loose_ball(st: &mut MatchState, from: (f64, f64), dir: (f64, f64), winn
 /// 开始角球落点 battle 松散球：攻防各 1 名（loose 启动时固定），双追逐争抢
 fn start_battle_loose(st: &mut MatchState, from: (f64, f64), dir: (f64, f64)) {
     let attacking = st.possession;
-    let atk_chaser = nearest_in_team(&st.pos, from, attacking);
-    let def_chaser = nearest_in_team(&st.pos, from, 1 - attacking);
+    let atk_chaser = nearest_in_team(st, from, attacking);
+    let def_chaser = nearest_in_team(st, from, 1 - attacking);
     st.loose = Some(LooseBall {
         pos: from, dir, speed: 3.0, chaser: atk_chaser, ticks: 0,
         battle: Some((atk_chaser, def_chaser)),
@@ -2282,7 +2416,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
           lead: Option<f64>, rx: Option<f64>, ry: Option<f64>,
           score: Option<String>, detail: Option<String>,
           players: Option<Vec<(i32, f64, f64)>>) -> Event {
-        Event { t, type_, subject, x, y, from, to, interceptor: None, carrier: None, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None, score, detail, h: None, players, movers: None, main: None, ball: None }
+        Event { t, type_, subject, x, y, from, to, interceptor: None, carrier: None, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None, score, detail, card: None, h: None, players, movers: None, main: None, ball: None }
     }
 
     // 初始站位（唯一一次 lineup）
@@ -2334,7 +2468,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         subject: 15, from: None, to: Some(6), interceptor: None, carrier: None,
         x: 0.58, y: 0.40, x2: Some(0.44), y2: Some(0.42),
         result: Some("success".to_string()), speed: None, touch_freq: None,
-        lead: None, score: None, detail: None, h: None,
+        lead: None, score: None, detail: None, card: None, h: None,
         receiver_x: None, receiver_y: None,
         loose_x: Some(loose_x), loose_y: Some(loose_y),
         carrier_from_x: Some(0.42), carrier_from_y: Some(0.42),
@@ -2348,6 +2482,26 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
     events.push(ev(t, EventType::Shot, 6, 0.60, 0.40, None, None, Some(0.98), Some(0.47),
         Some("saved".into()), Some(25.0), None, None,
         None, None, None, None, None));
+
+    // 6b. foul + 任意球（本轮试点展示）：away 中场 15（站位 0.58,0.40）贴身绊倒 home 持球者 6（0.44,0.42）。
+    //     foul 事件（subject=犯规者、carrier=被犯规者、detail=foul_trip、card=yellow，x/y=犯规点）；
+    //     随后任意球 pass（detail=free_kick，被犯规方 6 从犯规点短传，viewer 识别犯规后的重开）。
+    t += GAP;
+    events.push(Event {
+        t, type_: EventType::Foul,
+        subject: 15, from: None, to: None, interceptor: None, carrier: Some(6),
+        x: 0.44, y: 0.42, x2: None, y2: None,
+        result: None, speed: None, touch_freq: None,
+        lead: None, score: None, detail: Some("foul_trip".to_string()), card: Some("yellow".to_string()),
+        h: None,
+        receiver_x: None, receiver_y: None, loose_x: None, loose_y: None,
+        carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None,
+        players: None, movers: None, main: None, ball: None,
+    });
+    t += 1.0;
+    events.push(ev(t, EventType::Pass, 6, 0.44, 0.42, Some(6), Some(9), Some(0.48), Some(0.46),
+        Some("success".into()), Some(12.0), None, Some(0.1),
+        Some(0.52), Some(0.50), None, Some("free_kick".into()), None));
 
     // 7. 结束哨
     t = dur;
@@ -2502,6 +2656,106 @@ fn shot_target(rng: &mut SeededRng, home: bool, result: &str) -> (f64, f64) {
 
 fn clamp01(v: f64) -> f64 {
     if v < 0.0 { 0.0 } else if v > 1.0 { 1.0 } else { v }
+}
+
+// ---- 犯规/纪律牌：判定链（全部走 SeededRng，同 seed 同流）----
+
+/// 找离 target 最近的对方外场球员（排除门将与已罚下球员）。foul 用。返回 (id, pos, 距离米)。
+fn nearest_defender_avail(st: &MatchState, target: (f64, f64), def_home: bool) -> (i32, (f64, f64), f64) {
+    let mut best = -1;
+    let mut best_pos = (0.0, 0.0);
+    let mut best_d = f64::MAX;
+    for (id, &p) in st.pos.iter().enumerate() {
+        let is_def = if def_home { id <= 10 } else { id >= 11 };
+        if !is_def { continue; }
+        if id == 0 || id == 21 { continue; } // 门将不犯规
+        if st.sent_off[id] { continue; }      // 罚下球员不产新犯规
+        let d = distance_meters(p, target);
+        if d < best_d { best_d = d; best = id as i32; best_pos = p; }
+    }
+    (best, best_pos, best_d)
+}
+
+/// 犯规类型（foul 事件 detail 枚举：foul_tackle/foul_hold/foul_push/foul_trip/foul_handball）。
+fn roll_foul_type(rng: &mut SeededRng) -> &'static str {
+    let roll = rng.next_u64() % 100;
+    if roll < FOUL_TYPE_TACKLE_P {
+        "foul_tackle"
+    } else if roll < FOUL_TYPE_TACKLE_P + FOUL_TYPE_HOLD_P {
+        "foul_hold"
+    } else if roll < FOUL_TYPE_TACKLE_P + FOUL_TYPE_HOLD_P + FOUL_TYPE_PUSH_P {
+        "foul_push"
+    } else if roll < FOUL_TYPE_TACKLE_P + FOUL_TYPE_HOLD_P + FOUL_TYPE_TRIP_P + FOUL_TYPE_PUSH_P {
+        "foul_trip"
+    } else {
+        "foul_handball"
+    }
+}
+
+/// 掷卡决定（原始概率，未含二黄升级）。‰档：红牌 CARD_RED_P 独立于黄牌（与真实"直红"一致）；
+/// 无牌犯规不产卡字段。
+fn roll_foul_card(rng: &mut SeededRng) -> Option<&'static str> {
+    let roll = rng.next_u64() % 1000;
+    if roll < (CARD_RED_P * 1000.0) as u64 {
+        Some("red")
+    } else if roll < (CARD_RED_P * 1000.0) as u64 + (CARD_YELLOW_P * 1000.0) as u64 {
+        Some("yellow")
+    } else {
+        None
+    }
+}
+
+/// 应用纪律牌到状态：黄牌记到球员；同人第二黄 → 升级红牌罚下；红牌直接罚下。
+/// 返回实际出示的卡（viewer 展示）：黄牌二犯升级返回 "red"（事件 card=red）。
+fn apply_card(st: &mut MatchState, fouler: i32, card: Option<&'static str>) -> Option<&'static str> {
+    if card.is_none() {
+        return None;
+    }
+    let i = fouler as usize;
+    if card == Some("red") {
+        st.sent_off[i] = true;
+        return Some("red");
+    }
+    if st.has_yellow[i] {
+        st.sent_off[i] = true;
+        return Some("red"); // 二黄变红：罚下，事件按红牌展示
+    }
+    st.has_yellow[i] = true;
+    Some("yellow")
+}
+
+/// 产出一条犯规 + 进入任意球重开准备期。
+/// 犯规主体 = 贴身防守者（def），位置 = 持球者（被犯规方 carrier）脚下（任意球重开点）。
+/// 牌语义：subject 吃牌；红/二黄后 subject 罚下。任意球重开给当前 possession（被犯规方）。
+/// 之后由 restart_prep 驱动：被犯规方就近球员走向犯规点，发短任意球（pass detail=free_kick）。
+fn emit_foul_and_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
+    carrier: i32, spot: (f64, f64), def: i32) {
+    let detail = roll_foul_type(rng);
+    let card = roll_foul_card(rng);
+    let shown = apply_card(st, def, card);
+    // foul 事件：subject=犯规者，x/y=犯规点（= 持球者位置），carrier=被犯规者（可空：无持球犯规）。
+    // card 缺省表示无牌犯规；有牌才输出 card 字段（协议最小同步）。
+    let mut e = Event {
+        t, type_: EventType::Foul, subject: def,
+        x: spot.0, y: spot.1,
+        carrier: Some(carrier),
+        detail: Some(detail.to_string()),
+        ..Event::default()
+    };
+    if let Some(c) = shown {
+        e.card = Some(c.to_string());
+    }
+    events.push(e);
+    // 进入任意球重开：球放犯规点，被犯规方（当前 possession）就近球员走向犯规点发球。
+    // 注意：不 pos-sync 犯规者到犯规点——犯规者保持其真实缠斗位置，后续 restart beat 的 mover
+    // 从该位置出发，viewer 保持上拍末态到重开 beat 天然连续（pos-sync 会在非豁免的下一拍露出跳变）。
+    st.foul_cooldown_ticks = FOUL_MIN_GAP_TICKS;
+    st.carrier = -1;
+    st.ball_pos = spot;
+    let kicker = nearest_in_team(st, spot, st.possession);
+    st.restart_prep = Some(RestartPrep { player: kicker, target: spot, kind: RestartKind::FreeKick, ticks: 0 });
+    // 犯规 tick 不产 beat（同进球后 kickoff 发球 tick）：哨停后走位由 restart_prep beat 表达。
+    let _ = rng;
 }
 
 /// 暴露默认站位 JSON（B1：viewer 需要 22 球员初始位置）。
@@ -2697,6 +2951,63 @@ mod tests {
         assert!(tackle.contains("\"loose_x\":"));
     }
 
+    // ---- 犯规/纪律牌（本轮试点）----
+
+    /// 单场事件里所有 foul 事件
+    fn foul_events_of(s: &str) -> Vec<String> {
+        json_events(s).into_iter().filter(|e| e.contains("\"type\":\"foul\"")).collect()
+    }
+
+    #[test]
+    fn demo_has_foul_and_free_kick() {
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true };
+        let s = simulate(42, cfg);
+        let events = json_events(&s);
+        let foul = events.iter().find(|e| e.contains("\"type\":\"foul\"")).expect("demo 应有 foul");
+        // 犯规主体（subject）在场、detail 为 foul_ 类型、任意球重开 pass detail=free_kick
+        assert!(json_num(&foul, "subject").unwrap_or(-1.0) >= 0.0, "foul 应有 subject");
+        let detail = json_str(&foul, "detail").unwrap_or_default();
+        assert!(detail.starts_with("foul_"), "foul detail 应为 foul_ 前缀，got {}", detail);
+        let fk = events.iter().find(|e| e.contains("\"type\":\"pass\"") && e.contains("\"detail\":\"free_kick\""));
+        assert!(fk.is_some(), "demo 犯规后应有任意球重开 pass（detail=free_kick）");
+    }
+
+    #[test]
+    fn non_demo_produces_fouls_with_valid_shape() {
+        // 多 seed 扫到至少一场含 foul：事件结构 = subject/carrier/detail(foul_*)/x/y ∈[0,1]，
+        // 有卡时 card ∈ yellow/red；且每场犯规后都跟 free_kick 重开（计数一致）。
+        let cfg = MatchConfig::default_();
+        for seed in 1..40u64 {
+            let s = simulate(seed, cfg);
+            let fouls = foul_events_of(&s);
+            if fouls.is_empty() { continue; }
+            let fk_count = json_events(&s).iter().filter(|e| e.contains("\"type\":\"pass\"") && e.contains("\"detail\":\"free_kick\"")).count();
+            assert_eq!(fk_count, fouls.len(), "seed {} 犯规 {} 与 free_kick {} 不一致", seed, fouls.len(), fk_count);
+            for f in &fouls {
+                assert!(json_num(f, "subject").unwrap_or(-1.0) >= 0.0, "foul 缺 subject: {}", f);
+                assert!(json_num(f, "carrier").is_some(), "foul 缺 carrier（被犯规方持球者）: {}", f);
+                let detail = json_str(f, "detail").unwrap_or_default();
+                assert!(detail.starts_with("foul_"), "foul detail 应为 foul_ 前缀: {}", f);
+                for c in ["x", "y"] {
+                    let v = json_num(f, c).unwrap_or(-1.0);
+                    assert!((0.0..=1.0).contains(&v), "foul {}={} 越界: {}", c, v, f);
+                }
+                if let Some(card) = json_str(f, "card") {
+                    assert!(card == "yellow" || card == "red", "card 应为 yellow/red: {}", card);
+                }
+            }
+            return; // 一场含 foul 即足够验证结构（数量断言归 realism L1）
+        }
+        panic!("40 seed 内无任何 foul 事件——机制未生效？");
+    }
+
+    #[test]
+    fn foul_deterministic() {
+        let cfg = MatchConfig::default_();
+        assert_eq!(simulate(42, cfg), simulate(42, cfg));
+    }
+
+
     /// 从单条事件 JSON 片段取指定字段（number/string）
     fn json_field(e: &str, name: &str) -> Option<String> {
         let needle = format!("\"{}\":", name);
@@ -2704,6 +3015,11 @@ mod tests {
         let rest = &e[idx + needle.len()..];
         let end = rest.find(|c: char| c == ',' || c == '}').unwrap_or(rest.len());
         Some(rest[..end].trim().to_string())
+    }
+
+    /// json_field 的字符串值去引号（foul detail/card 读取用）
+    fn json_str(e: &str, name: &str) -> Option<String> {
+        json_field(e, name).map(|s| s.trim_matches('"').to_string())
     }
 
     fn json_num(e: &str, name: &str) -> Option<f64> {
@@ -3331,7 +3647,9 @@ mod tests {
         let cfg = MatchConfig::default_();
         let mut saw_normal = false;
         let mut saw_clearance = false;
-        for seed in 1..80u64 {
+        // 路径组合是确定性 RNG 级联的结果：犯规机制重排了事件流，把范围放宽到 200 seed
+        // 保证两类出底线路径（普通传球→门球 / 解围→角球）都扫到（组合事件，非每场必有）。
+        for seed in 1..200u64 {
             let s = simulate(seed, cfg);
             if let Some(out) = find_pass_detail(&s, "out_goal_line") {
                 assert!(json_num(&out, "to").is_none(), "出底线 pass to 应为 None: {}", out);
