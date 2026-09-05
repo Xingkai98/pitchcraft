@@ -17,7 +17,7 @@ TBD - created by archiving change p0-event-to-pitch. Update Purpose after archiv
 
 ### Requirement: 事件字段定义
 
-每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note、interceptor）按事件类型使用。
+每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note、interceptor、receiver_x/receiver_y、loose_x/loose_y、carrier_from_x/carrier_from_y、keeper_x/keeper_y、h）按事件类型使用。
 
 #### Scenario: 基础字段必填
 - **WHEN** 引擎产出一条事件
