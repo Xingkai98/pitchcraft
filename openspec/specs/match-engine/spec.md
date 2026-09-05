@@ -47,6 +47,22 @@ Rust 引擎 SHALL 是纯逻辑库，不假设有文件系统/命令行——数�
 - **WHEN** 引擎产出一条 pass 事件
 - **THEN** 事件包含 from、to、起点坐标、终点坐标、球速（speed）、提前量（lead）、结果（result）
 
+### Requirement: 传球可失败（拦截 / 传失）
+
+引擎 SHALL 使有向传球存在失败分支，整体传球成功率对齐真实带。普通传球（槽位 + 过渡传球）判定顺序：出界（仅槽位传球）→ 拦截 → 传失 → 成功，全部用引擎确定性 RNG。`result` SHALL 为：`success`（成功）、`intercepted`（对方断下，事件带 `interceptor`）、`lost`（失准，球到落点变松散球）。
+
+#### Scenario: 拦截
+- **GIVEN** 一条传球落点附近有对方球员（压力分档：贴防 ≤6m / 中距 ≤12m / 更远）
+- **THEN** 该传球以分档概率被拦截，事件 `result=intercepted` 且携带 `interceptor`；球权切到拦截方（拦截点松散球）
+
+#### Scenario: 传失
+- **GIVEN** 一条有向传球未被拦截
+- **THEN** 该传球以固定概率失准，事件 `result=lost`，落点进入松散球（双方可争，不直接丢球权）
+
+#### Scenario: 传球成功率带（L1）
+- **GIVEN** 引擎以 ≥200 个 seed × 90 分钟模拟
+- **THEN** 整体传球成功率（成功传球 / 全部 pass 事件，含发球重开分母）SHALL ∈ [82%, 90%]（真实队级 78.7-90.6%，FotMob 2024/25；目标中心 ~87%）
+
 ### Requirement: 事件坐标归一化
 
 引擎 SHALL 用球场归一化坐标（0-1，x 左门线→右门线，y 下边线→上边线）表示事件位置。
