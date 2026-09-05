@@ -2,6 +2,8 @@
   "seed": 10,
   "home_score": 0,
   "away_score": 0,
+  "n_goal_home": 0,
+  "n_goal_away": 0,
   "n_events": 5817,
   "n_beats": 5376,
   "n_shot": 8,
