@@ -211,6 +211,9 @@ struct MatchStats {
     // 比分（由 shot[result=goal] 按射手队计数得出）
     home_score: u32,
     away_score: u32,
+    // 主客进球分桶（pilot 3 home-advantage）：goal 事件射手队归属，与 home_score/away_score 同源
+    n_goal_home: usize,
+    n_goal_away: usize,
     // L2 违例计数
     score_mismatch: Option<String>,
     shot_target_violations: usize,
@@ -335,8 +338,10 @@ fn aggregate(seed: u64) -> MatchStats {
                 if result == "goal" {
                     if subject <= 10 {
                         goal_home += 1;
+                        st.n_goal_home += 1;
                     } else {
                         goal_away += 1;
+                        st.n_goal_away += 1;
                     }
                 }
                 // 射门落点：x2 = 攻方门线（shot_target 精确 0.98/0.02）；y2 按 result 分档
@@ -653,6 +658,45 @@ fn l1_pass_completion_rate() {
     );
 }
 
+/// L1：主客进球不对称（pilot 3 home-advantage）。口径：200 场聚合主/客进球分桶
+/// （n_goal_home/n_goal_away，= shot[result=goal] 射手队归属，与比分同源）。
+/// 真实参考（research/l3-gap-analysis.md §五，Kopacak）：主 1.53 / 客 1.22，主客比 ~1.25。
+/// 引擎在 L3 体积压缩缺口下总进球 ~0.9-1.1/场（本任务不做 B 档体积扩展，只做**主客比例**），
+/// 单场 0-1 球居多、主客各 ~0.4-0.6/场 → 200 场 n_goal_home≈110、n_goal_away≈90，比率统计误差大。
+/// 断言设计（稳而不假绿）：
+///   - 主队进球 ≥ 客队进球 × 1.08（比率下界，蕴含"主队进球>客队"方向性——对应真实主队胜率/
+///     进球更高；H/A≈1.25 时差 ~20 球可被 200 场检测，1.08 余量约 4.5pp）；
+///   - 主队进球/场 ∈ [0.38, 0.75]（体积只允许轻微浮动，防总量暴涨/崩塌）；
+///   - 客队进球/场 ≥ 0.30（主场优势不得机械压低客队——优势来自主队更强，客队不背压）。
+#[test]
+#[ignore]
+fn l1_home_away_goal_asymmetry() {
+    let stats = l1_stats();
+    let n = SEEDS_L1 as f64;
+    let gh: usize = stats.iter().map(|s| s.n_goal_home).sum();
+    let ga: usize = stats.iter().map(|s| s.n_goal_away).sum();
+    let gh_pm = gh as f64 / n;
+    let ga_pm = ga as f64 / n;
+    assert!(gh >= 60, "主队进球样本不足：{}（200 场应 ~100+）", gh);
+    assert!(ga >= 40, "客队进球样本不足：{}（200 场应 ~80+）", ga);
+    assert!(
+        (0.38..=0.75).contains(&gh_pm),
+        "主队进球/场 {:.3} ∉ [0.38,0.75]",
+        gh_pm
+    );
+    assert!(
+        gh as f64 > ga as f64 * 1.08,
+        "主客进球不对称不足：主 {:.2}/场 vs 客 {:.2}/场（真实主 1.53/客 1.22 比 ~1.25；任务目标主队>客队）",
+        gh_pm, ga_pm
+    );
+    assert!(
+        ga_pm >= 0.30,
+        "客队进球/场 {:.3} 过低——主场优势不应机械压低客队（真实客 1.22，本任务只调主客比例）",
+        ga_pm
+    );
+    println!("[home-adv] 主 {:.3}/场 客 {:.3}/场 合计 {:.3} H/A={:.3}", gh_pm, ga_pm, (gh + ga) as f64 / n, gh as f64 / ga.max(1) as f64);
+}
+
 /// L1：犯规 / 纪律牌（本轮试点）。口径：foul 事件计数（一次犯规=一条 foul 事件，含无牌犯规），
 /// 黄牌 = foul[card=yellow]（同人二黄升级红后，二黄那一次按 card=red 计——即"事件展示卡"口径），
 /// 红牌 = foul[card=red]。真实参考带（双方合计，Kopacak）：犯规 ~21 / 黄 ~3.8 / 红 0.12/场
@@ -709,8 +753,9 @@ fn l3_shot_ratios() {
     assert!((0.72..=0.92).contains(&inside_r), "禁区内进球占比 {:.3} ∉ [0.72,0.92]", inside_r);
 }
 
-/// P13 fix 副作用量化（report 用，非门禁）：失败传球对控球权/重开数量的连锁影响快照。
-/// 输出每场均值（传球/拦截/传失/射门/抢断/角球/界外球/门球/犯规/牌），跑 release --ignored 可见。
+/// P13 fix + pilot3 副作用量化（report 用，非门禁）：失败传球 + 主场优势对控球权/重开数量的
+/// 连锁影响快照。输出每场均值（主/客进球、传球/拦截/传失/射门/抢断/角球/界外球/门球/犯规/牌），
+/// 跑 release --ignored 可见。
 #[test]
 #[ignore]
 fn p13_side_effect_snapshot() {
@@ -728,7 +773,9 @@ fn p13_side_effect_snapshot() {
     let fouls = sum(|s| s.n_foul);
     let yellows = sum(|s| s.n_foul_yellow);
     let reds = sum(|s| s.n_foul_red);
-    println!("[P13 副作用] 每场(200 seed 90min): pass_evt={:.1} shot={:.2}(+header {:.2}) tackle={:.2}(succ {:.2}) corner={:.2} throw_in={:.2} goal_kick={:.2} foul={:.2}(yellow {:.2}/red {:.2})", pass_evt, shots, headers, tackles, succ, corners, throw_ins, gk, fouls, yellows, reds);
+    let gh = sum(|s| s.n_goal_home);
+    let ga = sum(|s| s.n_goal_away);
+    println!("[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主{:.2}/客{:.2} (H/A {:.3}) pass_evt={:.1} shot={:.2}(+header {:.2}) tackle={:.2}(succ {:.2}) corner={:.2} throw_in={:.2} goal_kick={:.2} foul={:.2}(yellow {:.2}/red {:.2})", gh, ga, if ga > 0.0 { gh / ga } else { f64::NAN }, pass_evt, shots, headers, tackles, succ, corners, throw_ins, gk, fouls, yellows, reds);
 }
 
 
@@ -784,10 +831,12 @@ fn golden_path(seed: u64) -> std::path::PathBuf {
 
 fn golden_summary_json(st: &MatchStats) -> String {
     format!(
-        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_box\": {},\n  \"n_arc\": {},\n  \"n_far\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_pass_success\": {},\n  \"n_pass_intercepted\": {},\n  \"n_pass_lost\": {},\n  \"n_corner_kick\": {},\n  \"n_gk_pass\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"n_foul\": {},\n  \"n_foul_yellow\": {},\n  \"n_foul_red\": {},\n  \"n_free_kick\": {},\n  \"stream_hash\": {}\n}}",
+        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_goal_home\": {},\n  \"n_goal_away\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_box\": {},\n  \"n_arc\": {},\n  \"n_far\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_pass_success\": {},\n  \"n_pass_intercepted\": {},\n  \"n_pass_lost\": {},\n  \"n_corner_kick\": {},\n  \"n_gk_pass\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"n_foul\": {},\n  \"n_foul_yellow\": {},\n  \"n_foul_red\": {},\n  \"n_free_kick\": {},\n  \"stream_hash\": {}\n}}",
         st.seed,
         st.home_score,
         st.away_score,
+        st.n_goal_home,
+        st.n_goal_away,
         st.n_events,
         st.n_beats,
         st.n_shot,
@@ -821,6 +870,8 @@ fn golden_from_str(s: &str) -> MatchStats {
     st.seed = field_num(s, "seed").unwrap_or(-1.0) as u64;
     st.home_score = field_num(s, "home_score").unwrap_or(-1.0) as u32;
     st.away_score = field_num(s, "away_score").unwrap_or(-1.0) as u32;
+    st.n_goal_home = field_num(s, "n_goal_home").unwrap_or(-1.0) as usize;
+    st.n_goal_away = field_num(s, "n_goal_away").unwrap_or(-1.0) as usize;
     st.n_events = field_num(s, "n_events").unwrap_or(-1.0) as usize;
     st.n_beats = field_num(s, "n_beats").unwrap_or(-1.0) as usize;
     st.n_shot = field_num(s, "n_shot").unwrap_or(-1.0) as usize;
@@ -874,6 +925,8 @@ fn gm_canary_seeds() {
         let fields = [
             ("home_score", gold.home_score as usize, st.home_score as usize),
             ("away_score", gold.away_score as usize, st.away_score as usize),
+            ("n_goal_home", gold.n_goal_home, st.n_goal_home),
+            ("n_goal_away", gold.n_goal_away, st.n_goal_away),
             ("n_events", gold.n_events, st.n_events),
             ("n_beats", gold.n_beats, st.n_beats),
             ("n_shot", gold.n_shot, st.n_shot),
