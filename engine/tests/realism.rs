@@ -366,8 +366,11 @@ fn aggregate(seed: u64) -> MatchStats {
                 let result = field_str(e, "result").unwrap_or_default();
                 st.n_pass += 1;
                 // P13 fix：有向传球（to 在场，开放比赛含过渡传球）的成功/拦截/传失计数。
-                // 传球成功率 = success / (success+intercepted+lost)。出界（contested+detail）与
-                // 重开（角球/门球/界外掷球/解围）不进分子也不进分母（同 L3 报告可比口径）。
+                // 这些计数支撑两个口径：
+                //   - 整体成功率 = success / n_pass（分母含发球重开/出界 pass）——同 L3 报告
+                //     "整体 95.9%→真实 80-90%" 的口径（l1_pass_completion_rate 用）。
+                //   - 有向传球成功率 = success / (success+intercepted+lost)——开放比赛纯传球口径
+                //     （~90.5%，高于整体因分母剔除重开/出界事件）。
                 let subj = field_num(e, "subject").unwrap_or(-1.0) as i32;
                 let has_to = field_num(e, "to").is_some();
                 if has_to {
