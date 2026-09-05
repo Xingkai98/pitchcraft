@@ -17,6 +17,28 @@ test('pass: 生成球飞行 + 接球者跑位锚点', () => {
   assert.ok(receivers.length >= 1);
 });
 
+test('pass intercepted: 球飞向拦截者，原接球者不跑向落点', () => {
+  // P13 fix：拦截时球到不了原目标 → 不产 to 的跑位锚点；球飞向拦截者（x2/y2 = 拦截者位置）
+  const e = { t: 10, type: 'pass', from: 8, to: 9, interceptor: 15, x: 0.4, y: 0.5, x2: 0.45, y2: 0.48, speed: 12, lead: 0.3, result: 'intercepted' };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.length >= 2);
+  assert.equal(balls[balls.length - 1].x, 0.45); // 球停在拦截者处
+  const receivers = anchors.filter((a) => a.kind === 'player' && a.id === 9);
+  assert.equal(receivers.length, 0, '拦截时原接球者不应跑向落点');
+});
+
+test('pass lost: 传失照常演绎球飞行，接收者不接球', () => {
+  // P13 fix：result=lost → 球飞向落点但无人接住（松散球由后续 beat.ball 表现），不产 to 跑位锚点
+  const e = { t: 10, type: 'pass', from: 8, to: 9, x: 0.4, y: 0.5, x2: 0.55, y2: 0.42, speed: 12, lead: 0.3, result: 'lost' };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.length >= 2);
+  assert.equal(balls[balls.length - 1].x, 0.55);
+  const receivers = anchors.filter((a) => a.kind === 'player' && a.id === 9);
+  assert.equal(receivers.length, 0, '传失时接收者不应跑向落点');
+});
+
 test('dribble: 人球解耦（球领先人）', () => {
   const e = { t: 20, type: 'dribble', subject: 6, x: 0.4, y: 0.4, x2: 0.5, y2: 0.4, speed: 3.2, touch_freq: 1.2, result: 'success' };
   const anchors = interpretEvent(e);

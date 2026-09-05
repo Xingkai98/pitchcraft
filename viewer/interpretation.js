@@ -52,6 +52,9 @@ function interpretDribble(e, out) {
 // ---- 传球：传跑配合 ----
 // 输入 pass 事件，输出锚点：接球者从当前位置(receiver_x/y)跑向落点，球飞向落点，落点汇合。
 // 球飞行时长 = 传球距离 ÷ 球速。
+// P13 fix：拦截（result=intercepted）语义——球被防守方断下，飞到拦截者处（x2/y2=拦截者位置），
+// 原目标接球者不跑向落点（球到不了）；拦截者引擎已站在断球点（x2/y2），无需额外锚点（球到脚下）。
+// 传失（result=lost）——球飞向落点但没人接住，后续 beat.ball（松散球）表现"传过/无人控制"。
 function interpretPass(e, out) {
   const p = config.interpretation.pass;
   const t0 = e.t;
@@ -67,9 +70,11 @@ function interpretPass(e, out) {
   out.push({ t: t0, kind: 'ball', x: e.x, y: e.y, h: 0 });
   out.push({ t: t0 + ballDur / 2, kind: 'ball', x: midX, y: midY, h });
   out.push({ t: t0 + ballDur, kind: 'ball', x: e.x2, y: e.y2, h: 0 });
-  // 接球者（to）：从当前位置(receiver_x/y)跑向落点。终点锚点 = t0+ballDur（引擎高亮结束位置 = 落点），
-  // 保证 beat-main（接球者持球）在首个 tick 边界从落点继续，无 freeze/teleport（审阅 blocker）。
-  if (e.to !== undefined) {
+  // P13 fix：成功传球才让接球者（to）跑向落点（receiver_x/y → x2/y2，终点 = 引擎高亮结束位置，beat-main
+  // 连续无 freeze/teleport）。拦截/传失时球到不了接球者 → 不产接球者跑位锚点（接球者由 beat movers 跑位，
+  // 参与者集合已对齐引擎：拦截含拦截者、传失仅传球者）。
+  const noReceiverRun = (e.result === 'intercepted' && e.interceptor !== undefined) || e.result === 'lost';
+  if (e.to !== undefined && !noReceiverRun) {
     const startX = e.receiver_x !== undefined ? e.receiver_x : e.x2;
     const startY = e.receiver_y !== undefined ? e.receiver_y : e.y2;
     out.push({ t: t0, kind: 'player', id: e.to, x: startX, y: startY });
@@ -296,7 +301,14 @@ function interpretBeat(e, out, excluded = null) {
 // 高亮事件的参与者集合（两层合成排除用）
 function highlightParticipants(e) {
   const clean = (ids) => new Set(ids.filter((x) => x !== undefined && x !== null));
-  if (e.type === 'pass') return clean([e.from, e.to]); // 门球开大脚无 to → 只有传球者
+  // P13 fix：参与者 = 引擎高亮冻结的球员（对齐 finalize 对账集合）——
+  // 拦截 = 传球者 + 拦截者（接球者照常跑位）；传失 = 只有传球者（球飞向落点变松散球，
+  // 接收者不冻结，双方争抢由 chase movers 表现）；成功 = 传球者 + 接球者；门球开大脚无 to → 传球者。
+  if (e.type === 'pass') {
+    if (e.result === 'intercepted' && e.interceptor !== undefined) return clean([e.from, e.interceptor]);
+    if (e.result === 'lost') return clean([e.from]);
+    return clean([e.from, e.to]);
+  }
   if (e.type === 'shot') {
     const keeperId = (typeof e.subject === 'number' && e.subject <= 10) ? 21 : 0;
     return clean([e.subject, keeperId]);
