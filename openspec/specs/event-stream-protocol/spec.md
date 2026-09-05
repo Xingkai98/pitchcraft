@@ -17,11 +17,23 @@ TBD - created by archiving change p0-event-to-pitch. Update Purpose after archiv
 
 ### Requirement: 事件字段定义
 
-每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note）按事件类型使用。
+每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note、interceptor）按事件类型使用。
 
 #### Scenario: 基础字段必填
 - **WHEN** 引擎产出一条事件
 - **THEN** 事件包含 t、type、subject、x、y 字段
+
+### Requirement: pass 拦截字段（interceptor）
+
+拦截 pass（`result=intercepted`）SHALL 携带 `interceptor`（断球方球员 id），画面层据此演绎"球被防守方截走"。
+
+#### Scenario: 拦截事件携带拦截者
+- **GIVEN** 一条 pass 事件且 `result=intercepted`
+- **THEN** 事件含 `interceptor`（0-21 整数）；画面层排除拦截者与传球者的高亮冻结，原接球者照常跑位
+
+#### Scenario: pass 结果枚举扩展
+- **WHEN** 引擎产出一条有向 pass 事件
+- **THEN** `result` 为 `success` / `intercepted` / `lost` 之一（`lost` = 失准，落点进入松散球）
 
 ### Requirement: 事件类型枚举
 
