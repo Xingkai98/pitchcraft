@@ -395,6 +395,25 @@ pub const BOX_DIST_M: f64 = 16.5;
 /// 禁区弧边界（m）——分桶边界（禁区内 ≤16.5 / 禁区弧 16.5-25 / 远射 >25）
 pub const ARC_DIST_M: f64 = 25.0;
 
+// ---- 主场优势参数（pilot 3:home-advantage）----
+/// 主客不对称 = 两个"home 正向 / away 不压"的**微差**通道，合并统计（双方合计）基本不变，
+/// 因此不挤压前两轮已标定带（射门桶比例 / 犯规 / 传球成功率）的合并口径。全部判定仍走 SeededRng、
+/// 不增/减 roll 消费（只改比较阈值）——引擎仍确定性（同 seed 同流），且主客判定本身不消耗额外
+/// RNG（注：个别球翻越 goal/saved/off 边界会级联改后续流，属正常确定性分叉，非本机制增加随机性）。
+/// 机制取舍见 pilot 报告：真实主场优势多因子，但引擎槽位集锦模型下「客队保守/少压上」这类
+/// 持续段差异（如 carrier 前插率）会大幅改写持球段 RNG 流 → 射门归属统计噪声大，**不采用**。
+/// 采用两个落在"单点判定"上的通道（画面可感知且副作用干净）：
+/// 通道① 机会把握：射门/头球判定 goal 阈值。**主队单向更强**（home +2pp / away 不压）——
+/// 真实主场优势主要体现为主队把握更多机会，客队进球不被机械压低（任务约束：避免只靠宏观系数压客队）。
+/// saved 窗口宽不变 → 门将扑救表现不随主客变化。画面：主队同位置攻门更常进。
+pub const CLINICAL_GOAL_PP_HOME: i64 = 2;
+pub const CLINICAL_GOAL_PP_AWAY: i64 = 0;
+/// 通道② 二点争顶：角球 battle 攻方胜率（攻/防基线 55/45）。攻方 home 58（助威争顶更拼）、
+/// 攻方 away 52（主队防守更稳——home 防守胜率 = 100−52 = 48 > 基线 45）——主队无论攻防在
+/// 定位球二点各 +3pp。画面：主队更常在禁区争到落点。
+pub const BATTLE_ATTACK_WIN_HOME: u64 = 58;
+pub const BATTLE_ATTACK_WIN_AWAY: u64 = 52;
+
 /// P7 观感：角球准备期最短持续（tick）——发球者到角旗后继续等攻方球员跑进禁区包抄，再发球
 pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
 
@@ -1476,11 +1495,13 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let home = st.possession == 0;
     let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
     // P9 射门质量：按起脚距离分桶（禁区内 15/30、禁区弧 7/22、远射 4/11）
+    // 主场优势通道①：判定窗口按射门方主客平移（home goal 上移 / away 不压，saved 宽不变）。
     let (goal_p, saved_p) = shot_bucket(dist_to_goal_m(st, shooter));
+    let (goal_lo, saved_hi) = clinical_goal_window(st.possession, goal_p, saved_p);
     let score_roll = rng.next_u64() % 100;
-    let (result, caught) = if score_roll < goal_p {
+    let (result, caught) = if score_roll < goal_lo {
         ("goal", false)
-    } else if score_roll < goal_p + saved_p {
+    } else if score_roll < saved_hi {
         let caught = rng.next_u64() % 100 < 40; // 扑出细分：40% 扑住、60% 扑出（角球来源）
         ("saved", caught)
     } else {
@@ -2078,12 +2099,15 @@ fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     let chaser_pos = st.pos[chaser as usize];
     let d = dist_norm(chaser_pos, loose_pos);
     if d < norm_step(PICKUP_RADIUS_METERS) {
-        // 角球 battle 争抢：攻方 chaser 到落点拾取半径 → 就地 roll 55/45（攻/防）
+        // 角球 battle 争抢：攻方 chaser 到落点拾取半径 → 就地 roll 攻/防。
+        // 主场优势通道②：二点争顶——攻方 home 胜率 58（助威争顶）、攻方 away 52（主队防守更稳）。
         if let Some((atk_chaser, def_chaser)) = st.loose.as_ref().unwrap().battle {
             let lp = st.loose.as_ref().unwrap().pos;
             st.loose = None;
             let roll = rng.next_u64() % 100;
-            if roll < 55 {
+            let atk_home = st.possession == 0;
+            let attack_win = if atk_home { BATTLE_ATTACK_WIN_HOME } else { BATTLE_ATTACK_WIN_AWAY };
+            if roll < attack_win {
                 // 攻方胜：攻方 chaser 就地分支（头球射门/摆渡/拿球）
                 battle_attack_wins(st, rng, events, t, atk_chaser, lp);
             } else {
@@ -2169,10 +2193,11 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     let home = st.possession == 0;
     let speed = 15.0 + (rng.next_u64() % 50) as f64 / 10.0;
     let score_roll = rng.next_u64() % 100;
-    // P9：头球全在禁区 → 对齐禁区内桶（goal 15 / saved 30 / off 55）
-    let (result, caught) = if score_roll < 15 {
+    // P9：头球全在禁区 → 对齐禁区内桶（goal 15 / saved 30 / off 55）；主场通道①窗口平移。
+    let (goal_lo, saved_hi) = clinical_goal_window(st.possession, 15, 30);
+    let (result, caught) = if score_roll < goal_lo {
         ("goal", false)
-    } else if score_roll < 45 {
+    } else if score_roll < saved_hi {
         let caught = rng.next_u64() % 100 < 40; // 扑出细分：40% 扑住、60% 扑出（角球来源）
         ("saved", caught)
     } else {
@@ -2546,6 +2571,17 @@ fn shot_bucket(dist_m: f64) -> (u64, u64) {
     }
 }
 
+/// 主场优势通道①：射门/头球判定窗口（goal 下界, saved 上界）。主队把握略高（goal 窗口上移 x，
+/// off→goal 平移）；客队不压（CLINICAL_GOAL_PP_AWAY=0，客队进球不被机械压低）。saved 窗口宽保持 →
+/// 双方 saved 占比稳定（门将扑救不受主场影响）。合并统计（home+away 合计）goal/saved/off 比例基本
+/// 不变 → 不挤 P9 桶 L1 带（home/away 射门数不完全对称会有轻微净偏移，带内自证）。possession=射门方。
+fn clinical_goal_window(possession: u32, goal_p: u64, saved_p: u64) -> (u64, u64) {
+    let off = if possession == 0 { CLINICAL_GOAL_PP_HOME } else { CLINICAL_GOAL_PP_AWAY };
+    let goal_lo = (goal_p as i64 + off).clamp(0, 100) as u64;
+    let saved_hi = (goal_lo as i64 + saved_p as i64).clamp(0, 100) as u64;
+    (goal_lo, saved_hi)
+}
+
 /// 找离位置 pos 最近的防守方球员（tackle 用：防守者只抢附近的人，避免跨半场狂奔）。
 /// 用实时 pos[]（非静态站位）。`def_home` = 防守方是否 home。
 /// 排除门将（home GK id=0，away GK id=21）——门将不参与抢断。
@@ -2772,6 +2808,25 @@ pub fn default_lineup_json() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 主场优势通道语义（pilot 3）：两个通道都只改比较阈值、不增/减 RNG 消费，且主队方向不弱于客队。
+    /// 纯函数/常量断言——不依赖具体 seed（机制偏置是统计性的，单 seed 事件流未必翻转）。
+    /// 注：推进强度（carrier 前插率）因会大幅改写持球段 RNG 流→统计噪声大，标定中弃用，此处不设常量。
+    #[test]
+    fn home_advantage_channel_semantics() {
+        // 通道① 机会把握：saved 窗口宽不变（门将扑救不随主客变化）；主队 goal 窗口上移、客队不压。
+        let (h_lo, h_hi) = clinical_goal_window(0, 15, 30);
+        let (a_lo, a_hi) = clinical_goal_window(1, 15, 30);
+        assert_eq!(h_hi - h_lo, 30, "home saved 窗口宽应保持 30");
+        assert_eq!(a_hi - a_lo, 30, "away saved 窗口宽应保持 30");
+        assert_eq!(h_lo, 17, "home 禁区 goal 阈值应上移 CLINICAL_GOAL_PP_HOME(2)");
+        assert_eq!(a_lo, 15, "away goal 阈值不应被压低");
+        assert!(CLINICAL_GOAL_PP_HOME >= CLINICAL_GOAL_PP_AWAY, "主队把握 ≥ 客队");
+        // 通道② 二点争顶：攻方 home 胜率 ≥ 攻方 away（主队无论攻防争顶更拼），都以 55 为中心对称。
+        assert!(BATTLE_ATTACK_WIN_HOME >= BATTLE_ATTACK_WIN_AWAY, "攻方 home 争顶不应弱于攻方 away");
+        assert!(BATTLE_ATTACK_WIN_HOME > 50 && BATTLE_ATTACK_WIN_AWAY > 50, "攻方胜率基线应 >50%");
+        assert_eq!(BATTLE_ATTACK_WIN_HOME + BATTLE_ATTACK_WIN_AWAY, 110, "争顶偏移应围绕 55/45 对称");
+    }
 
     fn json_events(s: &str) -> Vec<String> {
         // 把 "[{...},{...}]" 按顶层 `}` 深度感知拆分（正确处理 beat 的嵌套 movers/main/ball）
