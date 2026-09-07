@@ -91,7 +91,7 @@ function validateBaseEvent(e) {
   }
   // 归一化坐标必须在 [0,1]（含 Phase B 新增的 tackle 坐标字段）。
   // 用 typeof === 'number' 判断：null/字符串/null 不得绕过范围校验。
-  for (const c of ['x', 'y', 'x2', 'y2', 'loose_x', 'loose_y', 'carrier_from_x', 'carrier_from_y', 'receiver_x', 'receiver_y', 'keeper_x', 'keeper_y']) {
+  for (const c of ['x', 'y', 'x2', 'y2', 'loose_x', 'loose_y', 'carrier_from_x', 'carrier_from_y', 'subject_end_x', 'subject_end_y', 'carrier_end_x', 'carrier_end_y', 'receiver_x', 'receiver_y', 'keeper_x', 'keeper_y']) {
     if (e[c] !== undefined && e[c] !== null) {
       if (typeof e[c] !== 'number' || !Number.isFinite(e[c])) {
         throw new Error(`event coordinate ${c} must be a finite number: ${String(e[c])}`);

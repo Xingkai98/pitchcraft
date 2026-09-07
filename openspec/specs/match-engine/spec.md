@@ -135,15 +135,15 @@ Rust 引擎 SHALL 是纯逻辑库，不假设有文件系统/命令行——数�
 
 #### Scenario: 抢断成功状态更新
 - **GIVEN** tackle `result=success`
-- **THEN** 球权归防守者，持球者变为防守者，且防守者位置更新到弹开点 `(loose_x, loose_y)`（下一事件从 loose 出发，不 snap）
+- **THEN** 球权归防守者（防守者随后争抢弹开的松散球 `loose_x/loose_y`）；抢断者与被抢者结算到分离终点 `(subject_end, carrier_end)`——两球员间距 ≥ 最小间隔（约 0.03，观感不重合），下一事件不 snap
 
 #### Scenario: 抢断失败状态更新
 - **GIVEN** tackle `result=fail`
-- **THEN** 球权保留原持球者，被铲者位置更新到弹开点（追回球），防守者停在接触点——两端状态一致，下一事件不 snap
+- **THEN** 球权保留原持球者，被抢者留接触点继续持球；抢断者停在被抢者外侧 `(subject_end)`——两球员间距 ≥ 最小间隔（约 0.03，不贴身），下一事件不 snap
 
 ### Requirement: 抢断事件携带完整坐标语义
 
-tackle 事件 SHALL 携带：防守者起点 `x/y`、被铲者带球起点 `carrier_from_x/carrier_from_y`、接触点 `x2/y2`、弹开点 `loose_x/loose_y`。
+tackle 事件 SHALL 携带：防守者起点 `x/y`、被铲者带球起点 `carrier_from_x/carrier_from_y`、接触点 `x2/y2`、弹开点 `loose_x/loose_y`、抢断结算终点 `subject_end_x/subject_end_y` 与 `carrier_end_x/carrier_end_y`。
 
 #### Scenario: 带球起点
 - **WHEN** 引擎产出一条 tackle 事件

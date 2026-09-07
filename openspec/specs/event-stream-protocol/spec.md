@@ -91,19 +91,23 @@ pass/dribble/shot 事件的演绎参数（speed、touch_freq、lead）SHALL 由�
 - **WHEN** 画面层演绎带球/传球/射门动作
 - **THEN** 使用引擎提供的速度、触球频率、提前量参数，不自行猜测
 
-### Requirement: tackle 字段定稿（必填 to/x2/y2 + 新增可选字段）
+### Requirement: tackle 字段定稿（必填 to/carrier + x2/y2 + 新增可选字段）
 
-tackle 事件 SHALL 携带被铲者 `to` 与接触点 `x2/y2`（**必填**，定稿）；SHALL 可选携带 `loose_x/loose_y`（弹开点）、`carrier_from_x/carrier_from_y`（被铲者带球起点）。
+tackle 事件 SHALL 携带被铲者身份（v2 `carrier`，v1 兼容 `to`）与接触点 `x2/y2`（**必填**，定稿）；SHALL 可选携带 `loose_x/loose_y`（弹开点）、`carrier_from_x/carrier_from_y`（被铲者带球起点）、`subject_end_x/subject_end_y`（抢断者结算终点）、`carrier_end_x/carrier_end_y`（被抢者结算终点）。
 
 #### Scenario: tackle 必填字段
 - **GIVEN** 一条 tackle 事件
-- **THEN** 必须含 `to`、`x2`、`y2`（被铲者与其接触点）；缺失时协议校验抛错
+- **THEN** 必须含 `to` 或 `carrier`、`x2`、`y2`（被铲者与其接触点）；缺失时协议校验抛错
 
 #### Scenario: tackle 可选字段
 - **WHEN** 引擎产出一条 tackle 事件
-- **THEN** 可携带 `loose_x/loose_y`（弹开点）与 `carrier_from_x/carrier_from_y`（被铲者带球起点）；画面层对缺失字段 fallback
+- **THEN** 可携带 `loose_x/loose_y`（弹开点）、`carrier_from_x/carrier_from_y`（被铲者带球起点）；画面层对缺失字段 fallback
+
+#### Scenario: 抢断结算空间分离终点
+- **WHEN** 引擎产出一条 v2 tackle 事件
+- **THEN** 可携带 `subject_end_x/subject_end_y` 与 `carrier_end_x/carrier_end_y`（抢断者/被抢者高亮结算终点）；二者间距 ≥ 最小间隔（约 0.03，观感不重合）；画面层按各自终点画两球员
 
 #### Scenario: 向后兼容
 - **WHEN** 画面层收到缺可选字段的旧版 tackle 事件
-- **THEN** 仍能解析并演绎（缺 `loose`→画面自行算弹开点；缺 `carrier_from`→被铲者原地带球）
+- **THEN** 仍能解析并演绎（缺 `loose`→画面自行算弹开点；缺 `carrier_from`→被铲者原地带球；缺结算终点→两球员回退接触点）
 

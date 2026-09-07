@@ -292,6 +292,32 @@ test('off_ball_run: 缺 x2/y2 时不产出 NaN 锚点', () => {
   assert.equal(anchors.length, 0, '缺终点应跳过');
 });
 
+test('tackle 结算分离: subject/carrier 各归引擎终点（不重叠）', () => {
+  // 观感 bug：tackle 后两人被放到同一接触点 → 两圆点叠成一个。修复后引擎发 subject_end/carrier_end
+  // （成功：防守者留接触点、被抢者回撤；失败：被抢者留接触点、防守者停在身侧）。两端应各归终点。
+  const eSucc = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, carrier: 16, x2: 0.45, y2: 0.55, result: 'success',
+    carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.4277, loose_y: 0.5053,
+    subject_end_x: 0.45, subject_end_y: 0.55, carrier_end_x: 0.45, carrier_end_y: 0.58 };
+  const anchors = interpretEvent(eSucc);
+  const endT = 28;
+  const tacklerEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.subject && Math.abs(a.t - endT) < 1e-6).pop();
+  const victimEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.carrier && Math.abs(a.t - endT) < 1e-6).pop();
+  assert.ok(tacklerEnd && victimEnd, 'v2 tackle 应有 subject/carrier 终态锚点');
+  assert.equal(tacklerEnd.x, 0.45);
+  assert.equal(tacklerEnd.y, 0.55);
+  assert.equal(victimEnd.x, 0.45);
+  assert.equal(victimEnd.y, 0.58);
+  assert.ok(Math.hypot(tacklerEnd.x - victimEnd.x, tacklerEnd.y - victimEnd.y) > 0.02,
+    'tackle 结算两端不应重叠');
+
+  // 兼容：旧 v2 事件无 subject_end/carrier_end → 回退接触点（两端同点，保持原行为）
+  const eLegacy = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, carrier: 16, x2: 0.45, y2: 0.55, result: 'success' };
+  const anchorsL = interpretEvent(eLegacy);
+  const tEndL = anchorsL.filter((a) => a.kind === 'player' && a.id === eLegacy.subject && Math.abs(a.t - endT) < 1e-6).pop();
+  assert.equal(tEndL.x, 0.45);
+  assert.equal(tEndL.y, 0.55);
+});
+
 test('tackle dropCarryBeat: 被铲者从接触点开始（不重放带球段）', () => {
   const e = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55,
     carrier_from_x: 0.60, carrier_from_y: 0.50, loose_x: 0.4277, loose_y: 0.5053, result: 'success' };

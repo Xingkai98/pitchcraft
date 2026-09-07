@@ -112,6 +112,10 @@ pub struct Event {
     pub loose_y: Option<f64>,    // 抢断弹开点 y
     pub carrier_from_x: Option<f64>, // 被铲者带球起点 x（tackle 用，画面演"带球中被抢"）
     pub carrier_from_y: Option<f64>, // 被铲者带球起点 y
+    pub subject_end_x: Option<f64>,  // 抢断者(subject)结算终点 x（tackle 用，高亮末两球员空间分离）
+    pub subject_end_y: Option<f64>,  // 抢断者(subject)结算终点 y
+    pub carrier_end_x: Option<f64>,  // 被抢者(carrier)结算终点 x
+    pub carrier_end_y: Option<f64>,  // 被抢者(carrier)结算终点 y
     pub keeper_x: Option<f64>,   // 门将当前位置 x（shot 用，画面让门将从实位扑救，不瞬移）
     pub keeper_y: Option<f64>,   // 门将当前位置 y
     pub score: Option<String>, // 比分（whistle/goal 时）
@@ -132,7 +136,8 @@ impl Default for Event {
             from: None, to: None, interceptor: None, carrier: None, x2: None, y2: None, result: None,
             speed: None, touch_freq: None, lead: None,
             receiver_x: None, receiver_y: None, loose_x: None, loose_y: None,
-            carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None,
+            carrier_from_x: None, carrier_from_y: None, subject_end_x: None, subject_end_y: None,
+            carrier_end_x: None, carrier_end_y: None, keeper_x: None, keeper_y: None,
             score: None, detail: None, card: None, h: None, players: None,
             movers: None, main: None, ball: None,
         }
@@ -183,6 +188,10 @@ impl Event {
         if let Some(y) = self.loose_y { parts.push(format!("\"loose_y\":{:.4}", y)); }
         if let Some(x) = self.carrier_from_x { parts.push(format!("\"carrier_from_x\":{:.4}", x)); }
         if let Some(y) = self.carrier_from_y { parts.push(format!("\"carrier_from_y\":{:.4}", y)); }
+        if let Some(x) = self.subject_end_x { parts.push(format!("\"subject_end_x\":{:.4}", x)); }
+        if let Some(y) = self.subject_end_y { parts.push(format!("\"subject_end_y\":{:.4}", y)); }
+        if let Some(x) = self.carrier_end_x { parts.push(format!("\"carrier_end_x\":{:.4}", x)); }
+        if let Some(y) = self.carrier_end_y { parts.push(format!("\"carrier_end_y\":{:.4}", y)); }
         if let Some(x) = self.keeper_x { parts.push(format!("\"keeper_x\":{:.4}", x)); }
         if let Some(y) = self.keeper_y { parts.push(format!("\"keeper_y\":{:.4}", y)); }
         if let Some(s) = &self.score { parts.push(format!("\"score\":\"{}\"", s)); }
@@ -229,6 +238,10 @@ pub const TACKLE_EAGERNESS: f64 = 0.5;
 pub const TACKLE_SUCCESS_RATE: f64 = 0.5;
 /// 弹开距离（归一化，与 viewer config.interpretation.tackle.deflectDistance 对齐）。
 pub const TACKLE_DEFLECT_DISTANCE: f64 = 0.05;
+/// 抢断结算两球员最小间距（归一化）：tackle 结束后 subject(防守者) 与 carrier(被抢者) 不得同点重合，
+/// 至少相隔 ~0.03（x 向 ≈3.2m / y 向 ≈2.0m，视觉可分辨两圆点）。success：被抢者沿背离防守者方向
+/// 回撤 GAP；fail：防守者停在被抢者外侧 GAP 处（不贴身）。
+pub const TACKLE_SETTLE_GAP_NORM: f64 = 0.03;
 
 // ---- P13 fix：失败传球参数（拦截 / 传失）----
 /// 拦截概率按"最近对方外场球员到落点距离"分档（米）：
@@ -346,6 +359,8 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
         loose_y: None,
         carrier_from_x: None,
         carrier_from_y: None,
+        subject_end_x: None, subject_end_y: None,
+        carrier_end_x: None, carrier_end_y: None,
         keeper_x: None, keeper_y: None,
         score: None,
         detail: None,
@@ -1658,6 +1673,9 @@ fn emit_tackle_highlight_impl(st: &mut MatchState, rng: &mut SeededRng, events: 
         def_pos.0, def_pos.1, victim_pos.0, victim_pos.1,
         TACKLE_DEFLECT_DISTANCE, def_id, victim,
     );
+    // 抢断结算空间分离：subject/carrier 不再同落接触点（观感：两圆点叠一个、号码糊）。
+    // 终点随事件发出，viewer 在 tackle 演绎里把两人分别画到各自终点——两端一致、不引入额外跳变。
+    let (subject_end, carrier_end) = tackle_settle_points(victim_pos, def_pos, success);
     let t_end = t + TICK_SECONDS;
     let event = Event {
         t, type_: EventType::Tackle, subject: def_id,
@@ -1666,10 +1684,14 @@ fn emit_tackle_highlight_impl(st: &mut MatchState, rng: &mut SeededRng, events: 
         result: Some(result.to_string()),
         loose_x: Some(loose_x), loose_y: Some(loose_y),
         carrier_from_x: Some(victim_pos.0), carrier_from_y: Some(victim_pos.1),
+        subject_end_x: Some(subject_end.0), subject_end_y: Some(subject_end.1),
+        carrier_end_x: Some(carrier_end.0), carrier_end_y: Some(carrier_end.1),
         ..Event::default()
     };
     events.push(event);
-    let participants = vec![(victim, victim_pos), (def_id, victim_pos)];
+    // success：防守者留在接触点等 loose；被抢者回撤到 carrier_end（摆脱惯性）
+    // fail：被抢者留接触点继续持球；防守者停到 subject_end（逼抢不贴身）
+    let participants = vec![(victim, carrier_end), (def_id, subject_end)];
     let outcome = if success {
         HighlightOutcome::TackleSuccess { def: def_id, loose: (loose_x, loose_y), contact: victim_pos }
     } else {
@@ -2441,7 +2463,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
           lead: Option<f64>, rx: Option<f64>, ry: Option<f64>,
           score: Option<String>, detail: Option<String>,
           players: Option<Vec<(i32, f64, f64)>>) -> Event {
-        Event { t, type_, subject, x, y, from, to, interceptor: None, carrier: None, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None, score, detail, card: None, h: None, players, movers: None, main: None, ball: None }
+        Event { t, type_, subject, x, y, from, to, interceptor: None, carrier: None, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, subject_end_x: None, subject_end_y: None, carrier_end_x: None, carrier_end_y: None, keeper_x: None, keeper_y: None, score, detail, card: None, h: None, players, movers: None, main: None, ball: None }
     }
 
     // 初始站位（唯一一次 lineup）
@@ -2497,6 +2519,8 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         receiver_x: None, receiver_y: None,
         loose_x: Some(loose_x), loose_y: Some(loose_y),
         carrier_from_x: Some(0.42), carrier_from_y: Some(0.42),
+        subject_end_x: None, subject_end_y: None,
+        carrier_end_x: None, carrier_end_y: None,
         keeper_x: None, keeper_y: None,
         players: None,
         movers: None, main: None, ball: None,
@@ -2520,7 +2544,8 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         lead: None, score: None, detail: Some("foul_trip".to_string()), card: Some("yellow".to_string()),
         h: None,
         receiver_x: None, receiver_y: None, loose_x: None, loose_y: None,
-        carrier_from_x: None, carrier_from_y: None, keeper_x: None, keeper_y: None,
+        carrier_from_x: None, carrier_from_y: None, subject_end_x: None, subject_end_y: None,
+        carrier_end_x: None, carrier_end_y: None, keeper_x: None, keeper_y: None,
         players: None, movers: None, main: None, ball: None,
     });
     t += 1.0;
@@ -2642,6 +2667,54 @@ fn deflect_point(sx: f64, sy: f64, vx: f64, vy: f64, dist: f64, tackler: i32, vi
         cand1
     };
     (loose.0.clamp(0.0, 1.0), loose.1.clamp(0.0, 1.0))
+}
+
+/// 抢断结算终点：让 subject(防守者) 与 carrier(被抢者) 在高亮结束时不重合（观感 bug：两圆点叠一个）。
+/// success：防守者留接触点（随后争抢 loose）；被抢者沿"背离防守者"方向回撤 GAP（被断后踉跄/惯性）。
+/// fail：被抢者留接触点（继续持球，main 恢复）；防守者停在被抢者外侧 GAP 处（逼抢不贴身）。
+/// 全纯几何（无 RNG，保确定性）；返回 (subject 终点, carrier 终点)，均在界内。
+fn tackle_settle_points(contact: (f64, f64), def_pos: (f64, f64), success: bool) -> ((f64, f64), (f64, f64)) {
+    let gap = TACKLE_SETTLE_GAP_NORM;
+    if success {
+        // 被抢者回撤方向 = 接触点背离防守者（tackler 逼近方向延伸）；退化朝球场中心
+        let dir = unit_from(def_pos, contact);
+        (contact, offset_in_bounds(contact, dir, gap))
+    } else {
+        // 防守者所在侧 = 接触点指向防守者起点的方向；退化朝球场中心
+        let dir = unit_from(contact, def_pos);
+        (offset_in_bounds(contact, dir, gap), contact)
+    }
+}
+
+/// 从 `from` 指向 `to` 的单位方向；退化（同点）时朝球场中心 (0.5,0.5)。
+fn unit_from(from: (f64, f64), to: (f64, f64)) -> (f64, f64) {
+    let dx = to.0 - from.0;
+    let dy = to.1 - from.1;
+    let len = dx.hypot(dy);
+    if len < 1e-9 {
+        unit_toward_center(from)
+    } else {
+        (dx / len, dy / len)
+    }
+}
+
+/// 朝球场中心 (0.5,0.5) 的单位方向（同点退化兜底；恰在中心时退化为 +y）。
+fn unit_toward_center(p: (f64, f64)) -> (f64, f64) {
+    let dx = 0.5 - p.0;
+    let dy = 0.5 - p.1;
+    let len = dx.hypot(dy);
+    if len < 1e-9 { (0.0, 1.0) } else { (dx / len, dy / len) }
+}
+
+/// from 沿 dir 外推 dist 的界内点：主方向越界（极贴边）则退回球场中心方向，钳制在 [0,1]。
+fn offset_in_bounds(from: (f64, f64), dir: (f64, f64), dist: f64) -> (f64, f64) {
+    let cand = (from.0 + dir.0 * dist, from.1 + dir.1 * dist);
+    if cand.0 >= 0.0 && cand.0 <= 1.0 && cand.1 >= 0.0 && cand.1 <= 1.0 {
+        return cand;
+    }
+    let cdir = unit_toward_center(from);
+    let c = (from.0 + cdir.0 * dist, from.1 + cdir.1 * dist);
+    (c.0.clamp(0.0, 1.0), c.1.clamp(0.0, 1.0))
 }
 
 /// 找离位置 pos 最近的队友（pass 用：传球者把球传给附近的人，避免乱传给远端的"看起来像对手"的位置）
@@ -3702,11 +3775,18 @@ mod tests {
         let cfg = MatchConfig::default_();
         let mut saw_normal = false;
         let mut saw_clearance = false;
-        // 路径组合是确定性 RNG 级联的结果：犯规机制重排了事件流，把范围放宽到 200 seed
+        // 路径组合是确定性 RNG 级联的结果：犯规机制重排了事件流，把范围放宽到 400 seed
         // 保证两类出底线路径（普通传球→门球 / 解围→角球）都扫到（组合事件，非每场必有）。
-        for seed in 1..200u64 {
+        for seed in 1..400u64 {
             let s = simulate(seed, cfg);
             if let Some(out) = find_pass_detail(&s, "out_goal_line") {
+                // 跳过太靠近终场的出底线：比赛结束(<5400)前没有足够时间走完重开(角球/门球)准备期，
+                // 引擎会直接吹 whistle。tackle 修复等 RNG 级联会改变"首个出底线"落在哪个 seed 的时刻，
+                // 这类样本不代表"解围→角球"链路失效。
+                let out_t = json_num(&out, "t").unwrap_or(0.0);
+                if out_t > 5300.0 {
+                    continue;
+                }
                 assert!(json_num(&out, "to").is_none(), "出底线 pass to 应为 None: {}", out);
                 let has_lead = json_field(&out, "lead").is_some();
                 let evts = json_events(&s);
@@ -4045,6 +4125,52 @@ mod tests {
         json_events(s).iter().filter(|e| {
             type_of(e) == "shot" && e.contains("\"result\":\"goal\"")
         }).count()
+    }
+
+    // ---- tackle 空间分离回归：subject/carrier 高亮结算不重合 ----
+    // 观感 bug 复现（跨 seed 确定性）：tackle 后一拍 subject 与 carrier 距离恒为 0。
+    // 事件带 subject_end/carrier_end（结算终点），两者间距 ≥ TACKLE_SETTLE_GAP_NORM×0.9 即断言通过。
+
+    #[test]
+    fn tackle_settle_endpoints_separated() {
+        // 直接测纯函数：contact=(0.5,0.5)（非边角），success/fail 两路终点都在界内且相隔 GAP
+        let def = (0.46, 0.5);
+        let (s1, c1) = tackle_settle_points((0.5, 0.5), def, true);
+        let d1 = dist_norm(s1, c1);
+        assert!(d1 >= TACKLE_SETTLE_GAP_NORM * 0.9, "success settle 间距 {:.4} 过小", d1);
+        assert!(s1.0 >= 0.0 && s1.0 <= 1.0 && s1.1 >= 0.0 && s1.1 <= 1.0, "success subject 终点越界 {:?}", s1);
+        assert!(c1.0 >= 0.0 && c1.0 <= 1.0 && c1.1 >= 0.0 && c1.1 <= 1.0, "success carrier 终点越界 {:?}", c1);
+        let (s2, c2) = tackle_settle_points((0.5, 0.5), def, false);
+        let d2 = dist_norm(s2, c2);
+        assert!(d2 >= TACKLE_SETTLE_GAP_NORM * 0.9, "fail settle 间距 {:.4} 过小", d2);
+        assert!(s2.0 >= 0.0 && s2.0 <= 1.0 && s2.1 >= 0.0 && s2.1 <= 1.0, "fail subject 终点越界 {:?}", s2);
+        assert!(c2.0 >= 0.0 && c2.0 <= 1.0 && c2.1 >= 0.0 && c2.1 <= 1.0, "fail carrier 终点越界 {:?}", c2);
+        // 同点退化（防守者在接触点上）也必须产生分离终点
+        let (s3, c3) = tackle_settle_points((0.5, 0.5), (0.5, 0.5), true);
+        let d3 = dist_norm(s3, c3);
+        assert!(d3 >= TACKLE_SETTLE_GAP_NORM * 0.9, "退化 settle 间距 {:.4} 过小", d3);
+    }
+
+    #[test]
+    fn tackle_stream_participants_not_overlapping() {
+        // 事件流级断言：每个带 subject_end/carrier_end 的 tackle（引擎当前必发）两终点间距 ≥ GAP×0.9
+        let mut seen = 0usize;
+        for seed in 1..30u64 {
+            let cfg = MatchConfig::default_();
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                if !e.contains("\"type\":\"tackle\"") { continue; }
+                let (sex, sey) = (json_num(&e, "subject_end_x"), json_num(&e, "subject_end_y"));
+                let (cex, cey) = (json_num(&e, "carrier_end_x"), json_num(&e, "carrier_end_y"));
+                if let (Some(a), Some(b), Some(c), Some(d)) = (sex, sey, cex, cey) {
+                    seen += 1;
+                    let d = ((a - c).powi(2) + (b - d).powi(2)).sqrt();
+                    assert!(d >= TACKLE_SETTLE_GAP_NORM * 0.9,
+                        "seed {} tackle 结算 subject/carrier 间距 {:.4} 过小（重合 bug 回归）", seed, d);
+                }
+            }
+        }
+        assert!(seen > 0, "没有任何 seed 产出带结算终点的 tackle");
     }
 
     #[test]

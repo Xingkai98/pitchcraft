@@ -152,8 +152,8 @@ function interpretShot(e, out) {
 // dropCarryBeat（连续模式）：若被铲者上一事件刚带球到接触点，丢弃 carry-beat 起点（从接触点开始），
 // 避免连续播放里"重放刚播过的带球段"（design D4，grill Q6）。
 // v2（carrier 存在）：高亮时长固定 1 tick（引擎 t_end=t+1）；approach 压缩到 1s 内，
-//   球员终态 = 接触点（引擎 participants 结束位置），球终态 = loose（与下一 beat.ball 起点连续）；
-//   collect（捡球）不在此演绎——由后续 beat.ball + chase movers 表达。
+//   球员终态 = 引擎结算终点 subject_end/carrier_end（tackle 后两球员空间分离，不再同落接触点），
+//   球终态 = loose（与下一 beat.ball 起点连续）；collect（捡球）不在此演绎——由后续 beat.ball + chase movers 表达。
 function interpretTackle(e, out, dropCarryBeat = false) {
   const t0 = e.t;
   const tackler = e.subject;
@@ -201,15 +201,21 @@ function interpretTackle(e, out, dropCarryBeat = false) {
   const deflectDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), deflect.deflectSpeed);
 
   if (isV2) {
-    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 接触点（引擎对账），球终态按 result：
+    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 引擎结算终点（subject_end/carrier_end，tackle 后两球员空间分离，
+    //   不再同落接触点重叠）；球终态按 result：
     //   success → 弹到 loose（进入松散球，与 beat.ball 起点连续）
     //   fail    → 停在接触点（被铲者保持，main 从接触点恢复，无松散球）
     // collect 交给后续 beat.ball + chase，不在此演绎。
+    // 兼容旧事件：无 subject_end/carrier_end 时回退到接触点（引擎同版本保证两端一致）。
+    const tacklerEndX = (Number.isFinite(e.subject_end_x)) ? e.subject_end_x : vx;
+    const tacklerEndY = (Number.isFinite(e.subject_end_y)) ? e.subject_end_y : vy;
+    const victimEndX = (Number.isFinite(e.carrier_end_x)) ? e.carrier_end_x : vx;
+    const victimEndY = (Number.isFinite(e.carrier_end_y)) ? e.carrier_end_y : vy;
     const end = t0 + 1;
     if (e.result === 'fail') {
       out.push({ t: end, kind: 'ball', x: vx, y: vy });
-      out.push({ t: end, kind: 'player', id: victim, x: vx, y: vy });
-      out.push({ t: end, kind: 'player', id: tackler, x: vx, y: vy });
+      out.push({ t: end, kind: 'player', id: victim, x: victimEndX, y: victimEndY });
+      out.push({ t: end, kind: 'player', id: tackler, x: tacklerEndX, y: tacklerEndY });
       return;
     }
     const tLoose = Math.min(tContact + deflectDur, end - 0.05);
@@ -217,8 +223,8 @@ function interpretTackle(e, out, dropCarryBeat = false) {
     if (tLoose < end - 0.01) {
       out.push({ t: end, kind: 'ball', x: loose.x, y: loose.y }); // 球停在 loose 到高亮结束
     }
-    out.push({ t: end, kind: 'player', id: victim, x: vx, y: vy });
-    out.push({ t: end, kind: 'player', id: tackler, x: vx, y: vy });
+    out.push({ t: end, kind: 'player', id: victim, x: victimEndX, y: victimEndY });
+    out.push({ t: end, kind: 'player', id: tackler, x: tacklerEndX, y: tacklerEndY });
     return;
   }
 
