@@ -52,6 +52,9 @@ function interpretDribble(e, out) {
 // ---- 传球：传跑配合 ----
 // 输入 pass 事件，输出锚点：接球者从当前位置(receiver_x/y)跑向落点，球飞向落点，落点汇合。
 // 球飞行时长 = 传球距离 ÷ 球速。
+// P13 fix：拦截（result=intercepted）语义——球被防守方断下，飞到拦截者处（x2/y2=拦截者位置），
+// 原目标接球者不跑向落点（球到不了）；拦截者引擎已站在断球点（x2/y2），无需额外锚点（球到脚下）。
+// 传失（result=lost）——球飞向落点但没人接住，后续 beat.ball（松散球）表现"传过/无人控制"。
 function interpretPass(e, out) {
   const p = config.interpretation.pass;
   const t0 = e.t;
@@ -67,9 +70,11 @@ function interpretPass(e, out) {
   out.push({ t: t0, kind: 'ball', x: e.x, y: e.y, h: 0 });
   out.push({ t: t0 + ballDur / 2, kind: 'ball', x: midX, y: midY, h });
   out.push({ t: t0 + ballDur, kind: 'ball', x: e.x2, y: e.y2, h: 0 });
-  // 接球者（to）：从当前位置(receiver_x/y)跑向落点。终点锚点 = t0+ballDur（引擎高亮结束位置 = 落点），
-  // 保证 beat-main（接球者持球）在首个 tick 边界从落点继续，无 freeze/teleport（审阅 blocker）。
-  if (e.to !== undefined) {
+  // P13 fix：成功传球才让接球者（to）跑向落点（receiver_x/y → x2/y2，终点 = 引擎高亮结束位置，beat-main
+  // 连续无 freeze/teleport）。拦截/传失时球到不了接球者 → 不产接球者跑位锚点（接球者由 beat movers 跑位，
+  // 参与者集合已对齐引擎：拦截含拦截者、传失仅传球者）。
+  const noReceiverRun = (e.result === 'intercepted' && e.interceptor !== undefined) || e.result === 'lost';
+  if (e.to !== undefined && !noReceiverRun) {
     const startX = e.receiver_x !== undefined ? e.receiver_x : e.x2;
     const startY = e.receiver_y !== undefined ? e.receiver_y : e.y2;
     out.push({ t: t0, kind: 'player', id: e.to, x: startX, y: startY });
@@ -79,6 +84,23 @@ function interpretPass(e, out) {
   if (e.from !== undefined) {
     out.push({ t: t0, kind: 'player', id: e.from, x: e.x, y: e.y });
     out.push({ t: t0 + ballDur, kind: 'player', id: e.from, x: e.x, y: e.y });
+  }
+  // 任意球重开（detail=free_kick）：to 是接球者、from=发球者（重开方就地从犯规点发出，
+  // 引擎已让发球者走位到犯规点）。接球者照常跑位（上文处理），发球者静止由 from 锚点覆盖。
+}
+
+// ---- 犯规/纪律牌：牌出示（视觉覆盖锚点）----
+// foul 事件（v2 非 demo）：subject=犯规者、x/y=犯规点、carrier=被犯规持球者（可空）、
+// detail=foul_<type>、card 可选（缺省=无牌犯规）。
+// 犯规瞬间画面含义：哨停 + 球交死球点（任意球点 = 犯规点）。引擎在犯规 tick 已把犯规者
+// 位置对账到犯规点、球放犯规点（下个 tick 由 restart_prep beat + free_kick pass 演绎重开），
+// 犯规 tick 无 beat——viewer 保持上拍末态到重开 beat，天然连续，无需额外冻结锚点
+//（额外冻结会与后续 beat mover 跨 evt，触发插值器 hold 跳变，见 snap 调试）。
+// 这里只产牌出示覆盖锚点 kind:'card'（画面层在犯规点画黄/红卡图标，显示窗口由
+// game.activeCards() 控制）。牌位置 = 犯规点（真实裁判跑到犯规点出示）。
+function interpretFoul(e, out) {
+  if (e.card === 'yellow' || e.card === 'red') {
+    out.push({ t: e.t, kind: 'card', id: e.subject, x: e.x, y: e.y, card: e.card });
   }
 }
 
@@ -130,8 +152,8 @@ function interpretShot(e, out) {
 // dropCarryBeat（连续模式）：若被铲者上一事件刚带球到接触点，丢弃 carry-beat 起点（从接触点开始），
 // 避免连续播放里"重放刚播过的带球段"（design D4，grill Q6）。
 // v2（carrier 存在）：高亮时长固定 1 tick（引擎 t_end=t+1）；approach 压缩到 1s 内，
-//   球员终态 = 接触点（引擎 participants 结束位置），球终态 = loose（与下一 beat.ball 起点连续）；
-//   collect（捡球）不在此演绎——由后续 beat.ball + chase movers 表达。
+//   球员终态 = 引擎结算终点 subject_end/carrier_end（tackle 后两球员空间分离，不再同落接触点），
+//   球终态 = loose（与下一 beat.ball 起点连续）；collect（捡球）不在此演绎——由后续 beat.ball + chase movers 表达。
 function interpretTackle(e, out, dropCarryBeat = false) {
   const t0 = e.t;
   const tackler = e.subject;
@@ -179,15 +201,21 @@ function interpretTackle(e, out, dropCarryBeat = false) {
   const deflectDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), deflect.deflectSpeed);
 
   if (isV2) {
-    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 接触点（引擎对账），球终态按 result：
+    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 引擎结算终点（subject_end/carrier_end，tackle 后两球员空间分离，
+    //   不再同落接触点重叠）；球终态按 result：
     //   success → 弹到 loose（进入松散球，与 beat.ball 起点连续）
     //   fail    → 停在接触点（被铲者保持，main 从接触点恢复，无松散球）
     // collect 交给后续 beat.ball + chase，不在此演绎。
+    // 兼容旧事件：无 subject_end/carrier_end 时回退到接触点（引擎同版本保证两端一致）。
+    const tacklerEndX = (Number.isFinite(e.subject_end_x)) ? e.subject_end_x : vx;
+    const tacklerEndY = (Number.isFinite(e.subject_end_y)) ? e.subject_end_y : vy;
+    const victimEndX = (Number.isFinite(e.carrier_end_x)) ? e.carrier_end_x : vx;
+    const victimEndY = (Number.isFinite(e.carrier_end_y)) ? e.carrier_end_y : vy;
     const end = t0 + 1;
     if (e.result === 'fail') {
       out.push({ t: end, kind: 'ball', x: vx, y: vy });
-      out.push({ t: end, kind: 'player', id: victim, x: vx, y: vy });
-      out.push({ t: end, kind: 'player', id: tackler, x: vx, y: vy });
+      out.push({ t: end, kind: 'player', id: victim, x: victimEndX, y: victimEndY });
+      out.push({ t: end, kind: 'player', id: tackler, x: tacklerEndX, y: tacklerEndY });
       return;
     }
     const tLoose = Math.min(tContact + deflectDur, end - 0.05);
@@ -195,8 +223,8 @@ function interpretTackle(e, out, dropCarryBeat = false) {
     if (tLoose < end - 0.01) {
       out.push({ t: end, kind: 'ball', x: loose.x, y: loose.y }); // 球停在 loose 到高亮结束
     }
-    out.push({ t: end, kind: 'player', id: victim, x: vx, y: vy });
-    out.push({ t: end, kind: 'player', id: tackler, x: vx, y: vy });
+    out.push({ t: end, kind: 'player', id: victim, x: victimEndX, y: victimEndY });
+    out.push({ t: end, kind: 'player', id: tackler, x: tacklerEndX, y: tacklerEndY });
     return;
   }
 
@@ -296,7 +324,14 @@ function interpretBeat(e, out, excluded = null) {
 // 高亮事件的参与者集合（两层合成排除用）
 function highlightParticipants(e) {
   const clean = (ids) => new Set(ids.filter((x) => x !== undefined && x !== null));
-  if (e.type === 'pass') return clean([e.from, e.to]); // 门球开大脚无 to → 只有传球者
+  // P13 fix：参与者 = 引擎高亮冻结的球员（对齐 finalize 对账集合）——
+  // 拦截 = 传球者 + 拦截者（接球者照常跑位）；传失 = 只有传球者（球飞向落点变松散球，
+  // 接收者不冻结，双方争抢由 chase movers 表现）；成功 = 传球者 + 接球者；门球开大脚无 to → 传球者。
+  if (e.type === 'pass') {
+    if (e.result === 'intercepted' && e.interceptor !== undefined) return clean([e.from, e.interceptor]);
+    if (e.result === 'lost') return clean([e.from]);
+    return clean([e.from, e.to]);
+  }
   if (e.type === 'shot') {
     const keeperId = (typeof e.subject === 'number' && e.subject <= 10) ? 21 : 0;
     return clean([e.subject, keeperId]);
@@ -358,6 +393,9 @@ export function interpretEvent(e, dropCarryBeat = false) {
     case 'tackle':
     case 'interception':
       interpretTackle(e, out, dropCarryBeat);
+      break;
+    case 'foul':
+      interpretFoul(e, out);
       break;
     case 'off_ball_run':
       interpretOffBallRun(e, out);

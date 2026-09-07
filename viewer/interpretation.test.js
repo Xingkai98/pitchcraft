@@ -17,6 +17,28 @@ test('pass: 生成球飞行 + 接球者跑位锚点', () => {
   assert.ok(receivers.length >= 1);
 });
 
+test('pass intercepted: 球飞向拦截者，原接球者不跑向落点', () => {
+  // P13 fix：拦截时球到不了原目标 → 不产 to 的跑位锚点；球飞向拦截者（x2/y2 = 拦截者位置）
+  const e = { t: 10, type: 'pass', from: 8, to: 9, interceptor: 15, x: 0.4, y: 0.5, x2: 0.45, y2: 0.48, speed: 12, lead: 0.3, result: 'intercepted' };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.length >= 2);
+  assert.equal(balls[balls.length - 1].x, 0.45); // 球停在拦截者处
+  const receivers = anchors.filter((a) => a.kind === 'player' && a.id === 9);
+  assert.equal(receivers.length, 0, '拦截时原接球者不应跑向落点');
+});
+
+test('pass lost: 传失照常演绎球飞行，接收者不接球', () => {
+  // P13 fix：result=lost → 球飞向落点但无人接住（松散球由后续 beat.ball 表现），不产 to 跑位锚点
+  const e = { t: 10, type: 'pass', from: 8, to: 9, x: 0.4, y: 0.5, x2: 0.55, y2: 0.42, speed: 12, lead: 0.3, result: 'lost' };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.length >= 2);
+  assert.equal(balls[balls.length - 1].x, 0.55);
+  const receivers = anchors.filter((a) => a.kind === 'player' && a.id === 9);
+  assert.equal(receivers.length, 0, '传失时接收者不应跑向落点');
+});
+
 test('dribble: 人球解耦（球领先人）', () => {
   const e = { t: 20, type: 'dribble', subject: 6, x: 0.4, y: 0.4, x2: 0.5, y2: 0.4, speed: 3.2, touch_freq: 1.2, result: 'success' };
   const anchors = interpretEvent(e);
@@ -270,6 +292,32 @@ test('off_ball_run: 缺 x2/y2 时不产出 NaN 锚点', () => {
   assert.equal(anchors.length, 0, '缺终点应跳过');
 });
 
+test('tackle 结算分离: subject/carrier 各归引擎终点（不重叠）', () => {
+  // 观感 bug：tackle 后两人被放到同一接触点 → 两圆点叠成一个。修复后引擎发 subject_end/carrier_end
+  // （成功：防守者留接触点、被抢者回撤；失败：被抢者留接触点、防守者停在身侧）。两端应各归终点。
+  const eSucc = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, carrier: 16, x2: 0.45, y2: 0.55, result: 'success',
+    carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.4277, loose_y: 0.5053,
+    subject_end_x: 0.45, subject_end_y: 0.55, carrier_end_x: 0.45, carrier_end_y: 0.58 };
+  const anchors = interpretEvent(eSucc);
+  const endT = 28;
+  const tacklerEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.subject && Math.abs(a.t - endT) < 1e-6).pop();
+  const victimEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.carrier && Math.abs(a.t - endT) < 1e-6).pop();
+  assert.ok(tacklerEnd && victimEnd, 'v2 tackle 应有 subject/carrier 终态锚点');
+  assert.equal(tacklerEnd.x, 0.45);
+  assert.equal(tacklerEnd.y, 0.55);
+  assert.equal(victimEnd.x, 0.45);
+  assert.equal(victimEnd.y, 0.58);
+  assert.ok(Math.hypot(tacklerEnd.x - victimEnd.x, tacklerEnd.y - victimEnd.y) > 0.02,
+    'tackle 结算两端不应重叠');
+
+  // 兼容：旧 v2 事件无 subject_end/carrier_end → 回退接触点（两端同点，保持原行为）
+  const eLegacy = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, carrier: 16, x2: 0.45, y2: 0.55, result: 'success' };
+  const anchorsL = interpretEvent(eLegacy);
+  const tEndL = anchorsL.filter((a) => a.kind === 'player' && a.id === eLegacy.subject && Math.abs(a.t - endT) < 1e-6).pop();
+  assert.equal(tEndL.x, 0.45);
+  assert.equal(tEndL.y, 0.55);
+});
+
 test('tackle dropCarryBeat: 被铲者从接触点开始（不重放带球段）', () => {
   const e = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, to: 16, x2: 0.45, y2: 0.55,
     carrier_from_x: 0.60, carrier_from_y: 0.50, loose_x: 0.4277, loose_y: 0.5053, result: 'success' };
@@ -473,4 +521,41 @@ test('P6 批次1 interpretPass: 角球发球从角旗飞向禁区（detail=corne
   const ballStart = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t)[0];
   assert.equal(ballStart.x, 0, '角球发球起点 x=0（角旗）');
   assert.equal(ballStart.y, 1, '角球发球起点 y=1（角旗）');
+});
+
+test('foul: 牌出示 card 覆盖锚点（位置=犯规点、card=yellow）；不产球员冻结锚点', () => {
+  const e = { t: 300, type: 'foul', subject: 15, carrier: 6, x: 0.44, y: 0.42, detail: 'foul_trip', card: 'yellow' };
+  const anchors = interpretEvent(e);
+  // 牌覆盖锚点：kind=card、card=yellow、位置=犯规点、时间=事件 t
+  const cards = anchors.filter((a) => a.kind === 'card');
+  assert.equal(cards.length, 1, '黄牌犯规应产一个 card 覆盖锚点');
+  assert.equal(cards[0].card, 'yellow');
+  assert.equal(cards[0].x, 0.44);
+  assert.equal(cards[0].y, 0.42);
+  assert.equal(cards[0].id, 15);
+  assert.equal(cards[0].t, 300);
+  // 引擎负责位置连续性（犯规 tick 无 beat，viewer 保持上拍末态到重开 beat）——interpret 层不再产冻结锚点
+  const players = anchors.filter((a) => a.kind === 'player');
+  assert.equal(players.length, 0, 'foul 不应产球员冻结锚点（位置由引擎对账 + 后续 beat 保证连续）');
+});
+
+test('foul: 无牌犯规不产 card 锚点；红牌产 red', () => {
+  const noCard = interpretEvent({ t: 300, type: 'foul', subject: 15, carrier: 6, x: 0.4, y: 0.5, detail: 'foul_hold' });
+  assert.equal(noCard.filter((a) => a.kind === 'card').length, 0, '无牌犯规不应有 card 锚点');
+  const red = interpretEvent({ t: 310, type: 'foul', subject: 15, carrier: 6, x: 0.4, y: 0.5, detail: 'foul_tackle', card: 'red' });
+  const c = red.filter((a) => a.kind === 'card');
+  assert.equal(c.length, 1);
+  assert.equal(c[0].card, 'red');
+});
+
+test('foul: 任意球重开 pass（free_kick）复用短传演绎（球飞向接球者）', () => {
+  const e = { t: 301, type: 'pass', from: 6, subject: 6, to: 9, x: 0.44, y: 0.42, x2: 0.48, y2: 0.46, speed: 12, result: 'success', detail: 'free_kick', h: 0 };
+  const anchors = interpretEvent(e);
+  const balls = anchors.filter((a) => a.kind === 'ball');
+  assert.ok(balls.length >= 2, '任意球短传应有球飞行锚点');
+  const ballEnd = balls.sort((a, b) => a.t - b.t).pop();
+  assert.equal(ballEnd.x, 0.48);
+  // 接球者跑向落点
+  const receiver = anchors.filter((a) => a.kind === 'player' && a.id === 9);
+  assert.ok(receiver.length >= 1, '任意球接球者应有跑位锚点');
 });

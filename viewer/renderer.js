@@ -93,6 +93,23 @@ export function drawPlayer(ctx, x, y, id, width, height) {
   ctx.fillText(String(id), p.px, p.py);
 }
 
+// 绘制纪律牌图标（犯规出示，显示在犯规者脚下偏上）。card ∈ 'yellow'|'red'。
+export function drawCard(ctx, x, y, card, width, height) {
+  const margin = config.pitchMargin;
+  const r = config.render;
+  const p = normalizedToPixels(x, y, width, height, margin);
+  const w = 10; // 牌尺寸（像素）
+  const h = 14;
+  // 牌从犯规者上方 1.5 半径处上移（不遮球员号码）；直角矩形 + 黑描边（黄/红区分）
+  const rx = p.px - w / 2;
+  const ry = p.py - r.playerRadius - h - 4;
+  ctx.fillStyle = card === 'red' ? '#e03131' : '#ffd43b';
+  ctx.strokeStyle = '#000';
+  ctx.lineWidth = 1;
+  ctx.fillRect(rx, ry, w, h);
+  ctx.strokeRect(rx, ry, w, h);
+}
+
 // 绘制球（isBall=true 允许越界渲染：进球/打偏越底线时球心进入球门框/界外）。
 // h 高度（协议 0-1，P6 批次1）：2D 里 z 轴高度看不出，借鉴 FM 用球大小表示高度——
 // 球越高越大，球落回地面时恢复正常大小（P6 抛物线高度感；角球/门球大脚 h>0 球放大明显）。
@@ -112,7 +129,8 @@ export function drawBall(ctx, x, y, width, height, h = 0) {
 }
 
 // 渲染一帧：给定当前状态（22 球员位置 + 球位置），绘制到 ctx
-// opts 可选：{ playTime, movingIds:Set, dt }——开启 micro-motion（静止球员小幅重心调整）。
+// opts 可选：{ playTime, movingIds:Set, dt, cards:[] }——micro-motion（静止球员小幅重心调整）
+// + 纪律牌叠加（cards=[{x,y,card}]，犯规出示窗口内由 game.activeCards() 提供）。
 // 返回 imageData（供测试断言）
 export function renderFrame(ctx, state, width, height, opts = {}) {
   drawPitch(ctx, width, height);
@@ -136,6 +154,12 @@ export function renderFrame(ctx, state, width, height, opts = {}) {
     drawPlayer(ctx, x, y, p.id, width, height);
   }
   if (state.ball) drawBall(ctx, state.ball.x, state.ball.y, width, height, state.ball.h ?? 0);
+  // 纪律牌叠加（犯规出示窗口内）：牌画在球员之上（最后画，不被球员覆盖）
+  if (Array.isArray(opts.cards)) {
+    for (const c of opts.cards) {
+      if (c && (c.card === 'yellow' || c.card === 'red')) drawCard(ctx, c.x, c.y, c.card, width, height);
+    }
+  }
   // 调试日志：输出已渲染的球屏幕坐标（tasks 6.3 文本核对）。
   // 由 config.debug.logRender 控制（默认 false，避免每帧 60 行刷屏；测试时开）。
   if (config.debug.enabled && config.debug.logRender) {

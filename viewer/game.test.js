@@ -342,11 +342,35 @@ test('P7 isHighlightEvent: shot/tackle/精彩 detail 为真，普通 pass 为假
   const g = makeSkipGame();
   assert.equal(g.isHighlightEvent({ type: 'shot' }), true);
   assert.equal(g.isHighlightEvent({ type: 'tackle' }), true);
+  assert.equal(g.isHighlightEvent({ type: 'foul' }), true, 'foul 应是高亮（不跳过）');
   assert.equal(g.isHighlightEvent({ type: 'pass', detail: 'corner' }), true);
   assert.equal(g.isHighlightEvent({ type: 'pass', detail: 'throw_in' }), true);
   assert.equal(g.isHighlightEvent({ type: 'pass', detail: 'out_sideline' }), true);
+  assert.equal(g.isHighlightEvent({ type: 'pass', detail: 'free_kick' }), true, '任意球重开应是高亮');
   assert.equal(g.isHighlightEvent({ type: 'pass', to: 5 }), false, '普通 pass 非高亮');
   assert.equal(g.isHighlightEvent({ type: 'beat', movers: [] }), false);
+});
+
+test('foul: activeCards 只返回出示窗口内的黄/红牌', () => {
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [{ id: 15, team: 'away', x: 0.58, y: 0.4 }, { id: 6, team: 'home', x: 0.44, y: 0.42 }] },
+    { t: 10, type: 'foul', subject: 15, carrier: 6, x: 0.44, y: 0.42, detail: 'foul_trip', card: 'yellow' },
+    { t: 50, type: 'foul', subject: 15, carrier: 6, x: 0.44, y: 0.42, detail: 'foul_push', card: 'red' },
+    { t: 100, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '0-0' },
+  ];
+  const lineup = [{ id: 15, team: 'away', x: 0.58, y: 0.4 }, { id: 6, team: 'home', x: 0.44, y: 0.42 }];
+  const g = new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
+  g.seekTo(10.5); // 第一张黄牌出示窗口内
+  let cards = g.activeCards();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].card, 'yellow');
+  assert.equal(cards[0].subject, 15);
+  g.seekTo(50.5); // 红牌出示窗口内
+  cards = g.activeCards();
+  assert.equal(cards.length, 1);
+  assert.equal(cards[0].card, 'red');
+  g.seekTo(80); // 两张窗口都过
+  assert.equal(g.activeCards().length, 0);
 });
 
 test('P7 isSkipping: 非高亮窗口且距下一个高亮 > 阈值 → 跳过', () => {

@@ -5,7 +5,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MockCanvas } from './mock-canvas.js';
-import { drawPitch, drawPlayer, drawBall, renderFrame } from './renderer.js';
+import { drawPitch, drawPlayer, drawBall, drawCard, renderFrame } from './renderer.js';
 import { config } from './config.js';
 
 const W = config.canvas.width;
@@ -92,4 +92,29 @@ test('P6 批次1 drawBall: h 大小表示高度（h=0 基础半径，h>0 放大�
   assert.ok(rHigh > r0 * 1.5, `h=0.8 球应显著放大（r0=${r0}, rHigh=${rHigh}）`);
   // h=0 用基础半径
   assert.equal(r0, config.render.ballRadius);
+});
+
+test('drawCard: 黄牌画黄色圆角矩形、红牌画红色，位置在球员上方', () => {
+  const c = new MockCanvas(W, H);
+  const ctx = c.getContext();
+  drawCard(ctx, 0.5, 0.5, 'yellow', W, H);
+  const yellowRect = ctx.calls.find((x) => x.method === 'fillRect');
+  assert.ok(yellowRect, '牌应画矩形（fillRect）');
+  assert.equal(yellowRect.fillStyle, '#ffd43b', '黄牌矩形应使用黄色填充');
+
+  const c2 = new MockCanvas(W, H);
+  const ctx2 = c2.getContext();
+  drawCard(ctx2, 0.5, 0.5, 'red', W, H);
+  const redRect = ctx2.calls.find((x) => x.method === 'fillRect');
+  assert.ok(redRect, '牌应画矩形（fillRect）');
+  assert.equal(redRect.fillStyle, '#e03131', '红牌矩形应使用红色填充');
+});
+
+test('renderFrame: 传入 cards 时画出牌（叠加在球员之上）', () => {
+  const c = new MockCanvas(W, H);
+  const ctx = c.getContext();
+  const players = [{ id: 15, x: 0.5, y: 0.5 }];
+  renderFrame(ctx, mockState(players, { x: 0.6, y: 0.5 }), W, H, { cards: [{ x: 0.5, y: 0.5, card: 'red' }] });
+  const redRect = ctx.calls.find((x) => x.method === 'fillRect' && x.fillStyle === '#e03131');
+  assert.ok(redRect, 'renderFrame 传 cards 应画出红牌');
 });

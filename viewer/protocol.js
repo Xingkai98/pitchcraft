@@ -2,7 +2,7 @@
 // 引擎产出 JSON 事件流 → 解析成 JS 事件对象。
 // 协议字段与 id 方案遵循 openspec/specs/event-stream-protocol/spec.md + p4-parallel-beats delta。
 
-// 事件类型枚举（11 类：v1 动作 + lineup + v2 beat；goal 由 shot.result=goal 表达，非独立类型）
+// 事件类型枚举（12 类：v1 动作 + lineup + v2 beat + foul；goal 由 shot.result=goal 表达，非独立类型）
 export const EVENT_TYPES = [
   'lineup',
   'kickoff',
@@ -15,6 +15,7 @@ export const EVENT_TYPES = [
   'substitution',
   'off_ball_run',
   'beat',
+  'foul',
 ];
 
 // 球员 id 方案：0-10 = 主队(home)，11-21 = 客队(away)
@@ -90,7 +91,7 @@ function validateBaseEvent(e) {
   }
   // 归一化坐标必须在 [0,1]（含 Phase B 新增的 tackle 坐标字段）。
   // 用 typeof === 'number' 判断：null/字符串/null 不得绕过范围校验。
-  for (const c of ['x', 'y', 'x2', 'y2', 'loose_x', 'loose_y', 'carrier_from_x', 'carrier_from_y', 'receiver_x', 'receiver_y', 'keeper_x', 'keeper_y']) {
+  for (const c of ['x', 'y', 'x2', 'y2', 'loose_x', 'loose_y', 'carrier_from_x', 'carrier_from_y', 'subject_end_x', 'subject_end_y', 'carrier_end_x', 'carrier_end_y', 'receiver_x', 'receiver_y', 'keeper_x', 'keeper_y']) {
     if (e[c] !== undefined && e[c] !== null) {
       if (typeof e[c] !== 'number' || !Number.isFinite(e[c])) {
         throw new Error(`event coordinate ${c} must be a finite number: ${String(e[c])}`);
@@ -106,16 +107,28 @@ function validateBaseEvent(e) {
       throw new Error(`event h must be number 0-1: ${JSON.stringify(e.h)}`);
     }
   }
-  // detail 枚举按事件类型限定（P6 批次1）：pass 校验出界/角球/解围，shot 校验头球；
-  // 其他类型 detail（whistle 的 kickoff_again/half_time 等）不校验。
+  // detail 枚举按事件类型限定（P6 批次1 + foul）：pass 校验出界/角球/解围/掷球/任意球，
+  // shot 校验头球，foul 校验 foul_* 类型 + card 校验（yellow/red 枚举）；其他类型 detail 不校验。
   if (e.detail !== undefined && e.detail !== null) {
-    const passDetails = ['out_sideline', 'out_goal_line', 'corner', 'clearance', 'throw_in'];
+    const passDetails = ['out_sideline', 'out_goal_line', 'corner', 'clearance', 'throw_in', 'free_kick'];
     const shotDetails = ['header'];
     if (e.type === 'pass' && !passDetails.includes(e.detail)) {
       throw new Error(`pass detail must be one of ${passDetails.join('/')}: ${JSON.stringify(e.detail)}`);
     }
     if (e.type === 'shot' && !shotDetails.includes(e.detail)) {
       throw new Error(`shot detail must be one of ${shotDetails.join('/')}: ${JSON.stringify(e.detail)}`);
+    }
+    if (e.type === 'foul' && !/^foul_[a-z]+$/.test(e.detail)) {
+      throw new Error(`foul detail must match foul_<type>: ${JSON.stringify(e.detail)}`);
+    }
+  }
+  // foul：可选 carrier（被犯规持球者）、card（yellow/red 枚举；缺省=无牌犯规）
+  if (e.type === 'foul') {
+    if (e.carrier !== undefined && (typeof e.carrier !== 'number' || !Number.isInteger(e.carrier) || e.carrier < 0 || e.carrier > 21)) {
+      throw new Error(`foul carrier must be integer 0-21 when present: ${JSON.stringify(e.carrier)}`);
+    }
+    if (e.card !== undefined && e.card !== 'yellow' && e.card !== 'red') {
+      throw new Error(`foul card must be yellow/red when present: ${JSON.stringify(e.card)}`);
     }
   }
   // 类型相关必填：pass 必须有 from；to 可选（门球开大脚无接收者，落点是争抢点）。
