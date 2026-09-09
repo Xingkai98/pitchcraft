@@ -41,6 +41,8 @@ options:
   --timeout SECONDS    provider timeout (default: 300)
   --max-retry N        retries on invalid agent output (default: 1)
   --statement TXT      optional user natural-language statement
+  --run-id ID          resume a queued (captured) task by its existing id instead of
+                       generating a new one (P14 queue-only manual pickup)
 `;
 }
 
@@ -63,6 +65,7 @@ function parseArgv(argv) {
     else if (a === '--timeout') opts.timeout = Number(next());
     else if (a === '--max-retry') opts.maxRetry = Number(next());
     else if (a === '--statement') opts.statement = next();
+    else if (a === '--run-id') opts.runId = next();
   }
   return opts;
 }
@@ -103,6 +106,7 @@ async function main() {
     statement: opts.statement ?? null,
     tasksDir: opts.tasksDir,
     config,
+    runId: opts.runId ?? null,
   });
 
   // The task object is persisted redacted; printing it also carries no credential.

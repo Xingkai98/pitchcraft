@@ -2077,3 +2077,82 @@ test('POST /problems/:id/fix rejects a concurrent dispatch while one fix is in f
     await closeServer(server);
   }
 });
+
+// === P14 queue-only：入队不自动跑，任务 captured，可手动续跑 ===
+
+test('P14 queue-only: POST /observations persists bundle + captured task without running diagnosis', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-qonly-'));
+  let diagnosisCalled = false;
+  const fake = async () => { diagnosisCalled = true; };
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake, queueOnly: true });
+  try {
+    const res = await fetch(`${base}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify(validBundle()),
+    });
+    assert.equal(res.status, 202);
+    const data = await res.json();
+    assert.ok(data.task_id);
+    assert.equal(data.queued, true);
+    // 诊断未被调用
+    assert.equal(diagnosisCalled, false);
+    // bundle 与 task 均落盘，task 为 captured
+    const task = JSON.parse(readFileSync(join(dir, `${data.task_id}.task.json`), 'utf8'));
+    assert.equal(task.status, 'captured');
+    assert.equal(task.status_history[0].status, 'captured');
+    assert.ok(existsSync(join(dir, `${data.task_id}.bundle.json`)));
+    assert.equal(task.provider, null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P14 queue-only: GET /tasks/:id returns captured state (no error)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-qonly-'));
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: async () => {}, queueOnly: true });
+  try {
+    const post = await fetch(`${base}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify(validBundle()),
+    });
+    const { task_id } = await post.json();
+    const res = await fetch(`${base}/tasks/${task_id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(res.status, 200);
+    const task = await res.json();
+    assert.equal(task.status, 'captured');
+    assert.equal(task.report, null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P14 non-queue-only keeps auto-diagnosis behavior', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-auto-'));
+  const { fake, calls } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    const res = await fetch(`${base}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify(validBundle()),
+    });
+    assert.equal(res.status, 202);
+    const data = await res.json();
+    // 等后台 microtask 跑完
+    await new Promise((r) => setTimeout(r, 50));
+    assert.equal(calls.length, 1);
+    const task = JSON.parse(readFileSync(join(dir, `${data.task_id}.task.json`), 'utf8'));
+    assert.equal(task.status, 'diagnosed');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P14 parseArgs parses --queue-only', () => {
+  const opts = parseArgs(['--tasks-dir', '/tmp/x', '--queue-only']);
+  assert.equal(opts.queueOnly, true);
+  const opts2 = parseArgs(['--tasks-dir', '/tmp/x']);
+  assert.equal(opts2.queueOnly, undefined);
+});
