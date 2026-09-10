@@ -104,7 +104,11 @@ test('P19：播放控制区无时长切换入口', async () => {
   const mentionsDuration = [...controls.querySelectorAll('*')].filter((el) =>
     /时长|比赛\s*\d+\s*分钟/.test(el.textContent)
   );
-  assert.deepEqual(mentionsDuration.map((el) => el.textContent), [], '控制区不应出现含「时长」的控件');
+  assert.deepEqual(
+    mentionsDuration.map((el) => el.textContent),
+    [],
+    '控制区不应出现含「时长」或「比赛 N 分钟」的控件'
+  );
 });
 
 test('P19：时长收敛为单一参数 matchDuration（单一数值，非选项数组）', async () => {
