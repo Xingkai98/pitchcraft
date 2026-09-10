@@ -99,9 +99,10 @@ test('P19：播放控制区无时长切换入口', async () => {
     '控制区不应有 select/option/range/number 等可切换控件'
   );
 
-  // 兜住「文案不带数字」的换皮按钮：控制区任何文本都不该提「时长」。
+  // 兜住「换皮文案」的入口：控制区任何文本都不该提「时长」，也不该出现「比赛 N 分钟」
+  // （r1 原本只抓后者、r2 只抓前者，两者都留着才不漏——见审阅 r3 的 M7/M8 空档）。
   const mentionsDuration = [...controls.querySelectorAll('*')].filter((el) =>
-    /时长/.test(el.textContent)
+    /时长|比赛\s*\d+\s*分钟/.test(el.textContent)
   );
   assert.deepEqual(mentionsDuration.map((el) => el.textContent), [], '控制区不应出现含「时长」的控件');
 });

@@ -14,4 +14,4 @@
 
 - [x] P3.1 `verify.sh` 全绿（引擎 + viewer 单测 + WASM e2e + realism L1）
 - [x] P3.2 `npx openspec validate --all --strict` 通过
-- [ ] P3.3 代码审阅闭环（独立 paseo agent 审阅 → 修复 → 再审阅，直到无遗留问题）
+- [x] P3.3 代码审阅闭环（独立 paseo agent 审阅 → 修复 → 再审阅，直到无遗留问题）
