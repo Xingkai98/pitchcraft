@@ -31,8 +31,9 @@ export const config = {
   // 跳过机制借鉴 FM：高亮事件（射门/角球/界外球/头球/抢断）正常播放，非精彩段（普通传球+beat）
   // 检测间隙后快速播放或直接跳过——比赛时钟照常走（快跳/瞬跳），跳过的时间段也跳过显示。
   playback: {
-    matchDurations: [5, 10, 45, 90], // 比赛时长选项（分钟，引擎 match_duration_seconds）
-    matchDuration: 90,               // 默认 90 分钟比赛
+    // 比赛内容时长参数（分钟，引擎 match_duration_seconds = 该值 × 60）。
+    // 改这里即改比赛时长，无需动画面层逻辑；界面不提供切换（当前固定 5 分钟）。
+    matchDuration: 5,
     skipMode: 'fast',                // 'fast'=快进非精彩段 | 'skip'=直接跳到下一高亮 | 'off'=不跳过正常播
     skipChoices: [5, 10],            // 快速播放倍速档位（在基速上再乘）
     skipThresholdSeconds: 5,         // 间隙阈值（比赛秒）：距下一个高亮超过此值进入跳过模式

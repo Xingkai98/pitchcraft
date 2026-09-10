@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260910-2';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260910-2';
-import { createGame } from './game.js?v=20260910-2';
-import { mockEventStream } from './mock-event-stream.js?v=20260910-2';
-import { resetMicroMotion } from './micro-motion.js?v=20260910-2';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260910-2';
+import { config } from './config.js?v=20260910-3';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260910-3';
+import { createGame } from './game.js?v=20260910-3';
+import { mockEventStream } from './mock-event-stream.js?v=20260910-3';
+import { resetMicroMotion } from './micro-motion.js?v=20260910-3';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260910-3';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260910-2';
+} from './audit-report.js?v=20260910-3';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -35,7 +35,7 @@ import {
   applyServerStatement,
   loadList,
   saveList,
-} from './observation-list.js?v=20260910-2';
+} from './observation-list.js?v=20260910-3';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -52,14 +52,13 @@ import {
   pollRerunTask,
   formatDecisionText,
   fixRefToRender,
-} from './problem-view.js?v=20260910-2';
+} from './problem-view.js?v=20260910-3';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
 const statusEl = document.getElementById('status');
 const scoreEl = document.getElementById('score');
 const btnToggle = document.getElementById('btn-toggle');
-const btnDuration = document.getElementById('btn-duration');
 const btnSkip = document.getElementById('btn-skip');
 const btnSpeed = document.getElementById('btn-speed');
 const btnReplay = document.getElementById('btn-replay');
@@ -100,7 +99,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260910-2';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260910-3';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -125,10 +124,8 @@ function formatMatchClock(seconds) {
 
 // 固定种子（Q8：固定种子 + 刷新重播）
 const FIXED_SEED = 42;
-// config：连续比赛（demo_mode: false）产整场事件流；比赛时长可调（P7：默认 90 分钟）
+// config：连续比赛（demo_mode: false）产整场事件流；比赛时长读 config.playback.matchDuration（P19：单一参数，无 UI 切换）
 const MATCH_CONFIG = { demo_mode: false };
-let durationIndex = config.playback.matchDurations.indexOf(config.playback.matchDuration);
-if (durationIndex < 0) durationIndex = config.playback.matchDurations.length - 1;
 
 let game = null;
 let renderer = null;
@@ -313,7 +310,7 @@ async function init() {
     let streamStr = null;
     if (engine) {
       statusEl.textContent = '模拟中…';
-      const durMin = config.playback.matchDurations[durationIndex] ?? 90;
+      const durMin = config.playback.matchDuration;
       streamStr = engine.simulate(FIXED_SEED, { ...MATCH_CONFIG, match_duration_seconds: durMin * 60 });
       statusEl.textContent = '解析事件流…';
     } else {
@@ -324,10 +321,7 @@ async function init() {
     renderer = createRenderer();
     lastFrameTime = null;
     statusEl.textContent = `事件数: ${game.events.length} | ${engine ? 'WASM 引擎' : 'mock 数据'}`;
-    // 重置时长/跳过/速度按钮与跳转输入（新 game 回到当前时长、快速跳过、1x、事件 0）
-    const durMin = config.playback.matchDurations[durationIndex] ?? 90;
-    btnDuration.textContent = `比赛 ${durMin} 分钟`;
-    btnDuration.title = '比赛内容时长：点击切换 5/10/45/90 分钟（内容固定，播放时长随跳过/倍速）';
+    // 重置跳过/速度按钮与跳转输入（新 game 回到快速跳过、1x、事件 0）
     btnSkip.textContent = game.skipMode === 'fast' ? `跳过 快进${game.getSkipChoice()}x`
       : game.skipMode === 'skip' ? '跳过 直接跳' : '跳过 关';
     btnSkip.title = '跳过非精彩段：快进（连续画面）/ 直接跳（切到下一高亮）/ 关（全部播放）';
@@ -340,24 +334,12 @@ async function init() {
   }
 }
 
-// 重新建 Game（时长改变后重新 simulate）
-async function rebuildGame() {
-  await init();
-  resetMicroMotion();
-  showNotice(`已切换为 ${config.playback.matchDurations[durationIndex]} 分钟比赛`);
-}
-
 // 控制按钮
 btnToggle.addEventListener('click', () => {
   if (game) {
     game.togglePlay();
     showNotice(game.playing ? '播放中' : '已暂停');
   }
-});
-btnDuration.addEventListener('click', () => {
-  // 比赛时长选项循环（5/10/45/90 分钟），重新 simulate
-  durationIndex = (durationIndex + 1) % config.playback.matchDurations.length;
-  rebuildGame();
 });
 btnSkip.addEventListener('click', () => {
   if (game) {

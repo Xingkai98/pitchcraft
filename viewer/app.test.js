@@ -13,6 +13,7 @@
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { createAppHarness } from './dom-test-harness.mjs';
+import { config } from './config.js';
 
 let h;
 
@@ -53,6 +54,27 @@ test('harness 驱动真实 app.js：初始化完成并拿到 mock 事件流', as
   assert.ok(h.$('btn-submit'), '应有「提交诊断」按钮');
   assert.equal(h.statement, '', '初始描述输入框为空');
   assert.deepEqual(h.entryStatements(), [], '初始观察列表为空');
+});
+
+// --- P19 spec：比赛时长是单一可配置参数，界面不提供切换 ---
+test('P19：播放控制区无时长切换入口', async () => {
+  await h.importApp();
+  // 旧按钮已从 index.html 删除；再被加回来时此用例即红。
+  assert.equal(h.$('btn-duration'), null, '不应存在时长切换按钮 #btn-duration');
+  const controls = h.$('controls');
+  assert.ok(controls, '应有播放控制区 #controls');
+  // 兜住「换个 id 重新塞一个时长按钮」——控制区不该出现「比赛 N 分钟」这类文本。
+  const switchLike = [...controls.querySelectorAll('button')].filter((b) =>
+    /比赛\s*\d+\s*分钟/.test(b.textContent)
+  );
+  assert.deepEqual(switchLike.map((b) => b.textContent), [], '控制区不应有「比赛 N 分钟」切换按钮');
+});
+
+test('P19：时长收敛为单一参数 matchDuration（改 config 即改时长）', () => {
+  // 单一数值参数，不是选项数组——app.js 直接读它算 match_duration_seconds。
+  assert.equal(typeof config.playback.matchDuration, 'number');
+  assert.equal(config.playback.matchDuration, 5, '当前固定 5 分钟');
+  assert.equal(config.playback.matchDurations, undefined, 'matchDurations 数组应已删除');
 });
 
 // --- spec Scenario 1：采集后清空输入框 ---
