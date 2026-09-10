@@ -10,3 +10,6 @@ viewer/engine.wasm
 
 # 本地诊断问题数据（P10-P13 problem/task/bundle，运行期生成，不入库）
 .scratch/tasks/
+
+# Node 依赖（仅测试用 devDependency，如 jsdom；不进运行时/WASM/浏览器 bundle）
+node_modules/
