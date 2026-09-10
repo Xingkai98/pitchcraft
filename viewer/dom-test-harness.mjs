@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { JSDOM } from 'jsdom';
 import { MockContext } from './mock-canvas.js';
+import { mockEventStream } from './mock-event-stream.js';
 import { registerQueryStripLoader } from './test-query-loader.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -93,7 +94,40 @@ function patchCanvasContext(window) {
   };
 }
 
-function installGlobals(dom, fetchImpl) {
+// ---- 假 WASM 引擎（opt-in）：断言「app.js 实际发给引擎什么 config」时才装 ----
+// 不装时 fetch 桩抛错 → app.js 走 mock 事件流，测试完全不碰 wasm（既有用例的确定性路径）。
+// 装上后 fetch(engine.wasm) 返回假字节，WebAssembly.instantiate 返回假实例：simulate() 把
+// 收到的 config 原样记下来（app.js 把它写进 wasm 线性内存的 scratch 区，见 app.js loadEngine），
+// 事件流则由同一份 mockEventStream() 充当——格式已知有效，createGame 能正常解析。
+const FAKE_WASM_OUT_OFFSET = 8192; // 输出区（避开低地址 scratch 区）
+const FAKE_WASM_MEM_BYTES = 64 * 1024;
+
+function makeFakeEngine() {
+  const calls = [];
+  const memory = new Uint8Array(FAKE_WASM_MEM_BYTES);
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  let outLen = 0;
+  const exportsObj = {
+    memory: { buffer: memory.buffer },
+    simulate(seed, ptr, len) {
+      calls.push({ seed: Number(seed), config: JSON.parse(decoder.decode(memory.subarray(ptr, ptr + len))) });
+      const out = encoder.encode(JSON.stringify(mockEventStream()));
+      memory.set(out, FAKE_WASM_OUT_OFFSET);
+      outLen = out.length;
+    },
+    get_json_ptr: () => FAKE_WASM_OUT_OFFSET,
+    get_json_length: () => outLen,
+    free_json: () => {},
+  };
+  return {
+    calls,
+    // 形状对齐 app.js loadEngine 的用法：await WebAssembly.instantiate(bytes, {}) → { instance: { exports } }
+    webAssembly: { instantiate: async () => ({ instance: { exports: exportsObj } }) },
+  };
+}
+
+function installGlobals(dom, fetchImpl, engineStub = null) {
   const restore = [];
   const put = (key, value) => {
     restore.push([key, Object.getOwnPropertyDescriptor(globalThis, key)]);
@@ -108,6 +142,8 @@ function installGlobals(dom, fetchImpl) {
   put('cancelAnimationFrame', noopCancelAnimationFrame);
   // fetch 覆盖 Node 内置的：默认抛错 → mock 事件流路径（见 makeFetchStub）。
   put('fetch', fetchImpl);
+  // 假引擎只在显式 opt-in 时装：覆盖 Node 内置 WebAssembly（app.js 读裸全局）。
+  if (engineStub) put('WebAssembly', engineStub.webAssembly);
 
   // app.js 的 showNotice（app.js:114）用全局 setTimeout 排 2.5s 定时器清 notice，属模块级
   // 状态、harness 够不着。不清理的话，点过采集/提交的用例会留个定时器吊着进程（app.test.js
@@ -170,10 +206,12 @@ let activeHarness = null;
 
 /**
  * 建一个隔离的 app.js 测试环境。串行使用：用完必须 close() 再建下一个。
- * @param {{url?: string}} [opts]
+ * @param {{url?: string, fakeEngine?: boolean}} [opts] url：jsdom 的页面地址（默认 localhost）；
+ *   fakeEngine：装假 WASM 引擎（默认 false）。装上后 app.js 走真实引擎路径，测试可经
+ *   `harness.engineCalls` 断言 app.js 实际发给引擎的 config（见 makeFakeEngine）。
  * @returns harness
  */
-export function createAppHarness({ url = 'http://localhost/' } = {}) {
+export function createAppHarness({ url = 'http://localhost/', fakeEngine = false } = {}) {
   if (activeHarness) {
     throw new Error(
       'createAppHarness: 上一个 harness 尚未 close()。harness 会改写全局 document/window，' +
@@ -186,7 +224,12 @@ export function createAppHarness({ url = 'http://localhost/' } = {}) {
   patchCanvasContext(dom.window);
 
   const fetchStub = makeFetchStub();
-  const uninstallGlobals = installGlobals(dom, fetchStub.fetchImpl);
+  const engineStub = fakeEngine ? makeFakeEngine() : null;
+  if (engineStub) {
+    // app.js loadEngine 只在 response.ok 为真时继续；给个空体即可，内容不进 wasm 实例化。
+    fetchStub.setHandler(async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0) }));
+  }
+  const uninstallGlobals = installGlobals(dom, fetchStub.fetchImpl, engineStub);
   const { document } = dom.window;
 
   let closed = false;
@@ -225,6 +268,9 @@ export function createAppHarness({ url = 'http://localhost/' } = {}) {
 
     /** 等 app.js 里的 async 处理函数跑完。 */
     flush: flushAsync,
+
+    /** 假引擎收到的 simulate 调用（仅 fakeEngine: true 时非空）：{ seed, config }[]。 */
+    engineCalls: engineStub ? engineStub.calls : [],
 
     /** 观察描述输入框（#obs-statement）当前值。 */
     get statement() {
