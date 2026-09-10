@@ -10,7 +10,7 @@ import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260905
 import { createGame } from './game.js?v=20260905-2';
 import { mockEventStream } from './mock-event-stream.js?v=20260905-2';
 import { resetMicroMotion } from './micro-motion.js?v=20260905-2';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260905-2';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260910-1';
 import {
   parseAuditImport,
   formatFinding,
@@ -600,6 +600,9 @@ function captureCurrentObservation() {
   observationList = addListEntry(observationList, entry);
   saveList(obsStorage, observationList);
   renderObservationList();
+  // 采集后清空描述输入框：描述以「提交时输入框」为最终权威（见 submitObservation），
+  // 不清空会让下一条观察继承上一条描述（P15 错位 bug）。
+  obsStatementEl.value = '';
   setObsStatus('captured', `match_time=${lastBundle.match_time}s 事件 #${lastBundle.viewer_snapshot.current_event_index}`);
   showNotice('已采集观察，可导出 bundle 或提交诊断');
 }
@@ -625,6 +628,13 @@ async function submitObservation() {
   if (!lastBundle || !currentEntryId) {
     setObsStatus('captured', '请先采集观察');
     return;
+  }
+  // 描述以「提交时输入框」为最终权威（P15）：非空（抹除凭证后）覆盖采集时冻结的初值，
+  // 空则保留冻结值。用户流程是「采集 → 描述 → 提交」，故必须在此重读，不能沿用采集时快照。
+  const finalStatement = resolveSubmitStatement(lastBundle.statement, obsStatementEl.value);
+  if (finalStatement !== lastBundle.statement) {
+    lastBundle.statement = finalStatement;
+    updateEntry(currentEntryId, { statement: finalStatement });
   }
   if (!OBSERVATION_ENDPOINT) {
     updateEntry(currentEntryId, { sync_error: true, detail_error: '未配置本地诊断端点' });
