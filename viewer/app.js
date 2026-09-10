@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260905-2';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260905-2';
-import { createGame } from './game.js?v=20260905-2';
-import { mockEventStream } from './mock-event-stream.js?v=20260905-2';
-import { resetMicroMotion } from './micro-motion.js?v=20260905-2';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, deriveDiagnosisEndpoint } from './observation.js?v=20260905-2';
+import { config } from './config.js?v=20260910-1';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260910-1';
+import { createGame } from './game.js?v=20260910-1';
+import { mockEventStream } from './mock-event-stream.js?v=20260910-1';
+import { resetMicroMotion } from './micro-motion.js?v=20260910-1';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260910-1';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260905-2';
+} from './audit-report.js?v=20260910-1';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -34,7 +34,7 @@ import {
   summarizeStatement,
   loadList,
   saveList,
-} from './observation-list.js?v=20260905-2';
+} from './observation-list.js?v=20260910-1';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -51,7 +51,7 @@ import {
   pollRerunTask,
   formatDecisionText,
   fixRefToRender,
-} from './problem-view.js?v=20260905-2';
+} from './problem-view.js?v=20260910-1';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -99,7 +99,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260905-2';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260910-1';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -600,6 +600,9 @@ function captureCurrentObservation() {
   observationList = addListEntry(observationList, entry);
   saveList(obsStorage, observationList);
   renderObservationList();
+  // 采集后清空描述输入框：描述以「提交时输入框」为最终权威（见 submitObservation），
+  // 不清空会让下一条观察继承上一条描述（P15 错位 bug）。
+  obsStatementEl.value = '';
   setObsStatus('captured', `match_time=${lastBundle.match_time}s 事件 #${lastBundle.viewer_snapshot.current_event_index}`);
   showNotice('已采集观察，可导出 bundle 或提交诊断');
 }
@@ -626,6 +629,18 @@ async function submitObservation() {
     setObsStatus('captured', '请先采集观察');
     return;
   }
+  // 描述以「提交时输入框」为最终权威（P15）：非空（抹除凭证后）覆盖采集时冻结的初值，
+  // 空则保留冻结值。用户流程是「采集 → 描述 → 提交」，故必须在此重读，不能沿用采集时快照。
+  const finalStatement = resolveSubmitStatement(lastBundle.statement, obsStatementEl.value);
+  if (finalStatement !== lastBundle.statement) {
+    lastBundle.statement = finalStatement;
+    updateEntry(currentEntryId, { statement: finalStatement });
+  }
+  // 输入框内容已被消费（finalStatement 已落入 bundle 与列表条目），此处同样清空。只在采集
+  // 时清空不够：提交后不清空的话，下一条采集会把本条描述冻结成初值，提交时若未再输入就
+  // 沿用它 —— 与 P15 修的错位同源。无条件清空（即使 finalStatement 未变化，输入框也可能
+  // 有抹除/裁剪后等值的残留文本）。
+  obsStatementEl.value = '';
   if (!OBSERVATION_ENDPOINT) {
     updateEntry(currentEntryId, { sync_error: true, detail_error: '未配置本地诊断端点' });
     setObsStatus('provider_unavailable', '未配置本地诊断端点，已回退到 CLI 审计');

@@ -9,6 +9,8 @@ import {
   buildCliCommandTemplate,
   resolveObservationSelection,
   redactBundleForExport,
+  redactCredentialText,
+  resolveSubmitStatement,
   deriveDiagnosisEndpoint,
 } from './observation.js';
 import { validateObservationBundle } from '../tools/bundle.mjs';
@@ -383,4 +385,54 @@ test('redactBundleForExport output still passes the shared bundle validator', ()
   const { valid, errors } = validateObservationBundle(safe);
   assert.equal(valid, true, JSON.stringify(errors));
   assert.doesNotMatch(JSON.stringify(safe), /sk-ant-|ghp_/);
+});
+
+// --- P15 观察描述采集时机修复：resolveSubmitStatement / redactCredentialText ---
+
+test('redactCredentialText is exported and scrubs credential-shaped fragments', () => {
+  assert.equal(
+    redactCredentialText('描述 sk-ant-abc123xyz 结束'),
+    '描述 [REDACTED] 结束',
+  );
+  assert.equal(redactCredentialText('ghp_abcdefghijklmnopqrstuvwxyz123456'), '[REDACTED]');
+  assert.equal(redactCredentialText('普通描述'), '普通描述');
+  // 空/null 兜底为空串（与 captureObservation 内口径一致）
+  assert.equal(redactCredentialText(null), '');
+  assert.equal(redactCredentialText(undefined), '');
+  assert.equal(redactCredentialText(''), '');
+});
+
+test('resolveSubmitStatement returns the current input when non-empty (overrides frozen)', () => {
+  // 流程 (b)：采集时描述为空，采集后才输入 → 提交时覆盖（本次修复的核心场景）
+  assert.equal(resolveSubmitStatement('', '球员射门偏出太多了'), '球员射门偏出太多了');
+  assert.equal(resolveSubmitStatement('旧描述', '新描述'), '新描述');
+  // 前后空白裁剪
+  assert.equal(resolveSubmitStatement('', '  新描述  '), '新描述');
+});
+
+test('resolveSubmitStatement falls back to the frozen statement when input is empty', () => {
+  // 流程 (a)：采集前已输入（冻结），采集后被清空，提交时未改 → 保留冻结值
+  assert.equal(resolveSubmitStatement('传球时防守队员完全不干扰', ''), '传球时防守队员完全不干扰');
+  assert.equal(resolveSubmitStatement('传球时防守队员完全不干扰', '   '), '传球时防守队员完全不干扰');
+  assert.equal(resolveSubmitStatement('传球时防守队员完全不干扰', null), '传球时防守队员完全不干扰');
+  assert.equal(resolveSubmitStatement('传球时防守队员完全不干扰', undefined), '传球时防守队员完全不干扰');
+});
+
+test('resolveSubmitStatement redacts credential-shaped text in the current input', () => {
+  assert.equal(
+    resolveSubmitStatement('', '我的 key 是 sk-ant-abc123xyz'),
+    '我的 key 是 [REDACTED]',
+  );
+  assert.equal(
+    resolveSubmitStatement('', 'token ghp_abcdefghijklmnopqrstuvwxyz123456 泄漏了'),
+    'token [REDACTED] 泄漏了',
+  );
+});
+
+test('resolveSubmitStatement handles both sides empty without throwing', () => {
+  assert.equal(resolveSubmitStatement('', ''), '');
+  assert.equal(resolveSubmitStatement(null, null), '');
+  assert.equal(resolveSubmitStatement(undefined, undefined), '');
+  // frozen 为 undefined 时，current 非空仍覆盖
+  assert.equal(resolveSubmitStatement(undefined, '描述'), '描述');
 });

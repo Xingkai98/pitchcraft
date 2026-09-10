@@ -94,8 +94,17 @@ const CREDENTIAL_VALUE_GLOB_RE = new RegExp(CREDENTIAL_VALUE_SRC, 'g');
 
 // 抹除明显的凭证形片段（sk-ant-*/sk-proj-*/ghp_*/github_pat_*）。
 // 采集的 statement / CLI 模板值先经此清理，保证 bundle 与模板不含此类凭证形文本。
-function redactCredentialText(s) {
+// 导出：app.js（提交时重读描述）与测试复用同一口径。
+export function redactCredentialText(s) {
   return String(s ?? '').replace(CREDENTIAL_VALUE_GLOB_RE, '[REDACTED]');
+}
+
+// 提交诊断时的最终描述（P15）：以「提交时输入框」为权威——非空（抹除凭证后）覆盖采集时
+// 冻结的初值，空则保留冻结值。覆盖两种流程：(a) 采集前已输入、采集后输入框被清空且提交时
+// 未改 → 保留 frozen；(b) 采集后才输入描述 → 覆盖。
+export function resolveSubmitStatement(frozen, current) {
+  const next = redactCredentialText(String(current ?? '').trim());
+  return next !== '' ? next : String(frozen ?? '');
 }
 
 // 凭证键名（递归）：browser 端不知道存活 key 值，按键名保守抹除。与 tools/bundle.mjs
