@@ -21,7 +21,8 @@
 ### D1: 提交时重读，覆盖 + 清空双管齐下
 
 - `captureCurrentObservation`：冻结 bundle 后 `obsStatementEl.value = ''`。
-- `submitObservation`：POST 前用 `resolveSubmitStatement(lastBundle.statement, obsStatementEl.value)` 得到最终 statement，非空覆盖 `lastBundle.statement` 并 `updateEntry(currentEntryId, { statement })` 同步列表卡片。
+- `submitObservation`：POST 前用 `resolveSubmitStatement(lastBundle.statement, obsStatementEl.value)` 得到最终 statement，非空覆盖 `lastBundle.statement` 并 `updateEntry(currentEntryId, { statement })` 同步列表卡片；随后**同样清空输入框**。
+  - 只在采集时清空不足：提交后输入框仍留有刚提交的描述，下一条采集会把它冻结成初值，提交时若未再输入就沿用 —— 与本次修的错位同源。两处清空都必要。
 
 ### D2: 纯函数 `resolveSubmitStatement(frozen, current)`（observation.js，可测）
 
@@ -35,7 +36,7 @@
 
 ## Risks / Trade-offs
 
-- **[下载 bundle 不经提交]**：`downloadBundle` 用采集时冻结值；若用户采集后输入描述但不提交直接下载，下载的 bundle 仍是空/旧描述。缓解：明确「下载」用采集时快照、诊断用提交时最终描述；不扩大本次范围。
+- **[下载 bundle 不经提交]**：`downloadBundle` 用当时 `lastBundle.statement`；若用户采集后输入描述但不提交直接下载，下载的 bundle 仍是空/旧描述（尚未提交过时 = 采集时冻结值）。缓解：明确「下载」用当前 bundle 快照、诊断用提交时最终描述；不扩大本次范围。
 - **[提交时清空后覆盖语义]**：采集前输入描述、采集（清空）后想改成无描述再提交，会保留采集时旧描述（仅非空才覆盖）。缓解：这是当前单输入框模型的固有权衡，非本次目标。
 
 ## Migration Plan
