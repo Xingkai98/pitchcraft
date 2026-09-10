@@ -24,6 +24,12 @@ const INDEX_HTML = join(HERE, 'index.html');
 // 每个 harness 实例用不同的查询串 import app.js：Node 视作不同模块 URL → 拿到独立的
 // 模块实例，app.js 的模块级状态（lastBundle / observationList / game）不会跨用例串味。
 // 这与浏览器一致（同一个 URL 只求值一次），不是 hack。
+//
+// 隔离边界（实测核查过，写在这里免得后来人误判）：只有 app.js 是逐用例独立的。app.js 自己
+// 的传递依赖（game.js / renderer.js / observation.js 等）import URL 恒定 → 所有 harness 共享
+// 同一实例。当前无影响：这些模块无模块级可变状态（唯二的 micro-motion `_params`/`_fade`
+// 只在渲染路径写入，而 rAF 是 no-op、采集/提交路径不碰）。若将来新增「驱动单帧渲染」的用例，
+// 需注意该共享状态会跨用例渗漏。
 let instanceSeq = 0;
 
 // 需要从 jsdom window 借到 globalThis 的全局名。仅列 app.js 及其传递依赖在「import +
