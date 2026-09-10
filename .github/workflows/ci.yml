@@ -6,6 +6,12 @@ on:
   push:
   pull_request:
 
+# 同一 ref 连续 push 时取消尚未跑完的旧 run，避免多个 CI 并行占 runner、
+# 也让「最新一次 push 的结论」是分支上唯一的结论。
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
     name: verify.sh 全套（引擎单测 + viewer 单测/DOM + WASM e2e + realism L1）

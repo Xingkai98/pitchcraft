@@ -21,6 +21,7 @@
 
 - `push` 让 feature 分支 push 即触发（迭代 CI 时不用先开 PR）；`pull_request` 让 PR 合入前也跑。
 - `runs-on: ubuntu-latest`。
+- `concurrency`（`group: <workflow>-<ref>` + `cancel-in-progress`）：同一 ref 连续 push 时取消未跑完的旧 run，避免并行占 runner（审阅建议，非并行矩阵）。
 
 ### D2: Rust 前置编译 WASM
 
