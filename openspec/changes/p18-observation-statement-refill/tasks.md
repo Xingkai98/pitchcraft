@@ -20,4 +20,4 @@
 
 - [x] P4.1 `verify.sh` 全绿（含 tools + viewer 单测）
 - [x] P4.2 `npx openspec validate --all --strict` 通过
-- [ ] P4.3 代码审阅闭环（独立 paseo agent 审阅 → 修复 → 再审阅，直到无遗留问题）
+- [x] P4.3 代码审阅闭环（独立 paseo agent 审阅 → 修复 → 再审阅，直到无遗留问题）
