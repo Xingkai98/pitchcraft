@@ -262,6 +262,11 @@ export function createService({
       status_history: Array.isArray(task.status_history) ? task.status_history : [],
       failure_kind: task.failure_kind ?? null,
       findings,
+      // The bundle is the single source of truth for the observer's description: the
+      // page refreshes it back over its localStorage copy. `?? null` keeps an empty
+      // string distinct from a missing bundle, so the page can tell "cleared" from
+      // "unknown". Redacted below with the rest of the response.
+      statement: readBundle(id)?.statement ?? null,
     };
     // Defense-in-depth: the persisted task is already redacted; re-scrub the
     // composed response so a live env key value never leaves the service.

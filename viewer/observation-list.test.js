@@ -12,6 +12,7 @@ import {
   upsertListEntry,
   formatMatchTime,
   summarizeStatement,
+  applyServerStatement,
   parseObservationList,
   serializeObservationList,
   sanitizeEntry,
@@ -99,6 +100,36 @@ test('summarizeStatement truncates and falls back for empty input', () => {
   const long = 'x'.repeat(100);
   assert.equal(summarizeStatement(long).length, 49); // 48 + ellipsis
   assert.ok(summarizeStatement(long).endsWith('…'));
+});
+
+// --- P18：服务端 statement 回填（覆盖语义）---
+test('applyServerStatement overwrites the local statement with a server string', () => {
+  const entry = createListEntry({ id: 'e1', statement: '本地旧值', task_id: 't1' });
+  const applied = applyServerStatement(entry, '服务端权威描述');
+  assert.equal(applied.statement, '服务端权威描述');
+  assert.equal(entry.statement, '本地旧值', '原条目不被改动');
+  // 其余字段原样保留。
+  assert.equal(applied.id, 'e1');
+  assert.equal(applied.task_id, 't1');
+});
+
+test('applyServerStatement overwrites with an empty string (server-cleared description)', () => {
+  const entry = createListEntry({ id: 'e1', statement: '本地脏值', task_id: 't1' });
+  assert.equal(applyServerStatement(entry, '').statement, '', '空串是有效值，必须覆盖');
+});
+
+test('applyServerStatement keeps the local statement for null/undefined (missing bundle or old service)', () => {
+  const entry = createListEntry({ id: 'e1', statement: '本地值', task_id: 't1' });
+  assert.equal(applyServerStatement(entry, null).statement, '本地值');
+  assert.equal(applyServerStatement(entry, undefined).statement, '本地值');
+  // 非字符串一律视为「未返回该字段」，保持本地值。
+  assert.equal(applyServerStatement(entry, 42).statement, '本地值');
+  assert.equal(applyServerStatement(entry, {}).statement, '本地值');
+});
+
+test('applyServerStatement returns the same entry reference when it does not overwrite', () => {
+  const entry = createListEntry({ id: 'e1', statement: 'x' });
+  assert.equal(applyServerStatement(entry, null), entry);
 });
 
 test('sanitizeEntry rejects non-object and missing/empty id', () => {
