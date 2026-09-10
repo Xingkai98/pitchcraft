@@ -303,7 +303,8 @@ async function tryLoadEngine() {
   }
 }
 
-// 初始化：加载引擎（或 mock）→ 建 Game（当前时长）
+// 初始化：加载引擎（或 mock）→ 建 Game。时长取 config.playback.matchDuration（P19 单一参数），
+// 不在此处提供切换——改 config 即改时长。
 async function init() {
   statusEl.textContent = '加载引擎…';
   try {

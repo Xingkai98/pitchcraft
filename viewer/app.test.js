@@ -12,8 +12,8 @@
 
 import { test, beforeEach, afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { createAppHarness } from './dom-test-harness.mjs';
-import { config } from './config.js';
 
 let h;
 
@@ -24,6 +24,21 @@ beforeEach(() => {
 afterEach(() => {
   h.close();
 });
+
+// app.js 实际用的那个 config 模块实例。app.js 顶层 import 的是 './config.js?v=<版本>'（带
+// cache-busting 查询串），与测试里裸 import './config.js' 是**两个不同模块实例**（查询串参与
+// 模块身份，见 test-query-loader.mjs）——裸 import 拿到的是副本，改了 app.js 也读不到。
+// 这里从 app.js 源码里抠出它真正用的说明符再 import，才能拿到同一实例、真正测到「改 config
+// 即改时长」。不写死版本号：版本号每次改动都会 bump，写死必然过期（P18 审阅先例）。
+let _appConfig;
+async function appConfigInstance() {
+  if (_appConfig) return _appConfig;
+  const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
+  const spec = src.match(/from '(\.\/config\.js[^']*)'/)?.[1];
+  assert.ok(spec, 'app.js 顶层应 import ./config.js（带 ?v=）——测试据此取同一模块实例');
+  _appConfig = (await import(spec)).config;
+  return _appConfig;
+}
 
 // 采集（点真实「采集当前观察」按钮）。前置：描述输入框已铺好内容（由用例设置）。
 async function capture() {
@@ -70,11 +85,53 @@ test('P19：播放控制区无时长切换入口', async () => {
   assert.deepEqual(switchLike.map((b) => b.textContent), [], '控制区不应有「比赛 N 分钟」切换按钮');
 });
 
-test('P19：时长收敛为单一参数 matchDuration（改 config 即改时长）', () => {
-  // 单一数值参数，不是选项数组——app.js 直接读它算 match_duration_seconds。
-  assert.equal(typeof config.playback.matchDuration, 'number');
-  assert.equal(config.playback.matchDuration, 5, '当前固定 5 分钟');
-  assert.equal(config.playback.matchDurations, undefined, 'matchDurations 数组应已删除');
+test('P19：时长收敛为单一参数 matchDuration（单一数值，非选项数组）', async () => {
+  const cfg = await appConfigInstance();
+  assert.equal(cfg.playback.matchDuration, 5, '当前固定 5 分钟');
+  assert.equal(cfg.playback.matchDurations, undefined, 'matchDurations 数组应已删除');
+});
+
+// --- P19 spec Scenario 1：「以配置的时长调用引擎」的端到端接线 ---
+test('P19：app.js 用 config.playback.matchDuration 调引擎（非写死）', async () => {
+  h.close();
+  h = createAppHarness({ fakeEngine: true });
+  await h.importApp();
+  const cfg = await appConfigInstance();
+
+  assert.equal(h.engineCalls.length, 1, '应恰好一次 simulate 调用');
+  const { config: sentConfig, seed } = h.engineCalls[0];
+  assert.equal(seed, 42, '固定种子 42');
+  assert.equal(
+    sentConfig.match_duration_seconds,
+    cfg.playback.matchDuration * 60,
+    'match_duration_seconds 应等于 config.playback.matchDuration × 60'
+  );
+  assert.equal(sentConfig.match_duration_seconds, 300, '当前配置 5 分钟 → 300 秒');
+  assert.equal(sentConfig.demo_mode, false, '连续比赛模式');
+});
+
+// --- P19 spec Scenario 3：「改配置即改时长」 ---
+// 上面那例断言的是「等于 config × 60」，但 config 当前就是 5——把 app.js 写死成 5 也照样成立。
+// 要真正测到「时长是参数」，必须**真的改一次 config**：改成 90 后重新初始化，app.js 应以 5400
+// 秒调引擎，且全程不改画面层代码。这一例正是「写死 5」的照妖镜（写死则恒为 300 → 红）。
+test('P19：改 config 即改时长（改为 90 → 引擎收到 5400 秒）', async () => {
+  const cfg = await appConfigInstance();
+  const original = cfg.playback.matchDuration;
+  try {
+    cfg.playback.matchDuration = 90;
+    h.close();
+    h = createAppHarness({ fakeEngine: true });
+    await h.importApp();
+
+    assert.equal(h.engineCalls.length, 1, '应恰好一次 simulate 调用');
+    assert.equal(
+      h.engineCalls[0].config.match_duration_seconds,
+      5400,
+      '改 config 为 90 分钟后应以 5400 秒调引擎，无需改画面层逻辑'
+    );
+  } finally {
+    cfg.playback.matchDuration = original; // config 是跨用例共享的模块实例，必须还原
+  }
 });
 
 // --- spec Scenario 1：采集后清空输入框 ---
