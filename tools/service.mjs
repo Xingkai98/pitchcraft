@@ -19,7 +19,7 @@
 
 import { createServer } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { mkdirSync, readFileSync, writeFileSync, readdirSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync, readdirSync, unlinkSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -196,6 +196,8 @@ export function createService({
   runFixFn = runFix,
   gitExec = gitRun,
   log = () => {},
+  // P14 queue-only：入队不自动跑诊断（页面只提交，用户在 paseo/CLI 侧手动取任务）。
+  queueOnly = false,
 } = {}) {
   if (!tasksDir) throw new Error('createService: tasksDir is required');
   mkdirSync(tasksDir, { recursive: true });
@@ -368,6 +370,38 @@ export function createService({
         writeFileSync(bundlePath, JSON.stringify(bundle));
       } catch (e) {
         sendJSON(res, 500, { error: `cannot persist bundle: ${e.code ?? e.message}` }, corsOrigin);
+        return;
+      }
+
+      if (queueOnly) {
+        // P14 queue-only：只入队，不自动跑诊断。落盘 captured 任务，用户在 paseo/CLI
+        // 侧用 runner-cli --run-id <id> 手动取任务跑。不读 provider 凭证、不启动诊断。
+        const capturedAt = new Date().toISOString();
+        const capturedTask = {
+          run_id: runId,
+          task_id: runId,
+          status: 'captured',
+          input_summary: null,
+          provider: null,
+          started_at: capturedAt,
+          ended_at: null,
+          command_exit_status: null,
+          report: null,
+          raw_output_ref: null,
+          errors: [],
+          retries: { attempts: 0, max_retry: 0, reasons: [] },
+          failure_kind: null,
+          status_history: [{ status: 'captured', at: capturedAt }],
+        };
+        try {
+          writeFileSync(join(tasksDir, `${runId}.task.json`), JSON.stringify(capturedTask, null, 2));
+        } catch (e) {
+          // 写盘失败：删掉刚落的 bundle，避免孤儿 bundle 让 GET /tasks/:id 误显 auditing。
+          try { unlinkSync(join(tasksDir, `${runId}.bundle.json`)); } catch { /* best-effort */ }
+          sendJSON(res, 500, { error: `cannot persist captured task: ${e.code ?? e.message}` }, corsOrigin);
+          return;
+        }
+        sendJSON(res, 202, { task_id: runId, queued: true }, corsOrigin);
         return;
       }
 
@@ -1010,6 +1044,7 @@ export function parseArgs(argv) {
       opts.allowOrigin ??= [];
       opts.allowOrigin.push(next());
     } else if (a === '--tasks-dir') opts.tasksDir = next();
+    else if (a === '--queue-only') opts.queueOnly = true;
   }
   return opts;
 }
@@ -1029,6 +1064,9 @@ options:
                       http://100.114.76.34:8000). CORS headers are echoed only for
                       localhost/127.0.0.1 origins or allow-listed origins; any other
                       Origin is rejected without CORS headers.
+  --queue-only        only enqueue observations (persist bundle + captured task);
+                      do not auto-start diagnosis. Take tasks manually via
+                      runner-cli --run-id <id>.
 `;
 }
 
@@ -1061,6 +1099,7 @@ export async function main(
     tasksDir: opts.tasksDir,
     log,
     allowedOrigins: opts.allowOrigin ?? [],
+    queueOnly: opts.queueOnly === true,
   });
   listen(server, port, host, () => {
     log(`observation diagnosis service listening on http://${host}:${port}`);

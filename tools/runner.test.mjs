@@ -1305,3 +1305,125 @@ test('runDiagnosis rejects a credential-shaped leak in agent output and keeps ra
   assert.doesNotMatch(persisted, new RegExp(FAKE_KEY));
   assert.doesNotMatch(persisted, /sk-ant-/);
 });
+
+// === P14 queue-only 续跑：captured 任务按同 run_id 跑，status_history 含 captured → auditing → 终态 ===
+
+test('P14 runDiagnosis resumes a captured task by runId and preserves captured in status_history', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-resume-'));
+  const tasksDir = dir; // mkdtemp 已建；runDiagnosis 内部 ensureDir 幂等
+  const bundlePath = mkBundleFile(dir);
+  const auditPath = join(dir, 'audit.json');
+  const runId = 'resume-1';
+  // 模拟 queue-only service 落盘的 captured 任务
+  const capturedAt = new Date().toISOString();
+  writeFileSync(
+    join(tasksDir, `${runId}.task.json`),
+    JSON.stringify({
+      run_id: runId,
+      task_id: runId,
+      status: 'captured',
+      status_history: [{ status: 'captured', at: capturedAt }],
+      provider: null,
+      report: null,
+      errors: [],
+    })
+  );
+  const adapter = {
+    run: async () => ({
+      ok: true,
+      status: 'success',
+      stdout: JSON.stringify(validReport({ root_cause: 'x', verification: 'y' })),
+      exitCode: 0,
+    }),
+  };
+  const task = await runDiagnosis({
+    bundlePath,
+    auditPath,
+    replayInstructions: 'x',
+    sourceRevision: 'r',
+    tasksDir,
+    adapter,
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runId,
+  });
+  assert.equal(task.run_id, runId);
+  assert.equal(task.status, 'diagnosed');
+  // status_history 以 captured 开头，含 auditing，终态结束
+  const statuses = task.status_history.map((h) => h.status);
+  assert.equal(statuses[0], 'captured');
+  assert.ok(statuses.includes('auditing'));
+  assert.equal(statuses[statuses.length - 1], 'diagnosed');
+  // 持久化的 task 文件也被覆盖为 diagnosed，history 完整
+  const persisted = JSON.parse(readFileSync(join(tasksDir, `${runId}.task.json`), 'utf8'));
+  assert.equal(persisted.status, 'diagnosed');
+  assert.equal(persisted.status_history[0].status, 'captured');
+});
+
+test('P14 runDiagnosis without runId keeps auto-generated id (unchanged)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-fresh-'));
+  const bundlePath = mkBundleFile(dir);
+  const auditPath = join(dir, 'audit.json');
+  const tasksDir = join(dir, 'tasks');
+  const adapter = {
+    run: async () => ({
+      ok: true,
+      status: 'success',
+      stdout: JSON.stringify(validReport()),
+      exitCode: 0,
+    }),
+  };
+  const task = await runDiagnosis({
+    bundlePath,
+    auditPath,
+    replayInstructions: 'x',
+    sourceRevision: 'r',
+    tasksDir,
+    adapter,
+    env: { ANTHROPIC_API_KEY: FAKE_KEY },
+  });
+  assert.ok(task.run_id && task.run_id.length > 0);
+  assert.equal(task.status, 'diagnosed');
+  // 无 captured 前置 → history 从 auditing 开始
+  assert.equal(task.status_history[0].status, 'auditing');
+});
+
+test('P14 runDiagnosis retry after failure keeps captured origin in status_history', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-retry-'));
+  const tasksDir = dir;
+  const bundlePath = mkBundleFile(dir);
+  const auditPath = join(dir, 'audit.json');
+  const runId = 'retry-1';
+  // 模拟 queue-only service 落盘的 captured 任务
+  writeFileSync(
+    join(tasksDir, `${runId}.task.json`),
+    JSON.stringify({
+      run_id: runId, task_id: runId, status: 'captured', provider: null, report: null, errors: [],
+      status_history: [{ status: 'captured', at: 't0' }],
+    })
+  );
+  // 第一次跑：provider_unavailable（无 key 的 adapter 场景——用抛错 adapter 走失败）
+  const failAdapter = { run: async () => { throw new Error('provider down'); } };
+  const first = await runDiagnosis({
+    bundlePath, auditPath, replayInstructions: 'x', sourceRevision: 'r',
+    tasksDir, adapter: failAdapter, env: { ANTHROPIC_API_KEY: FAKE_KEY }, runId,
+  });
+  assert.equal(first.status, 'failed');
+  assert.ok(first.status_history[0].status === 'captured');
+  // 第二次跑（queue-cli 允许的重试）：成功 adapter
+  const okAdapter = {
+    run: async () => ({ ok: true, status: 'success', stdout: JSON.stringify(validReport()), exitCode: 0 }),
+  };
+  const second = await runDiagnosis({
+    bundlePath, auditPath, replayInstructions: 'x', sourceRevision: 'r',
+    tasksDir, adapter: okAdapter, env: { ANTHROPIC_API_KEY: FAKE_KEY }, runId,
+  });
+  assert.equal(second.status, 'diagnosed');
+  // captured 起点在重试后仍保留 → queue-cli isRerunnable 语义下可再次重试（若再失败）
+  assert.equal(second.status_history[0].status, 'captured');
+  const statuses = second.status_history.map((h) => h.status);
+  assert.ok(statuses.includes('auditing'));
+  assert.equal(statuses[statuses.length - 1], 'diagnosed');
+  // 持久化文件同样保留 captured 起点
+  const persisted = JSON.parse(readFileSync(join(tasksDir, `${runId}.task.json`), 'utf8'));
+  assert.equal(persisted.status_history[0].status, 'captured');
+});

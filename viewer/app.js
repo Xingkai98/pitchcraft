@@ -555,6 +555,12 @@ function renderEntryCard(entry) {
     hint.textContent = '已采集（未提交）。可点击「提交诊断」发到本地服务，或用 CLI 审计：';
     body.appendChild(hint);
     body.appendChild(buildCliTemplateNode(entry));
+  } else if (entry.status === 'captured' && entry.task_id != null) {
+    // P14 queue-only：已入队、等待用户手动取任务跑（页面不轮询）。
+    const progress = document.createElement('div');
+    progress.className = 'obs-entry-progress';
+    progress.textContent = '已入队，等待处理。在 paseo/CLI 用 queue-cli run 取任务跑。';
+    body.appendChild(progress);
   } else {
     // 处理中（auditing / audit_ready / diagnosing）
     const progress = document.createElement('div');
@@ -657,6 +663,20 @@ async function submitObservation() {
       detail_error: null,
       findingsDetail: null,
     });
+    if (data.queued === true) {
+      // P14 queue-only：服务只入队不自动诊断。任务停在 captured，用户在 paseo/CLI 侧
+      // 用 runner-cli --run-id 手动取任务跑。静默轮询：等人取走后自动回填终态，
+      // 期间服务不在线/超时都不误报「回退 CLI/失败」。
+      updateEntry(currentEntryId, {
+        status: 'captured',
+        sync_error: false,
+        detail_error: null,
+        findingsDetail: null,
+      });
+      setObsStatus('captured', `已入队等待处理，task=${data.task_id.slice(0, 8)}…`);
+      await pollTask(currentEntryId, data.task_id, true);
+      return;
+    }
     setObsStatus('auditing', `已提交，task=${data.task_id.slice(0, 8)}…`);
     await pollTask(currentEntryId, data.task_id);
   } catch (err) {
@@ -667,17 +687,25 @@ async function submitObservation() {
 }
 
 // 轮询 GET /tasks/:id，状态变化实时更新徽章；终态渲染该条目的最终反馈。
-async function pollTask(entryId, taskId) {
+// silent 模式（P14 queue-only captured 条目）：fetch 失败 / 超时 / HTTP 错误不置
+// sync_error（不误报「端点不可用/回退 CLI」）——任务本就等人手动取，服务可不在线。
+// 一旦观察到任务进入活动状态（auditing/diagnosing…）则退出静默，按正常报错处理；
+// 若中途变为终态则照常渲染结果。
+async function pollTask(entryId, taskId, silent = false) {
   const deadline = Date.now() + OBSERVATION_POLL_MAX_MS;
   while (Date.now() < deadline) {
     let res;
     try {
       res = await fetch(`${OBSERVATION_ENDPOINT}/tasks/${encodeURIComponent(taskId)}`);
     } catch (err) {
+      // 静默：服务不在线但任务已入队，保持「已入队」展示。continue 而非 return——
+      // 服务短暂离线后本轮窗口内自动恢复，无需用户刷新。
+      if (silent) { await new Promise((r) => setTimeout(r, OBSERVATION_POLL_MS)); continue; }
       markEntrySyncError(entryId, err.message);
       return;
     }
     if (!res.ok) {
+      if (silent) { await new Promise((r) => setTimeout(r, OBSERVATION_POLL_MS)); continue; }
       markEntrySyncError(entryId, `轮询任务 HTTP ${res.status}`);
       return;
     }
@@ -685,6 +713,7 @@ async function pollTask(entryId, taskId) {
     try {
       data = await res.json();
     } catch {
+      if (silent) { await new Promise((r) => setTimeout(r, OBSERVATION_POLL_MS)); continue; }
       markEntrySyncError(entryId, '轮询响应不是 JSON');
       return;
     }
@@ -698,10 +727,14 @@ async function pollTask(entryId, taskId) {
       renderEntryFeedback(entryId, data);
       return;
     }
+    // 队列任务已被手动取走进入活动阶段 → 退出静默，后续失败按正常上报。
+    if (silent && state !== 'captured') {
+      silent = false;
+    }
     await new Promise((r) => setTimeout(r, OBSERVATION_POLL_MS));
   }
   // 长时间未到终态：不再无限等待，标记同步错误并回退 CLI。
-  markEntrySyncError(entryId, '等待诊断超时');
+  if (!silent) markEntrySyncError(entryId, '等待诊断超时');
 }
 
 // triage 徽章 + 按类别的后续动作面板（bug → change 草稿复制/下载；design →
@@ -804,8 +837,9 @@ function restoreObservationList() {
   renderObservationList();
   for (const entry of observationList) {
     if (entry.task_id) {
-      // 终态条目拉一次刷新最终反馈；非终态持续轮询到终态。
-      pollTask(entry.id, entry.task_id);
+      // queue-only captured 条目：静默轮询（不误报回退 CLI/超时），等任务被人手动
+      // 取走进入活动/终态后正常渲染。终态条目拉一次刷新最终反馈。
+      pollTask(entry.id, entry.task_id, entry.status === 'captured');
     }
   }
 }

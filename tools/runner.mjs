@@ -348,6 +348,22 @@ export async function runDiagnosis({
   const finalRunId = runId ?? randomUUID();
   const startedAt = now();
   const envKey = env.ANTHROPIC_API_KEY;
+
+  // P14 queue-only 续跑：若 runId 对应一个「源自入队」的任务（service 落盘 captured，或
+  // 已失败但 status_history 以 captured 开头——queue-cli 允许对失败任务重试），把它的
+  // status_history 前置，保证最终历史含 captured → auditing → … 完整流转（即使重试多次，
+  // captured 起点也保留，使 queue-cli 能继续判定为可重试）。旧 task 不存在或非入队源起
+  // 时不特殊处理（全新跑）。
+  const preExistingTaskPath = join(tasksDir, `${finalRunId}.task.json`);
+  let preExistingHistory = [];
+  try {
+    const pre = JSON.parse(readFileSync(preExistingTaskPath, 'utf8'));
+    if (pre && Array.isArray(pre.status_history) && pre.status_history[0]?.status === 'captured') {
+      preExistingHistory = pre.status_history;
+    }
+  } catch {
+    // 无旧 task（全新 runId）或文件损坏——忽略，按全新跑处理。
+  }
   // Scrub all user/CLI-controlled values for display, prompt, and persistence so
   // a live key or sk-ant secret never reaches the provider or a persisted record.
   // Original paths are kept below for the real filesystem reads/writes.
@@ -379,7 +395,7 @@ export async function runDiagnosis({
     errors: [],
     retries: { attempts: 0, max_retry: cfg.max_retry, reasons: [] },
     failure_kind: null,
-    status_history: [{ status: 'auditing', at: startedAt }],
+    status_history: [...preExistingHistory, { status: 'auditing', at: startedAt }],
   };
 
   // Record a status transition in both `status` and the persisted history.
