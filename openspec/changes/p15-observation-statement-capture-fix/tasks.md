@@ -10,6 +10,7 @@
 - [x] P2.1 `captureCurrentObservation` 采集后清空 `obsStatementEl.value`
 - [x] P2.2 `submitObservation` 提交前 `resolveSubmitStatement` 覆盖 `lastBundle.statement` 并 `updateEntry` 同步 statement
 - [x] P2.3 `index.html` 版本号 bump（`?v=` 新值，格式 `YYYYMMDD-N`）
+- [x] P2.4 `submitObservation` 提交后同样清空 `obsStatementEl.value`（审阅 round 1 blocker：只在采集时清空不足，提交后输入框残留会使下一条采集冻结上一条描述）
 
 ## P3. 测试
 
