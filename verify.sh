@@ -13,7 +13,13 @@ echo "=== 1/4 Rust 引擎测试（cargo test）==="
 (cd engine && cargo test 2>&1 | tail -15)
 
 echo ""
-echo "=== 2/4 Viewer 单测（node --test）==="
+echo "=== 2/4 Viewer 单测（node --test，含 app.test.js DOM 测试）==="
+# app.test.js 用 jsdom（项目唯一第三方依赖，devDependency，见 package.json）。未安装时
+# `node --test *.test.js` 会以模块解析失败整体挂掉，报错难懂 —— 先给出可操作的提示。
+if [ ! -d node_modules/jsdom ]; then
+  echo "缺少 node_modules/jsdom —— 先在仓库根运行: npm install"
+  exit 1
+fi
 (cd viewer && node --test *.test.js 2>&1 | grep -E "^(# (tests|pass|fail))")
 
 echo ""

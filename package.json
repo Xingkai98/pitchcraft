@@ -1,0 +1,14 @@
+{
+  "name": "football-manager-clone",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "足球经理 2D 复刻：Rust 事件引擎 + JS/Canvas 画面层。jsdom 仅测试用（devDependency），不进运行时/WASM/浏览器 bundle。",
+  "scripts": {
+    "test": "cd viewer && node --test *.test.js",
+    "verify": "./verify.sh"
+  },
+  "devDependencies": {
+    "jsdom": "^30.0.1"
+  }
+}
