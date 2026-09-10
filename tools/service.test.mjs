@@ -389,7 +389,7 @@ test('GET /tasks/:id returns a synthetic auditing status before the task file ex
     const post = await fetch(`${base}/observations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
-      body: JSON.stringify(validBundle()),
+      body: JSON.stringify({ ...validBundle(), statement: '合成状态下的描述' }),
     });
     const { task_id } = await post.json();
     const res = await fetch(`${base}/tasks/${task_id}`, { headers: { Origin: LOCAL_ORIGIN } });
@@ -397,6 +397,9 @@ test('GET /tasks/:id returns a synthetic auditing status before the task file ex
     const data = await res.json();
     assert.equal(data.status, 'auditing');
     assert.deepEqual(data.findings, []);
+    // P18：合成响应这条路径同样要带 statement——页面在任务刚提交、task 文件还没落盘的
+    // 窗口里就在轮询，这时描述必须已经可回填，不能等任务真正开始跑。
+    assert.equal(data.statement, '合成状态下的描述');
   } finally {
     await closeServer(server);
   }

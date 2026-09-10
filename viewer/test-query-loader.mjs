@@ -1,7 +1,7 @@
 // 测试专用 ESM loader（P16）：让 Node 能 import 顶层带 `?v=` cache-busting 查询串的模块。
 //
 // 背景：app.js 的顶层 import 全带 `?v=<日期-序号>` cache-busting 查询串（浏览器靠它强制刷新
-// 入口模块；具体值见 app.js 文件头，会随每次改动 bump，此处不写死以免注释过期）。Node ESM
+// 入口模块；具体值见 app.js 顶层 import 行，会随每次改动 bump，此处不写死以免注释过期）。Node ESM
 // 把查询串当模块 URL 的一部分，默认按文件名读盘 → ENOENT。选型见
 // openspec/changes/p16-viewer-dom-test-harness/design.md D2：不改 app.js 源码、不破坏浏览器
 // cache-busting（浏览器侧完全无感知）。
