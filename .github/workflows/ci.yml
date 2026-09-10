@@ -1,0 +1,51 @@
+name: CI
+
+# P17：把 verify.sh 的分层验证搬到远端，让回归在合入前被拦住。
+# push（任意分支）与 pull_request 都触发——feature 分支 push 即可看到绿否，迭代 CI 无需先开 PR。
+on:
+  push:
+  pull_request:
+
+jobs:
+  verify:
+    name: verify.sh 全套（引擎单测 + viewer 单测/DOM + WASM e2e + realism L1）
+    runs-on: ubuntu-latest
+    # wasm release 编译 + realism L1 在干净 runner 上可能数分钟；rust-cache 之外再给足上限兜底。
+    timeout-minutes: 30
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      # 先装 Rust：verify.sh 第 1/4 步 cargo test、后续 wasm release 编译都靠它。
+      - name: 安装 Rust（stable + wasm32 target）
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      # 缓存 engine/target（wasm release 产物与 cargo test 共用），避免每次重编。
+      - name: 缓存 Rust 构建产物
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      # viewer/engine.wasm 被 .gitignore 排除（不入库），CI 必须自行编译：
+      # 否则 verify.sh 第 3/4 步（WASM e2e）找不到产物直接 exit 1。
+      - name: 编译 WASM 引擎产物
+        run: |
+          cd engine
+          cargo build --target wasm32-unknown-unknown --release
+          cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm
+
+      # app.test.js 的 loader 用 module.registerHooks（需 Node >= 22.15），22 会解析到最新 22.x。
+      - name: 安装 Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: 安装 npm 依赖（npm ci，package-lock.json 锁定）
+        run: npm ci
+
+      - name: 运行验证套件（verify.sh 四步）
+        run: ./verify.sh
