@@ -66,6 +66,14 @@ export function upsertListEntry(list, entry) {
     : addListEntry(list, entry);
 }
 
+// 用服务端 bundle 的 statement 覆盖本地条目（已提交条目的描述以服务端为权威）。
+// 仅当服务端给出的**是字符串**时覆盖：空串是有效值（用户把描述清空了），必须覆盖掉
+// 本地旧值；null/undefined（bundle 缺失或旧服务不返回该字段）时保持本地值不动。
+export function applyServerStatement(entry, statement) {
+  if (typeof statement !== 'string') return entry;
+  return { ...entry, statement };
+}
+
 // 秒 → MM:SS（比赛时刻显示，如 2234 → 37:14）。负数/NaN 兜底为 0:00。
 export function formatMatchTime(seconds) {
   const s = Number(seconds);

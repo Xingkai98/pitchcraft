@@ -139,6 +139,95 @@ test('保留 frozen：采集前输入、采集后未再输入 → 提交保留�
   assert.deepEqual(h.entryStatements(), ['采集前写的描述'], '列表条目保持冻结描述');
 });
 
+// --- P18：刷新恢复时 statement 以服务端 bundle 为权威回填 ---
+//
+// 驱动路径与真实刷新完全一致：localStorage 预置条目（含 task_id）→ importApp 时 app.js
+// 顶层的 restoreObservationList() 读回它们并 pollTask 拉服务端状态。harness 的 fetch 桩
+// 对 engine.wasm 照旧抛错（走 mock 事件流），只对 GET /tasks/:id 返回带 statement 的响应。
+
+const LIST_STORAGE_KEY = 'p10.observation.list.v1';
+
+// 预置 localStorage 里的观察列表（app.js 启动时 restoreObservationList 会读它）。
+function seedObservationList(entries) {
+  h.window.localStorage.setItem(LIST_STORAGE_KEY, JSON.stringify(entries));
+}
+
+// 一条已提交（有 task_id）的本地条目，statement 为本地旧值。
+function submittedEntry({ id = 'e1', statement = '本地旧值', status = 'diagnosed' } = {}) {
+  return {
+    id,
+    statement,
+    match_time: 100,
+    event_index: 3,
+    status,
+    task_id: 'task-abc',
+    created_at: '2026-09-10T00:00:00.000Z',
+    sync_error: false,
+    detail_error: null,
+  };
+}
+
+// fetch 桩：GET /tasks/:id → 200 + 给定任务 JSON；其余（engine.wasm）照旧抛错。
+// 返回它实际收到的 task 请求 URL 列表，供「未提交条目不轮询」断言用。
+function stubTaskFetch(taskJson, { taskStatus = 'diagnosed' } = {}) {
+  const seen = [];
+  h.fetch.setHandler((call) => {
+    if (call.url.includes('/tasks/')) {
+      seen.push(call.url);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ task_id: 'task-abc', status: taskStatus, errors: [], report: null, findings: [], ...taskJson }),
+      });
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  return seen;
+}
+
+test('刷新回填：服务端 statement 覆盖本地旧值（终态条目不例外）', async () => {
+  seedObservationList([submittedEntry({ statement: '本地旧值' })]);
+  stubTaskFetch({ statement: '球员射门偏出太多了' });
+
+  await h.importApp();
+  await h.flush(20);
+
+  assert.deepEqual(h.entryStatements(), ['球员射门偏出太多了'], '刷新后应以服务端 bundle 的描述为准');
+});
+
+test('刷新回填：服务端空描述覆盖本地脏值', async () => {
+  seedObservationList([submittedEntry({ statement: '本地脏值' })]);
+  stubTaskFetch({ statement: '' });
+
+  await h.importApp();
+  await h.flush(20);
+
+  assert.deepEqual(h.entryStatements(), [''], '服务端空串是有效值，应清掉本地旧描述');
+});
+
+test('刷新回填：服务端未返回 statement 时保持本地值', async () => {
+  seedObservationList([submittedEntry({ statement: '本地保留值' })]);
+  stubTaskFetch({}); // 响应无 statement 字段（bundle 缺失 / 旧服务）
+
+  await h.importApp();
+  await h.flush(20);
+
+  assert.deepEqual(h.entryStatements(), ['本地保留值'], '服务端未返回该字段时不得清空本地值');
+});
+
+test('刷新回填：未提交（无 task_id）的条目不轮询、保持本地值', async () => {
+  seedObservationList([
+    { ...submittedEntry({ id: 'e1' }), statement: '未提交本地值', task_id: null, status: 'captured' },
+  ]);
+  const seen = stubTaskFetch({ statement: '服务端值' });
+
+  await h.importApp();
+  await h.flush(20);
+
+  assert.deepEqual(seen, [], '无 task_id 的条目不该发起任务轮询');
+  assert.deepEqual(h.entryStatements(), ['未提交本地值'], '未提交条目保持本地描述');
+});
+
 // --- 跨观察隔离：提交清空后，下一条采集不继承上一条描述（P15 错位 bug 的整体回归） ---
 test('跨观察隔离：第二条采集不继承第一条的描述', async () => {
   await h.importApp();

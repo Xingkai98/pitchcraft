@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260910-1';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260910-1';
-import { createGame } from './game.js?v=20260910-1';
-import { mockEventStream } from './mock-event-stream.js?v=20260910-1';
-import { resetMicroMotion } from './micro-motion.js?v=20260910-1';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260910-1';
+import { config } from './config.js?v=20260910-2';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260910-2';
+import { createGame } from './game.js?v=20260910-2';
+import { mockEventStream } from './mock-event-stream.js?v=20260910-2';
+import { resetMicroMotion } from './micro-motion.js?v=20260910-2';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260910-2';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260910-1';
+} from './audit-report.js?v=20260910-2';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -32,9 +32,10 @@ import {
   updateListEntry,
   formatMatchTime,
   summarizeStatement,
+  applyServerStatement,
   loadList,
   saveList,
-} from './observation-list.js?v=20260910-1';
+} from './observation-list.js?v=20260910-2';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -51,7 +52,7 @@ import {
   pollRerunTask,
   formatDecisionText,
   fixRefToRender,
-} from './problem-view.js?v=20260910-1';
+} from './problem-view.js?v=20260910-2';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -99,7 +100,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260910-1';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260910-2';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -737,7 +738,18 @@ async function pollTask(entryId, taskId, silent = false) {
     const errors = Array.isArray(data?.errors) && data.errors.length > 0
       ? data.errors.map((e) => redactText(String(e))).join('; ')
       : '';
-    updateEntry(entryId, { status: state, sync_error: false, detail_error: errors || null });
+    const patch = { status: state, sync_error: false, detail_error: errors || null };
+    // P18：服务端 bundle 是已提交条目 statement 的权威源——刷新/轮询时用它覆盖本地
+    // 缓存（改服务端数据后刷新即可见）。applyServerStatement 只认字符串（含空串，
+    // 即用户清空）为覆盖依据，null/undefined（bundle 缺失/旧服务）保持本地值。
+    // 位置在下面终态 `return` 之前，故终态条目刷新时同样回填；restoreObservationList
+    // 与提交后实时轮询两条路径都经过这里。
+    const current = observationList.find((e) => e.id === entryId);
+    if (current) {
+      const applied = applyServerStatement(current, data?.statement);
+      if (applied.statement !== current.statement) patch.statement = applied.statement;
+    }
+    updateEntry(entryId, patch);
     if (isTerminalStatus(state)) {
       renderEntryFeedback(entryId, data);
       return;

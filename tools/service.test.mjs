@@ -278,6 +278,107 @@ test('GET /tasks/:id returns the persisted redacted task with findings for polli
   }
 });
 
+// --- P18：GET /tasks/:id 暴露 bundle 的 statement（页面刷新回填的权威源）---
+test('GET /tasks/:id returns the bundle statement so the page can refill it (P18)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    const post = await fetch(`${base}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ ...validBundle(), statement: '球员射门偏出太多了' }),
+    });
+    const { task_id } = await post.json();
+    const res = await fetch(`${base}/tasks/${task_id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.statement, '球员射门偏出太多了');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('GET /tasks/:id distinguishes an empty bundle statement from a missing one (P18)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    const post = await fetch(`${base}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ ...validBundle(), statement: '' }),
+    });
+    const { task_id } = await post.json();
+    const res = await fetch(`${base}/tasks/${task_id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    const data = await res.json();
+    // 空串（用户清空描述）不同于 null（无 bundle）——页面据此决定是否覆盖本地值。
+    assert.equal(data.statement, '');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P14 queue-only captured task still exposes its bundle statement (P18)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: async () => {}, queueOnly: true });
+  try {
+    // queue-only 任务停在 captured（同一次请求里就落盘），此时页面已在轮询——
+    // statement 必须随第一个响应就能回填，不能等到有人取走任务。
+    const post = await fetch(`${base}/observations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ ...validBundle(), statement: '右路内切太少' }),
+    });
+    const { task_id } = await post.json();
+    const res = await fetch(`${base}/tasks/${task_id}`, { headers: { Origin: LOCAL_ORIGIN } });
+    const data = await res.json();
+    assert.equal(data.status, 'captured');
+    assert.equal(data.statement, '右路内切太少');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('GET /tasks/:id returns a null statement when the bundle is missing (P18)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: async () => {} });
+  try {
+    // 只落 task 文件、不落 bundle（例如 bundle 被清理）：任务仍可轮询，但描述无从得知。
+    writeFileSync(
+      join(dir, 't-no-bundle.task.json'),
+      JSON.stringify({ run_id: 't-no-bundle', status: 'captured', errors: [], status_history: [] })
+    );
+    const res = await fetch(`${base}/tasks/t-no-bundle`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.statement, null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('GET /tasks/:id redacts credential-shaped text in the bundle statement (P18)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  // POST 的 bundle 校验会拒收含凭证的 statement，所以这里直接落盘模拟「绕过提交路径
+  // 写入的 bundle」（历史/导入文件）。读取时统一过 redactKey 是这层兜底的意义所在。
+  writeFileSync(
+    join(dir, 't-stale.task.json'),
+    JSON.stringify({ run_id: 't-stale', status: 'captured', errors: [], status_history: [] })
+  );
+  writeFileSync(join(dir, 't-stale.bundle.json'), JSON.stringify({ statement: `key 是 ${FAKE_KEY}` }));
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: async () => {}, env: { ANTHROPIC_API_KEY: FAKE_KEY } });
+  try {
+    const res = await fetch(`${base}/tasks/t-stale`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.ok(!data.statement.includes(FAKE_KEY), 'statement 不得含存活凭证');
+    assert.match(data.statement, /\[REDACTED\]/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
 test('GET /tasks/:id returns a synthetic auditing status before the task file exists', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
   // A fake that never persists anything — the bundle file exists but the task
