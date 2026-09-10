@@ -102,7 +102,33 @@ function installGlobals(dom, fetchImpl) {
   put('cancelAnimationFrame', noopCancelAnimationFrame);
   // fetch 覆盖 Node 内置的：默认抛错 → mock 事件流路径（见 makeFetchStub）。
   put('fetch', fetchImpl);
+
+  // app.js 的 showNotice（app.js:114）用全局 setTimeout 排 2.5s 定时器清 notice，属模块级
+  // 状态、harness 够不着。不清理的话，点过采集/提交的用例会留个定时器吊着进程（app.test.js
+  // 因此要 4.4s 才退出），并在 window.close() 后往 detached DOM 写。这里在 harness 存活期间
+  // 包一层记录 handle，close() 时统一清掉。真实回调/clearTimeout 语义原样透传，只多记一笔。
+  const realSetTimeout = globalThis.setTimeout;
+  const realClearTimeout = globalThis.clearTimeout;
+  const pendingTimers = new Set();
+  put('setTimeout', (handler, delay, ...args) => {
+    // 字符串 handler 形态 app.js 不用；非函数直接透传，绝不改语义。
+    if (typeof handler !== 'function') return realSetTimeout(handler, delay, ...args);
+    const handle = realSetTimeout((...cbArgs) => {
+      pendingTimers.delete(handle);
+      handler(...cbArgs);
+    }, delay, ...args);
+    pendingTimers.add(handle);
+    return handle;
+  });
+  put('clearTimeout', (handle) => {
+    pendingTimers.delete(handle);
+    return realClearTimeout(handle);
+  });
+
   return () => {
+    // 先清 harness 期间排下的定时器（close 后不该再有回调落到已销毁的 window 上）。
+    for (const handle of pendingTimers) realClearTimeout(handle);
+    pendingTimers.clear();
     // 倒序还原，把 Node 原本的全局（navigator/fetch 等）还回去，避免污染同进程其他测试。
     for (let i = restore.length - 1; i >= 0; i -= 1) {
       const [key, descriptor] = restore[i];
