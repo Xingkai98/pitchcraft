@@ -130,12 +130,24 @@ async function flushAsync(turns = 8) {
   for (let i = 0; i < turns; i += 1) await new Promise((r) => setImmediate(r));
 }
 
+// 同时只允许一个 harness 存活。原因：harness 把 jsdom window 的全局**装到 globalThis**上，
+// 而 app.js 读的是裸 `document`/`window`。若两个 harness 重叠，close() 的逆序还原会互相踩踏
+//（后关的那个会把前一个已失效的 window 还原回 globalThis，静默留下悬空全局）。串行是唯一
+// 支持的用法（node:test 顶层用例本就串行），故把误用变成一眼可读的错误，而非静默串味。
+let activeHarness = null;
+
 /**
- * 建一个隔离的 app.js 测试环境。
- * @param {{url?: string, engineSimStream?: unknown}} [opts]
+ * 建一个隔离的 app.js 测试环境。串行使用：用完必须 close() 再建下一个。
+ * @param {{url?: string}} [opts]
  * @returns harness
  */
 export function createAppHarness({ url = 'http://localhost/' } = {}) {
+  if (activeHarness) {
+    throw new Error(
+      'createAppHarness: 上一个 harness 尚未 close()。harness 会改写全局 document/window，' +
+        '同一时刻只能有一个存活 —— 请在用例结束时 close()（afterEach）。'
+    );
+  }
   registerQueryStripLoader();
 
   const dom = new JSDOM(readFileSync(INDEX_HTML, 'utf8'), { url });
@@ -146,6 +158,7 @@ export function createAppHarness({ url = 'http://localhost/' } = {}) {
   const { document } = dom.window;
 
   let closed = false;
+  activeHarness = dom;
 
   const harness = {
     dom,
@@ -199,6 +212,7 @@ export function createAppHarness({ url = 'http://localhost/' } = {}) {
     close() {
       if (closed) return;
       closed = true;
+      if (activeHarness === dom) activeHarness = null;
       uninstallGlobals();
       dom.window.close();
     },
