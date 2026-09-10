@@ -30,7 +30,7 @@
 
 ### D3: Node 22 + npm ci
 
-- 项目顶层 `app.test.js` 的 loader 用 `module.registerHooks`（Node ≥ 22.15）。用 `actions/setup-node@v4` + `node-version: 22`。
+- 项目顶层 `app.test.js` 的 loader 用 `module.registerHooks`（Node ≥ 22.15）。用 `actions/setup-node@v7` + `node-version: '22'`（取当前 major：v4 系列的 action 运行时 Node 20 已被 GitHub 标记弃用；checkout 同理用 `@v7`）。
 - 有 `package-lock.json` → `npm ci`（确定性强于 `npm install`）。
 
 ### D4: 直接跑 `./verify.sh`

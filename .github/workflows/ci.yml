@@ -15,7 +15,7 @@ jobs:
 
     steps:
       - name: 检出代码
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       # 先装 Rust：verify.sh 第 1/4 步 cargo test、后续 wasm release 编译都靠它。
       - name: 安装 Rust（stable + wasm32 target）
@@ -38,8 +38,9 @@ jobs:
           cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm
 
       # app.test.js 的 loader 用 module.registerHooks（需 Node >= 22.15），22 会解析到最新 22.x。
+      # v7/v6 基于 Node 24 —— v4 系列的 action 运行时（Node 20）已被 GitHub 标记弃用。
       - name: 安装 Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
