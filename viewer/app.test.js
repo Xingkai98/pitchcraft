@@ -23,6 +23,10 @@ beforeEach(() => {
 
 afterEach(() => {
   h.close();
+  // 兜底还原：app.js 用的 config 是跨用例共享的模块实例，有用例会改它的值。用例自身在
+  // finally 里已还原，这里是第二道防线——万一将来新增用例忘了还原（或还原逻辑被改坏），
+  // 不至于把脏值漏给后续用例（P19 审阅 r2 指出：改坏还原逻辑时无任何用例会红）。
+  if (_appConfig) _appConfig.playback.matchDuration = _appConfigOriginalMatchDuration;
 });
 
 // app.js 实际用的那个 config 模块实例。app.js 顶层 import 的是 './config.js?v=<版本>'（带
@@ -31,12 +35,14 @@ afterEach(() => {
 // 这里从 app.js 源码里抠出它真正用的说明符再 import，才能拿到同一实例、真正测到「改 config
 // 即改时长」。不写死版本号：版本号每次改动都会 bump，写死必然过期（P18 审阅先例）。
 let _appConfig;
+let _appConfigOriginalMatchDuration;
 async function appConfigInstance() {
   if (_appConfig) return _appConfig;
   const src = readFileSync(new URL('./app.js', import.meta.url), 'utf8');
   const spec = src.match(/from '(\.\/config\.js[^']*)'/)?.[1];
   assert.ok(spec, 'app.js 顶层应 import ./config.js（带 ?v=）——测试据此取同一模块实例');
   _appConfig = (await import(spec)).config;
+  _appConfigOriginalMatchDuration = _appConfig.playback.matchDuration; // 首次加载时记下原值
   return _appConfig;
 }
 
@@ -78,11 +84,26 @@ test('P19：播放控制区无时长切换入口', async () => {
   assert.equal(h.$('btn-duration'), null, '不应存在时长切换按钮 #btn-duration');
   const controls = h.$('controls');
   assert.ok(controls, '应有播放控制区 #controls');
-  // 兜住「换个 id 重新塞一个时长按钮」——控制区不该出现「比赛 N 分钟」这类文本。
-  const switchLike = [...controls.querySelectorAll('button')].filter((b) =>
-    /比赛\s*\d+\s*分钟/.test(b.textContent)
+
+  // 控制区只应有这几个按钮（白名单快照）。任何新增控件——按钮、下拉、滑块——都必须先
+  // 在此登记，从而逼一次「这是不是时长切换」的自问；时长入口不可能悄悄溜回来。
+  const BUTTON_IDS = ['btn-toggle', 'btn-skip', 'btn-speed', 'btn-replay'];
+  const buttonIds = [...controls.querySelectorAll('button')].map((b) => b.id);
+  assert.deepEqual(buttonIds, BUTTON_IDS, '控制区按钮应为白名单内的播放控制按钮');
+
+  // 控制区不得含任何可切换数值的控件（下拉/滑块/数字输入）——时长切换无论换什么皮都逃不掉。
+  const pickers = controls.querySelectorAll('select, option, input[type="range"], input[type="number"]');
+  assert.deepEqual(
+    [...pickers].map((el) => el.id || el.tagName),
+    [],
+    '控制区不应有 select/option/range/number 等可切换控件'
   );
-  assert.deepEqual(switchLike.map((b) => b.textContent), [], '控制区不应有「比赛 N 分钟」切换按钮');
+
+  // 兜住「文案不带数字」的换皮按钮：控制区任何文本都不该提「时长」。
+  const mentionsDuration = [...controls.querySelectorAll('*')].filter((el) =>
+    /时长/.test(el.textContent)
+  );
+  assert.deepEqual(mentionsDuration.map((el) => el.textContent), [], '控制区不应出现含「时长」的控件');
 });
 
 test('P19：时长收敛为单一参数 matchDuration（单一数值，非选项数组）', async () => {

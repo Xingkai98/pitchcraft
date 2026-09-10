@@ -206,7 +206,9 @@ let activeHarness = null;
 
 /**
  * 建一个隔离的 app.js 测试环境。串行使用：用完必须 close() 再建下一个。
- * @param {{url?: string}} [opts]
+ * @param {{url?: string, fakeEngine?: boolean}} [opts] url：jsdom 的页面地址（默认 localhost）；
+ *   fakeEngine：装假 WASM 引擎（默认 false）。装上后 app.js 走真实引擎路径，测试可经
+ *   `harness.engineCalls` 断言 app.js 实际发给引擎的 config（见 makeFakeEngine）。
  * @returns harness
  */
 export function createAppHarness({ url = 'http://localhost/', fakeEngine = false } = {}) {
