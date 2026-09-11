@@ -620,7 +620,8 @@ function renderConfirmationInto(body, entry) {
   summary.className = 'obs-confirm-summary';
   summary.textContent = ui.selection.length > 0 ? `已选：${ui.selection.map((i) => `#${i}`).join('、')}` : '未选任何事件';
   const submitBtn = document.createElement('button');
-  submitBtn.id = 'btn-confirm-anchors';
+  // class 而非 id：多个 awaiting_confirmation 条目会各有一个按钮，id 会重复（无效 HTML；
+  // 点击处理已按节点绑定，无需靠 id 查找）。
   submitBtn.className = 'obs-confirm-submit';
   submitBtn.textContent = '确认锚定';
   submitBtn.disabled = ui.submitting;

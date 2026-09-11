@@ -787,24 +787,30 @@ export async function runProposal({
   const preExistingTaskPath = join(tasksDir, `${finalRunId}.task.json`);
   let preExistingHistory = [];
   let preExistingConfirmation = null;
+  let preExistingStatus = null;
   try {
     const pre = JSON.parse(readFileSync(preExistingTaskPath, 'utf8'));
     if (pre && Array.isArray(pre.status_history) && pre.status_history[0]?.status === 'captured') {
       preExistingHistory = pre.status_history;
     }
-    if (pre && typeof pre === 'object' && pre.confirmation && typeof pre.confirmation === 'object') {
-      preExistingConfirmation = pre.confirmation;
+    if (pre && typeof pre === 'object') {
+      if (pre.confirmation && typeof pre.confirmation === 'object') preExistingConfirmation = pre.confirmation;
+      if (typeof pre.status === 'string') preExistingStatus = pre.status;
     }
   } catch {
     // 全新 runId 或文件损坏——按全新任务处理。
   }
+  // 对一个已 confirmed 的任务重新提案时，状态不能退回 awaiting_confirmation——那会让任务
+  // 卡在「isRerunnable 不收、也不等人确认」的死角（复核 finding 2）。已确认的锚点仍在，
+  // 重新提案只是刷新候选，状态保持 confirmed（等人取诊断）。
+  const reproposalOfConfirmed = preExistingStatus === 'confirmed' && preExistingConfirmation !== null;
 
   const displayBundlePath = scrubText(bundlePath, envKey);
   const displayStatement = statement == null ? null : scrubText(statement, envKey);
 
   const task = {
     run_id: finalRunId,
-    status: 'awaiting_confirmation',
+    status: reproposalOfConfirmed ? 'confirmed' : 'awaiting_confirmation',
     input_summary: null,
     provider: {
       provider: cfg.provider,
@@ -826,7 +832,9 @@ export async function runProposal({
     failure_kind: null,
     proposal: null,
     confirmation: preExistingConfirmation,
-    status_history: [...preExistingHistory, { status: 'awaiting_confirmation', at: startedAt }],
+    status_history: reproposalOfConfirmed
+      ? [...preExistingHistory] // 状态未变（confirmed）→ 不追加冗余流转
+      : [...preExistingHistory, { status: 'awaiting_confirmation', at: startedAt }],
   };
 
   const persist = () => {
@@ -868,35 +876,32 @@ export async function runProposal({
   const prompt = buildProposalPrompt({ bundlePath: displayBundlePath, statement: displayStatement });
   const provider = adapter ?? createProviderAdapter(cfg);
   let proposal = { event_indexes: [], candidates: [], drift_hints: [], source: 'fallback-empty' };
-  let attempt = 0;
-  // 提案失败（provider 不可用/超时/error/无法解析）一律回退 fallback-empty：确认步是可选增强，
-  // 不该因提案失败而失败——用户永远能从全量列表手动勾选。
-  while (attempt <= cfg.max_retry) {
-    attempt += 1;
-    task.retries.attempts = attempt;
-    let run;
-    try {
-      run = await provider.run(prompt, { env, timeoutMs: (cfg.timeout_seconds ?? 300) * 1000 });
-    } catch (e) {
-      task.retries.reasons.push(`proposal provider.run threw: ${e.message}`);
-      break;
-    }
+  // 单次尝试：提案失败（provider 不可用/超时/error/非零退出/无法解析）一律回退 fallback-empty。
+  // 确认步是可选增强，不该因提案失败而失败——用户永远能从全量列表手动勾选，故不重试
+  // （与诊断不同：诊断输出非法要重试，提案空/错只是少给建议）。max_retry 仍是任务字段，
+  // 但提案路径不用它重跑。
+  task.retries.attempts = 1;
+  let run;
+  try {
+    run = await provider.run(prompt, { env, timeoutMs: (cfg.timeout_seconds ?? 300) * 1000 });
+  } catch (e) {
+    task.retries.reasons.push(`proposal provider.run threw: ${e.message}`);
+    run = null;
+  }
+  if (run) {
     if (run.status === 'provider_unavailable' || run.status === 'timeout' || run.status === 'error' || run.ok === false) {
       task.retries.reasons.push(`proposal provider unavailable/failed: ${run.error ?? run.status}`);
-      break;
-    }
-    if (run.exitCode !== null && run.exitCode !== undefined && run.exitCode !== 0) {
+    } else if (run.exitCode !== null && run.exitCode !== undefined && run.exitCode !== 0) {
       task.retries.reasons.push(`proposal provider exited with code ${run.exitCode}`);
-      break;
+    } else {
+      const normalized = normalizeProposal(run.stdout ?? '');
+      // 空提案（模型没选出任何候选）也算 fallback-empty：用户改从全量列表选。
+      if (normalized.event_indexes.length === 0 && normalized.candidates.length === 0) {
+        task.retries.reasons.push('proposal returned no candidates; using fallback-empty');
+      } else {
+        proposal = { ...normalized, source: 'llm' };
+      }
     }
-    const normalized = normalizeProposal(run.stdout ?? '');
-    // 空提案（模型没选出任何候选）也算 fallback-empty：用户改从全量列表选。
-    if (normalized.event_indexes.length === 0 && normalized.candidates.length === 0) {
-      task.retries.reasons.push('proposal returned no candidates; using fallback-empty');
-      break;
-    }
-    proposal = { ...normalized, source: 'llm' };
-    break;
   }
   task.proposal = proposal;
   task.command_exit_status = null;

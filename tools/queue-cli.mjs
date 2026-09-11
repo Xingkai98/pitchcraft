@@ -20,7 +20,7 @@ import { join, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { buildReplayInstructions } from './service.mjs';
-import { confirmTask, redactTaskText, CONFIRMABLE_STATUSES } from './runner.mjs';
+import { confirmTask, redactTaskText } from './runner.mjs';
 import { describeEvent, isCandidateEvent } from '../viewer/event-labels.js';
 import { redactCredentialText, redactKey } from './provider.mjs';
 
@@ -46,6 +46,54 @@ export function isRerunnable(task) {
 export function isProposable(task) {
   if (!task) return false;
   return ['captured', 'awaiting_confirmation', 'confirmed'].includes(task.status);
+}
+
+// P20：任务是否「有下一步可做」——list 用它决定是否列进可取清单。captured/failed-retryable
+// 可 run；awaiting_confirmation/confirmed 可 confirm 或 run。确认步的任务**不该**从 list 消失
+// （list 是用户找待办的地方），故把确认两态也算可操作。
+export function isActionable(task) {
+  return isRerunnable(task) || isProposable(task);
+}
+
+// 状态 → list 里的提示后缀。之前是「非 captured 一律 (失败，可重试)」的二元判断，
+// 会把已确认/待确认（乃至已诊断）的任务误标成失败——P20 新增两态后必须按状态给准确提示。
+export function statusHint(status) {
+  switch (status) {
+    case 'captured':
+      return '';
+    case 'awaiting_confirmation':
+      return ' (待确认事件锚点)';
+    case 'confirmed':
+      return ' (已确认，待跑诊断)';
+    // 活动态（已被取走/在跑）：不是失败，别催重试。
+    case 'auditing':
+    case 'audit_ready':
+    case 'diagnosing':
+      return ' (进行中)';
+    // 已出结果：--all 里出现时不是失败。
+    case 'diagnosed':
+      return ' (已完成)';
+    case 'insufficient_evidence':
+      return ' (证据不足)';
+    // 失败终态（provider_unavailable/failed）与未知状态：可重试。
+    default:
+      return ' (失败，可重试)';
+  }
+}
+
+// 状态 → 该状态下的「下一步命令」提示（list 尾部提示行）。
+export function nextStepHint(status, taskId) {
+  const id = taskId ?? '<task-id>';
+  if (status === 'awaiting_confirmation') {
+    return `待确认锚点：node tools/queue-cli.mjs --tasks-dir <dir> events ${id}  →  confirm ${id} --events 3,5`;
+  }
+  if (status === 'confirmed') {
+    return `跑诊断：node tools/queue-cli.mjs --tasks-dir <dir> run ${id}`;
+  }
+  if (status === 'captured') {
+    return `提案：node tools/queue-cli.mjs --tasks-dir <dir> propose ${id}  →  或直接 run ${id}`;
+  }
+  return `重试：node tools/queue-cli.mjs --tasks-dir <dir> run ${id}`;
 }
 
 // P20：解析 `confirm <id> --events 3,5` 的 --events 值 → 非负整数数组。空串 → []。
@@ -210,11 +258,11 @@ function main() {
       console.log('(队列为空)');
       return;
     }
-    const ready = tasks.filter(isRerunnable);
-    const rest = opts.all ? tasks.filter((t) => !isRerunnable(t)) : [];
+    const ready = tasks.filter(isActionable);
+    const rest = opts.all ? tasks.filter((t) => !isActionable(t)) : [];
     const shown = opts.all ? [...ready, ...rest] : ready;
     if (shown.length === 0) {
-      console.log(`没有可取的队列任务（captured 或失败可重试）。共 ${tasks.length} 个任务（加 --all 查看全部）。`);
+      console.log(`没有可取的队列任务（captured 待提案/待确认/已确认，或失败可重试）。共 ${tasks.length} 个任务（加 --all 查看全部）。`);
       return;
     }
     for (const t of shown) {
@@ -230,11 +278,10 @@ function main() {
           }
         } catch { /* bundle 缺失/不可读——只显示 id */ }
       }
-      const hint = t.status === 'captured' ? '' : ' (失败，可重试)';
-      console.log(`${t.status.padEnd(14)} ${String(t.run_id).padEnd(12)} started=${t.started_at ?? '?'}${info}${hint}${stmt ? `  「${String(stmt).slice(0, 60)}」` : ''}`);
+      console.log(`${t.status.padEnd(20)} ${String(t.run_id).padEnd(12)} started=${t.started_at ?? '?'}${info}${statusHint(t.status)}${stmt ? `  「${String(stmt).slice(0, 60)}」` : ''}`);
     }
     if (ready.length > 0) {
-      console.log(`\n取任务跑：node tools/queue-cli.mjs --tasks-dir <dir> run <task-id>`);
+      console.log(`\n下一步（按状态）：\n  ${nextStepHint(ready[0].status, ready[0].run_id)}`);
     }
     return;
   }
@@ -313,6 +360,20 @@ function main() {
       '--propose',
     ];
     if (statement) args.push('--statement', statement);
+    // 转发 provider 覆盖参数（与 run 同一套 argMap），否则 `propose <id> --model X` 会被
+    // parser 收下却静默丢弃（复核 finding 6）。
+    const proposeArgMap = {
+      provider: 'provider',
+      command: 'command',
+      model: 'model',
+      permission: 'permission',
+      budget: 'budget',
+      timeout: 'timeout',
+      maxRetry: 'max-retry',
+    };
+    for (const [optKey, flag] of Object.entries(proposeArgMap)) {
+      if (opts[optKey]) args.push(`--${flag}`, opts[optKey]);
+    }
     const child = spawn(process.execPath, args, { stdio: 'inherit' });
     child.on('exit', (code) => {
       process.exitCode = code ?? 1;

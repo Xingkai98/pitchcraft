@@ -422,7 +422,7 @@ test('P20 确认 UI：awaiting_confirmation 条目渲染模型提案（人话标
   // 漂移提示（⚠️）
   assert.match(text, /角球/, '应渲染漂移提示');
   // 提交按钮就位
-  assert.ok(card.querySelector('#btn-confirm-anchors'), '应有「确认锚定」按钮');
+  assert.ok(card.querySelector('.obs-confirm-submit'), '应有「确认锚定」按钮');
   // 默认不展开全量列表（beat 不出现）
   assert.doesNotMatch(text, /无球跑动/, '默认不展开 beat');
 });
@@ -434,7 +434,7 @@ test('P20 确认 UI：提交 confirm 发送 POST /tasks/:id/confirm，body 带�
   await h.importApp();
   await h.flush(20);
 
-  await h.click('btn-confirm-anchors');
+  await h.clickSelector('.obs-confirm-submit');
   await h.flush(20);
 
   assert.equal(seen.confirm.length, 1, '应发生一次 POST confirm');
@@ -491,7 +491,7 @@ test('P20 确认 UI：展开全量后可改勾选，提交发送改后的 index 
   // 取消勾选 → 提交空集合
   box55.click();
   await h.flush(4);
-  await h.click('btn-confirm-anchors');
+  await h.clickSelector('.obs-confirm-submit');
   await h.flush(20);
   assert.deepEqual(seen.confirm[0].event_indexes, [], '取消勾选后提交空锚点集合');
 });
@@ -512,14 +512,22 @@ test('P20 确认 UI：confirmed 条目展示「已确认，等待诊断」与锚
   assert.match(text, /等待诊断/, '应提示等待诊断');
 });
 
-test('P20 兼容：旧 captured 任务（无 proposal/events）不渲染确认面板，行为不变', async () => {
+test('P20 兼容：旧 captured 任务（无 proposal/confirmation）不渲染确认面板，行为不变', async () => {
   seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'captured' }), task_id: 'task-old' }]);
-  // 响应不带 proposal/events（旧服务/旧任务）
+  // 真实旧任务响应：服务端照常返回窗口 events/lineup（所有 bundle 都有 events），
+  // 只是**没有** proposal/confirmation 字段。页面靠 renderEntryCard 的分支顺序（captured
+  // 分支在 awaiting_confirmation 分支之前）走原「已入队」路径——不是靠
+  // confirmationDetailFromTask 返回 null（那个 helper 只用于排除「无事件且无提案」）。
   h.fetch.setHandler((call) => {
     if (call.url.includes('/tasks/')) {
       return Promise.resolve({
         ok: true, status: 200,
-        json: async () => ({ task_id: 'task-old', status: 'captured', errors: [], report: null, findings: [] }),
+        json: async () => ({
+          task_id: 'task-old', status: 'captured', errors: [], report: null, findings: [],
+          events: [{ index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' }],
+          lineup: [{ id: 7, team: 'home' }],
+          // proposal / confirmation 缺省 → undefined
+        }),
       });
     }
     throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
@@ -530,5 +538,5 @@ test('P20 兼容：旧 captured 任务（无 proposal/events）不渲染确认�
 
   const text = h.$('obs-list').textContent;
   assert.match(text, /已入队/, '旧 captured 条目走原「已入队」路径');
-  assert.equal(h.document.querySelector('#btn-confirm-anchors'), null, '旧任务不应出现确认按钮');
+  assert.equal(h.document.querySelector('.obs-confirm-submit'), null, '旧任务不应出现确认按钮');
 });

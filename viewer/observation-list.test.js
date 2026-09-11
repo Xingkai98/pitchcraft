@@ -19,6 +19,11 @@ import {
   loadList,
   saveList,
   LIST_STORAGE_KEY,
+  confirmationDetailFromTask,
+  proposalIndexes,
+  defaultConfirmationSelection,
+  toggleEventIndex,
+  confirmationEventsToShow,
 } from './observation-list.js';
 
 test('OBSERVATION_STATUSES is the exact spec vocabulary (P20 adds the two confirmation states)', () => {
@@ -201,4 +206,90 @@ test('loadList returns [] when storage is null or throws', () => {
   // saveList swallows quota errors
   const badStore = { setItem: () => { throw new Error('quota'); } };
   saveList(badStore, [createListEntry({ id: 'x' })]);
+});
+
+// --- P20 事件锚定确认：纯函数 helper -----------------------------------------
+
+test('P20 confirmationDetailFromTask：从服务端响应提取确认数据；旧任务（无 events/proposal）返回 null', () => {
+  const detail = confirmationDetailFromTask({
+    proposal: { event_indexes: [55], source: 'llm' },
+    confirmation: null,
+    events: [{ index: 55, type: 'pass' }],
+    lineup: [{ id: 7, team: 'home' }],
+  });
+  assert.deepEqual(detail.events, [{ index: 55, type: 'pass' }]);
+  assert.equal(detail.proposal.source, 'llm');
+  assert.equal(detail.confirmation, null);
+  assert.deepEqual(detail.lineup, [{ id: 7, team: 'home' }]);
+  // 旧任务：events 空 + proposal 缺 → null（页面走原路径）
+  assert.equal(confirmationDetailFromTask({}), null);
+  assert.equal(confirmationDetailFromTask({ events: [] }), null);
+  assert.equal(confirmationDetailFromTask(null), null);
+  assert.equal(confirmationDetailFromTask('x'), null);
+  // proposal 存在但 events 为空仍算确认数据（提案候选可标注「不在窗口内」）
+  assert.ok(confirmationDetailFromTask({ proposal: { event_indexes: [] }, events: [] }) !== null);
+});
+
+test('P20 proposalIndexes：去重 + 过滤非整数/负数', () => {
+  assert.deepEqual(proposalIndexes({ proposal: { event_indexes: [55, 55, 3] } }), [55, 3]);
+  assert.deepEqual(proposalIndexes({ proposal: { event_indexes: [3, 'x', 2.5, -1, 5] } }), [3, 5]);
+  assert.deepEqual(proposalIndexes({ proposal: {} }), []);
+  assert.deepEqual(proposalIndexes(null), []);
+  assert.deepEqual(proposalIndexes({ proposal: { event_indexes: 'nope' } }), []);
+});
+
+test('P20 defaultConfirmationSelection：默认勾选 = 模型候选；fallback-empty → 空', () => {
+  assert.deepEqual(defaultConfirmationSelection({ proposal: { event_indexes: [55, 3] } }), [55, 3]);
+  assert.deepEqual(defaultConfirmationSelection({ proposal: { event_indexes: [], source: 'fallback-empty' } }), []);
+  assert.deepEqual(defaultConfirmationSelection(null), []);
+});
+
+test('P20 toggleEventIndex：增/删并去重，不改入参', () => {
+  const base = [55];
+  assert.deepEqual(toggleEventIndex(base, 3), [55, 3], '新增');
+  assert.deepEqual(toggleEventIndex([55, 3], 55), [3], '删除');
+  assert.deepEqual(base, [55], '不得改动入参数组');
+  assert.deepEqual(toggleEventIndex([], 55), [55]);
+  assert.deepEqual(toggleEventIndex(null, 55), [55], 'null 选择集视为空');
+});
+
+test('P20 confirmationEventsToShow：默认/展开/显示全部三种视图', () => {
+  const detail = {
+    proposal: { event_indexes: [55] },
+    events: [
+      { index: 0, type: 'lineup' },
+      { index: 55, type: 'pass' },
+      { index: 56, type: 'beat' },
+      { index: 57, type: 'shot' },
+    ],
+  };
+  // 未展开 → 只列模型候选
+  assert.deepEqual(
+    confirmationEventsToShow(detail, { expanded: false }).map((e) => e.index),
+    [55]
+  );
+  // 展开 + 只看高亮（isCandidate 注入：pass/shot 算高亮，beat/lineup 不算）
+  const isCandidate = (e) => ['pass', 'shot', 'tackle', 'foul'].includes(e.type);
+  assert.deepEqual(
+    confirmationEventsToShow(detail, { expanded: true, showAll: false, isCandidate }).map((e) => e.index),
+    [55, 57]
+  );
+  // 展开 + 显示全部
+  assert.deepEqual(
+    confirmationEventsToShow(detail, { expanded: true, showAll: true, isCandidate }).map((e) => e.index),
+    [0, 55, 56, 57]
+  );
+  // 空 detail 不抛
+  assert.deepEqual(confirmationEventsToShow(null, { expanded: true }), []);
+});
+
+test('P20 sanitizeEntry 丢弃 _confirmUi/confirmationDetail（派生渲染状态不进 localStorage）', () => {
+  const entry = {
+    ...createListEntry({ id: 'e1', task_id: 't1' }),
+    _confirmUi: { selection: [55], dirty: true },
+    confirmationDetail: { proposal: { event_indexes: [55] }, events: [] },
+  };
+  const clean = sanitizeEntry(JSON.parse(serializeObservationList([entry]))[0]);
+  assert.equal(clean._confirmUi, undefined, '确认 UI 选择态不持久化');
+  assert.equal(clean.confirmationDetail, undefined, '确认派生数据不持久化（刷新从服务端重拉）');
 });
