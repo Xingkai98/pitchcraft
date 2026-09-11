@@ -4,7 +4,7 @@
 //! - L1 规格一致性：引擎硬编码概率多 seed 聚合按带断言
 //!   （普通射门 15/35/50、头球 chi-square、tackle 稀释模型、槽位相对 mix、角球派生带、
 //!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）
-//!   ——`#[ignore]`，verify.sh 第 4 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
+//!   ——`#[ignore]`，verify.sh 第 5 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
 //! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、
 //!   速度上界、门将贴门线、事件 t 范围）——默认 `cargo test` 就跑（15 场）
 //! - golden master：10 个 canary seed 的统计摘要 + 事件流哈希，防静默漂移——默认跑（10 场）
@@ -497,7 +497,7 @@ fn chi_sq_gof(observed: &[usize; 3], expected_p: &[f64; 3]) -> f64 {
 
 // ==== L1：规格一致性（多 seed 统计分布）====
 
-/// `#[ignore]`：L1 是独立统计 gate（verify.sh 第 4 步以 `--release -- --ignored` 显式运行）。
+/// `#[ignore]`：L1 是独立统计 gate（verify.sh 第 5 步以 `--release -- --ignored` 显式运行）。
 /// 默认 `cargo test` 跳过——debug 下 200 场统计聚合 ~40s，不应拖慢日常单测（L2/golden 不 ignore）。
 #[test]
 #[ignore]

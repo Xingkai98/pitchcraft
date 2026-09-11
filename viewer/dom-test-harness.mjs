@@ -266,6 +266,14 @@ export function createAppHarness({ url = 'http://localhost/', fakeEngine = false
       return flushAsync();
     },
 
+    /** 按 CSS 选择器点元素（用于没有唯一 id 的按钮，如每张卡片各一个的确认按钮）。 */
+    clickSelector(selector) {
+      const el = document.querySelector(selector);
+      if (!el) throw new Error(`找不到元素 ${selector}`);
+      el.click();
+      return flushAsync();
+    },
+
     /** 等 app.js 里的 async 处理函数跑完。 */
     flush: flushAsync,
 

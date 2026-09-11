@@ -2260,3 +2260,219 @@ test('P14 parseArgs parses --queue-only', () => {
   const opts2 = parseArgs(['--tasks-dir', '/tmp/x']);
   assert.equal(opts2.queueOnly, undefined);
 });
+
+// --- P20 事件锚定确认：GET 返回 proposal/confirmation/events + POST confirm ---
+
+// 直接落盘一个 captured / awaiting_confirmation 任务 + bundle（模拟 queue-only 入队 / 提案后）。
+function seedTask(dir, id, { status = 'captured', extra = {} } = {}) {
+  const bundle = {
+    ...validBundle(),
+    statement: '踢出边线',
+    lineup: [{ id: 7, team: 'home' }],
+    events: [
+      { index: 0, type: 'kickoff' },
+      { index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' },
+    ],
+  };
+  writeFileSync(join(dir, `${id}.bundle.json`), JSON.stringify(bundle));
+  writeFileSync(join(dir, `${id}.task.json`), JSON.stringify({
+    run_id: id, task_id: id, status, input_summary: null, provider: null,
+    started_at: '2026-09-10T00:00:00.000Z', ended_at: null, command_exit_status: null,
+    report: null, raw_output_ref: null, errors: [], retries: { attempts: 0, max_retry: 0, reasons: [] },
+    failure_kind: null, proposal: null, confirmation: null,
+    status_history: [{ status: 'captured', at: '2026-09-10T00:00:00.000Z' }],
+    ...extra,
+  }, null, 2));
+}
+
+test('P20 GET /tasks/:id returns proposal + confirmation + window events/lineup', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    seedTask(dir, 'task-p20', {
+      status: 'awaiting_confirmation',
+      extra: {
+        proposal: { event_indexes: [55], candidates: [{ index: 55, why: '唯一出边线' }], drift_hints: [], source: 'llm' },
+      },
+    });
+    const res = await fetch(`${base}/tasks/task-p20`, { headers: { Origin: LOCAL_ORIGIN } });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'awaiting_confirmation');
+    assert.equal(data.proposal.source, 'llm');
+    assert.deepEqual(data.proposal.event_indexes, [55]);
+    assert.equal(data.confirmation, null);
+    // 窗口事件 + lineup 供页面 B 面渲染人话标签
+    assert.deepEqual(data.events.map((e) => e.index), [0, 55]);
+    assert.deepEqual(data.lineup, [{ id: 7, team: 'home' }]);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P20 POST /tasks/:id/confirm writes confirmation and moves captured → confirmed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    seedTask(dir, 'task-c');
+    const res = await fetch(`${base}/tasks/task-c/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ event_indexes: [55], source: 'page', note: '确认 t=51 出边线' }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.status, 'confirmed');
+    assert.deepEqual(data.confirmation.event_indexes, [55]);
+    assert.equal(data.confirmation.source, 'page');
+    assert.equal(data.confirmation.note, '确认 t=51 出边线');
+    // 持久化：任务文件已写 confirmation + 状态流转
+    const saved = JSON.parse(readFileSync(join(dir, 'task-c.task.json'), 'utf8'));
+    assert.equal(saved.status, 'confirmed');
+    assert.deepEqual(saved.confirmation.event_indexes, [55]);
+    assert.equal(saved.status_history[saved.status_history.length - 1].status, 'confirmed');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P20 POST confirm accepts an empty event_indexes (no event anchors the statement)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    seedTask(dir, 'task-e', { status: 'awaiting_confirmation' });
+    const res = await fetch(`${base}/tasks/task-e/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ event_indexes: [] }),
+    });
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.deepEqual(data.confirmation.event_indexes, []);
+    assert.equal(data.confirmation.source, 'page', '缺省 source = page');
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P20 POST confirm rejects malformed bodies with 400', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    seedTask(dir, 'task-b');
+    const cases = [
+      { body: {}, err: /event_indexes must be an array/ },
+      { body: { event_indexes: [1, 'x'] }, err: /non-negative integers/ },
+      { body: { event_indexes: [-1] }, err: /non-negative integers/ },
+      { body: { event_indexes: [1.5] }, err: /non-negative integers/ },
+      { body: { event_indexes: [1], source: 'bogus' }, err: /source must be one of/ },
+    ];
+    for (const { body, err } of cases) {
+      const res = await fetch(`${base}/tasks/task-b/confirm`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+        body: JSON.stringify(body),
+      });
+      assert.equal(res.status, 400, `body ${JSON.stringify(body)} should 400`);
+      assert.match((await res.json()).error, err);
+    }
+    // 非法请求不改任务
+    const saved = JSON.parse(readFileSync(join(dir, 'task-b.task.json'), 'utf8'));
+    assert.equal(saved.status, 'captured');
+    assert.equal(saved.confirmation, null);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P20 POST confirm 404 for unknown task, 409 for a task past confirmation', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  const confirm = (id, body = { event_indexes: [] }) => fetch(`${base}/tasks/${id}/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+    body: JSON.stringify(body),
+  });
+  try {
+    const missing = await confirm('nope');
+    assert.equal(missing.status, 404);
+    // 诊断已开始的 task 不再接受确认（避免与在跑的诊断打架）
+    seedTask(dir, 'task-aud', { status: 'auditing' });
+    const conflict = await confirm('task-aud');
+    assert.equal(conflict.status, 409);
+    assert.match((await conflict.json()).error, /cannot confirm/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P20 POST confirm is idempotent and re-confirm overwrites anchors before diagnosis', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    seedTask(dir, 'task-re', { status: 'awaiting_confirmation' });
+    const post = (body) => fetch(`${base}/tasks/task-re/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify(body),
+    });
+    await post({ event_indexes: [55] });
+    const second = await post({ event_indexes: [55, 60], source: 'cli' });
+    assert.equal(second.status, 200);
+    const data = await second.json();
+    assert.deepEqual(data.confirmation.event_indexes, [55, 60]);
+    assert.equal(data.confirmation.source, 'cli');
+    // 重确认不该重复追加 confirmed 历史（状态已 confirmed）
+    const saved = JSON.parse(readFileSync(join(dir, 'task-re.task.json'), 'utf8'));
+    assert.equal(saved.status_history.filter((h) => h.status === 'confirmed').length, 1);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P20 POST confirm redacts credential-shaped note before persisting', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    seedTask(dir, 'task-n', { status: 'awaiting_confirmation' });
+    const res = await fetch(`${base}/tasks/task-n/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: LOCAL_ORIGIN },
+      body: JSON.stringify({ event_indexes: [55], note: `note with ${FAKE_KEY}` }),
+    });
+    assert.equal(res.status, 200);
+    const text = await res.text();
+    assert.doesNotMatch(text, /sk-ant-/);
+    assert.doesNotMatch(text, new RegExp(FAKE_KEY));
+    const saved = JSON.parse(readFileSync(join(dir, 'task-n.task.json'), 'utf8'));
+    assert.doesNotMatch(saved.confirmation.note, /sk-ant-/);
+  } finally {
+    await closeServer(server);
+  }
+});
+
+test('P20 POST confirm rejects a non-localhost origin (403, no task change)', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'service-test-'));
+  const { fake } = fakeRunPersisting();
+  const { server, base } = await startService({ tasksDir: dir, runDiagnosisFn: fake });
+  try {
+    seedTask(dir, 'task-o');
+    const res = await fetch(`${base}/tasks/task-o/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Origin: EVIL_ORIGIN },
+      body: JSON.stringify({ event_indexes: [55] }),
+    });
+    assert.equal(res.status, 403);
+    const saved = JSON.parse(readFileSync(join(dir, 'task-o.task.json'), 'utf8'));
+    assert.equal(saved.status, 'captured');
+  } finally {
+    await closeServer(server);
+  }
+});

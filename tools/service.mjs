@@ -24,7 +24,7 @@ import { execFileSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { validateObservationBundle } from './bundle.mjs';
-import { runDiagnosis } from './runner.mjs';
+import { runDiagnosis, redactTaskText, confirmTask } from './runner.mjs';
 import { redactKey, redactCredentialText } from './provider.mjs';
 import { loadDotEnv } from './dotenv.mjs';
 import {
@@ -61,6 +61,7 @@ export const DEFAULT_HOST = '127.0.0.1';
 // Task ids are service-generated (UUIDs) or test ids; only safe path-segment
 // characters are accepted so a task id can never escape the tasks dir.
 const TASK_ID_RE = /^[A-Za-z0-9_-]+$/;
+
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -254,6 +255,7 @@ export function createService({
     // Whitelist the polling fields the page actually consumes. The persisted task
     // carries internal paths (input_summary.bundle_path / audit_path) and runner
     // config that must not be exposed through the service.
+    const bundle = readBundle(id);
     const response = {
       task_id: id,
       status: typeof task.status === 'string' ? task.status : 'failed',
@@ -266,7 +268,16 @@ export function createService({
       // page refreshes it back over its localStorage copy. `?? null` keeps an empty
       // string distinct from a missing bundle, so the page can tell "cleared" from
       // "unknown". Redacted below with the rest of the response.
-      statement: readBundle(id)?.statement ?? null,
+      statement: bundle?.statement ?? null,
+      // P20 事件锚定确认步：提案与用户确认（旧任务无这两个字段 → null，页面据此走原路径）。
+      proposal: task.proposal ?? null,
+      confirmation: task.confirmation ?? null,
+      // P20：页面 B 面（「从全部事件重选」）要用人话标签渲染窗口事件，而刷新后页面只有
+      // localStorage 元数据、拿不到 bundle。这里把窗口事件 + lineup 一并返回，让页面调
+      // 双端共享的 describeEvent 渲染（若改由服务端预生成标签串，页面就不共用该函数了）。
+      // 都是观察者自己窗口内的数据（statement 已是同类先例），窗口只有秒级事件，payload 可控。
+      events: Array.isArray(bundle?.events) ? bundle.events : [],
+      lineup: Array.isArray(bundle?.lineup) ? bundle.lineup : [],
     };
     // Defense-in-depth: the persisted task is already redacted; re-scrub the
     // composed response so a live env key value never leaves the service.
@@ -449,6 +460,61 @@ export function createService({
         return;
       }
       sendJSON(res, 200, task, corsOrigin);
+      return;
+    }
+
+    // --- P20 事件锚定确认：POST /tasks/:id/confirm --------------------------
+    // 写 confirmation（事件 index 集合），状态 captured/awaiting_confirmation → confirmed。
+    // 只记确认、不自动跑诊断（与 captured 同为「等人来取」的待处理态，design D1/D7）。
+    const confirmMatch = /^\/tasks\/([^/]+)\/confirm$/.exec(pathname);
+    if (req.method === 'POST' && confirmMatch) {
+      const id = confirmMatch[1];
+      if (!TASK_ID_RE.test(id)) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      const parsed = await parseJsonBody(req, maxBodyBytes);
+      if (!parsed.ok) {
+        sendJSON(res, parsed.tooLarge ? 413 : 400, { error: parsed.error }, corsOrigin, parsed.tooLarge ? { connectionClose: true } : undefined);
+        return;
+      }
+      const body = parsed.body;
+
+      const taskPath = join(tasksDir, `${id}.task.json`);
+      let task = null;
+      try {
+        task = JSON.parse(readFileSync(taskPath, 'utf8'));
+      } catch {
+        task = null;
+      }
+      if (!task) {
+        sendJSON(res, 404, { error: 'not found' }, corsOrigin);
+        return;
+      }
+      // 校验 + 状态流转走 runner 的 confirmTask（与 queue-cli 共用同一实现，避免两处漂移）。
+      // note 是用户文本，落盘前抹除凭证形片段（与 service 其他用户文本同口径）。
+      const note = typeof body.note === 'string' ? body.note : '';
+      const result = confirmTask(task, {
+        event_indexes: body.event_indexes,
+        source: body.source ?? 'page',
+        note: redactCredentialText(redactKey(note, envKey)),
+      });
+      if (!result.ok) {
+        const status = result.code === 'NOT_FOUND' ? 404 : result.code === 'CONFLICT' ? 409 : 400;
+        sendJSON(res, status, { error: result.error }, corsOrigin);
+        return;
+      }
+      try {
+        writeFileSync(taskPath, JSON.stringify(JSON.parse(redactTaskText(result.task, envKey)), null, 2));
+      } catch (e) {
+        sendJSON(res, 500, { error: `cannot persist confirmation: ${e.code ?? e.message}` }, corsOrigin);
+        return;
+      }
+      sendJSON(res, 200, {
+        task_id: id,
+        status: result.task.status,
+        confirmation: result.task.confirmation,
+      }, corsOrigin);
       return;
     }
 

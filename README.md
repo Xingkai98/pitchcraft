@@ -65,7 +65,7 @@ python3 serve.py 8000
 - 动画逻辑：传跑配合、踢-追周期、射门（纯函数单测）
 - 渲染：坐标映射、像素位置（MockCanvas 断言）
 - **真实性统计套件**（`engine/tests/realism.rs`）：
-  - L1 规格一致性（`#[ignore]`，verify.sh 第 4 步 release 显式跑）：射门 15/35/50、头球 12/38/50（chi-square GOF）、tackle 稀释模型、槽位相对 mix、角球场均带（200 seed 聚合）
+  - L1 规格一致性（`#[ignore]`，verify.sh 第 5 步 release 显式跑）：射门 15/35/50、头球 12/38/50（chi-square GOF）、tackle 稀释模型、槽位相对 mix、角球场均带（200 seed 聚合）
   - L2 过程真实性（默认 `cargo test` 就跑）：比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、速度上界、门将贴门线、事件 t 范围（任意 seed）
   - golden master（默认跑）：10 canary seed 统计摘要 + 事件流哈希，防静默漂移（`ACCEPT_GOLDEN=1` 显式重基线）
 - 最终观感：浏览器人工验收（真实性最后一层，结构化抽查）
