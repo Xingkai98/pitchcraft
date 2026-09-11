@@ -771,14 +771,22 @@ function renderEntryCard(entry) {
     // P20：提案已产出，等人确认事件锚点（A+B：默认模型提案，可展开全量重选）。
     renderConfirmationInto(body, entry);
   } else if (entry.status === 'awaiting_confirmation' && entry.task_id != null) {
-    // P20：awaiting_confirmation 但拿不到确认数据（提案时 bundle 不可读 → 服务不再返回
-    // events/proposal，或首轮轮询前）。此时不该渲染一个永远禁用的按钮——给出原因 + CLI 回退，
-    // 让用户仍能手动确认（复核 NEW-1）。
-    const err = document.createElement('div');
-    err.className = 'obs-entry-error';
-    err.textContent = `等待确认，但拿不到窗口事件数据${entry.detail_error ? `：${redactText(entry.detail_error)}` : ''}（提案可能失败，或服务暂不可达）。可用 CLI 查看/确认：`;
-    body.appendChild(err);
-    body.appendChild(buildCliTemplateNode(entry));
+    // P20：awaiting_confirmation 但拿不到确认数据。两种情况分开说，避免刷新页面时（确认数据
+    // 是内存派生态，刷新后要等首轮轮询）把「加载中」误报成失败（复核 r4 NIT）：
+    //   - 有 detail_error → 真拿不到（提案时 bundle 不可读，服务不再返回 events/proposal）
+    //     → 给原因 + CLI 回退，让用户仍能手动确认。
+    //   - 无 detail_error → 只是首轮轮询前 → 中性「加载中」提示，等轮询到了自会渲染确认面板。
+    // 两种情况都**不**渲染提交按钮：放行一个空锚点提交会覆盖 CLI/对话面已确认的真实锚点（N4）。
+    const pending = document.createElement('div');
+    if (entry.detail_error) {
+      pending.className = 'obs-entry-error';
+      pending.textContent = `等待确认，但拿不到窗口事件数据：${redactText(entry.detail_error)}。可用 CLI 查看/确认：`;
+    } else {
+      pending.className = 'obs-entry-progress';
+      pending.textContent = '正在加载确认数据…';
+    }
+    body.appendChild(pending);
+    if (entry.detail_error) body.appendChild(buildCliTemplateNode(entry));
   } else if (entry.status === 'confirmed' && entry.task_id != null) {
     // P20：已确认锚定，等诊断（与 captured 同语义，不自动跑）。
     const done = document.createElement('div');

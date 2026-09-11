@@ -543,10 +543,10 @@ test('P20 兼容：旧 captured 任务（无 proposal/confirmation）不渲染�
 
 // --- P20 复核 r2 修复：确认数据未就绪不提交 + 提交后锚点立即显示 ---
 
-test('P20 确认 UI：确认数据未就绪（服务不应答）时不渲染提交按钮，走错误 + CLI 回退', async () => {
+test('P20 确认 UI：确认数据未就绪且无错误时显示中性「加载中」，不渲染提交按钮', async () => {
   seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
-  // GET /tasks/:id 永远挂起 → confirmationDetail 拿不到。此时代替「永远禁用的按钮」，卡片
-  // 应给出原因 + CLI 回退（否则用户面对一个点不动的按钮，无从下手 —— 复核 NEW-1）。
+  // GET /tasks/:id 永远挂起 → confirmationDetail 拿不到，且无 detail_error。这是刷新页面后
+  // 首轮轮询前的正常状态，应显示中性「加载中」而非失败文案（复核 r4 NIT）。
   // 关键：绝不能放行一个会 POST 空 event_indexes、覆盖 CLI/对话面已确认锚点的按钮。
   h.fetch.setHandler((call) => {
     if (call.url.includes('/tasks/')) return new Promise(() => {}); // 永不 resolve
@@ -558,6 +558,33 @@ test('P20 确认 UI：确认数据未就绪（服务不应答）时不渲染提�
 
   const text = h.$('obs-list').textContent;
   assert.equal(h.document.querySelector('.obs-confirm-submit'), null, '数据未就绪时不应出现可提交的确认按钮');
+  assert.match(text, /正在加载确认数据/, '无错误时应显示中性加载提示');
+  assert.doesNotMatch(text, /拿不到窗口事件数据/, '无错误时不应误报失败');
+});
+
+test('P20 确认 UI：确认数据拿不到且带错误时，给原因 + CLI 回退，不渲染提交按钮', async () => {
+  // 提案因 bundle 不可读失败：服务返回 awaiting_confirmation 但 events 为空、proposal 为 null
+  // → confirmationDetail 永远为 null。此时（有 detail_error）应给出原因 + CLI 回退，而不是
+  // 一个永远禁用的死按钮（复核 NEW-1）。
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
+  h.fetch.setHandler((call) => {
+    if (call.url.includes('/tasks/')) {
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: async () => ({
+          task_id: 'task-abc', status: 'awaiting_confirmation', errors: ['bundle 不可读'],
+          report: null, findings: [], events: [], lineup: [], proposal: null, confirmation: null,
+        }),
+      });
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+
+  await h.importApp();
+  await h.flush(20);
+
+  const text = h.$('obs-list').textContent;
+  assert.equal(h.document.querySelector('.obs-confirm-submit'), null, '数据拿不到时不应出现可提交的确认按钮');
   assert.match(text, /拿不到窗口事件数据/, '应说明拿不到确认数据');
   assert.match(text, /runner-cli\.mjs/, '应给出 CLI 回退模板');
 });
