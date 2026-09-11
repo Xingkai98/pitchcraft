@@ -28,7 +28,8 @@ captured → awaiting_confirmation → confirmed → auditing → … → 终态
 
 - `captured`：已入队，等「取提案」。
 - `awaiting_confirmation`：提案已产出，等人确认。
-- `confirmed`：已确认锚定，等「取诊断」——**不自动触发诊断**，与 captured 同语义（queue-only 等 CLI / 非 queue-only 可自动跑）。
+- `confirmed`：已确认锚定，等「取诊断」——**确认动作本身不触发诊断**，与 captured 同语义（等人来取）。
+- **确认步的强制范围**：在 **queue-only 模式**下确认步为**强制**——任务停在 captured/awaiting_confirmation，未确认前诊断不启动，确认后由人用 CLI 取任务跑。**非 queue-only 模式**保持既有「提交即自动诊断」（任务经 auditing 直接进诊断，不到 captured），确认步在该模式下是**可选增强**（captured/awaiting_confirmation 任务仍可被确认，跳过提案直接确认亦走同一 confirm 端点）。
 - 两个新增状态进 runner `TASK_STATUSES` 与页面 `OBSERVATION_STATUSES` 词表。
 
 ### D2: 提案的数据结构（task 文件）

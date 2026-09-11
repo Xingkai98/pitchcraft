@@ -4,7 +4,7 @@
 
 ### Requirement: 观察诊断前需确认事件锚点
 
-已提交的观察 SHALL 在进入诊断前经过「事件锚定确认」：页面/CLI/对话 SHALL 能将观察描述锚定到窗口内的事件 index 集合，确认产物 SHALL 持久化到任务。未确认前诊断 SHALL 不启动（非 queue-only 服务亦同）。
+已提交的观察 SHALL 能被「事件锚定确认」：页面/CLI/对话 SHALL 能将观察描述锚定到窗口内的事件 index 集合，确认产物 SHALL 持久化到任务。在 queue-only 模式下，未确认前诊断 SHALL 不启动（任务停在 captured/awaiting_confirmation，等待确认后由人取任务跑）；非 queue-only 模式下确认步为可选增强，诊断随提交自动启动，captured/awaiting_confirmation 任务仍可被确认（跳过提案直接确认亦走同一 confirm 端点）。
 
 #### Scenario: 提案后等待确认
 - **GIVEN** 一个已入队的观察任务
