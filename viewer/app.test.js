@@ -540,3 +540,38 @@ test('P20 兼容：旧 captured 任务（无 proposal/confirmation）不渲染�
   assert.match(text, /已入队/, '旧 captured 条目走原「已入队」路径');
   assert.equal(h.document.querySelector('.obs-confirm-submit'), null, '旧任务不应出现确认按钮');
 });
+
+// --- P20 复核 r2 修复：确认数据未就绪不提交 + 提交后锚点立即显示 ---
+
+test('P20 确认 UI：确认数据未就绪（服务不应答）时提交按钮禁用，不误发空锚点', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
+  // GET /tasks/:id 永远挂起 → confirmationDetail 拿不到。此时卡片仍渲染（awaiting_confirmation
+  // 分支），但提交按钮必须 disabled，避免 POST 空 event_indexes 覆盖掉 CLI/对话面已确认的锚点。
+  h.fetch.setHandler((call) => {
+    if (call.url.includes('/tasks/')) return new Promise(() => {}); // 永不 resolve
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+
+  await h.importApp();
+  await h.flush(8);
+
+  const btn = h.document.querySelector('.obs-confirm-submit');
+  assert.ok(btn, 'awaiting_confirmation 卡片应渲染提交按钮');
+  assert.equal(btn.disabled, true, '确认数据未就绪时提交按钮应禁用');
+  assert.match(h.$('obs-list').textContent, /加载确认数据/, '应提示确认数据加载中');
+});
+
+test('P20 确认 UI：提交成功后 confirmed 卡片立即显示锚点（不等下一次轮询）', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
+  stubConfirmationFetch(confirmationTask());
+
+  await h.importApp();
+  await h.flush(20);
+  await h.clickSelector('.obs-confirm-submit');
+  await h.flush(20);
+
+  const text = h.$('obs-list').textContent;
+  assert.match(text, /已确认/, '应显示已确认');
+  assert.match(text, /#55/, 'POST 返回的锚点应立即可见（复核 N8），而非显示「未锚定具体事件」');
+  assert.doesNotMatch(text, /未锚定具体事件/, '不应短暂显示未锚定');
+});

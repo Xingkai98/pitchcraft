@@ -14,7 +14,7 @@ concurrency:
 
 jobs:
   verify:
-    name: verify.sh 全套（引擎单测 + viewer 单测/DOM + WASM e2e + realism L1）
+    name: verify.sh 全套（引擎单测 + viewer 单测/DOM + tools 单测 + WASM e2e + realism L1）
     runs-on: ubuntu-latest
     # wasm release 编译 + realism L1 在干净 runner 上可能数分钟；rust-cache 之外再给足上限兜底。
     timeout-minutes: 30
@@ -23,7 +23,7 @@ jobs:
       - name: 检出代码
         uses: actions/checkout@v7
 
-      # 先装 Rust：verify.sh 第 1/4 步 cargo test、后续 wasm release 编译都靠它。
+      # 先装 Rust：verify.sh 第 1/5 步 cargo test、后续 wasm release 编译都靠它。
       - name: 安装 Rust（stable + wasm32 target）
         uses: dtolnay/rust-toolchain@stable
         with:
@@ -36,7 +36,7 @@ jobs:
           workspaces: engine
 
       # viewer/engine.wasm 被 .gitignore 排除（不入库），CI 必须自行编译：
-      # 否则 verify.sh 第 3/4 步（WASM e2e）找不到产物直接 exit 1。
+      # 否则 verify.sh 第 4/5 步（WASM e2e）找不到产物直接 exit 1。
       - name: 编译 WASM 引擎产物
         run: |
           cd engine
@@ -54,5 +54,5 @@ jobs:
       - name: 安装 npm 依赖（npm ci，package-lock.json 锁定）
         run: npm ci
 
-      - name: 运行验证套件（verify.sh 四步）
+      - name: 运行验证套件（verify.sh 五步）
         run: ./verify.sh

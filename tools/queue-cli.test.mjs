@@ -215,3 +215,110 @@ test('P20 queue-cli: statusHint 区分进行中/已完成/证据不足，不再�
   assert.equal(statusHint('failed'), ' (失败，可重试)');
   assert.equal(statusHint('provider_unavailable'), ' (失败，可重试)');
 });
+
+// --- P20 复核 r2 修复：listHint/nextStepHint 按任务判重试 + buildProposeArgs ---
+
+import { listHint, nextStepHint, buildProposeArgs } from './queue-cli.mjs';
+
+test('P20 queue-cli: buildProposeArgs 转发 provider 覆盖参数 + --propose，且不需要 audit/replay', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'queue-cli-propose-'));
+  const args = buildProposeArgs({
+    tasksDir: dir, taskId: 'task-1', statement: '踢出边线',
+    opts: { model: 'mymodel', permission: 'read-only', timeout: '42', maxRetry: '3' },
+  });
+  assert.ok(args.includes('--propose'));
+  assert.ok(args.includes('--bundle'));
+  assert.ok(args.includes(join(dir, 'task-1.bundle.json')));
+  assert.ok(args.includes('--tasks-dir'));
+  assert.ok(args.includes(dir));
+  assert.ok(args.includes('--run-id'));
+  assert.ok(args.includes('task-1'));
+  assert.ok(args.includes('--statement'));
+  assert.ok(args.includes('踢出边线'));
+  // provider 覆盖参数（复核 N2：此前 propose 静默丢弃这些 flag）
+  assert.ok(args.includes('--model') && args.includes('mymodel'));
+  assert.ok(args.includes('--permission') && args.includes('read-only'));
+  assert.ok(args.includes('--timeout') && args.includes('42'));
+  assert.ok(args.includes('--max-retry') && args.includes('3'));
+  // 提案不诊断：不应带 --audit/--replay/--revision
+  assert.ok(!args.includes('--audit'));
+  assert.ok(!args.includes('--replay'));
+  assert.ok(!args.includes('--revision'));
+});
+
+test('P20 queue-cli: listHint 只对可重试的失败任务标「可重试」', () => {
+  // 失败且源自入队 → 可重试
+  assert.match(
+    listHint({ status: 'failed', status_history: [{ status: 'captured', at: 't0' }] }),
+    /可重试/
+  );
+  // 失败但非入队源起 → 只说失败，不催重试（复核 N7：run 会拒收）
+  assert.equal(listHint({ status: 'failed', status_history: [{ status: 'auditing', at: 't0' }] }), ' (失败)');
+  assert.doesNotMatch(listHint({ status: 'provider_unavailable' }), /可重试/);
+  // 确认两态不受影响
+  assert.match(listHint({ status: 'awaiting_confirmation' }), /待确认/);
+  assert.match(listHint({ status: 'confirmed' }), /已确认/);
+});
+
+test('P20 queue-cli: nextStepHint 对不可重试的失败任务不给「重试」提示', () => {
+  assert.match(nextStepHint({ run_id: 'x', status: 'captured' }), /propose x/);
+  assert.match(nextStepHint({ run_id: 'x', status: 'awaiting_confirmation' }), /confirm x/);
+  assert.match(nextStepHint({ run_id: 'x', status: 'confirmed' }), /run x/);
+  assert.match(
+    nextStepHint({ run_id: 'x', status: 'failed', status_history: [{ status: 'captured', at: 't0' }] }),
+    /重试：.*run x/
+  );
+  // 不可重试的失败 → 不给「重试：... run」（run 会拒收）
+  assert.doesNotMatch(
+    nextStepHint({ run_id: 'x', status: 'failed', status_history: [{ status: 'auditing', at: 't0' }] }),
+    /重试：/
+  );
+});
+
+// list 端到端：三种确认相关状态都应出现在可取清单里（复核 N3：此前只测 isActionable 纯函数，
+// 把 list 的过滤换回 isRerunnable 也不会有测试变红）。
+test('P20 queue-cli list：captured/awaiting_confirmation/confirmed 都出现在可取清单', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'queue-cli-list-'));
+  const mk = (id, status, extra = {}) => writeFileSync(join(dir, `${id}.task.json`),
+    JSON.stringify({ run_id: id, status, input_summary: null, started_at: 't', status_history: [{ status: 'captured', at: 't' }], ...extra }));
+  mk('c1', 'captured');
+  mk('a1', 'awaiting_confirmation');
+  mk('f1', 'confirmed', { confirmation: { event_indexes: [55], source: 'cli', note: '' } });
+  mk('d1', 'diagnosed');
+  const out = execFileSync(process.execPath, [QUEUE_CLI, '--tasks-dir', dir, 'list'], { encoding: 'utf8' });
+  assert.match(out, /c1/);
+  assert.match(out, /a1/);
+  assert.match(out, /f1/);
+  assert.doesNotMatch(out, /d1/, '已诊断（非可取）不应出现');
+  assert.match(out, /待确认事件锚点/);
+  assert.match(out, /已确认，待跑诊断/);
+});
+
+// 复核 N1：首态非 captured（如 await(awaiting_confirmation) 起源）的任务再提案不应写空历史。
+test('P20 runProposal: 保留非 captured 起源的历史（不写空 status_history）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'queue-cli-hist-'));
+  const tasksDir = join(dir, 'tasks');
+  mkdirSync(tasksDir, { recursive: true });
+  const bundle = {
+    schema_version: '1', observation_id: 'o', seed: '42', config: {}, match_time: 51,
+    window: { before: 5, after: 5 }, events: [{ index: 55, type: 'pass', subject: 7 }],
+    engine_snapshot: { kind: 'event-stream', source: 'engine-event-stream', match_time: 51, current_event_index: 0, event_count: 1, window: { before: 5, after: 5 }, lineup: [] },
+    viewer_snapshot: { match_time: 51, current_event_index: 0, event_count: 1, play_time: 51, players: [], ball: { x: 0.5, y: 0.5 } },
+    audit_input: { events: [], players: {} }, source_revision: 'abc',
+  };
+  writeFileSync(join(tasksDir, 'h1.bundle.json'), JSON.stringify(bundle));
+  // 首态是 awaiting_confirmation（非 captured），随后被确认。
+  writeFileSync(join(tasksDir, 'h1.task.json'), JSON.stringify({
+    run_id: 'h1', status: 'confirmed',
+    confirmation: { event_indexes: [55], source: 'cli', note: '' },
+    status_history: [{ status: 'awaiting_confirmation', at: 't0' }, { status: 'confirmed', at: 't1' }],
+  }));
+  const { runProposal } = await import('./runner.mjs');
+  const task = await runProposal({ bundlePath: join(tasksDir, 'h1.bundle.json'), tasksDir, runId: 'h1', env: {} });
+  assert.equal(task.status, 'confirmed');
+  assert.deepEqual(
+    task.status_history.map((h) => h.status),
+    ['awaiting_confirmation', 'confirmed'],
+    '历史应原样保留，而不是被清空'
+  );
+});

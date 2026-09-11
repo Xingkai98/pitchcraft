@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260912-1';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260912-1';
-import { createGame } from './game.js?v=20260912-1';
-import { mockEventStream } from './mock-event-stream.js?v=20260912-1';
-import { resetMicroMotion } from './micro-motion.js?v=20260912-1';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260912-1';
+import { config } from './config.js?v=20260912-2';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260912-2';
+import { createGame } from './game.js?v=20260912-2';
+import { mockEventStream } from './mock-event-stream.js?v=20260912-2';
+import { resetMicroMotion } from './micro-motion.js?v=20260912-2';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260912-2';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260912-1';
+} from './audit-report.js?v=20260912-2';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -39,10 +39,10 @@ import {
   defaultConfirmationSelection,
   toggleEventIndex,
   confirmationEventsToShow,
-} from './observation-list.js?v=20260912-1';
+} from './observation-list.js?v=20260912-2';
 // 别名 describeWindowEvent：app.js 另有一个同名的调试摘要函数（describeEvent(e,id)，
 // 供 #event-info 面板用），两者用途不同，避免遮蔽。
-import { describeEvent as describeWindowEvent, isCandidateEvent } from './event-labels.js?v=20260912-1';
+import { describeEvent as describeWindowEvent, isCandidateEvent } from './event-labels.js?v=20260912-2';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -59,7 +59,7 @@ import {
   pollRerunTask,
   formatDecisionText,
   fixRefToRender,
-} from './problem-view.js?v=20260912-1';
+} from './problem-view.js?v=20260912-2';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -106,7 +106,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260912-1';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260912-2';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -614,17 +614,24 @@ function renderConfirmationInto(body, entry) {
   }
 
   // 当前勾选摘要 + 提交。
+  // 确认数据未就绪（confirmationDetail == null：服务未应答/首轮轮询前）时不放行提交——
+  // 否则会 POST 空的 event_indexes，把 CLI/对话面已确认的真实锚点覆盖掉（复核 N4）。
+  const ready = detail !== null && detail !== undefined;
   const actions = document.createElement('div');
   actions.className = 'obs-confirm-actions';
   const summary = document.createElement('span');
   summary.className = 'obs-confirm-summary';
-  summary.textContent = ui.selection.length > 0 ? `已选：${ui.selection.map((i) => `#${i}`).join('、')}` : '未选任何事件';
+  if (!ready) {
+    summary.textContent = '加载确认数据…';
+  } else {
+    summary.textContent = ui.selection.length > 0 ? `已选：${ui.selection.map((i) => `#${i}`).join('、')}` : '未选任何事件';
+  }
   const submitBtn = document.createElement('button');
   // class 而非 id：多个 awaiting_confirmation 条目会各有一个按钮，id 会重复（无效 HTML；
   // 点击处理已按节点绑定，无需靠 id 查找）。
   submitBtn.className = 'obs-confirm-submit';
   submitBtn.textContent = '确认锚定';
-  submitBtn.disabled = ui.submitting;
+  submitBtn.disabled = ui.submitting || !ready;
   submitBtn.addEventListener('click', () => submitConfirmation(entry.id));
   actions.appendChild(summary);
   actions.appendChild(submitBtn);
@@ -663,7 +670,18 @@ async function submitConfirmation(entryId) {
     // 提交成功：切到 confirmed，等诊断（不自动跑）。轮询会同步服务端权威状态。
     // dirty 复位：本地选择已是服务端权威值，后续轮询可再同步。
     ui.dirty = false;
-    updateEntry(entryId, { status: 'confirmed', detail_error: null });
+    // 把 POST 返回的 confirmation 折进派生数据（若有）：否则在下一轮 2s 轮询前，
+    // confirmed 卡片会短暂显示「未锚定具体事件」（复核 N8）。
+    const patch = { status: 'confirmed', detail_error: null };
+    let posted = null;
+    try {
+      posted = await res.json();
+    } catch { /* 非 JSON 响应：仅切状态，轮询兜底 */ }
+    if (posted?.confirmation) {
+      const detail = observationList.find((e) => e.id === entryId)?.confirmationDetail;
+      if (detail) patch.confirmationDetail = { ...detail, confirmation: posted.confirmation };
+    }
+    updateEntry(entryId, patch);
     setObsStatus('confirmed', `已确认锚点：${ui.selection.length > 0 ? ui.selection.map((i) => `#${i}`).join('、') : '（无）'}`);
     showNotice('已确认事件锚点，等待诊断');
   } catch (err) {

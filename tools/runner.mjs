@@ -783,17 +783,20 @@ export async function runProposal({
   const startedAt = now();
   const envKey = env.ANTHROPIC_API_KEY;
 
-  // 沿用旧 task 的来源历史与确认产物（提案可重跑；已确认的 confirmation 不因再提案丢失）。
+  // 沿用旧 task 的历史与确认产物（提案可重跑；已确认的 confirmation 不因再提案丢失）。
+  // 历史只要非空就整体带上——不要求首态是 captured：runProposal 不做 `captured` 源起判定
+  // （那是 runDiagnosis/isRerunnable 的事），首态是 awaiting_confirmation 的任务再提案时
+  // 若丢掉历史会写空 status_history（复核 N1）。
   const preExistingTaskPath = join(tasksDir, `${finalRunId}.task.json`);
   let preExistingHistory = [];
   let preExistingConfirmation = null;
   let preExistingStatus = null;
   try {
     const pre = JSON.parse(readFileSync(preExistingTaskPath, 'utf8'));
-    if (pre && Array.isArray(pre.status_history) && pre.status_history[0]?.status === 'captured') {
-      preExistingHistory = pre.status_history;
-    }
     if (pre && typeof pre === 'object') {
+      if (Array.isArray(pre.status_history) && pre.status_history.length > 0) {
+        preExistingHistory = pre.status_history;
+      }
       if (pre.confirmation && typeof pre.confirmation === 'object') preExistingConfirmation = pre.confirmation;
       if (typeof pre.status === 'string') preExistingStatus = pre.status;
     }

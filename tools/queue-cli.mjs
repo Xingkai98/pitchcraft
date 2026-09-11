@@ -81,9 +81,21 @@ export function statusHint(status) {
   }
 }
 
-// 状态 → 该状态下的「下一步命令」提示（list 尾部提示行）。
-export function nextStepHint(status, taskId) {
-  const id = taskId ?? '<task-id>';
+// list 里的提示后缀（含重试可行性判断）。失败态里只有**可重试**（源自入队）的才提示
+// 「可重试」——否则 --all 里一个非入队源的失败任务会写着「可重试」，而 run 实际拒收。
+export function listHint(task) {
+  const status = task?.status;
+  if (status === 'failed' || status === 'provider_unavailable') {
+    return isRerunnable(task) ? ' (失败，可重试)' : ' (失败)';
+  }
+  return statusHint(status);
+}
+
+// 状态 → 该状态下的「下一步命令」提示（list 尾部提示行）。以任务为单位判断，使失败但
+// 不可重试的任务不给「重试」提示。
+export function nextStepHint(task) {
+  const status = task?.status;
+  const id = task?.run_id ?? '<task-id>';
   if (status === 'awaiting_confirmation') {
     return `待确认锚点：node tools/queue-cli.mjs --tasks-dir <dir> events ${id}  →  confirm ${id} --events 3,5`;
   }
@@ -93,7 +105,9 @@ export function nextStepHint(status, taskId) {
   if (status === 'captured') {
     return `提案：node tools/queue-cli.mjs --tasks-dir <dir> propose ${id}  →  或直接 run ${id}`;
   }
-  return `重试：node tools/queue-cli.mjs --tasks-dir <dir> run ${id}`;
+  return isRerunnable(task)
+    ? `重试：node tools/queue-cli.mjs --tasks-dir <dir> run ${id}`
+    : `查看：node tools/queue-cli.mjs --tasks-dir <dir> events ${id}`;
 }
 
 // P20：解析 `confirm <id> --events 3,5` 的 --events 值 → 非负整数数组。空串 → []。
@@ -115,6 +129,33 @@ export function formatEventLines(bundle, { showAll = false } = {}) {
   const lineup = Array.isArray(bundle?.lineup) ? bundle.lineup : null;
   const shown = showAll ? events : events.filter(isCandidateEvent);
   return shown.map((e) => describeEvent(e, lineup));
+}
+
+// 组装 runner-cli --propose 参数（纯函数，可测）：只提案不诊断，故不需要 audit/replay/
+// revision。opts 里的 provider 覆盖参数（provider/command/model/permission/budget/timeout/
+// maxRetry）与 run 同一套，缺省即不传（复核 N2：此前 propose 会静默丢弃这些 flag）。
+export function buildProposeArgs({ tasksDir, taskId, statement = null, opts = {}, runnerCliPath = join(TOOLS_DIR, 'runner-cli.mjs') }) {
+  const args = [
+    runnerCliPath,
+    '--bundle', join(tasksDir, `${taskId}.bundle.json`),
+    '--tasks-dir', tasksDir,
+    '--run-id', taskId,
+    '--propose',
+  ];
+  if (statement) args.push('--statement', statement);
+  const argMap = {
+    provider: 'provider',
+    command: 'command',
+    model: 'model',
+    permission: 'permission',
+    budget: 'budget',
+    timeout: 'timeout',
+    maxRetry: 'max-retry',
+  };
+  for (const [optKey, flag] of Object.entries(argMap)) {
+    if (opts[optKey]) args.push(`--${flag}`, opts[optKey]);
+  }
+  return args;
 }
 
 // 组装 runner-cli 参数（纯函数，可测）：从 captured 任务 id + bundle 推导
@@ -278,10 +319,10 @@ function main() {
           }
         } catch { /* bundle 缺失/不可读——只显示 id */ }
       }
-      console.log(`${t.status.padEnd(20)} ${String(t.run_id).padEnd(12)} started=${t.started_at ?? '?'}${info}${statusHint(t.status)}${stmt ? `  「${String(stmt).slice(0, 60)}」` : ''}`);
+      console.log(`${t.status.padEnd(20)} ${String(t.run_id).padEnd(12)} started=${t.started_at ?? '?'}${info}${listHint(t)}${stmt ? `  「${String(stmt).slice(0, 60)}」` : ''}`);
     }
     if (ready.length > 0) {
-      console.log(`\n下一步（按状态）：\n  ${nextStepHint(ready[0].status, ready[0].run_id)}`);
+      console.log(`\n下一步（按状态）：\n  ${nextStepHint(ready[0])}`);
     }
     return;
   }
@@ -352,28 +393,7 @@ function main() {
     // 复用 runner-cli --propose：只提案不诊断。statement 优先用旧任务 input_summary，
     // 回退 bundle.statement（captured 任务 input_summary 为空）。
     const statement = task.input_summary?.statement ?? bundle.statement ?? null;
-    const args = [
-      join(TOOLS_DIR, 'runner-cli.mjs'),
-      '--bundle', join(tasksDir, `${taskId}.bundle.json`),
-      '--tasks-dir', tasksDir,
-      '--run-id', taskId,
-      '--propose',
-    ];
-    if (statement) args.push('--statement', statement);
-    // 转发 provider 覆盖参数（与 run 同一套 argMap），否则 `propose <id> --model X` 会被
-    // parser 收下却静默丢弃（复核 finding 6）。
-    const proposeArgMap = {
-      provider: 'provider',
-      command: 'command',
-      model: 'model',
-      permission: 'permission',
-      budget: 'budget',
-      timeout: 'timeout',
-      maxRetry: 'max-retry',
-    };
-    for (const [optKey, flag] of Object.entries(proposeArgMap)) {
-      if (opts[optKey]) args.push(`--${flag}`, opts[optKey]);
-    }
+    const args = buildProposeArgs({ tasksDir, taskId, statement, opts });
     const child = spawn(process.execPath, args, { stdio: 'inherit' });
     child.on('exit', (code) => {
       process.exitCode = code ?? 1;
