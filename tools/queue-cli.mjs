@@ -15,11 +15,14 @@
 // --timeout/--max-retry），并透传 --run-id <task-id> 续跑该 captured 任务。
 // 凭证只从进程环境读，绝不落盘/打印。
 
-import { readFileSync, readdirSync, existsSync } from 'node:fs';
+import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { buildReplayInstructions } from './service.mjs';
+import { confirmTask, redactTaskText, CONFIRMABLE_STATUSES } from './runner.mjs';
+import { describeEvent, isCandidateEvent } from '../viewer/event-labels.js';
+import { redactCredentialText, redactKey } from './provider.mjs';
 
 const TOOLS_DIR = dirname(fileURLToPath(import.meta.url));
 
@@ -31,8 +34,39 @@ export const isCaptured = (task) => Boolean(task && task.status === 'captured');
 export function isRerunnable(task) {
   if (!task) return false;
   if (task.status === 'captured') return true;
+  // P20：confirmed（已确认锚点，等诊断）与 captured 同语义——都是「等人来取」的待处理态，
+  // 确认步不自动触发诊断，由 queue-cli run 取走。
+  if (task.status === 'confirmed') return true;
   const failedTerminal = ['failed', 'provider_unavailable', 'insufficient_evidence'].includes(task.status);
   return failedTerminal && Array.isArray(task.status_history) && task.status_history[0]?.status === 'captured';
+}
+
+// P20：可跑提案的任务态——captured 尚未提案，或 awaiting_confirmation/confirmed 想重新提案
+// （提案可重跑，见 runProposal）。
+export function isProposable(task) {
+  if (!task) return false;
+  return ['captured', 'awaiting_confirmation', 'confirmed'].includes(task.status);
+}
+
+// P20：解析 `confirm <id> --events 3,5` 的 --events 值 → 非负整数数组。空串 → []。
+// 非法（非数字/负数/空项）抛错，让 CLI 明确拒绝而不是静默丢弃用户输入。
+export function parseEventIndexes(spec) {
+  const s = String(spec ?? '').trim();
+  if (s === '') return [];
+  return s.split(',').map((part) => {
+    const t = part.trim();
+    if (!/^\d+$/.test(t)) throw new Error(`--events 含非法 index: ${JSON.stringify(part)}`);
+    return Number(t);
+  });
+}
+
+// P20：把窗口事件渲染成人话标签行，供 `queue-cli events` 展示（与页面共用 describeEvent）。
+// 默认只列高亮事件（design：shot/pass/corner/tackle/foul/throw_in）；showAll 时列全量（beat 折叠）。
+export function formatEventLines(bundle, { showAll = false } = {}) {
+  const events = Array.isArray(bundle?.events) ? bundle.events : [];
+  const lineup = Array.isArray(bundle?.lineup) ? bundle.lineup : null;
+  const shown = showAll ? events : events.filter(isCandidateEvent);
+  return shown.map((e) => describeEvent(e, lineup));
 }
 
 // 组装 runner-cli 参数（纯函数，可测）：从 captured 任务 id + bundle 推导
@@ -92,7 +126,7 @@ function listTasks(tasksDir) {
 }
 
 function usage() {
-  return `usage: node tools/queue-cli.mjs --tasks-dir DIR <list|run> [task-id] [options]
+  return `usage: node tools/queue-cli.mjs --tasks-dir DIR <command> [task-id] [options]
 
 commands:
   list                  list queue tasks you can pick up (captured + failed-but-retryable),
@@ -100,6 +134,13 @@ commands:
   run <task-id>         pick up a queued task and run its diagnosis
                         (paths/replay/revision are derived from the stored bundle;
                         failed attempts can be retried with the same task-id)
+  propose <task-id>     P20: run the event-anchoring PROPOSAL step (no diagnosis).
+                        Writes awaiting_confirmation + proposal to the task.
+  events <task-id>      P20: show the proposal + the window events as human labels.
+                        Add --all to expand past the highlight events (incl. beat).
+  confirm <task-id>     P20: confirm the event anchors -> status confirmed (no diagnosis).
+                        --events 3,5   anchor these event indexes (default: none)
+                        --note "..."   optional free-text note
 
 options:
   --tasks-dir DIR       directory the service/runner persists task files into (required)
@@ -110,7 +151,10 @@ options:
   --budget USD          max API spend
   --timeout SECONDS     provider timeout (default: 300)
   --max-retry N         retries on invalid agent output (default: 1)
-  --all                 (with list) also show tasks you cannot pick up (diagnosed/auditing/etc.)
+  --events LIST         (with confirm) comma-separated event indexes, e.g. 3,5
+  --note TXT            (with confirm) note recorded on the confirmation
+  --all                 (with list) also show tasks you cannot pick up;
+                        (with events) expand past the highlight events
 `;
 }
 
@@ -129,12 +173,25 @@ function parseArgv(argv) {
     else if (a === '--budget') opts.budget = next();
     else if (a === '--timeout') opts.timeout = next();
     else if (a === '--max-retry') opts.maxRetry = next();
+    else if (a === '--events') opts.events = next();
+    else if (a === '--note') opts.note = next();
     else if (a === '--all') opts.all = true;
     else positional.push(a);
   }
   opts.commandName = positional[0] ?? null;
   opts.taskId = positional[1] ?? null;
   return opts;
+}
+
+// 读 bundle（propose/events/confirm 都要）。缺失/不可解析返回 null，由调用方报错。
+function readBundle(tasksDir, taskId) {
+  const p = join(tasksDir, `${taskId}.bundle.json`);
+  if (!existsSync(p)) return null;
+  try {
+    return JSON.parse(readFileSync(p, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function main() {
@@ -219,6 +276,148 @@ function main() {
     child.on('exit', (code) => {
       process.exitCode = code ?? 1;
     });
+    return;
+  }
+
+  if (commandName === 'propose') {
+    if (!taskId) {
+      console.error('propose 需要 <task-id>。先 list 看队列。');
+      process.exitCode = 2;
+      return;
+    }
+    const task = readTask(tasksDir, taskId);
+    if (!task) {
+      console.error(`task ${taskId} 不存在于 ${tasksDir}`);
+      process.exitCode = 2;
+      return;
+    }
+    if (!isProposable(task)) {
+      console.error(`task ${taskId} 状态是 ${task.status}，不可提案（只对 captured/awaiting_confirmation/confirmed）。`);
+      process.exitCode = 2;
+      return;
+    }
+    const bundle = readBundle(tasksDir, taskId);
+    if (!bundle) {
+      console.error(`bundle 缺失或无法解析：${join(tasksDir, `${taskId}.bundle.json`)}`);
+      process.exitCode = 2;
+      return;
+    }
+    // 复用 runner-cli --propose：只提案不诊断。statement 优先用旧任务 input_summary，
+    // 回退 bundle.statement（captured 任务 input_summary 为空）。
+    const statement = task.input_summary?.statement ?? bundle.statement ?? null;
+    const args = [
+      join(TOOLS_DIR, 'runner-cli.mjs'),
+      '--bundle', join(tasksDir, `${taskId}.bundle.json`),
+      '--tasks-dir', tasksDir,
+      '--run-id', taskId,
+      '--propose',
+    ];
+    if (statement) args.push('--statement', statement);
+    const child = spawn(process.execPath, args, { stdio: 'inherit' });
+    child.on('exit', (code) => {
+      process.exitCode = code ?? 1;
+    });
+    return;
+  }
+
+  if (commandName === 'events') {
+    if (!taskId) {
+      console.error('events 需要 <task-id>。');
+      process.exitCode = 2;
+      return;
+    }
+    const task = readTask(tasksDir, taskId);
+    if (!task) {
+      console.error(`task ${taskId} 不存在于 ${tasksDir}`);
+      process.exitCode = 2;
+      return;
+    }
+    const bundle = readBundle(tasksDir, taskId);
+    if (!bundle) {
+      console.error(`bundle 缺失或无法解析：${join(tasksDir, `${taskId}.bundle.json`)}`);
+      process.exitCode = 2;
+      return;
+    }
+    console.log(`task ${taskId}  status=${task.status}`);
+    if (bundle.statement) console.log(`描述：${bundle.statement}`);
+    // 提案（模型候选 + 漂移提示）。
+    const proposal = task.proposal;
+    if (proposal) {
+      const src = proposal.source === 'fallback-empty' ? '（无模型：从下方全量列表自行勾选）' : '';
+      console.log(`\n提案 [${proposal.source}] ${src}`);
+      if (Array.isArray(proposal.candidates) && proposal.candidates.length > 0) {
+        const byIndex = new Map((bundle.events ?? []).map((e) => [e.index, e]));
+        for (const c of proposal.candidates) {
+          const label = byIndex.has(c.index) ? describeEvent(byIndex.get(c.index), bundle.lineup) : `#${c.index}`;
+          console.log(`  ✔ ${label}${c.why ? `  — ${c.why}` : ''}`);
+        }
+      } else {
+        console.log('  （无候选）');
+      }
+      for (const h of proposal.drift_hints ?? []) {
+        console.log(`  ⚠️ 描述里的「${h.mention}」：${h.hint}`);
+      }
+    } else {
+      console.log('\n（尚未提案 —— 先 `propose` 让模型给候选）');
+    }
+    // 已确认锚点。
+    if (task.confirmation) {
+      console.log(`\n已确认锚点 [${task.confirmation.source}]：${task.confirmation.event_indexes.join(', ') || '（空）'}${task.confirmation.note ? `  note=${task.confirmation.note}` : ''}`);
+    }
+    // 窗口事件全量/高亮人话标签。
+    const lines = formatEventLines(bundle, { showAll: opts.all });
+    const header = opts.all ? '窗口事件（全量）' : '窗口高亮事件（--all 展开全部，含 beat）';
+    console.log(`\n${header}：`);
+    if (lines.length === 0) console.log('  （窗口内无高亮事件 —— 加 --all 看全部）');
+    for (const l of lines) console.log(`  ${l}`);
+    console.log(`\n确认锚点：node tools/queue-cli.mjs --tasks-dir <dir> confirm ${taskId} --events 3,5`);
+    return;
+  }
+
+  if (commandName === 'confirm') {
+    if (!taskId) {
+      console.error('confirm 需要 <task-id>。');
+      process.exitCode = 2;
+      return;
+    }
+    let eventIndexes;
+    try {
+      eventIndexes = parseEventIndexes(opts.events ?? '');
+    } catch (e) {
+      console.error(e.message);
+      process.exitCode = 2;
+      return;
+    }
+    const task = readTask(tasksDir, taskId);
+    if (!task) {
+      console.error(`task ${taskId} 不存在于 ${tasksDir}`);
+      process.exitCode = 2;
+      return;
+    }
+    // 走与 service 共用的 confirmTask，避免两处校验/流转漂移。
+    const result = confirmTask(task, {
+      event_indexes: eventIndexes,
+      source: 'cli',
+      note: redactCredentialText(redactKey(opts.note ?? '', process.env.ANTHROPIC_API_KEY)),
+    });
+    if (!result.ok) {
+      console.error(`确认失败（${result.code}）：${result.error}`);
+      process.exitCode = result.code === 'NOT_FOUND' ? 2 : 1;
+      return;
+    }
+    const taskPath = join(tasksDir, `${taskId}.task.json`);
+    try {
+      writeFileSync(taskPath, JSON.stringify(JSON.parse(redactTaskText(result.task, process.env.ANTHROPIC_API_KEY)), null, 2));
+    } catch (e) {
+      console.error(`写任务失败：${e.message}`);
+      process.exitCode = 1;
+      return;
+    }
+    console.log(`task ${taskId} 已确认 → confirmed`);
+    console.log(`  锚点：${result.task.confirmation.event_indexes.join(', ') || '（空）'}`);
+    if (result.task.confirmation.note) console.log(`  note：${result.task.confirmation.note}`);
+    // confirmed 与 captured 同语义：等人来取诊断（不自动跑）。
+    console.log(`\n跑诊断：node tools/queue-cli.mjs --tasks-dir <dir> run ${taskId}`);
     return;
   }
 

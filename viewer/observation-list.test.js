@@ -21,10 +21,11 @@ import {
   LIST_STORAGE_KEY,
 } from './observation-list.js';
 
-test('OBSERVATION_STATUSES is the exact 8-state spec vocabulary', () => {
+test('OBSERVATION_STATUSES is the exact spec vocabulary (P20 adds the two confirmation states)', () => {
+  // P20 在 captured 与 auditing 之间插入事件锚定确认步的两态。
   assert.deepEqual(OBSERVATION_STATUSES, [
-    'captured', 'auditing', 'audit_ready', 'diagnosing', 'diagnosed',
-    'insufficient_evidence', 'provider_unavailable', 'failed',
+    'captured', 'awaiting_confirmation', 'confirmed', 'auditing', 'audit_ready', 'diagnosing',
+    'diagnosed', 'insufficient_evidence', 'provider_unavailable', 'failed',
   ]);
 });
 

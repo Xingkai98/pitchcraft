@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { mkdtempSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -9,6 +9,9 @@ import {
   validateDiagnosisReport,
   redactTaskText,
   runDiagnosis,
+  runProposal,
+  normalizeProposal,
+  anchorEventsBlock,
   REPORT_FIELDS,
   TASK_STATUSES,
   DEFAULT_RUNNER_CONFIG,
@@ -999,8 +1002,12 @@ test('runDiagnosis audits bundle.audit_input (meter), not raw normalized viewer 
 });
 
 test('TASK_STATUSES uses the match-observation spec vocabulary only', () => {
+  // P20 在 captured 与 auditing 之间插入事件锚定确认步的两态（match-observation /
+  // diagnosis-runner spec delta）。此断言是「状态词表只含 spec 认可的态」的护栏。
   assert.deepEqual(TASK_STATUSES, [
     'captured',
+    'awaiting_confirmation',
+    'confirmed',
     'auditing',
     'audit_ready',
     'diagnosing',
@@ -1426,4 +1433,219 @@ test('P14 runDiagnosis retry after failure keeps captured origin in status_histo
   // 持久化文件同样保留 captured 起点
   const persisted = JSON.parse(readFileSync(join(tasksDir, `${runId}.task.json`), 'utf8'));
   assert.equal(persisted.status_history[0].status, 'captured');
+});
+
+// --- P20 事件锚定确认：提案模式 + 诊断锚点 ---------------------------------
+
+test('P20 runProposal: provider 提案 → awaiting_confirmation + proposal.source=llm', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+  const bundle = validBundle();
+  // 窗口里放一条出边线传球（真实案例 3），让提案能被解读。
+  bundle.events = [
+    { index: 0, type: 'kickoff' },
+    { index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' },
+  ];
+  const bundlePath = mkBundleFile(dir, bundle);
+  const tasksDir = join(dir, 'tasks');
+
+  const adapter = {
+    run: async () => ({
+      ok: true,
+      status: 'success',
+      exitCode: 0,
+      stdout: JSON.stringify({
+        event_indexes: [55],
+        candidates: [{ index: 55, why: '窗口内唯一出边线传球' }],
+        drift_hints: [{ mention: '射门', hint: '窗口内无射门事件' }],
+      }),
+    }),
+  };
+  const task = await runProposal({
+    bundlePath, statement: '踢出边线', tasksDir, adapter, env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    runId: 'p20-llm',
+  });
+  assert.equal(task.status, 'awaiting_confirmation');
+  assert.equal(task.proposal.source, 'llm');
+  assert.deepEqual(task.proposal.event_indexes, [55]);
+  assert.equal(task.proposal.candidates[0].why, '窗口内唯一出边线传球');
+  assert.equal(task.proposal.drift_hints[0].mention, '射门');
+  // 只提案不诊断：不产 report、不写 audit。
+  assert.equal(task.report, null);
+  assert.equal(existsSync(join(dir, 'audit.json')), false);
+  // 持久化到任务文件。
+  const persisted = JSON.parse(readFileSync(join(tasksDir, 'p20-llm.task.json'), 'utf8'));
+  assert.equal(persisted.status, 'awaiting_confirmation');
+  assert.deepEqual(persisted.proposal.event_indexes, [55]);
+});
+
+test('P20 runProposal: 无 provider → fallback-empty，状态仍 awaiting_confirmation（不失败）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+  const bundlePath = mkBundleFile(dir);
+  const tasksDir = join(dir, 'tasks');
+  let adapterCalled = false;
+  const adapter = { run: async () => { adapterCalled = true; return { ok: true, status: 'success', stdout: '{}', exitCode: 0 }; } };
+
+  const task = await runProposal({
+    bundlePath, tasksDir, adapter, env: {}, runId: 'p20-empty',
+  });
+  assert.equal(task.status, 'awaiting_confirmation');
+  assert.equal(task.proposal.source, 'fallback-empty');
+  assert.deepEqual(task.proposal.event_indexes, []);
+  assert.deepEqual(task.proposal.candidates, []);
+  assert.deepEqual(task.proposal.drift_hints, []);
+  assert.equal(adapterCalled, false, '无 key 时不该调 provider');
+});
+
+test('P20 runProposal: agent 输出无法解析 → 回退 fallback-empty，不 failed', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+  const bundlePath = mkBundleFile(dir);
+  const tasksDir = join(dir, 'tasks');
+  const adapter = { run: async () => ({ ok: true, status: 'success', stdout: 'not json', exitCode: 0 }) };
+
+  const task = await runProposal({
+    bundlePath, tasksDir, adapter, env: { ANTHROPIC_API_KEY: FAKE_KEY }, runId: 'p20-bad',
+  });
+  assert.equal(task.status, 'awaiting_confirmation');
+  assert.equal(task.proposal.source, 'fallback-empty');
+});
+
+test('P20 runProposal: 非法/缺字段的提案被规范化（负数/非整数 index 丢弃）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+  const bundlePath = mkBundleFile(dir);
+  const tasksDir = join(dir, 'tasks');
+  const adapter = {
+    run: async () => ({
+      ok: true, status: 'success', exitCode: 0,
+      stdout: JSON.stringify({
+        event_indexes: [3, 'x', 2.5, 5],
+        candidates: [{ index: 3, why: 'a' }, { index: 'bad' }, 'nope'],
+        drift_hints: [{ mention: 'x' }, 'nope'],
+      }),
+    }),
+  };
+  const task = await runProposal({
+    bundlePath, tasksDir, adapter, env: { ANTHROPIC_API_KEY: FAKE_KEY }, runId: 'p20-norm',
+  });
+  assert.deepEqual(task.proposal.event_indexes, [3, 5]);
+  assert.equal(task.proposal.candidates.length, 1);
+  assert.equal(task.proposal.candidates[0].index, 3);
+  assert.equal(task.proposal.drift_hints.length, 1);
+  assert.equal(task.proposal.drift_hints[0].hint, '', '缺 hint 补空串');
+});
+
+test('P20 runProposal: 提案可重跑且不冲掉已确认的 confirmation', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+  const bundlePath = mkBundleFile(dir);
+  const tasksDir = join(dir, 'tasks');
+  mkdirSync(tasksDir, { recursive: true });
+  writeFileSync(
+    join(tasksDir, 'p20-rerun.task.json'),
+    JSON.stringify({
+      run_id: 'p20-rerun', status: 'confirmed', confirmation: { event_indexes: [55], source: 'cli', note: '' },
+      status_history: [{ status: 'captured', at: 't0' }],
+    })
+  );
+  const adapter = {
+    run: async () => ({ ok: true, status: 'success', exitCode: 0, stdout: JSON.stringify({ event_indexes: [1], candidates: [{ index: 1, why: 'w' }] }) }),
+  };
+  const task = await runProposal({
+    bundlePath, tasksDir, adapter, env: { ANTHROPIC_API_KEY: FAKE_KEY }, runId: 'p20-rerun',
+  });
+  assert.equal(task.proposal.source, 'llm');
+  assert.deepEqual(task.confirmation.event_indexes, [55], '已确认的锚点不因再次提案丢失');
+  assert.equal(task.status_history[0].status, 'captured');
+});
+
+test('P20 anchorEventsBlock: 确认的 index 映射到事件原文，缺失 index 如实标注', () => {
+  const bundle = {
+    ...validBundle(),
+    lineup: [{ id: 7, team: 'home' }],
+    events: [
+      { index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' },
+    ],
+  };
+  const block = anchorEventsBlock(bundle, [55, 999]);
+  assert.match(block, /#55 · t=51s · 传球出边线 · 主队 #7/);
+  assert.match(block, /999.*不在观察窗口内/);
+  // 空集合给出显式说明而非空串
+  assert.match(anchorEventsBlock(bundle, []), /未锚定任何具体事件/);
+});
+
+test('P20 诊断 prompt: 附确认锚点，且不泄漏凭证', () => {
+  const prompt = buildDiagnosisPrompt({
+    bundlePath: '/b.json', auditPath: '/a.json', replayInstructions: 'x', sourceRevision: 'r',
+    anchors: '- #55 · t=51s · 传球出边线 · 主队 #7  {"index":55}',
+  });
+  assert.match(prompt, /CONFIRMED these events as the anchor/);
+  assert.match(prompt, /#55 · t=51s · 传球出边线 · 主队 #7/);
+  assert.doesNotMatch(prompt, /sk-ant-/);
+});
+
+test('P20 诊断 prompt: 无锚点时不含锚点块（旧任务行为不变）', () => {
+  const prompt = buildDiagnosisPrompt({
+    bundlePath: '/b.json', auditPath: '/a.json', replayInstructions: 'x', sourceRevision: 'r',
+  });
+  assert.doesNotMatch(prompt, /CONFIRMED these events/);
+});
+
+test('P20 runDiagnosis: 带 confirmation 的任务把锚点事件原文交给诊断 prompt', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+  const bundle = validBundle();
+  bundle.events = [
+    { index: 0, type: 'kickoff' },
+    { index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' },
+  ];
+  bundle.lineup = [{ id: 7, team: 'home' }];
+  const bundlePath = mkBundleFile(dir, bundle);
+  const auditPath = join(dir, 'audit.json');
+  const tasksDir = join(dir, 'tasks');
+  mkdirSync(tasksDir, { recursive: true });
+  // 预置一个已确认任务：诊断应读到 confirmation 并锚定 #55。
+  writeFileSync(
+    join(tasksDir, 'p20-diag.task.json'),
+    JSON.stringify({
+      run_id: 'p20-diag',
+      status: 'confirmed',
+      proposal: { event_indexes: [55], candidates: [], drift_hints: [], source: 'llm' },
+      confirmation: { event_indexes: [55], source: 'cli', note: '' },
+      status_history: [{ status: 'captured', at: 't0' }, { status: 'confirmed', at: 't1' }],
+    })
+  );
+  let seenPrompt = null;
+  const adapter = {
+    run: async (prompt) => {
+      seenPrompt = prompt;
+      return { ok: true, status: 'success', stdout: JSON.stringify(validReport()), exitCode: 0 };
+    },
+  };
+  const task = await runDiagnosis({
+    bundlePath, auditPath, replayInstructions: 'x', sourceRevision: 'r',
+    tasksDir, adapter, env: { ANTHROPIC_API_KEY: FAKE_KEY }, runId: 'p20-diag',
+  });
+  assert.equal(task.status, 'diagnosed');
+  assert.match(seenPrompt, /CONFIRMED these events as the anchor/);
+  assert.match(seenPrompt, /#55 · t=51s · 传球出边线 · 主队 #7/);
+  // 确认产物在诊断后仍在任务里
+  assert.deepEqual(task.confirmation.event_indexes, [55]);
+  assert.deepEqual(task.proposal.event_indexes, [55]);
+});
+
+test('P20 runDiagnosis: 无 confirmation 的旧任务诊断 prompt 不含锚点块', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+  const bundlePath = mkBundleFile(dir);
+  const auditPath = join(dir, 'audit.json');
+  const tasksDir = join(dir, 'tasks');
+  let seenPrompt = null;
+  const adapter = {
+    run: async (prompt) => {
+      seenPrompt = prompt;
+      return { ok: true, status: 'success', stdout: JSON.stringify(validReport()), exitCode: 0 };
+    },
+  };
+  const task = await runDiagnosis({
+    bundlePath, auditPath, replayInstructions: 'x', sourceRevision: 'r',
+    tasksDir, adapter, env: { ANTHROPIC_API_KEY: FAKE_KEY },
+  });
+  assert.equal(task.status, 'diagnosed');
+  assert.doesNotMatch(seenPrompt, /CONFIRMED these events/);
 });

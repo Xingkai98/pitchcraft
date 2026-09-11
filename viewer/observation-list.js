@@ -7,10 +7,11 @@
 
 export const LIST_STORAGE_KEY = 'p10.observation.list.v1';
 
-// 8 状态词表（对应 match-observation spec / runner TASK_STATUSES）。
+// 状态词表（对应 match-observation spec / runner TASK_STATUSES）。P20 加入事件锚定
+// 确认步的两态（awaiting_confirmation / confirmed，见 runner.mjs 注释）。
 export const OBSERVATION_STATUSES = [
-  'captured', 'auditing', 'audit_ready', 'diagnosing', 'diagnosed',
-  'insufficient_evidence', 'provider_unavailable', 'failed',
+  'captured', 'awaiting_confirmation', 'confirmed', 'auditing', 'audit_ready', 'diagnosing',
+  'diagnosed', 'insufficient_evidence', 'provider_unavailable', 'failed',
 ];
 
 export const OBSERVATION_TERMINAL_STATUSES = new Set([
@@ -123,6 +124,65 @@ export function parseObservationList(text) {
 
 export function serializeObservationList(list) {
   return JSON.stringify(list);
+}
+
+// --- P20 事件锚定确认：条目上的确认渲染状态（纯函数，可测） ------------------
+//
+// 确认 UI 的数据来自 GET /tasks/:id（proposal + confirmation + 窗口 events/lineup）。
+// 这些是**轮询派生的渲染状态**，与 findingsDetail 一样只留在内存、不进 localStorage
+// （刷新后从服务端重新拉）。选择/展开状态也挂在条目上，避免 re-render 丢失。
+
+// 从服务端任务响应提取确认步渲染数据。events 与 proposal 都缺时返回 null
+// （旧任务/captured → 页面走原有路径，确认步是可选增强）。
+export function confirmationDetailFromTask(data) {
+  if (data === null || typeof data !== 'object') return null;
+  const events = Array.isArray(data.events) ? data.events : [];
+  const proposal = data.proposal && typeof data.proposal === 'object' ? data.proposal : null;
+  const confirmation = data.confirmation && typeof data.confirmation === 'object' ? data.confirmation : null;
+  if (events.length === 0 && proposal === null) return null;
+  return {
+    proposal,
+    confirmation,
+    events,
+    lineup: Array.isArray(data.lineup) ? data.lineup : [],
+  };
+}
+
+// 提案的候选 index 集合（带去重 + 非整数过滤）。无提案时返回空。
+export function proposalIndexes(detail) {
+  const raw = detail?.proposal?.event_indexes;
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  for (const i of raw) {
+    if (Number.isInteger(i) && i >= 0) seen.add(i);
+  }
+  return [...seen];
+}
+
+// 默认勾选：模型提案的候选（用户在此基础上可增可减）。无提案（fallback-empty）→ 空。
+export function defaultConfirmationSelection(detail) {
+  return proposalIndexes(detail);
+}
+
+// 勾选集合增/删（返回新数组，去重，保持稳定顺序）。
+export function toggleEventIndex(selection, index) {
+  const set = new Set(Array.isArray(selection) ? selection : []);
+  if (set.has(index)) set.delete(index);
+  else set.add(index);
+  return [...set];
+}
+
+// 确认 UI 要展示的事件列表：
+//   - 默认（expanded=false）：只列模型候选对应的事件（A 面）；
+//   - expanded=true：列全部事件（B 面），showAll=false 时只列高亮事件、折叠 beat。
+// isCandidate 由调用方（页面）注入 event-labels 的 isCandidateEvent，避免本模块依赖它。
+export function confirmationEventsToShow(detail, { expanded = false, showAll = false, isCandidate = () => true } = {}) {
+  const events = Array.isArray(detail?.events) ? detail.events : [];
+  if (!expanded) {
+    const wanted = new Set(proposalIndexes(detail));
+    return events.filter((e) => wanted.has(e.index));
+  }
+  return showAll ? events : events.filter((e) => isCandidate(e));
 }
 
 // localStorage 存取（浏览器注入真实 localStorage；Node 测试传内存 store）。

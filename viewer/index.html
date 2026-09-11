@@ -206,6 +206,8 @@
       white-space: nowrap;
     }
     .obs-badge-captured { background: #2a2a3a; color: #ccc; }
+    .obs-badge-awaiting_confirmation { background: #3a2e0c; color: #ffd27d; }
+    .obs-badge-confirmed { background: #1c4a44; color: #7fe3c8; }
     .obs-badge-auditing { background: #1c3a5c; color: #9bd2ff; }
     .obs-badge-audit_ready { background: #1c4a44; color: #7fe3c8; }
     .obs-badge-diagnosing { background: #5c3a1c; color: #ffd27d; }
@@ -220,6 +222,30 @@
       margin-top: 2px;
     }
     .obs-entry-error { color: #ff9d9d; }
+    /* P20 事件锚定确认面板 */
+    .obs-confirm-head { font-size: 0.75rem; color: #cfe6ff; margin-top: 4px; }
+    .obs-confirm-candidates { margin-top: 4px; }
+    .obs-confirm-candidate {
+      font-size: 0.74rem; color: #ddd; font-family: monospace;
+      padding: 2px 0; border-bottom: 1px solid #2a2a44;
+    }
+    .obs-confirm-why { color: #9bd2ff; font-family: inherit; }
+    .obs-confirm-drift { font-size: 0.74rem; color: #ffd27d; margin-top: 3px; }
+    .obs-confirm-toggles { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; }
+    .obs-confirm-toggle { font-size: 0.7rem; padding: 3px 8px; background: #2a2a44; border: 1px solid #3a3a55; }
+    .obs-confirm-events {
+      margin-top: 6px; max-height: 260px; overflow-y: auto;
+      background: #10101f; border: 1px solid #3a3a55; border-radius: 4px; padding: 4px 6px;
+    }
+    .obs-confirm-event {
+      display: flex; gap: 6px; align-items: center; cursor: pointer;
+      font-size: 0.74rem; color: #ddd; font-family: monospace; padding: 2px 0;
+    }
+    .obs-confirm-empty { font-size: 0.72rem; color: #999; }
+    .obs-confirm-actions { margin-top: 6px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .obs-confirm-summary { font-size: 0.74rem; color: #9fd6a9; font-family: monospace; }
+    .obs-confirm-submit { font-size: 0.72rem; padding: 4px 12px; background: #2b7a4b; }
+    .obs-confirm-submit:disabled { opacity: 0.6; cursor: default; }
     .obs-entry-cli {
       margin-top: 6px;
       background: #0d0d1a;
@@ -469,6 +495,6 @@
   </div>
 
   <!-- 版本号强制刷新 JS 模块缓存：改代码后改这里或清浏览器缓存 -->
-  <script type="module" src="./app.js?v=20260910-3"></script>
+  <script type="module" src="./app.js?v=20260912-1"></script>
 </body>
 </html>

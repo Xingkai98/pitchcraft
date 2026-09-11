@@ -348,3 +348,187 @@ test('跨观察隔离：第二条采集不继承第一条的描述', async () =>
   await submit();
   assert.equal(submittedBundle().statement, '', '第二条提交的 statement 不应继承上一条描述');
 });
+
+// --- P20 事件锚定确认：awaiting_confirmation 态渲染提案 + confirm 提交 ---
+//
+// 驱动路径与真实页面一致：localStorage 预置条目（含 task_id）→ importApp 时
+// restoreObservationList 读回并 pollTask。fetch 桩对 GET /tasks/:id 返回带
+// proposal/events/lineup 的响应，页面据此渲染确认面板（A+B）。
+// 回归护栏：删掉 renderConfirmationInto / submitConfirmation 接线，下面用例即红。
+
+// 一条 awaiting_confirmation 的服务端任务响应（含提案 + 窗口事件）。
+function confirmationTask(over = {}) {
+  return {
+    task_status: 'awaiting_confirmation',
+    statement: '踢出边线',
+    proposal: {
+      event_indexes: [55],
+      candidates: [{ index: 55, why: '窗口内唯一出边线传球' }],
+      drift_hints: [{ mention: '角球', hint: '窗口内无角球事件' }],
+      source: 'llm',
+    },
+    confirmation: null,
+    lineup: [{ id: 7, team: 'home' }],
+    events: [
+      { index: 0, type: 'lineup' },
+      { index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' },
+      { index: 56, t: 52, type: 'beat', movers: [{ id: 4 }] },
+    ],
+    ...over,
+  };
+}
+
+// 把 GET /tasks/:id 切到确认步响应；POST /tasks/:id/confirm 返回成功并记录 body。
+function stubConfirmationFetch(taskJson, { taskStatus = 'awaiting_confirmation' } = {}) {
+  const seen = { confirm: [] };
+  h.fetch.setHandler((call) => {
+    if (call.url.includes('/confirm')) {
+      seen.confirm.push(call.body);
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ task_id: 'task-abc', status: 'confirmed', confirmation: { event_indexes: call.body?.event_indexes ?? [], source: 'page', note: '' } }),
+      });
+    }
+    if (call.url.includes('/tasks/')) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({
+          task_id: 'task-abc', status: taskStatus, errors: [], report: null, findings: [],
+          proposal: taskJson.proposal, confirmation: taskJson.confirmation,
+          events: taskJson.events, lineup: taskJson.lineup, statement: taskJson.statement,
+        }),
+      });
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  return seen;
+}
+
+test('P20 确认 UI：awaiting_confirmation 条目渲染模型提案（人话标签 + why + 漂移提示）', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
+  stubConfirmationFetch(confirmationTask());
+
+  await h.importApp();
+  await h.flush(20);
+
+  const card = h.document.querySelector('#obs-list .obs-entry');
+  assert.ok(card, '应有观察条目卡片');
+  const text = card.textContent;
+  // A 面：模型提案的人话标签（与 CLI 共用 describeEvent）
+  assert.match(text, /#55 · t=51s · 传球出边线 · 主队 #7/, '应渲染候选事件的人话标签');
+  assert.match(text, /窗口内唯一出边线传球/, '应渲染候选的「为什么」');
+  // 漂移提示（⚠️）
+  assert.match(text, /角球/, '应渲染漂移提示');
+  // 提交按钮就位
+  assert.ok(card.querySelector('#btn-confirm-anchors'), '应有「确认锚定」按钮');
+  // 默认不展开全量列表（beat 不出现）
+  assert.doesNotMatch(text, /无球跑动/, '默认不展开 beat');
+});
+
+test('P20 确认 UI：提交 confirm 发送 POST /tasks/:id/confirm，body 带勾选的 index', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
+  const seen = stubConfirmationFetch(confirmationTask());
+
+  await h.importApp();
+  await h.flush(20);
+
+  await h.click('btn-confirm-anchors');
+  await h.flush(20);
+
+  assert.equal(seen.confirm.length, 1, '应发生一次 POST confirm');
+  assert.deepEqual(seen.confirm[0].event_indexes, [55], '默认提交模型候选作为锚点');
+  assert.equal(seen.confirm[0].source, 'page');
+  // 提交后条目切到 confirmed
+  assert.match(h.$('obs-list').textContent, /已确认/, '提交后应显示已确认');
+});
+
+test('P20 确认 UI：无模型提案（fallback-empty）直接展示全量事件列表供勾选', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
+  stubConfirmationFetch(confirmationTask({
+    proposal: { event_indexes: [], candidates: [], drift_hints: [], source: 'fallback-empty' },
+    confirmation: null,
+  }));
+
+  await h.importApp();
+  await h.flush(20);
+
+  const card = h.document.querySelector('#obs-list .obs-entry');
+  assert.match(card.textContent, /无模型提案/, 'fallback-empty 应提示从列表勾选');
+  // 点「从全部事件重选」→ 展开全量高亮事件（beat 折叠，不出现无球跑动）
+  const expand = [...card.querySelectorAll('.obs-confirm-toggle')].find((b) => /从全部事件重选/.test(b.textContent));
+  assert.ok(expand, '应有展开全量列表的按钮');
+  expand.click();
+  await h.flush(4);
+  const after = h.document.querySelector('#obs-list .obs-entry');
+  assert.match(after.textContent, /#55 · t=51s · 传球出边线 · 主队 #7/, '展开后应列出窗口高亮事件');
+  assert.doesNotMatch(after.textContent, /无球跑动/, '默认折叠 beat');
+  // 「显示全部」开关展开 beat
+  const showAll = [...after.querySelectorAll('.obs-confirm-toggle')].find((b) => /显示全部/.test(b.textContent));
+  assert.ok(showAll, '应有「显示全部」开关');
+  showAll.click();
+  await h.flush(4);
+  assert.match(h.document.querySelector('#obs-list .obs-entry').textContent, /无球跑动/, '「显示全部」应展开 beat');
+});
+
+test('P20 确认 UI：展开全量后可改勾选，提交发送改后的 index 集合', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
+  const seen = stubConfirmationFetch(confirmationTask());
+
+  await h.importApp();
+  await h.flush(20);
+
+  // 展开 B 面，勾上第二条高亮事件（#55 之外再加一个）
+  let card = h.document.querySelector('#obs-list .obs-entry');
+  [...card.querySelectorAll('.obs-confirm-toggle')].find((b) => /从全部事件重选/.test(b.textContent)).click();
+  await h.flush(4);
+  card = h.document.querySelector('#obs-list .obs-entry');
+  const boxes = [...card.querySelectorAll('.obs-confirm-event input[type="checkbox"]')];
+  // #55 应默认已勾（模型候选）
+  const box55 = boxes.find((b) => b.dataset.eventIndex === '55');
+  assert.ok(box55?.checked, '模型候选 #55 应默认勾选');
+  // 取消勾选 → 提交空集合
+  box55.click();
+  await h.flush(4);
+  await h.click('btn-confirm-anchors');
+  await h.flush(20);
+  assert.deepEqual(seen.confirm[0].event_indexes, [], '取消勾选后提交空锚点集合');
+});
+
+test('P20 确认 UI：confirmed 条目展示「已确认，等待诊断」与锚点', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'confirmed' }), task_id: 'task-abc' }]);
+  stubConfirmationFetch(
+    { ...confirmationTask(), confirmation: { event_indexes: [55], source: 'cli', note: '' } },
+    { taskStatus: 'confirmed' }
+  );
+
+  await h.importApp();
+  await h.flush(20);
+
+  const text = h.$('obs-list').textContent;
+  assert.match(text, /已确认/, 'confirmed 应显示已确认');
+  assert.match(text, /#55/, '应展示已确认的锚点');
+  assert.match(text, /等待诊断/, '应提示等待诊断');
+});
+
+test('P20 兼容：旧 captured 任务（无 proposal/events）不渲染确认面板，行为不变', async () => {
+  seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'captured' }), task_id: 'task-old' }]);
+  // 响应不带 proposal/events（旧服务/旧任务）
+  h.fetch.setHandler((call) => {
+    if (call.url.includes('/tasks/')) {
+      return Promise.resolve({
+        ok: true, status: 200,
+        json: async () => ({ task_id: 'task-old', status: 'captured', errors: [], report: null, findings: [] }),
+      });
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+
+  await h.importApp();
+  await h.flush(20);
+
+  const text = h.$('obs-list').textContent;
+  assert.match(text, /已入队/, '旧 captured 条目走原「已入队」路径');
+  assert.equal(h.document.querySelector('#btn-confirm-anchors'), null, '旧任务不应出现确认按钮');
+});

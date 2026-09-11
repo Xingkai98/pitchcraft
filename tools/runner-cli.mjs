@@ -17,11 +17,12 @@
 //
 // Reads ANTHROPIC_API_KEY only from the process environment. Never logs it.
 
-import { runDiagnosis } from './runner.mjs';
+import { runDiagnosis, runProposal } from './runner.mjs';
 import { loadDotEnv } from './dotenv.mjs';
 
 function usage() {
   return `usage: node tools/runner-cli.mjs --bundle <path> --audit <path> --replay <txt> --revision <rev> --tasks-dir <dir> [options]
+       node tools/runner-cli.mjs --bundle <path> --tasks-dir <dir> --propose [--statement TXT] [--run-id ID]
 
 required:
   --bundle PATH    observation bundle JSON path
@@ -43,6 +44,9 @@ options:
   --statement TXT      optional user natural-language statement
   --run-id ID          resume a queued (captured) task by its existing id instead of
                        generating a new one (P14 queue-only manual pickup)
+  --propose            P20: run the event-anchoring PROPOSAL step only (no diagnosis).
+                       Needs --bundle + --tasks-dir (+ optional --statement/--run-id).
+                       Writes awaiting_confirmation + proposal; no audit is produced.
 `;
 }
 
@@ -66,6 +70,7 @@ function parseArgv(argv) {
     else if (a === '--max-retry') opts.maxRetry = Number(next());
     else if (a === '--statement') opts.statement = next();
     else if (a === '--run-id') opts.runId = next();
+    else if (a === '--propose') opts.propose = true;
   }
   return opts;
 }
@@ -79,14 +84,6 @@ async function main() {
     console.log(usage());
     process.exit(0);
   }
-  const missing = ['bundle', 'audit', 'replay', 'revision', 'tasksDir'].filter(
-    (k) => !opts[k]
-  );
-  if (missing.length > 0) {
-    console.error(`missing required argument(s): ${missing.join(', ')}`);
-    console.error(usage());
-    process.exit(2);
-  }
 
   const config = {
     provider: opts.provider ?? 'claude-code',
@@ -97,6 +94,36 @@ async function main() {
     timeout_seconds: opts.timeout ?? 300,
     max_retry: opts.maxRetry ?? 1,
   };
+
+  // P20 提案模式：只提案不诊断。只需要 --bundle --tasks-dir（可选 --statement/--run-id），
+  // 不需要 --audit/--replay/--revision（那三个只有诊断用）。
+  if (opts.propose) {
+    const missing = ['bundle', 'tasksDir'].filter((k) => !opts[k]);
+    if (missing.length > 0) {
+      console.error(`missing required argument(s): ${missing.join(', ')}`);
+      console.error(usage());
+      process.exit(2);
+    }
+    const proposalTask = await runProposal({
+      bundlePath: opts.bundle,
+      statement: opts.statement ?? null,
+      tasksDir: opts.tasksDir,
+      config,
+      runId: opts.runId ?? null,
+    });
+    console.log(JSON.stringify(proposalTask, null, 2));
+    // 提案失败（bundle 不可读/非法）→ 退出码 1；成功（含 fallback-empty）→ 0。
+    process.exit(proposalTask.failure_kind ? 1 : 0);
+  }
+
+  const missing = ['bundle', 'audit', 'replay', 'revision', 'tasksDir'].filter(
+    (k) => !opts[k]
+  );
+  if (missing.length > 0) {
+    console.error(`missing required argument(s): ${missing.join(', ')}`);
+    console.error(usage());
+    process.exit(2);
+  }
 
   const task = await runDiagnosis({
     bundlePath: opts.bundle,

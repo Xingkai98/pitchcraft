@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260910-3';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260910-3';
-import { createGame } from './game.js?v=20260910-3';
-import { mockEventStream } from './mock-event-stream.js?v=20260910-3';
-import { resetMicroMotion } from './micro-motion.js?v=20260910-3';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260910-3';
+import { config } from './config.js?v=20260912-1';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260912-1';
+import { createGame } from './game.js?v=20260912-1';
+import { mockEventStream } from './mock-event-stream.js?v=20260912-1';
+import { resetMicroMotion } from './micro-motion.js?v=20260912-1';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260912-1';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260910-3';
+} from './audit-report.js?v=20260912-1';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -35,7 +35,14 @@ import {
   applyServerStatement,
   loadList,
   saveList,
-} from './observation-list.js?v=20260910-3';
+  confirmationDetailFromTask,
+  defaultConfirmationSelection,
+  toggleEventIndex,
+  confirmationEventsToShow,
+} from './observation-list.js?v=20260912-1';
+// 别名 describeWindowEvent：app.js 另有一个同名的调试摘要函数（describeEvent(e,id)，
+// 供 #event-info 面板用），两者用途不同，避免遮蔽。
+import { describeEvent as describeWindowEvent, isCandidateEvent } from './event-labels.js?v=20260912-1';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -52,7 +59,7 @@ import {
   pollRerunTask,
   formatDecisionText,
   fixRefToRender,
-} from './problem-view.js?v=20260910-3';
+} from './problem-view.js?v=20260912-1';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -99,7 +106,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260910-3';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260912-1';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;
@@ -466,6 +473,207 @@ function buildCliTemplateNode(entry) {
   return cli;
 }
 
+// --- P20 事件锚定确认 UI -----------------------------------------------------
+//
+// A+B 组合（design / issue #12）：
+//   A（默认）：模型提案——列候选事件（带「为什么」）+ 锚点漂移提示（⚠️ 只提示，不做一键扩窗口）。
+//   B（展开）：「从全部事件重选」→ 列窗口全部高亮事件（beat 折叠），可勾选/删/加。
+// 无模型（proposal.source=fallback-empty）→ 直接进 B（全量列表）。
+// 勾选初始值 = 模型候选；用户在渲染态上增删，提交 POST /tasks/:id/confirm（只记确认，不跑诊断）。
+
+// 条目上的确认 UI 渲染态（只留内存，刷新后从服务端重拉）：
+//   selection 当前勾选集合；expanded 是否展开全量；showAll 展开时是否含 beat。
+function confirmationUiState(entry) {
+  if (!entry._confirmUi) {
+    entry._confirmUi = {
+      selection: defaultConfirmationSelection(entry.confirmationDetail),
+      expanded: false,
+      showAll: false,
+      submitting: false,
+      // dirty：用户在本地改过勾选。为 true 时轮询不同步服务端锚点，避免把用户
+      // 正在编辑的选择冲掉（提交成功后复位）。
+      dirty: false,
+    };
+  }
+  return entry._confirmUi;
+}
+
+// 局部重渲染该条目（勾选/展开只影响一张卡，不重排整列表，避免滚动跳动）。
+// 不用 CSS.escape（浏览器有、jsdom 测试环境没有）：条目 id 由 app 生成（obs-<uuid>），
+// 用 dataset 精确匹配即可，无需选择器转义。
+function rerenderEntry(entryId) {
+  const entry = observationList.find((e) => e.id === entryId);
+  if (!entry) return;
+  const card = [...obsListEl.querySelectorAll('.obs-entry')].find((el) => el.dataset.entryId === entryId);
+  if (card) card.replaceWith(renderEntryCard(entry));
+}
+
+function renderConfirmationInto(body, entry) {
+  const detail = entry.confirmationDetail;
+  const ui = confirmationUiState(entry);
+  const events = Array.isArray(detail?.events) ? detail.events : [];
+  const lineup = detail?.lineup ?? [];
+
+  // 提案区（A）：候选 + why + 漂移提示。fallback-empty 时提示用户从下方列表选。
+  const proposal = detail?.proposal;
+  const head = document.createElement('div');
+  head.className = 'obs-confirm-head';
+  if (proposal && proposal.source === 'llm' && Array.isArray(proposal.candidates) && proposal.candidates.length > 0) {
+    head.textContent = '模型提案（勾选要锚定的事件，可展开全部重选）：';
+  } else if (proposal && proposal.source === 'fallback-empty') {
+    head.textContent = '无模型提案 —— 请从下方窗口事件列表勾选要锚定的事件：';
+  } else {
+    head.textContent = '请从下方窗口事件列表勾选要锚定的事件：';
+  }
+  body.appendChild(head);
+
+  // A 面候选（只在未展开时显示，避免与 B 面全量列表重复）。
+  if (!ui.expanded && proposal && Array.isArray(proposal.candidates) && proposal.candidates.length > 0) {
+    const byIndex = new Map(events.map((e) => [e.index, e]));
+    const list = document.createElement('div');
+    list.className = 'obs-confirm-candidates';
+    for (const c of proposal.candidates) {
+      const row = document.createElement('div');
+      row.className = 'obs-confirm-candidate';
+      const label = byIndex.has(c.index)
+        ? describeWindowEvent(byIndex.get(c.index), lineup)
+        : `#${c.index}（不在窗口内）`;
+      const why = document.createElement('span');
+      why.className = 'obs-confirm-why';
+      why.textContent = c.why ? ` — ${redactText(c.why)}` : '';
+      row.textContent = label;
+      row.appendChild(why);
+      list.appendChild(row);
+    }
+    body.appendChild(list);
+  }
+
+  // 漂移提示（⚠️，只提示不扩窗口）。
+  if (proposal && Array.isArray(proposal.drift_hints)) {
+    for (const h of proposal.drift_hints) {
+      const hint = document.createElement('div');
+      hint.className = 'obs-confirm-drift';
+      hint.textContent = `⚠️ 描述里的「${redactText(h.mention)}」：${redactText(h.hint)}`;
+      body.appendChild(hint);
+    }
+  }
+
+  // 展开/收起 + 显示全部 开关。
+  const toggles = document.createElement('div');
+  toggles.className = 'obs-confirm-toggles';
+  const expandBtn = document.createElement('button');
+  expandBtn.className = 'obs-confirm-toggle';
+  expandBtn.textContent = ui.expanded ? '收起（只看提案）' : '从全部事件重选';
+  expandBtn.addEventListener('click', () => {
+    ui.expanded = !ui.expanded;
+    rerenderEntry(entry.id);
+  });
+  toggles.appendChild(expandBtn);
+  if (ui.expanded) {
+    const allBtn = document.createElement('button');
+    allBtn.className = 'obs-confirm-toggle';
+    allBtn.textContent = ui.showAll ? '只显示高亮事件' : '显示全部（含 beat）';
+    allBtn.addEventListener('click', () => {
+      ui.showAll = !ui.showAll;
+      rerenderEntry(entry.id);
+    });
+    toggles.appendChild(allBtn);
+  }
+  body.appendChild(toggles);
+
+  // B 面：事件勾选列表（展开时列全量；未展开时不重复显示）。
+  if (ui.expanded) {
+    const shown = confirmationEventsToShow(detail, { expanded: true, showAll: ui.showAll, isCandidate: isCandidateEvent });
+    const list = document.createElement('div');
+    list.className = 'obs-confirm-events';
+    if (shown.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'obs-confirm-empty';
+      empty.textContent = '（窗口内无高亮事件 —— 点「显示全部」看含 beat 的全部事件）';
+      list.appendChild(empty);
+    }
+    for (const e of shown) {
+      const row = document.createElement('label');
+      row.className = 'obs-confirm-event';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = ui.selection.includes(e.index);
+      cb.dataset.eventIndex = String(e.index);
+      cb.addEventListener('change', () => {
+        ui.selection = toggleEventIndex(ui.selection, e.index);
+        ui.dirty = true;
+        rerenderEntry(entry.id);
+      });
+      const text = document.createElement('span');
+      text.textContent = describeWindowEvent(e, lineup);
+      row.appendChild(cb);
+      row.appendChild(text);
+      list.appendChild(row);
+    }
+    body.appendChild(list);
+  }
+
+  // 当前勾选摘要 + 提交。
+  const actions = document.createElement('div');
+  actions.className = 'obs-confirm-actions';
+  const summary = document.createElement('span');
+  summary.className = 'obs-confirm-summary';
+  summary.textContent = ui.selection.length > 0 ? `已选：${ui.selection.map((i) => `#${i}`).join('、')}` : '未选任何事件';
+  const submitBtn = document.createElement('button');
+  submitBtn.id = 'btn-confirm-anchors';
+  submitBtn.className = 'obs-confirm-submit';
+  submitBtn.textContent = '确认锚定';
+  submitBtn.disabled = ui.submitting;
+  submitBtn.addEventListener('click', () => submitConfirmation(entry.id));
+  actions.appendChild(summary);
+  actions.appendChild(submitBtn);
+  body.appendChild(actions);
+}
+
+// 提交确认 → POST /tasks/:id/confirm（只记确认，不自动跑诊断）。失败还原可点状态。
+async function submitConfirmation(entryId) {
+  const entry = observationList.find((e) => e.id === entryId);
+  if (!entry || !entry.task_id) return;
+  const ui = confirmationUiState(entry);
+  if (ui.submitting) return;
+  if (!OBSERVATION_ENDPOINT) {
+    updateEntry(entryId, { detail_error: '未配置本地诊断端点' });
+    setObsStatus('provider_unavailable', '未配置本地诊断端点，无法确认');
+    return;
+  }
+  ui.submitting = true;
+  rerenderEntry(entryId);
+  try {
+    const res = await fetch(`${OBSERVATION_ENDPOINT}/tasks/${encodeURIComponent(entry.task_id)}/confirm`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ event_indexes: ui.selection.slice(), source: 'page' }),
+    });
+    if (!res.ok) {
+      let detail = `确认失败 HTTP ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body?.error) detail += `: ${redactText(String(body.error))}`;
+      } catch { /* non-JSON error body */ }
+      updateEntry(entryId, { detail_error: detail });
+      setObsStatus('failed', redactText(detail));
+      return;
+    }
+    // 提交成功：切到 confirmed，等诊断（不自动跑）。轮询会同步服务端权威状态。
+    // dirty 复位：本地选择已是服务端权威值，后续轮询可再同步。
+    ui.dirty = false;
+    updateEntry(entryId, { status: 'confirmed', detail_error: null });
+    setObsStatus('confirmed', `已确认锚点：${ui.selection.length > 0 ? ui.selection.map((i) => `#${i}`).join('、') : '（无）'}`);
+    showNotice('已确认事件锚点，等待诊断');
+  } catch (err) {
+    updateEntry(entryId, { detail_error: `确认失败：${redactText(String(err.message))}` });
+    setObsStatus('failed', redactText(`确认失败：${err.message}`));
+  } finally {
+    ui.submitting = false;
+    rerenderEntry(entryId);
+  }
+}
+
 function renderEntryCard(entry) {
   const card = document.createElement('div');
   card.className = 'obs-entry';
@@ -545,6 +753,17 @@ function renderEntryCard(entry) {
     progress.className = 'obs-entry-progress';
     progress.textContent = '已入队，等待处理。在 paseo/CLI 用 queue-cli run 取任务跑。';
     body.appendChild(progress);
+  } else if (entry.status === 'awaiting_confirmation' && entry.task_id != null) {
+    // P20：提案已产出，等人确认事件锚点（A+B：默认模型提案，可展开全量重选）。
+    renderConfirmationInto(body, entry);
+  } else if (entry.status === 'confirmed' && entry.task_id != null) {
+    // P20：已确认锚定，等诊断（与 captured 同语义，不自动跑）。
+    const done = document.createElement('div');
+    done.className = 'obs-entry-progress';
+    const anchors = entry.confirmationDetail?.confirmation?.event_indexes;
+    const anchorText = Array.isArray(anchors) && anchors.length > 0 ? `锚点 #${anchors.join(', #')}` : '未锚定具体事件';
+    done.textContent = `已确认（${anchorText}），等待诊断。在 paseo/CLI 用 queue-cli run 取任务跑。`;
+    body.appendChild(done);
   } else {
     // 处理中（auditing / audit_ready / diagnosing）
     const progress = document.createElement('div');
@@ -731,6 +950,29 @@ async function pollTask(entryId, taskId, silent = false) {
     if (current) {
       const applied = applyServerStatement(current, data?.statement);
       if (applied.statement !== current.statement) patch.statement = applied.statement;
+    }
+    // P20：确认步派生状态（提案 + 窗口事件）随轮询刷新。服务端为准；重新提案/改锚点后
+    // 刷新即可见。confirmationDetailFromTask 对 events/proposal 都缺的旧任务返回 null，
+    // 此时不覆盖本地值（保持 undefined → 卡片走原路径）。
+    const confirmDetail = confirmationDetailFromTask(data);
+    if (confirmDetail !== null) {
+      const hadDetail = current?.confirmationDetail != null;
+      patch.confirmationDetail = confirmDetail;
+      const ui = current?._confirmUi;
+      // 服务端锚点（CLI/对话面确认过）优先于本地默认；否则若这是确认数据**首次到达**
+      // （页面初次渲染时还没有 proposal/events，_confirmUi 已被空提案播种），按模型候选
+      // 重新播种默认勾选。用户改过勾选（dirty）时一律不动，避免冲掉正在编辑的选择。
+      if (ui && !ui.dirty) {
+        const serverAnchors = confirmDetail.confirmation?.event_indexes;
+        if (Array.isArray(serverAnchors)) {
+          ui.selection = serverAnchors.slice();
+        } else if (!hadDetail) {
+          ui.selection = defaultConfirmationSelection(confirmDetail);
+        }
+      }
+    } else if (current?.confirmationDetail && current.confirmationDetail !== null) {
+      // 服务端不再返回确认数据（任务已过确认步进入诊断）→ 清掉本地派生状态。
+      patch.confirmationDetail = null;
     }
     updateEntry(entryId, patch);
     if (isTerminalStatus(state)) {

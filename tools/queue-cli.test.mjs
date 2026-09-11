@@ -56,3 +56,91 @@ test('P14 queue-cli: buildRunArgs derives bundle/audit/replay/revision and passe
   assert.ok(replayIdx >= 0);
   assert.match(args[replayIdx + 1], /seed \(42\)/);
 });
+
+// --- P20 事件锚定确认：propose/events/confirm 子命令 ------------------------
+
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
+import { isProposable, parseEventIndexes, formatEventLines } from './queue-cli.mjs';
+
+test('P20 queue-cli: isProposable accepts captured/awaiting_confirmation/confirmed only', () => {
+  for (const status of ['captured', 'awaiting_confirmation', 'confirmed']) {
+    assert.equal(isProposable({ status }), true, `${status} 可提案`);
+  }
+  for (const status of ['auditing', 'diagnosing', 'diagnosed', 'failed']) {
+    assert.equal(isProposable({ status }), false, `${status} 不可提案`);
+  }
+  assert.equal(isProposable(null), false);
+});
+
+test('P20 queue-cli: isRerunnable accepts confirmed (confirmed == captured 同语义)', () => {
+  assert.equal(isRerunnable({ status: 'confirmed' }), true);
+  assert.equal(isRerunnable({ status: 'awaiting_confirmation' }), false);
+});
+
+test('P20 queue-cli: parseEventIndexes parses lists and rejects junk', () => {
+  assert.deepEqual(parseEventIndexes('3,5'), [3, 5]);
+  assert.deepEqual(parseEventIndexes(' 3 , 5 '), [3, 5]);
+  assert.deepEqual(parseEventIndexes(''), []);
+  assert.deepEqual(parseEventIndexes(undefined), []);
+  assert.deepEqual(parseEventIndexes('55'), [55]);
+  assert.throws(() => parseEventIndexes('3,x'), /非法 index/);
+  assert.throws(() => parseEventIndexes('-1'), /非法 index/);
+  assert.throws(() => parseEventIndexes('3,,5'), /非法 index/);
+});
+
+test('P20 queue-cli: formatEventLines lists highlight events by default, all with showAll', () => {
+  const bundle = {
+    lineup: [{ id: 7, team: 'home' }],
+    events: [
+      { index: 0, type: 'kickoff', subject: 9 },
+      { index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' },
+      { index: 56, t: 52, type: 'beat', movers: [{ id: 4 }] },
+      { index: 57, t: 53, type: 'off_ball_run', subject: 4 },
+    ],
+  };
+  const defaults = formatEventLines(bundle);
+  assert.deepEqual(defaults, ['#55 · t=51s · 传球出边线 · 主队 #7'], '默认只列高亮事件');
+  const all = formatEventLines(bundle, { showAll: true });
+  assert.equal(all.length, 4, '--all 列全量');
+  assert.ok(all.some((l) => l.includes('无球跑动')), 'beat 折叠为无球跑动');
+});
+
+// 端到端跑真实 CLI 进程（spawn 子进程）：confirm 写盘 → 状态/锚点落进任务文件。
+test('P20 queue-cli confirm: writes confirmation + confirmed status to the task file', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'queue-cli-p20-'));
+  const bundle = {
+    seed: '42', source_revision: 'abc', match_time: 51, statement: '踢出边线',
+    audit_input: { events: [], players: {} },
+    lineup: [{ id: 7, team: 'home' }],
+    events: [{ index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' }],
+  };
+  writeFileSync(join(dir, 'task-p.task.json'), JSON.stringify({
+    run_id: 'task-p', status: 'awaiting_confirmation', status_history: [{ status: 'captured', at: 't0' }],
+    proposal: { event_indexes: [55], candidates: [{ index: 55, why: '唯一出边线' }], drift_hints: [], source: 'llm' },
+  }));
+  writeFileSync(join(dir, 'task-p.bundle.json'), JSON.stringify(bundle));
+
+  // events：应展示提案候选的人话标签（可与页面共用同一 describeEvent）。
+  const eventsOut = execFileSync(process.execPath, ['tools/queue-cli.mjs', '--tasks-dir', dir, 'events', 'task-p'], { encoding: 'utf8', cwd: process.cwd() });
+  assert.match(eventsOut, /#55 · t=51s · 传球出边线 · 主队 #7/);
+  assert.match(eventsOut, /唯一出边线/);
+
+  // confirm：写确认 → confirmed。
+  const confirmOut = execFileSync(process.execPath, ['tools/queue-cli.mjs', '--tasks-dir', dir, 'confirm', 'task-p', '--events', '55', '--note', '锚定出边线'], { encoding: 'utf8', cwd: process.cwd() });
+  assert.match(confirmOut, /已确认 → confirmed/);
+  const saved = JSON.parse(readFileSync(join(dir, 'task-p.task.json'), 'utf8'));
+  assert.equal(saved.status, 'confirmed');
+  assert.deepEqual(saved.confirmation.event_indexes, [55]);
+  assert.equal(saved.confirmation.source, 'cli');
+  assert.equal(saved.confirmation.note, '锚定出边线');
+});
+
+test('P20 queue-cli confirm: empty --events confirms an empty anchor set', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'queue-cli-p20e-'));
+  writeFileSync(join(dir, 'task-e.task.json'), JSON.stringify({ run_id: 'task-e', status: 'captured', status_history: [{ status: 'captured', at: 't0' }] }));
+  execFileSync(process.execPath, ['tools/queue-cli.mjs', '--tasks-dir', dir, 'confirm', 'task-e'], { encoding: 'utf8', cwd: process.cwd() });
+  const saved = JSON.parse(readFileSync(join(dir, 'task-e.task.json'), 'utf8'));
+  assert.equal(saved.status, 'confirmed');
+  assert.deepEqual(saved.confirmation.event_indexes, []);
+});
