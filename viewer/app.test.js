@@ -543,10 +543,11 @@ test('P20 兼容：旧 captured 任务（无 proposal/confirmation）不渲染�
 
 // --- P20 复核 r2 修复：确认数据未就绪不提交 + 提交后锚点立即显示 ---
 
-test('P20 确认 UI：确认数据未就绪（服务不应答）时提交按钮禁用，不误发空锚点', async () => {
+test('P20 确认 UI：确认数据未就绪（服务不应答）时不渲染提交按钮，走错误 + CLI 回退', async () => {
   seedObservationList([{ ...submittedEntry({ id: 'e1', status: 'awaiting_confirmation' }), task_id: 'task-abc' }]);
-  // GET /tasks/:id 永远挂起 → confirmationDetail 拿不到。此时卡片仍渲染（awaiting_confirmation
-  // 分支），但提交按钮必须 disabled，避免 POST 空 event_indexes 覆盖掉 CLI/对话面已确认的锚点。
+  // GET /tasks/:id 永远挂起 → confirmationDetail 拿不到。此时代替「永远禁用的按钮」，卡片
+  // 应给出原因 + CLI 回退（否则用户面对一个点不动的按钮，无从下手 —— 复核 NEW-1）。
+  // 关键：绝不能放行一个会 POST 空 event_indexes、覆盖 CLI/对话面已确认锚点的按钮。
   h.fetch.setHandler((call) => {
     if (call.url.includes('/tasks/')) return new Promise(() => {}); // 永不 resolve
     throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
@@ -555,10 +556,10 @@ test('P20 确认 UI：确认数据未就绪（服务不应答）时提交按钮�
   await h.importApp();
   await h.flush(8);
 
-  const btn = h.document.querySelector('.obs-confirm-submit');
-  assert.ok(btn, 'awaiting_confirmation 卡片应渲染提交按钮');
-  assert.equal(btn.disabled, true, '确认数据未就绪时提交按钮应禁用');
-  assert.match(h.$('obs-list').textContent, /加载确认数据/, '应提示确认数据加载中');
+  const text = h.$('obs-list').textContent;
+  assert.equal(h.document.querySelector('.obs-confirm-submit'), null, '数据未就绪时不应出现可提交的确认按钮');
+  assert.match(text, /拿不到窗口事件数据/, '应说明拿不到确认数据');
+  assert.match(text, /runner-cli\.mjs/, '应给出 CLI 回退模板');
 });
 
 test('P20 确认 UI：提交成功后 confirmed 卡片立即显示锚点（不等下一次轮询）', async () => {

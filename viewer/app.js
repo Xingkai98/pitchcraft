@@ -614,24 +614,19 @@ function renderConfirmationInto(body, entry) {
   }
 
   // 当前勾选摘要 + 提交。
-  // 确认数据未就绪（confirmationDetail == null：服务未应答/首轮轮询前）时不放行提交——
-  // 否则会 POST 空的 event_indexes，把 CLI/对话面已确认的真实锚点覆盖掉（复核 N4）。
-  const ready = detail !== null && detail !== undefined;
+  // 进入本函数即 detail != null（renderEntryCard 已保证）——没有「数据未就绪还渲染一个永远
+  // 禁用的按钮」的死角：拿不到确认数据时走的是卡片里的错误 + CLI 回退分支（复核 NEW-1）。
   const actions = document.createElement('div');
   actions.className = 'obs-confirm-actions';
   const summary = document.createElement('span');
   summary.className = 'obs-confirm-summary';
-  if (!ready) {
-    summary.textContent = '加载确认数据…';
-  } else {
-    summary.textContent = ui.selection.length > 0 ? `已选：${ui.selection.map((i) => `#${i}`).join('、')}` : '未选任何事件';
-  }
+  summary.textContent = ui.selection.length > 0 ? `已选：${ui.selection.map((i) => `#${i}`).join('、')}` : '未选任何事件';
   const submitBtn = document.createElement('button');
   // class 而非 id：多个 awaiting_confirmation 条目会各有一个按钮，id 会重复（无效 HTML；
   // 点击处理已按节点绑定，无需靠 id 查找）。
   submitBtn.className = 'obs-confirm-submit';
   submitBtn.textContent = '确认锚定';
-  submitBtn.disabled = ui.submitting || !ready;
+  submitBtn.disabled = ui.submitting;
   submitBtn.addEventListener('click', () => submitConfirmation(entry.id));
   actions.appendChild(summary);
   actions.appendChild(submitBtn);
@@ -772,9 +767,18 @@ function renderEntryCard(entry) {
     progress.className = 'obs-entry-progress';
     progress.textContent = '已入队，等待处理。在 paseo/CLI 用 queue-cli run 取任务跑。';
     body.appendChild(progress);
-  } else if (entry.status === 'awaiting_confirmation' && entry.task_id != null) {
+  } else if (entry.status === 'awaiting_confirmation' && entry.task_id != null && entry.confirmationDetail != null) {
     // P20：提案已产出，等人确认事件锚点（A+B：默认模型提案，可展开全量重选）。
     renderConfirmationInto(body, entry);
+  } else if (entry.status === 'awaiting_confirmation' && entry.task_id != null) {
+    // P20：awaiting_confirmation 但拿不到确认数据（提案时 bundle 不可读 → 服务不再返回
+    // events/proposal，或首轮轮询前）。此时不该渲染一个永远禁用的按钮——给出原因 + CLI 回退，
+    // 让用户仍能手动确认（复核 NEW-1）。
+    const err = document.createElement('div');
+    err.className = 'obs-entry-error';
+    err.textContent = `等待确认，但拿不到窗口事件数据${entry.detail_error ? `：${redactText(entry.detail_error)}` : ''}（提案可能失败，或服务暂不可达）。可用 CLI 查看/确认：`;
+    body.appendChild(err);
+    body.appendChild(buildCliTemplateNode(entry));
   } else if (entry.status === 'confirmed' && entry.task_id != null) {
     // P20：已确认锚定，等诊断（与 captured 同语义，不自动跑）。
     const done = document.createElement('div');

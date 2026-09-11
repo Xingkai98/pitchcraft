@@ -322,3 +322,35 @@ test('P20 runProposal: 保留非 captured 起源的历史（不写空 status_his
     '历史应原样保留，而不是被清空'
   );
 });
+
+test('P20 queue-cli: statusHint 未知状态不谎报可重试；listHint 对 null 也不谎报', () => {
+  assert.equal(statusHint('bogus'), ' (未知状态)');
+  assert.doesNotMatch(statusHint('bogus'), /可重试/);
+  // listHint(null)：状态未知，不该说可重试
+  assert.doesNotMatch(listHint(null), /可重试/);
+});
+
+// 端到端守卫 N2 的**调用点**：propose 把 opts 传给 buildProposeArgs（纯函数单测只覆盖
+// 函数内部，删掉调用点的 opts 仍全绿）。跑真实 CLI 进程，断言 provider.model 落进任务文件。
+test('P20 queue-cli propose: --model 端到端落进任务文件的 provider.model', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'queue-cli-pflag-'));
+  const bundle = {
+    schema_version: '1', observation_id: 'o', seed: '42', config: {}, match_time: 51,
+    window: { before: 5, after: 5 }, events: [{ index: 55, type: 'pass', subject: 7 }],
+    engine_snapshot: { kind: 'event-stream', source: 'engine-event-stream', match_time: 51, current_event_index: 0, event_count: 1, window: { before: 5, after: 5 }, lineup: [] },
+    viewer_snapshot: { match_time: 51, current_event_index: 0, event_count: 1, play_time: 51, players: [], ball: { x: 0.5, y: 0.5 } },
+    audit_input: { events: [], players: {} }, source_revision: 'abc',
+  };
+  writeFileSync(join(dir, 'pf.bundle.json'), JSON.stringify(bundle));
+  writeFileSync(join(dir, 'pf.task.json'), JSON.stringify({
+    run_id: 'pf', status: 'captured', status_history: [{ status: 'captured', at: 't0' }],
+  }));
+  // 无 ANTHROPIC_API_KEY → 提案回退 fallback-empty（不 spawn 真 provider），但 provider.model
+  // 仍应记录 CLI 传入的覆盖值。
+  execFileSync(process.execPath, [QUEUE_CLI, '--tasks-dir', dir, 'propose', 'pf', '--model', 'mymodel-x', '--permission', 'read-only'],
+    { encoding: 'utf8', env: { ...process.env, ANTHROPIC_API_KEY: '' } });
+  const saved = JSON.parse(readFileSync(join(dir, 'pf.task.json'), 'utf8'));
+  assert.equal(saved.status, 'awaiting_confirmation');
+  assert.equal(saved.provider.model, 'mymodel-x', 'propose 的 --model 应转发到任务');
+  assert.equal(saved.provider.permission, 'read-only', 'propose 的 --permission 应转发到任务');
+});

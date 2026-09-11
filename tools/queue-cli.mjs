@@ -75,9 +75,13 @@ export function statusHint(status) {
       return ' (已完成)';
     case 'insufficient_evidence':
       return ' (证据不足)';
-    // 失败终态（provider_unavailable/failed）与未知状态：可重试。
-    default:
+    // 失败终态由 listHint 按「是否可重试」细化；此处兜底。
+    case 'failed':
+    case 'provider_unavailable':
       return ' (失败，可重试)';
+    // 未知状态：不谎报可重试（复核 NEW-2）。
+    default:
+      return ' (未知状态)';
   }
 }
 
