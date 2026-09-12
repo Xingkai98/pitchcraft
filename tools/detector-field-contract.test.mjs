@@ -52,14 +52,20 @@ test('the contract covers every detector runAudit actually emits (no unregistere
   // 反向覆盖（防再犯的核心）：runAudit 实际产出的每个 detector_id 都必须在契约里登记。
   // 否则新加一个 detector（issue #34/#35 之类）时，它会静默不受契约保护、不参与漂移守卫、
   // 聚合摘要也不会带 calibration——正是 D5 要防的「代码与清单不一致」。
+  //
+  // 必须喂**真实窗口**而不只是空输入：空输入下 detector 靠 statsFor(...) 恒产 stats 行才
+  // 被看见；一个只在有事件时才产 finding、又忘了配 statsFor 的新 detector 会完全逃逸
+  // （审阅实测的 M8 变异）。跑真实窗口才能覆盖「只在真实数据上产 finding」的路径。
+  const inputs = [
+    { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} },
+    ...FIXTURE.windows.map((w) => w.audit_input),
+  ];
   const emitted = new Set();
-  const { stats, findings } = runAudit({
-    schema_version: AUDIT_INPUT_SCHEMA_VERSION,
-    events: [],
-    players: {},
-  });
-  for (const s of stats) emitted.add(s.detector_id);
-  for (const f of findings) if (f.detector_id) emitted.add(f.detector_id);
+  for (const input of inputs) {
+    const { stats, findings } = runAudit(input);
+    for (const s of stats) emitted.add(s.detector_id);
+    for (const f of findings) if (f.detector_id) emitted.add(f.detector_id);
+  }
   assert.ok(emitted.size > 0, 'runAudit must emit at least one detector');
   const undeclared = [...emitted].filter((id) => !(id in DETECTOR_FIELD_CONTRACT));
   assert.deepEqual(

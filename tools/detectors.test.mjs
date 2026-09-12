@@ -13,8 +13,10 @@ import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 // P21 D6 之后 runAudit 要求 audit_input 带 schema_version。下面这些用例是手写的合成
 // 事件/快照片段，补版本号是噪音——统一在这里注入，用例正文保持只描述被测字段。
 // 版本门本身的行为由文件末尾的 `runAudit rejects ...` 用例用 runAuditRaw 直接覆盖。
-const runAudit = (input = {}) =>
-  runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, ...input });
+const runAudit = (input = {}, profile = undefined) =>
+  profile === undefined
+    ? runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, ...input })
+    : runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, ...input }, profile);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_FIXTURE = JSON.parse(
@@ -964,5 +966,40 @@ test('an unknown detector_id is treated as uncalibrated (D4 fail-closed)', () =>
   const d = agg.detectors.find((x) => x.detector_id === 'detector_not_in_profile_map');
   assert.equal(d.calibration, 'uncalibrated');
   assert.equal(d.aggregate_severity, null);
+  assert.equal(d.band_state, null);
+});
+
+test('a partial custom profile cannot make a known-uncalibrated detector look calibrated (D4)', () => {
+  // 审阅发现的第二条 fail-open 通路：detector_id 在映射表里，但调用方传给 aggregateAudit
+  // 的 profile 少了对应配置块（例如只给 reference_bands 的 partial profile）。此时「块缺失」
+  // 不能被当成「已标定」——无法证明已标定 → 算未标定。否则 known-uncalibrated 的
+  // ignored_interception_opportunity 会超 band 升级 realism_failure。
+  // 用合成 audit 对象直接打 aggregateAudit（runAudit 需要完整 profile，partial 会在
+  // detectInvariants 崩——那是另一回事，不属本用例）。
+  const audit = {
+    profile: { id: 'p', version: '0' },
+    findings: [],
+    stats: [
+      { detector_id: 'ignored_interception_opportunity', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
+    ],
+    pass_outcomes: {},
+  };
+  const partialProfile = { id: 'partial', version: '0', aggregation: { reference_bands: {} } };
+  // 先确认这条 detector 在默认 profile 下确实被标为未标定（否则本用例无意义）。
+  const withDefault = aggregateAudit([audit], {
+    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+  });
+  assert.equal(
+    withDefault.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity').calibration,
+    'uncalibrated'
+  );
+  // 换成缺块的 partial profile：仍须未标定、不升级。
+  const agg = aggregateAudit([audit], {
+    profile: partialProfile,
+    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+  });
+  const d = agg.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity');
+  assert.equal(d.calibration, 'uncalibrated');
+  assert.notEqual(d.aggregate_severity, 'realism_failure');
   assert.equal(d.band_state, null);
 });

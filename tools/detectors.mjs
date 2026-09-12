@@ -77,13 +77,18 @@ const DETECTOR_PROFILE_KEY = {
   ignored_interception_opportunity: 'ignored_interception',
 };
 
-// 未标定判定。fail-closed：**未知 detector_id 一律算未标定**——新 detector 忘了登记时，
-// 保守地不让它升级 realism_failure（未登记=没标定过），而不是 fail-open 地当它已标定。
-// 「新 detector 必须登记」本身由契约测试（runAudit 产出的 id 全部有契约条目）在测试期兜住。
+// 未标定判定，一律 fail-closed：**无法证明「已标定」就算未标定**。两条路径都保守：
+//   - detector_id 不在映射表（新 detector 忘了登记）→ 未标定；
+//   - 映射到块键，但调用方 profile 里整个块缺失（自定义 partial profile）→ 未标定。
+// 若只覆盖前者，一个不含 `ignored_interception` 块的自定义 profile 会让已知未标定的
+// detector 被当成已标定并升级 realism_failure（审阅发现的 fail-open）。
+// 「新 detector 必须登记」由契约测试在测试期兜住（见 detector-field-contract.test.mjs）。
 const isUncalibrated = (detectorId, profile) => {
   const blockKey = DETECTOR_PROFILE_KEY[detectorId];
-  if (blockKey === undefined) return true; // 未登记的 detector → 视为未标定
-  return profile?.[blockKey]?.calibrated === false;
+  if (blockKey === undefined) return true;
+  const block = profile?.[blockKey];
+  if (block === undefined) return true;
+  return block.calibrated === false;
 };
 
 const distance = (a, b) =>
