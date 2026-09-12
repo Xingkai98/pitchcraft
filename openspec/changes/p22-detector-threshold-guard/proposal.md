@@ -11,7 +11,7 @@ P21 修好了「detector 读的字段有没有生产者」（字段契约），�
 两处纯测试新增（不改 `detectors.mjs` 生产逻辑）：
 
 1. **边界测试**：对每个阈值算子，用「恰好等于阈值」的样本钉死方向。这类样本在真实 fixture 里几乎不可能出现（真实值连续、恰等于 8.0/3.0/0.5 等阈值的概率近零），故手写合成输入，断言「等于阈值时的判定」与算子方向一致。
-2. **golden finding 签名（宽网）**：对 `tools/fixtures/real-audit-input.json` 的 7 个真实窗口，记录 `runAudit` 产出的 finding 集合（窗口 label + detector_id + severity + event_index + entity_id），断言逐条一致。任何「改判据方向、改阈值、删分支」只要让真实数据上的 finding 集合变化，测试当场红——防「改了阈值但现有边界测试没覆盖到的那一处」漏网。
+2. **golden finding 签名（宽网）**：对 `tools/fixtures/real-audit-input.json` 的 7 个真实窗口，记录 `runAudit` 产出的 finding 集合（窗口 label + detector_id + severity + event_index + entity_id），断言逐条一致。任何「改判据方向、改阈值、删分支」只要让真实数据上的 finding 集合变化，测试当场红。注意：golden 签名只兜「会让真实 finding 集合变化」的那类改动（如 `defender_speed` 变化），不是每个阈值值变异的完整宽网——精确的逐算子守卫由边界用例承担，两者互补。
 
 ## Capabilities
 

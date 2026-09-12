@@ -4,7 +4,7 @@
 
 ### Requirement: detector 阈值算子方向有测试守卫
 
-确定性审计的阈值算子方向 SHALL 有测试守卫：每个方向敏感的判据（`>` / `>=` / `<`）SHALL 有「恰好等于阈值」的边界样本断言其方向；真实窗口的 finding 集合 SHALL 有 golden 签名断言其一致性。改判据方向、改阈值、删分支导致真实数据 finding 集合变化 SHALL 由测试发现。
+确定性审计的阈值算子方向 SHALL 有测试守卫：每个**可达的**方向敏感判据（`>` / `>=` / `<`）SHALL 有「恰好等于阈值」的边界样本断言其方向；真实窗口的 finding 集合 SHALL 有 golden 签名断言其一致性。改判据方向、改阈值、删分支导致真实数据 finding 集合变化 SHALL 由测试发现。需浮点恰好相等才触发的容差类判据（如 `time_order_epsilon`）SHALL 在 design 中显式登记为缺口，而非静默。
 
 #### Scenario: 等于阈值的边界钉死算子方向
 - **GIVEN** unforced_out 的 pressure_distance 阈值为 8.0

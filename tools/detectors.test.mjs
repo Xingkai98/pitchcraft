@@ -1093,3 +1093,161 @@ test('D1 priority: detail out-evidence wins over result==="out" (observable beha
   });
   assert.equal(pass_outcomes.unpressured.out_count, 1);
 });
+
+// --- P22: detector 阈值算子方向守卫（issue #38） ------------------------------
+//
+// P21 的字段契约守卫钉「读的字段有没有生产者」，钉不住「怎么比较」。issue #38：
+// 把阈值算子方向（`>`→`>=` 等）改掉，所有测试全绿。下面用「恰好等于阈值」的边界样本
+// 钉死每个算子的方向——真实 fixture 里几乎不可能出现恰等于阈值的值（真实坐标连续），
+// 必须手写合成输入。每个用例都标注：改成另一个方向会让它红。
+
+test('threshold direction: unforced_out is strict > (equal pressure_distance does not warn)', () => {
+  // `nearest_defender_distance > 8.0`：恰等于 8.0 不算无压迫。改成 `>=` 会让本用例红。
+  const { findings } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', detail: 'out_sideline', nearest_defender_distance: 8.0, pass_distance: 25 },
+    ],
+  });
+  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
+  assert.equal(unforced.length, 0);
+});
+
+test('threshold direction: inactive split is >= (equal stationary_epsilon counts as movement)', () => {
+  // `distance >= 0.5` 分割 run：位移恰等于 0.5 算移动，连续 4 点各成单点 run（时长 0），
+  // 全部短于 static_duration → 无告警。改成 `>` 会让位移 0.5 不再分割，合成一个时长 3s 的
+  // run → 告警，本用例红。
+  const input = {
+    players: {
+      home_7: [
+        { t: 0, x: 0, y: 0, responsibility: 'ball_entered_zone' },
+        { t: 1, x: 0.5, y: 0, responsibility: 'ball_entered_zone' },
+        { t: 2, x: 1.0, y: 0, responsibility: 'ball_entered_zone' },
+        { t: 3, x: 1.5, y: 0, responsibility: 'ball_entered_zone' },
+      ],
+    },
+  };
+  const { findings } = runAudit(input);
+  const inactive = findings.filter((f) => f.detector_id === 'inactive_responsibility' && f.severity === 'realism_warning');
+  assert.equal(inactive.length, 0);
+});
+
+test('threshold direction: inactive duration is < (equal static_duration still warns)', () => {
+  // `staticDuration < 3.0` 才 continue 跳过；恰等于 3.0 不跳过 → 告警。改成 `<=` 会让
+  // 时长 3.0 被跳过，本用例红。
+  const { findings } = runAudit({
+    players: {
+      home_8: [
+        { t: 0, x: 0, y: 0, responsibility: 'ball_entered_zone' },
+        { t: 3, x: 0.1, y: 0, responsibility: 'ball_entered_zone' },
+      ],
+    },
+  });
+  const inactive = findings.filter((f) => f.detector_id === 'inactive_responsibility' && f.severity === 'realism_warning');
+  assert.equal(inactive.length, 1);
+  assert.equal(inactive[0].features.static_duration, 3);
+});
+
+test('threshold direction: interception is strict < (equal arrival does not flag)', () => {
+  // `defenderArrival + margin < ballArrival`：恰等于时不构成机会。改成 `<=` 会让本用例红。
+  const { findings } = runAudit({
+    events: [
+      {
+        index: 0, t: 1, type: 'pass', result: 'complete',
+        corridor_distance: 9.0, // 9.0 / 6.0 = 1.5；+0.5 margin = 2.0
+        pass_distance: 20, pass_speed: 10, // 20 / 10 = 2.0 → 恰好相等
+        defender_moved_toward_corridor: false,
+      },
+    ],
+  });
+  const inter = findings.filter((f) => f.detector_id === 'ignored_interception_opportunity' && f.severity === 'realism_warning');
+  assert.equal(inter.length, 0);
+});
+
+test('threshold direction: pass_outcomes is strict > (equal threshold is pressured)', () => {
+  // `nearest_defender_distance > 8.0` 才进 unpressured 桶；恰等于 8.0 进 pressured。改成
+  // `>=` 会让本用例红。
+  const { pass_outcomes } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'success', nearest_defender_distance: 8.0 },
+    ],
+  });
+  assert.equal(pass_outcomes.pressured.sample_count, 1);
+  assert.equal(pass_outcomes.unpressured.sample_count, 0);
+});
+
+test('threshold direction: band escalation is strict > (rate == band.max does not escalate)', () => {
+  // `rate > band.max`（aggregateAudit 里）：baseline_invariant 默认 band max=0（不变量违规
+  // 是 bug，零容忍）。干净输入 rate=0，`0 > 0` false → within，aggregate_severity 保持 null。
+  // 改成 `>=` 会让 `0 >= 0` → above + realism_failure——每次干净聚合都被翻成失败。
+  const audits = [
+    runAudit({
+      events: [{ index: 0, t: 1, type: 'pass', result: 'success', x: 50, y: 30, x2: 80, y2: 40, pass_distance: 40 }],
+    }),
+  ];
+  const agg = aggregateAudit(audits);
+  const inv = agg.detectors.find((d) => d.detector_id === 'baseline_invariant');
+  assert.equal(inv.anomaly_count, 0);
+  assert.equal(inv.anomaly_rate, 0);
+  assert.equal(inv.aggregate_severity, null);
+  assert.equal(inv.band_state, 'within');
+});
+
+test('threshold direction: geometric out is strict > (x2 == pitch.width is not out)', () => {
+  // `isOutOfPitch` 用 `x2 > pitch.width`。引擎 clamp 把出界落点钳回边界线（x2=105 或
+  // y2=0），所以 x2 恰等于 105 是真实数据上会出现的值。改成 `>=` 会把 x2=105 当几何出界
+  // 证据（landing_out_of_bounds）。这里钉：x2 恰等于 pitch.width 不构成几何出界。
+  const { findings } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'contested', x2: 105, y2: 30, pass_distance: 40 },
+    ],
+  });
+  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
+  assert.equal(unforced.length, 1);
+  assert.equal(unforced[0].severity, 'unknown');
+  assert.match(unforced[0].reason, /near boundary/);
+});
+
+test('threshold direction: near-boundary is strict < (distance == margin is not near)', () => {
+  // `distanceToBoundary(...) < boundary_margin(3.0)`：落点距右边线恰 3.0 不算 near-boundary。
+  // 改成 `<=` 会多产一条 near-boundary unknown。这里钉：distance 恰等于 margin 不产。
+  const { findings } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'success', x2: 102, y2: 30, pass_distance: 40 },
+    ],
+  });
+  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
+  assert.equal(unforced.length, 0);
+});
+
+// golden finding 签名：真实窗口的 finding 集合逐条一致。改判据方向/阈值/删分支，只要让
+// 真实数据上的 finding 集合变化（含「现有边界测试没覆盖到的那一处」），本用例当场红。
+// 签名基于 P21 落盘的 tools/fixtures/real-audit-input.json（逐字节可复现），值由当前正确
+// 实现产出。有意改阈值（#36 标定）时需同步更新——这正是「改了就红」的预期代价。
+const GOLDEN_FINDINGS = [
+  'clearance | ignored_interception_opportunity | realism_warning | ev=3412 | ent=12',
+  'corner | ignored_interception_opportunity | realism_warning | ev=1687 | ent=7',
+  'free_kick | ignored_interception_opportunity | realism_warning | ev=474 | ent=15',
+  'free_kick | inactive_responsibility | unknown | ev=null | ent=6',
+  'out_goal_line | ignored_interception_opportunity | realism_warning | ev=2523 | ent=17',
+  'out_goal_line | inactive_responsibility | unknown | ev=null | ent=1',
+  'out_goal_line | inactive_responsibility | unknown | ev=null | ent=2',
+  'out_goal_line | unforced_out | realism_warning | ev=2523 | ent=null',
+  'out_sideline | ignored_interception_opportunity | realism_warning | ev=263 | ent=16',
+  'out_sideline | inactive_responsibility | unknown | ev=null | ent=9',
+  'out_sideline | unforced_out | realism_warning | ev=263 | ent=null',
+  'throw_in | inactive_responsibility | unknown | ev=null | ent=17',
+  'whistle_dead_ball | inactive_responsibility | realism_warning | ev=null | ent=17',
+  'whistle_dead_ball | inactive_responsibility | unknown | ev=null | ent=0',
+];
+
+test('golden finding signature over real windows catches threshold/semantics drift', () => {
+  const actual = [];
+  for (const w of REAL_FIXTURE.windows) {
+    const { findings } = runAudit(w.audit_input);
+    for (const f of findings) {
+      actual.push(`${w.label} | ${f.detector_id} | ${f.severity} | ev=${f.event_index} | ent=${f.entity_id}`);
+    }
+  }
+  actual.sort();
+  assert.deepEqual(actual, GOLDEN_FINDINGS);
+});

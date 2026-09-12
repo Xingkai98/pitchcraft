@@ -25,15 +25,23 @@ P21 的字段契约守卫钉「读的字段有没有生产者」，钉不住「�
 
 ### D2: 覆盖的阈值算子（P21 后 detectors.mjs 实际存在的判据）
 
-| detector | 判据 | 方向 |
-|---|---|---|
-| unforced_out | `nearest_defender_distance > threshold` | 无压迫 = **严格大于** 8.0 |
-| inactive_responsibility | `distance(...) >= stationary_epsilon`（跑段分割） | 移动 = **≥** 0.5 |
-| inactive_responsibility | `static_duration < static_duration`（是否够久） | 告警 = **严格小于** 3.0（小于才 continue 跳过） |
-| ignored_interception | `defenderArrival + margin < ballArrival` | 机会 = **严格小于** |
-| pass_outcomes | `nearest_defender_distance > threshold`（unpressured 桶） | 同 unforced_out |
+| detector | 判据 | 方向 | 覆盖 |
+|---|---|---|---|
+| unforced_out | `nearest_defender_distance > threshold` | 无压迫 = **严格大于** 8.0 | ✅ P1.1 |
+| inactive_responsibility | `distance(...) >= stationary_epsilon`（跑段分割） | 移动 = **≥** 0.5 | ✅ P1.2 |
+| inactive_responsibility | `static_duration < static_duration`（是否够久） | 告警 = **严格小于** 3.0 | ✅ P1.3 |
+| ignored_interception | `defenderArrival + margin < ballArrival` | 机会 = **严格小于** | ✅ P1.4 |
+| pass_outcomes | `nearest_defender_distance > threshold`（unpressured 桶） | 同 unforced_out | ✅ P1.5 |
+| aggregateAudit | `rate > band.max`（band 升级） | 超带 = **严格大于**（`baseline_invariant` max=0，干净 rate=0 不升级） | ✅ P1.6 |
+| unforced_out | `isOutOfPitch` 的 `x2 > pitch.width` / `y2 > pitch.height` | 几何出界 = **严格大于**（引擎 clamp 使 x2=105/y2=0 在边界上，真实可达） | ✅ P1.7 |
+| unforced_out | `distanceToBoundary(...) < boundary_margin` | near-boundary = **严格小于** 3.0 | ✅ P1.8 |
 
-只测「方向敏感」的算子；类型守卫（`typeof x === 'number'`）与等值判断（`result === 'out'`）是 P21 已覆盖的契约，不重复。
+只测「方向敏感」且**可达**的算子；类型守卫（`typeof x === 'number'`）与等值判断（`result === 'out'`）是 P21 已覆盖的契约，不重复。
+
+**已知未覆盖**（需浮点恰好相等才触发、真实数据上概率近零，或属非方向判据）——登记为显式缺口，不改判据、不加守卫：
+
+- `baseline_invariant` 的 `time_order_epsilon`（`t < prev.t - eps`）、`bounds_tolerance`（`value < -tol` / `> max`）、`pass_distance` 上界——这些是「容差」语义，改方向的影响被 `baseline_invariant` 的 invariant 语义兜住（违规即 bug，方向微调不会把合规误判成违规）。
+- 这些缺口在 P21 的 `KNOWN_GAPS` 模式之外，但同理「显式登记而非静默」。
 
 ### D3: golden 签名的稳定性
 
