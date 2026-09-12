@@ -655,8 +655,20 @@ export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
     );
   }
 
-  const events = Array.isArray(input?.events) ? input.events : [];
-  const players = input?.players ?? {};
+  // P21：容器形状也 fail-loud。此前 `Array.isArray(events) ? ... : []` 会把 events 缺失 /
+  // null / 非数组静默当成空数组，audit 出全零结果——「静默 = 断裂潜伏」正是本 change 的
+  // 立项理由（同一个 runAudit 的版本门就是为此 fail-loud）。audit_input 的负载容器必须
+  // 是 events: 数组、players: 对象，否则拒绝。
+  const events = input?.events;
+  const players = input?.players;
+  if (!Array.isArray(events)) {
+    throw new Error(
+      `audit_input.events must be an array (got ${events === null ? 'null' : typeof events})`
+    );
+  }
+  if (players === null || typeof players !== 'object' || Array.isArray(players)) {
+    throw new Error(`audit_input.players must be an object (got ${Array.isArray(players) ? 'array' : typeof players})`);
+  }
 
   const invariantFindings = detectInvariants(events, players, profile);
   const unforcedFindings = detectUnforcedOut(events, profile);

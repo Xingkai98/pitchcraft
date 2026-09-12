@@ -79,6 +79,11 @@ const NON_INPUT_PROPERTIES = {
   s: new Set(['detector_id']),
 };
 
+// 允许出现在白名单里、但**不在**契约中的「内部键」。这些是 detector 自己产出的 finding /
+// stat 结构上的键，不可能成为 audit_input 的输入字段。白名单只能登记这类键——它无法把
+// 「本应是输入字段却忘了登记」的名字（如 `zz_hidden`）洗白，因为那类名字不在此集合里。
+const NON_INPUT_INTERNAL_KEYS = new Set(['detector_id', 'severity', 'reason', 'features', 'thresholds']);
+
 function sourceFieldReads(src = DETECTORS_SOURCE) {
   const code = stripComments(src);
   const reads = new Set();
@@ -92,21 +97,71 @@ function sourceFieldReads(src = DETECTORS_SOURCE) {
   return reads;
 }
 
-test('source-level: no detector_id literal exists without a contract entry (F1)', () => {
-  // 行为守卫只覆盖「被输入触发」的 detector。源码扫描不依赖触发条件：只要代码里写下
-  // `detector_id: 'x'`（或 `statsFor('x'`），x 就必须在契约里——否则新 detector 静默逃逸。
+// 源码里所有「构造 detector id」的位置：字面量赋值 + statsFor 首参。非字面量赋值里只有
+// 下列**转发点**是允许的——它们是参数/局部量，值来自别处已登记的 id，不引入新 id：
+const DETECTOR_ID_FORWARDING = new Set([
+  'detectorId', // statsFor(detectorId, ...) 的形参：值来自 statsFor('literal', ...) 调用点
+  'id', // aggregateAudit 里 detector_id: id —— id 来自 stats 或 known 集合
+  'f.detector_id', // runAudit 里把 finding 的 id 透传给 profile 查询
+]);
+
+const DETECTOR_ID_ASSIGN_RE = /detector_id:\s*([^,\n}]+)/g;
+const DETECTOR_ID_LITERAL_RE = /detector_id:\s*'([^']+)'/g;
+const STATSFOR_RE = /statsFor\(\s*'([^']+)'/g;
+
+test('source-level: detector ids are discoverable — no non-literal detector_id passes silently (F2a)', () => {
+  // 行为守卫看不见「触发条件在 fixture 窗口之外」的 detector；只扫字面量又会漏掉
+  // 非字面量 id（审阅实测 `const GHOST='x'; detector_id: GHOST` 全绿逃逸）。这里要求
+  // 每个 detector_id 赋值要么是字面量、要么是**已登记的转发点**，否则判红——逼实现者
+  // 把它写成字面量（可被契约检查）。
   const code = stripComments(DETECTORS_SOURCE);
-  const ids = new Set();
-  for (const m of code.matchAll(/detector_id:\s*'([^']+)'/g)) ids.add(m[1]);
-  for (const m of code.matchAll(/statsFor\(\s*'([^']+)'/g)) ids.add(m[1]);
-  assert.ok(ids.size > 0, 'source scan found no detector_id literals — scan is broken');
-  const undeclared = [...ids].filter((id) => !(id in DETECTOR_FIELD_CONTRACT));
+  const unhandled = [];
+  for (const m of code.matchAll(DETECTOR_ID_ASSIGN_RE)) {
+    const rhs = m[1].trim();
+    if (/^'[^']+'$/.test(rhs)) continue;
+    if (DETECTOR_ID_FORWARDING.has(rhs)) continue;
+    unhandled.push(rhs);
+  }
+  assert.deepEqual(
+    unhandled,
+    [],
+    `detector_id assigned from an unregistered expression — the guard cannot check its ` +
+      `contract entry: ${unhandled.join(' | ')}. Write the id as a literal, or register the ` +
+      `forwarding point in DETECTOR_ID_FORWARDING with a comment explaining its source.`
+  );
+
+  const literals = new Set();
+  for (const m of code.matchAll(DETECTOR_ID_LITERAL_RE)) literals.add(m[1]);
+  for (const m of code.matchAll(STATSFOR_RE)) literals.add(m[1]);
+  assert.ok(literals.size > 0, 'source scan found no detector_id literals — scan is broken');
+  const undeclared = [...literals].filter((id) => !(id in DETECTOR_FIELD_CONTRACT));
   assert.deepEqual(
     undeclared,
     [],
     `detectors.mjs declares detector ids with no contract entry: ${undeclared.join(', ')}`
   );
 });
+
+test('source-level: the discoverability guard catches a variable detector id (self-check)', () => {
+  // 真注入自检：把 id 换成**未登记**的变量，discoverability 守卫必须报出来。
+  const planted = `const f = { detector_id: GHOST_ID };`;
+  const unhandled = [];
+  for (const m of stripComments(planted).matchAll(DETECTOR_ID_ASSIGN_RE)) {
+    const rhs = m[1].trim();
+    if (/^'[^']+'$/.test(rhs) || DETECTOR_ID_FORWARDING.has(rhs)) continue;
+    unhandled.push(rhs);
+  }
+  assert.deepEqual(unhandled, ['GHOST_ID'], 'guard must flag an unregistered detector_id expression');
+  // 已登记的转发点不该被误报。
+  assert.equal(DETECTOR_ID_FORWARDING.has('detectorId'), true);
+});
+
+// **已知残留缺口（诚实登记，非静默）**：若一个 helper 把 id 作为**形参**接收，并在 helper
+// 体内写 `detector_id: detectorId`（属于已登记的转发点），而调用点又用非字面量传入 id，
+// 那么这个 id 不会以字面量形式出现在源码里，上面的守卫看不见它。彻底修法是在 detectors.mjs
+// 引入**detector 注册表**（runAudit 遍历注册表而非内联 4 次调用），使「有哪些 detector」
+// 成为运行时可枚举的事实——那是一次小幅重构，超出本 change 范围，留给新增 detector 的
+// issue（#34/#35）一并处理。当前 4 个 detector 全部以字面量登记，故本缺口不影响现状。
 
 test('source-level: every input field read in detectors.mjs is declared somewhere (F2)', () => {
   // 不看执行、只看文本：任何分支里的未声明读取都会被这条抓到，与是否被输入覆盖无关。
@@ -153,13 +208,29 @@ test('source-level: injection self-check — the scanner detects a planted read 
   assert.deepEqual(undeclared, ['planted_undeclared_field']);
 });
 
-test('source-level: the e. base genuinely covers the event-shaped reads (non-input allowlist is explicit)', () => {
-  // 显式登记非输入属性，避免「e. 既是事件又是别的对象」被静默计入字段契约。
-  // 这条断言保证白名单本身是有意的（键名合法、注释说明来源）。
+test('source-level: the non-input allowlist cannot mask an undeclared field (F2b)', () => {
+  // 白名单会同时关掉「未声明读取」和「跨条目串读」两条守卫——若允许它登记任意字段，
+  // 就能把真实缺陷藏起来（审阅实测：白名单塞 `zz_hidden` + 不可达读取 = 全绿逃逸）。
+  // 约束：白名单里的每个属性名都必须是**契约已声明**的字段。这样它只能用来澄清
+  // 「这个已声明字段在这里不是输入字段」，无法把未声明字段洗白。
+  const declared = allAllowedReadKeys();
   for (const [base, props] of Object.entries(NON_INPUT_PROPERTIES)) {
     assert.ok(INPUT_BASE_VARS.includes(base), `non-input allowlist key ${base} is not a scanned base var`);
     assert.ok(props instanceof Set, `non-input allowlist for ${base} must be a Set`);
+    for (const prop of props) {
+      // 白名单只允许两种东西：契约已声明的字段（澄清它在此处非输入），或 detector 自产的
+      // 内部键（detector_id/severity/...，本就不可能成为输入）。任何别的名字都判红——
+      // 这样白名单无法掩盖一个「忘了登记的输入字段」。
+      assert.ok(
+        declared.has(prop) || NON_INPUT_INTERNAL_KEYS.has(prop),
+        `non-input allowlist masks "${prop}", which is neither a declared field nor a known ` +
+          `internal finding/stat key — it may only reclassify one of those`
+      );
+    }
   }
+  // 自检：一个既不在契约、也不在内部键集合的名字，必须被上面这条规则拒绝。
+  assert.equal(NON_INPUT_INTERNAL_KEYS.has('zz_hidden'), false);
+  assert.equal(declared.has('zz_hidden'), false);
 });
 
 // --- 1. 契约清单自身的完整性 ------------------------------------------------

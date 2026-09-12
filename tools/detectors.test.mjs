@@ -10,13 +10,14 @@ import {
 } from './detectors.mjs';
 import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
-// P21 D6 之后 runAudit 要求 audit_input 带 schema_version。下面这些用例是手写的合成
-// 事件/快照片段，补版本号是噪音——统一在这里注入，用例正文保持只描述被测字段。
-// 版本门本身的行为由文件末尾的 `runAudit rejects ...` 用例用 runAuditRaw 直接覆盖。
-const runAudit = (input = {}, profile = undefined) =>
-  profile === undefined
-    ? runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, ...input })
-    : runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, ...input }, profile);
+// P21 D6 之后 runAudit 要求 audit_input 带 schema_version + 合法的 events/players 容器。
+// 下面这些用例是手写的合成事件/快照片段，补这些样板是噪音——统一在这里注入，用例正文只
+// 描述被测字段。版本门与容器校验本身的行为由文件末尾的 `runAudit rejects ...` 用例用
+// runAuditRaw（不带样板）直接覆盖。
+const runAudit = (input = {}, profile = undefined) => {
+  const full = { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {}, ...input };
+  return profile === undefined ? runAuditRaw(full) : runAuditRaw(full, profile);
+};
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REAL_FIXTURE = JSON.parse(
@@ -809,7 +810,7 @@ test('runAudit rejects an audit_input with an unknown schema_version', () => {
 });
 
 test('runAudit accepts the known schema_version', () => {
-  const out = runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [] });
+  const out = runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} });
   assert.ok(Array.isArray(out.findings));
 });
 
@@ -1041,4 +1042,28 @@ test('a profile block without a calibrated key is not trusted (D4 N5)', () => {
   assert.equal(d.calibration, 'uncalibrated');
   assert.notEqual(d.aggregate_severity, 'realism_failure');
   assert.equal(d.band_state, null);
+});
+
+test('runAudit rejects malformed events/players containers (fail-loud, not silent)', () => {
+  // 与 schema_version 版本门同族的 fail-open：此前 events 缺失/null/非数组会被静默当成
+  // 空数组，audit 出全零结果（「静默 = 断裂潜伏」正是本 change 的立项理由）。
+  const base = { schema_version: AUDIT_INPUT_SCHEMA_VERSION };
+  for (const bad of [
+    { ...base }, // events 缺失
+    { ...base, events: null },
+    { ...base, events: 'nope' },
+    { ...base, events: {} },
+  ]) {
+    assert.throws(() => runAuditRaw(bad), /events must be an array/, JSON.stringify(bad));
+  }
+  for (const bad of [
+    { ...base, events: [], players: null },
+    { ...base, events: [], players: [] },
+    { ...base, events: [], players: 'x' },
+  ]) {
+    assert.throws(() => runAuditRaw(bad), /players must be an object/, JSON.stringify(bad));
+  }
+  // 合法空输入仍正常。
+  const ok = runAuditRaw({ ...base, events: [], players: {} });
+  assert.deepEqual(ok.findings, []);
 });

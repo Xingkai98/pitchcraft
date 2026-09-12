@@ -163,3 +163,66 @@ test('evidence genuinely unavailable still preserves unknown (no fabrication)', 
     assert.ok(unknown, `detector ${detectorId} should emit unknown when evidence is missing`);
   }
 });
+
+// --- P21 派生层字段保留契约（活体守卫） -------------------------------------
+// 契约清单（tools/detector-field-contract.mjs）声明 `detail` 等字段由某层生产。但
+// tools/detector-field-contract.test.mjs 吃的是**冻结的** fixture 快照 + 只扫
+// tools/detectors.mjs 源码——**它看不见 viewer/derive-audit-features.js 是否真的把
+// 字段保留下来**。审阅实测：在 derivePassEvent 里 `delete out.detail` 后，tools 368 绿、
+// viewer 288 绿，而真实出界球完整复现原始症状（unknown + out_count=0）。
+// 这一组测试走**真实 derive 链路**（现场 capture，不读落盘 fixture），把那一层钉住。
+
+test('derive layer preserves the fields the contract says it produces (live capture)', () => {
+  // 引擎直出字段必须原样保留到 audit_input（derive 层用 {...e} 复制，不得删改）。
+  // 对事件本身携带的每个字段都断言保留——不预设某一事件带哪些字段。
+  const bundle = captureAt(30);
+  const pass = bundle.audit_input.events.find((e) => e.type === 'pass');
+  assert.ok(pass, 'window should include a pass');
+  const engineEvent = events.find((e) => e.type === 'pass' && e.t === 30);
+  for (const f of Object.keys(engineEvent)) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(pass, f),
+      `derive layer dropped engine field "${f}" — audit_input no longer carries it`
+    );
+  }
+  // 对带 detail 的真实形状单独钉（下面那条用例覆盖出界场景）。
+});
+
+test('a real out-of-play pass keeps its detail through the derive layer (D1 live guard)', () => {
+  // 用 detail 型出界（不是几何型）：这正是 P21 D1 修的形状。若 derive 层丢掉 detail，
+  // 这里会从 realism_warning 退化成 unknown——原始症状的活体版本。
+  const outEvents = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineups },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    // 引擎真实出界形状：result=contested + detail=out_* + 落点被 clamp 到边界（y2=0）。
+    // home 9 在左半场无人区传球，防守者都在右半场 → 无压力（nearest_defender_distance > 8）。
+    { t: 20, type: 'pass', subject: 9, from: 9, x: 0.42, y: 0.72, x2: 0.42, y2: 0, speed: 15, result: 'contested', detail: 'out_sideline' },
+  ];
+  const game = new Game(outEvents, lineups, 'continuous');
+  game.seekTo(20);
+  const bundle = captureObservation({
+    game, seed: 42, config: MATCH_CONFIG, opts: deterministic(),
+  });
+  const pass = bundle.audit_input.events.find((e) => e.type === 'pass');
+  assert.equal(pass.detail, 'out_sideline', 'derive layer must preserve the engine detail field');
+  const { findings, pass_outcomes } = runAudit(bundle.audit_input);
+  const f = findings.find((x) => x.detector_id === 'unforced_out' && x.event_index === pass.index);
+  assert.ok(f, JSON.stringify(findings));
+  assert.notEqual(f.severity, 'unknown', 'a real out pass must not degrade to unknown');
+  assert.equal(f.features.out_evidence, 'event.detail');
+  assert.ok(
+    pass_outcomes.unpressured.out_count + pass_outcomes.pressured.out_count >= 1,
+    'the out pass must be counted as out'
+  );
+});
+
+test('derive layer preserves the snapshot fields the contract says it produces (live capture)', () => {
+  const bundle = captureAt(51);
+  const snaps = Object.values(bundle.audit_input.players).flat();
+  assert.ok(snaps.length > 0, 'capture should produce player snapshots');
+  // derive 层对这些快照字段是有条件产出（有证据才设），但一旦产出就必须能到 audit_input。
+  const producedKeys = new Set(snaps.flatMap((s) => Object.keys(s)));
+  for (const f of ['t', 'x', 'y']) {
+    assert.ok(producedKeys.has(f), `snapshot field "${f}" missing from audit_input`);
+  }
+});
