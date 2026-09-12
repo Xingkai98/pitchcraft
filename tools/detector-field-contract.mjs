@@ -171,8 +171,10 @@ export const KNOWN_GAPS = {
     id: 'clearance_out_intent',
     kind: 'semantic',
     detector_fields: { unforced_out: 'detail' },
+    // 严重度高于 K1（goal_kick_exclusion 只是统计轻微偏差）：这条产生的是**假阳性**——
+    // 防守方有意解围出界会被报成「无压力传球失误」，直接进诊断报告误导根因分析。
     reason:
-      '头球解围出界事件 detail 也是 out_*，与普通传球出界同形（source=Clearance 只在 Highlight 里、不进事件 JSON）。解围出界会被 unforced_out 当普通出界报——防守方有意解围被当失误。',
+      '头球解围出界事件 detail 也是 out_*，与普通传球出界同形（source=Clearance 只在 Highlight 里、不进事件 JSON）。解围出界会被 unforced_out 当普通出界报——防守方有意解围被当失误。这是假阳性（不是统计偏差），会进诊断报告。',
     issue: '#25',
   },
   formation_hold: {

@@ -69,6 +69,7 @@ const RESPONSIBILITY_TRIGGERS = [
 // detector_id → profile 里对应配置块的键。两者并不总是同名（历史原因：detector 叫
 // `ignored_interception_opportunity`，配置块叫 `ignored_interception`），所以显式映射，
 // 别靠字符串拼。D4 的 calibrated 标记就靠它把 finding/detector 摘要挂回配置。
+// 新 detector 必须同时补这里和 tools/detector-field-contract.mjs（契约测试会红）。
 const DETECTOR_PROFILE_KEY = {
   baseline_invariant: 'invariants',
   unforced_out: 'unforced_out',
@@ -76,8 +77,14 @@ const DETECTOR_PROFILE_KEY = {
   ignored_interception_opportunity: 'ignored_interception',
 };
 
-const isUncalibrated = (detectorId, profile) =>
-  profile?.[DETECTOR_PROFILE_KEY[detectorId]]?.calibrated === false;
+// 未标定判定。fail-closed：**未知 detector_id 一律算未标定**——新 detector 忘了登记时，
+// 保守地不让它升级 realism_failure（未登记=没标定过），而不是 fail-open 地当它已标定。
+// 「新 detector 必须登记」本身由契约测试（runAudit 产出的 id 全部有契约条目）在测试期兜住。
+const isUncalibrated = (detectorId, profile) => {
+  const blockKey = DETECTOR_PROFILE_KEY[detectorId];
+  if (blockKey === undefined) return true; // 未登记的 detector → 视为未标定
+  return profile?.[blockKey]?.calibrated === false;
+};
 
 const distance = (a, b) =>
   Math.hypot((a.x ?? 0) - (b.x ?? 0), (a.y ?? 0) - (b.y ?? 0));

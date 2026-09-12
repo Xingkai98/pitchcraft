@@ -48,6 +48,27 @@ const allRealSnapshots = () =>
 
 // --- 1. 契约清单自身的完整性 ------------------------------------------------
 
+test('the contract covers every detector runAudit actually emits (no unregistered detector)', () => {
+  // 反向覆盖（防再犯的核心）：runAudit 实际产出的每个 detector_id 都必须在契约里登记。
+  // 否则新加一个 detector（issue #34/#35 之类）时，它会静默不受契约保护、不参与漂移守卫、
+  // 聚合摘要也不会带 calibration——正是 D5 要防的「代码与清单不一致」。
+  const emitted = new Set();
+  const { stats, findings } = runAudit({
+    schema_version: AUDIT_INPUT_SCHEMA_VERSION,
+    events: [],
+    players: {},
+  });
+  for (const s of stats) emitted.add(s.detector_id);
+  for (const f of findings) if (f.detector_id) emitted.add(f.detector_id);
+  assert.ok(emitted.size > 0, 'runAudit must emit at least one detector');
+  const undeclared = [...emitted].filter((id) => !(id in DETECTOR_FIELD_CONTRACT));
+  assert.deepEqual(
+    undeclared,
+    [],
+    `runAudit emits detectors missing from the contract: ${undeclared.join(', ')}`
+  );
+});
+
 test('contract covers every detector and every entry is internally consistent', () => {
   const ids = Object.keys(DETECTOR_FIELD_CONTRACT);
   for (const expected of [

@@ -176,6 +176,7 @@ async function main() {
       warnings: [
         'does not contain dead_ball/corner/throw_in/goal_kick/contested boolean keys: the engine never produces them (that is the bug this change fixes)',
         'out passes carry result:"contested" + detail:"out_*" and CLAMPED landing coords (y2=0 / x2=105)',
+        'SNAPSHOT, not a live cross-check: the field VALUES are frozen at generation time. The contract tests assert field PRESENCE/producers, not values, so a change to derive-audit-features.js metric semantics will not turn these tests red — regenerate this file (node tools/fixtures/generate-real-audit-fixture.mjs) after touching the derive layer.',
       ],
     },
     windows,

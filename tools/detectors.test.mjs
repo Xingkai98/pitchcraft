@@ -948,3 +948,21 @@ test('an excluded pass WITH out evidence still reports the exclusion (D2 compat)
   assert.equal(unforced.length, 1, JSON.stringify(findings));
   assert.match(unforced[0].reason, /excluded: clearance/);
 });
+
+test('an unknown detector_id is treated as uncalibrated (D4 fail-closed)', () => {
+  // 防 fail-open：新 detector 忘了登记时，绝不能默认被当成「已标定」而允许升级
+  // realism_failure。未登记 = 没标定过 → 保守地算未标定。契约测试另在测试期报出
+  // 「runAudit 产出的 detector 未登记」，运行时行为则保持保守。
+  const agg = aggregateAudit([
+    {
+      profile: { id: 'p', version: '0' },
+      findings: [],
+      stats: [{ detector_id: 'detector_not_in_profile_map', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} }],
+      pass_outcomes: {},
+    },
+  ], { referenceBands: { detector_not_in_profile_map: { min: 0, max: 0.1 } } });
+  const d = agg.detectors.find((x) => x.detector_id === 'detector_not_in_profile_map');
+  assert.equal(d.calibration, 'uncalibrated');
+  assert.equal(d.aggregate_severity, null);
+  assert.equal(d.band_state, null);
+});
