@@ -2657,16 +2657,18 @@ fn nearest_defender(st: &MatchState, target: (f64, f64), def_home: bool) -> (i32
             best = Some((id as i32, p));
         }
     }
-    let (id, p) = match best {
-        Some(b) => b,
+    let (id, p, dist) = match best {
+        Some((id, p)) => (id, p, best_dist),
         // 退化态：防守方外场全部罚下（规则可达的极端——每队最多 10 张红牌，门将不产犯规）。
         // 门将恒不被罚下 → 由其顶上，保持函数 total（不 panic）且不返回罚下球员。
+        // 距离必须按门将实际位置计算（否则 f64::MAX 会被调用方误判为"最远档"→ 强制远距抢断/
+        // 最低拦截概率，见 tackle 槽与拦截分档）。
         None => {
             let gk = if def_home { 0usize } else { 21 };
-            (gk as i32, st.pos[gk])
+            (gk as i32, st.pos[gk], distance_meters(st.pos[gk], target))
         }
     };
-    (id, p, best_dist)
+    (id, p, dist)
 }
 
 /// 决策：防守者是否真的去抢（抢断积极性）。将来接战术（票据04）/属性（票据05）。
@@ -3835,9 +3837,18 @@ mod tests {
             st.sent_off[id] = true; // home 外场清空（门将 0 保留）
         }
         let target = (0.5, 0.5);
-        // nearest_defender：home 防守方无可选外场 → 回退门将 0（非罚下）
-        let (id, _, _) = nearest_defender(&st, target, true);
+        // nearest_defender：home 防守方无可选外场 → 回退门将 0（非罚下），且距离按门将实际位置算
+        // （不能是 f64::MAX——调用方按距离分档，f64::MAX 会被误判为"最远档"）
+        st.pos[0] = (0.3, 0.5);
+        let (id, p, d) = nearest_defender(&st, (0.31, 0.5), true);
         assert_eq!(id, 0, "home 外场全罚下时应回退门将 0，而非 panic 或返回罚下球员");
+        assert_eq!(p, (0.3, 0.5));
+        let want = distance_meters((0.3, 0.5), (0.31, 0.5));
+        assert!(
+            (d - want).abs() < 1e-9,
+            "回退门将的距离应按实际位置算（got {} want {}，f64::MAX={}）",
+            d, want, f64::MAX
+        );
         // nearest_teammate：home 传球者 id=1（已罚下，仅用于构造）→ 回退门将 0
         let (id, _) = nearest_teammate(&st, target, true, 3);
         assert_eq!(id, 0, "home 队友全罚下时应回退门将 0");
