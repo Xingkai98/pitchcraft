@@ -34,7 +34,7 @@
 ## P5. 收尾
 
 - [x] P5.1 `verify.sh` 全绿（引擎单测 + L2 不变量 + golden）
-- [ ] P5.2 独立 subagent 审阅闭环
+- [x] P5.2 独立 subagent 审阅闭环（codex gpt-5.6-sol + claude fable-5 各 2 轮，最终均「通过，无遗留 P0/P1」）
 
 ## 关联
 
