@@ -897,6 +897,27 @@ fn l2_cross_event_invariants() {
     }
 }
 
+/// P23：罚下球员不得参与——定向 seed 补充。
+///
+/// `l2_cross_event_invariants` 的 1..=15 窗口里只有 seed 9 出红牌，且不含「进球后开球」落在罚下
+/// 球员身上的场景。宽扫 1..=2000（564 张红牌）曾暴露 4 个 seed 有此场景：罚下者恰是硬编码的开球者
+/// （home→9 / away→12）或接球者（10/11），会以 subject/carrier 身份重新进入比赛——该路径不经过
+/// `compute_movers`（`advance_dead_ball` 手动 push mover），只靠上面 15 seed 窗口守不住。
+/// 这里显式钉住这几个 seed，作为开球路径的回归守卫（引擎确定性 → 永不 flaky）。
+/// 这些 seed 实测均含红牌（seed 260/884/1271/1658），保证不是空跑。
+#[test]
+fn l2_sent_off_kickoff_seeds() {
+    for seed in [260u64, 884, 1271, 1658] {
+        let st = aggregate(seed);
+        assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
+        assert_eq!(
+            st.n_sent_off_participation, 0,
+            "seed {} 罚下球员仍参与比赛 {} 次：{:?}",
+            seed, st.n_sent_off_participation, st.sent_off_violations
+        );
+    }
+}
+
 // ==== golden master：10 canary seed 防漂移 ====
 
 fn golden_path(seed: u64) -> std::path::PathBuf {
