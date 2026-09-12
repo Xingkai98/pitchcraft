@@ -1,13 +1,33 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEFAULT_AUDIT_PROFILE, runAudit, aggregateAudit } from './detectors.mjs';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
+import {
+  DEFAULT_AUDIT_PROFILE,
+  runAudit as runAuditRaw,
+  aggregateAudit,
+} from './detectors.mjs';
+import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
-const findingsByDetector = (findings) => {
-  const out = {};
-  for (const f of findings) {
-    (out[f.detector_id] ??= []).push(f);
-  }
-  return out;
+// P21 D6 之后 runAudit 要求 audit_input 带 schema_version + 合法的 events/players 容器。
+// 下面这些用例是手写的合成事件/快照片段，补这些样板是噪音——统一在这里注入，用例正文只
+// 描述被测字段。版本门与容器校验本身的行为由文件末尾的 `runAudit rejects ...` 用例用
+// runAuditRaw（不带样板）直接覆盖。
+const runAudit = (input = {}, profile = undefined) => {
+  const full = { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {}, ...input };
+  return profile === undefined ? runAuditRaw(full) : runAuditRaw(full, profile);
+};
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const REAL_FIXTURE = JSON.parse(
+  readFileSync(join(HERE, 'fixtures', 'real-audit-input.json'), 'utf8')
+);
+// 真实引擎采集链路产出的 audit_input 窗口（生成器见 tools/fixtures/generate-real-audit-fixture.mjs）。
+const realWindow = (label) => {
+  const w = REAL_FIXTURE.windows.find((x) => x.label === label);
+  assert.ok(w, `fixture should contain a window labelled ${label}`);
+  return w.audit_input;
 };
 
 test('runAudit flags an unforced ordinary pass out of play', () => {
@@ -62,6 +82,10 @@ test('every finding carries profile_id and profile_version', () => {
   for (const f of findings) {
     assert.equal(f.profile_id, DEFAULT_AUDIT_PROFILE.id);
     assert.equal(f.profile_version, DEFAULT_AUDIT_PROFILE.version);
+    // 每个 finding 必须能归属到某个 detector：缺 detector_id 的 finding 在 viewer 里退化
+    // 成占位符、也让「detector_id 全在契约里」的守卫看不见它（审阅发现的假绿通路）。
+    assert.equal(typeof f.detector_id, 'string', JSON.stringify(f));
+    assert.ok(f.detector_id.length > 0);
   }
 });
 
@@ -245,7 +269,12 @@ test('runAudit flags a responsibility-gated stationary defender', () => {
   assert.equal(inactive[0].features.static_duration, 3);
 });
 
-test('runAudit excludes a stationary defender holding formation', () => {
+test('runAudit no longer keys off formation_hold (dead code removed, K3)', () => {
+  // P21 P2.6/K3：`formation_hold` 没有任何生产者（引擎内部事实、viewer 不可观测），
+  // 此前 disqualified 判定里的 `s.formation_hold === true` 永远为 false。删掉后，只带
+  // formation_hold 的球员不再被豁免——这是**故意的行为变化**：那条豁免过去只对合成
+  // fixture 生效，对真实数据从未生效。防回潮由 detector-field-contract.test.mjs 的漂移
+  // 守卫负责（formation_hold 已从 reads 移除，代码再读它会立刻报「未声明字段」）。
   const input = {
     players: {
       home_5: [
@@ -256,7 +285,8 @@ test('runAudit excludes a stationary defender holding formation', () => {
   };
   const { findings } = runAudit(input);
   const inactive = findings.filter((f) => f.detector_id === 'inactive_responsibility');
-  assert.equal(inactive.length, 0);
+  assert.equal(inactive.length, 1);
+  assert.equal(inactive[0].severity, 'realism_warning');
 });
 
 test('runAudit reports unknown when no responsibility trigger is present', () => {
@@ -672,4 +702,394 @@ test('aggregateAudit pass_outcomes is deterministic and preserves unknown_outcom
     success_rate: 0,
     unknown_outcome_count: 2,
   });
+});
+
+// --- P21 L1：真实 audit_input 形状回归（P4.2/P5.1） ---------------------------
+// 前面的合成输入覆盖边界；下面这组用真实引擎采集链路产出的 audit_input
+// （tools/fixtures/real-audit-input.json），钉住「detector 对真实数据不再瞎」这件事。
+// 真实出界传球形状：result:"contested" + detail:"out_*" + 落点被 clamp01 钳回边界。
+
+test('real out-of-play pass yields an unforced_out realism_warning, not unknown', () => {
+  const w = realWindow('out_sideline');
+  const pass = w.events.find((e) => e.detail === 'out_sideline');
+  const { findings } = runAudit(w);
+  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
+  assert.equal(unforced.length, 1, JSON.stringify(findings));
+  assert.equal(unforced[0].severity, 'realism_warning');
+  assert.equal(unforced[0].event_index, pass.index);
+  assert.equal(unforced[0].features.out_evidence, 'event.detail');
+  assert.equal(unforced[0].features.out_reason, 'out_sideline');
+  // 出界原因由 detail 给，不靠几何；落点被钳在边线上 → 边界距离 0。
+  assert.equal(unforced[0].features.boundary_distance, 0);
+  assert.equal(unforced[0].features.defender_distance, pass.nearest_defender_distance);
+});
+
+test('real goal-line out pass also yields an unforced_out realism_warning', () => {
+  const w = realWindow('out_goal_line');
+  const pass = w.events.find((e) => e.detail === 'out_goal_line');
+  const { findings } = runAudit(w);
+  const f = findings.find((x) => x.detector_id === 'unforced_out' && x.event_index === pass.index);
+  assert.ok(f, JSON.stringify(findings));
+  assert.equal(f.severity, 'realism_warning');
+  assert.equal(f.features.out_evidence, 'event.detail');
+  assert.equal(f.features.out_reason, 'out_goal_line');
+});
+
+test('real pass_outcomes counts a real out pass as out (out_count > 0)', () => {
+  const { pass_outcomes } = runAudit(realWindow('out_sideline'));
+  const ordinary =
+    pass_outcomes.unpressured.sample_count + pass_outcomes.pressured.sample_count;
+  assert.equal(ordinary, 1, 'the out pass is the only ordinary pass in this window');
+  assert.equal(pass_outcomes.unpressured.out_count + pass_outcomes.pressured.out_count, 1);
+  assert.equal(pass_outcomes.excluded.sample_count, 0);
+});
+
+test('real corner/throw_in/free_kick/clearance passes are all excluded (D2)', () => {
+  for (const label of ['corner', 'throw_in', 'free_kick', 'clearance']) {
+    const w = realWindow(label);
+    const { pass_outcomes, findings } = runAudit(w);
+    assert.ok(pass_outcomes.excluded.sample_count >= 1, `${label}: expected an excluded pass`);
+    const pass = w.events.find((e) => e.detail === label);
+    const warned = findings.find(
+      (f) => f.detector_id === 'unforced_out' && f.event_index === pass.index && f.severity !== 'unknown'
+    );
+    assert.equal(warned, undefined, `${label}: must not be reported as unforced out`);
+  }
+});
+
+test('a real contested out pass is not excluded by the contested result (D2)', () => {
+  const w = realWindow('out_sideline');
+  const pass = w.events.find((e) => e.detail === 'out_sideline');
+  assert.equal(pass.result, 'contested');
+  const { pass_outcomes } = runAudit(w);
+  assert.equal(pass_outcomes.excluded.sample_count, 0);
+});
+
+// --- P21 D3：不再读无生产者的字段 --------------------------------------------
+
+test('unforced_out features no longer carry target_distance (D3)', () => {
+  const { findings } = runAudit(realWindow('out_sideline'));
+  const f = findings.find((x) => x.detector_id === 'unforced_out');
+  assert.ok(f);
+  assert.equal(Object.prototype.hasOwnProperty.call(f.features, 'target_distance'), false);
+  assert.equal(f.features.out_reason, 'out_sideline');
+});
+
+test('a legacy synthetic target_distance never reaches features (D3)', () => {
+  const { findings } = runAudit({
+    events: [
+      {
+        index: 0,
+        t: 1,
+        type: 'pass',
+        result: 'out',
+        nearest_defender_distance: 12,
+        target_distance: 20,
+      },
+    ],
+  });
+  const f = findings.find((x) => x.detector_id === 'unforced_out');
+  assert.equal(f.severity, 'realism_warning');
+  assert.equal(Object.prototype.hasOwnProperty.call(f.features, 'target_distance'), false);
+});
+
+// --- P21 P3.3：audit_input 版本门 -------------------------------------------
+
+test('runAudit rejects an audit_input without schema_version', () => {
+  assert.throws(
+    () => runAuditRaw({ events: [], players: {} }),
+    /missing schema_version.*re-capture/s
+  );
+});
+
+test('runAudit rejects an audit_input with an unknown schema_version', () => {
+  assert.throws(
+    () => runAuditRaw({ schema_version: 'audit-input/999', events: [], players: {} }),
+    /unsupported audit_input schema_version.*re-capture/s
+  );
+});
+
+test('runAudit accepts the known schema_version', () => {
+  const out = runAuditRaw({ schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} });
+  assert.ok(Array.isArray(out.findings));
+});
+
+// --- P21 D4：未标定 detector 降级 --------------------------------------------
+
+const ignoredInterceptionEvent = (index) => ({
+  events: [
+    {
+      index,
+      t: 200 + index,
+      type: 'pass',
+      result: 'complete',
+      defender_id: 11,
+      corridor_distance: 2.0,
+      pass_distance: 20,
+      pass_speed: 10,
+      defender_moved_toward_corridor: false,
+    },
+  ],
+});
+
+test('ignored_interception findings are marked calibrated:false (D4)', () => {
+  const { findings } = runAudit(ignoredInterceptionEvent(20));
+  const inter = findings.filter((f) => f.detector_id === 'ignored_interception_opportunity');
+  assert.equal(inter.length, 1);
+  assert.equal(inter[0].severity, 'realism_warning');
+  assert.equal(inter[0].calibrated, false);
+  // 其它 detector 的 finding 不受影响（不被打上该标记）。
+  for (const f of findings) {
+    if (f.detector_id !== 'ignored_interception_opportunity') assert.equal(f.calibrated, undefined);
+  }
+});
+
+test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (D4)', () => {
+  // 标定状态必须**显式**声明（isUncalibrated 只认 calibrated:true；「没声明」= 未标定，
+  // fail-closed）。默认 profile 里只有 ignored_interception 未标定，其余显式 true。
+  // 配置块 = 与 detector 对应的对象块（非顶层标量/非 pitch/aggregation）。
+  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'ignored_interception', 'invariants']) {
+    const block = DEFAULT_AUDIT_PROFILE[blockKey];
+    assert.equal(
+      typeof block.calibrated,
+      'boolean',
+      `DEFAULT_AUDIT_PROFILE.${blockKey} must explicitly declare calibrated`
+    );
+  }
+  assert.equal(DEFAULT_AUDIT_PROFILE.ignored_interception.calibrated, false);
+  assert.equal(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, true);
+  assert.equal(DEFAULT_AUDIT_PROFILE.inactive_responsibility.calibrated, true);
+  assert.equal(DEFAULT_AUDIT_PROFILE.invariants.calibrated, true);
+});
+
+test('aggregateAudit does not escalate an uncalibrated detector, even above band (D4)', () => {
+  // 3 个 seed 各有一条 ignored_interception 告警，并给一个 max=0.1 的「已标定」band。
+  // detector 未标定 → band 判定不生效 → 不升级 realism_failure。
+  const audits = [1, 2, 3].map((i) => runAudit(ignoredInterceptionEvent(i)));
+  const agg = aggregateAudit(audits, {
+    referenceBands: {
+      ignored_interception_opportunity: { min: 0, max: 0.1, source: 'calibrated-test' },
+    },
+  });
+  const inter = agg.detectors.find((d) => d.detector_id === 'ignored_interception_opportunity');
+  assert.equal(inter.anomaly_count, 3);
+  assert.equal(inter.calibration, 'uncalibrated');
+  assert.equal(inter.aggregate_severity, 'realism_warning');
+  assert.equal(inter.band_state, null);
+});
+
+test('aggregateAudit still escalates a calibrated detector above band (D4 regression)', () => {
+  const audits = [1, 2, 3].map((i) =>
+    runAudit({
+      events: [
+        { index: i, t: 100 + i, type: 'pass', result: 'out', nearest_defender_distance: 12 + i },
+      ],
+    })
+  );
+  const agg = aggregateAudit(audits, {
+    referenceBands: { unforced_out: { min: 0, max: 0.1, source: 'calibrated-test' } },
+  });
+  const unforced = agg.detectors.find((d) => d.detector_id === 'unforced_out');
+  assert.equal(unforced.calibration, 'calibrated');
+  assert.equal(unforced.aggregate_severity, 'realism_failure');
+  assert.equal(unforced.band_state, 'above');
+});
+
+test('aggregateAudit reports calibration for every detector summary (D4)', () => {
+  const agg = aggregateAudit([runAudit({ events: [] })]);
+  for (const d of agg.detectors) {
+    assert.ok(['calibrated', 'uncalibrated'].includes(d.calibration), d.detector_id);
+  }
+});
+
+test('an excluded pass near the boundary is not mislabelled as a doubtful out (D2 ordering)', () => {
+  // 回归：排除位判定曾排在「出界证据门」之后，导致一个没有出界证据的角球（落点离边线 2m、
+  // 在界内）掉进 near-boundary 分支，被报成「cannot prove an out event」——把死球重开
+  // 误标成「无法判断的疑似出界」。
+  // 正确行为：排除位传球不是 unforced out 候选 → 不产 finding（只在 pass_outcomes.excluded
+  // 里计数）。这样既不误标，也不会给每个死球重开都塞一条 unknown 噪音（实测一场约 36 次）。
+  const { findings, pass_outcomes } = runAudit({
+    events: [
+      // 角球：无出界证据、落点在边界附近（会命中 near-boundary 分支的条件）。
+      {
+        index: 0, t: 1, type: 'pass', detail: 'corner', result: 'success',
+        x2: 103, y2: 30, nearest_defender_distance: 12, pass_distance: 20,
+      },
+    ],
+  });
+  assert.deepEqual(
+    findings.filter((f) => f.detector_id === 'unforced_out'),
+    [],
+    JSON.stringify(findings)
+  );
+  assert.equal(pass_outcomes.excluded.sample_count, 1);
+  assert.equal(pass_outcomes.unpressured.sample_count, 0);
+});
+
+test('excluded passes do not inflate the unknown count (D2 noise guard)', () => {
+  // 死球重开在一场比赛里约 36 次。若每次都给 unforced_out 塞一条 unknown finding，
+  // 诊断报告会被噪音淹没。排除位传球必须完全静默（只计入 pass_outcomes.excluded）。
+  const events = [];
+  for (let i = 0; i < 36; i++) {
+    events.push({
+      index: i,
+      t: i * 10,
+      type: 'pass',
+      detail: ['corner', 'throw_in', 'free_kick', 'clearance'][i % 4],
+      result: 'success',
+      x2: 50,
+      y2: 34,
+      nearest_defender_distance: 12,
+      pass_distance: 20,
+    });
+  }
+  const { findings, stats, pass_outcomes } = runAudit({ events });
+  assert.deepEqual(findings.filter((f) => f.detector_id === 'unforced_out'), []);
+  const uf = stats.find((s) => s.detector_id === 'unforced_out');
+  assert.equal(uf.unknown, 0);
+  assert.equal(uf.samples, 36);
+  assert.equal(pass_outcomes.excluded.sample_count, 36);
+});
+
+test('an excluded pass WITH out evidence still reports the exclusion (D2 compat)', () => {
+  // 旧合成 fixture 的兼容语义：带出界证据的排除位传球仍产出一条 `excluded: <key>` unknown
+  // finding（P10 既有测试钉住的行为），不被 near-boundary 或 pressure 分支抢走。
+  const input = {
+    events: [
+      { index: 11, t: 110, type: 'pass', result: 'out', nearest_defender_distance: 15.0, clearance: true },
+    ],
+  };
+  const { findings } = runAudit(input);
+  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
+  assert.equal(unforced.length, 1, JSON.stringify(findings));
+  assert.match(unforced[0].reason, /excluded: clearance/);
+});
+
+test('an unknown detector_id is treated as uncalibrated (D4 fail-closed)', () => {
+  // 防 fail-open：新 detector 忘了登记时，绝不能默认被当成「已标定」而允许升级
+  // realism_failure。未登记 = 没标定过 → 保守地算未标定。契约测试另在测试期报出
+  // 「runAudit 产出的 detector 未登记」，运行时行为则保持保守。
+  const agg = aggregateAudit([
+    {
+      profile: { id: 'p', version: '0' },
+      findings: [],
+      stats: [{ detector_id: 'detector_not_in_profile_map', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} }],
+      pass_outcomes: {},
+    },
+  ], { referenceBands: { detector_not_in_profile_map: { min: 0, max: 0.1 } } });
+  const d = agg.detectors.find((x) => x.detector_id === 'detector_not_in_profile_map');
+  assert.equal(d.calibration, 'uncalibrated');
+  assert.equal(d.aggregate_severity, null);
+  assert.equal(d.band_state, null);
+});
+
+test('a partial custom profile cannot make a known-uncalibrated detector look calibrated (D4)', () => {
+  // 审阅发现的第二条 fail-open 通路：detector_id 在映射表里，但调用方传给 aggregateAudit
+  // 的 profile 少了对应配置块（例如只给 reference_bands 的 partial profile）。此时「块缺失」
+  // 不能被当成「已标定」——无法证明已标定 → 算未标定。否则 known-uncalibrated 的
+  // ignored_interception_opportunity 会超 band 升级 realism_failure。
+  // 用合成 audit 对象直接打 aggregateAudit（runAudit 需要完整 profile，partial 会在
+  // detectInvariants 崩——那是另一回事，不属本用例）。
+  const audit = {
+    profile: { id: 'p', version: '0' },
+    findings: [],
+    stats: [
+      { detector_id: 'ignored_interception_opportunity', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
+    ],
+    pass_outcomes: {},
+  };
+  const partialProfile = { id: 'partial', version: '0', aggregation: { reference_bands: {} } };
+  // 先确认这条 detector 在默认 profile 下确实被标为未标定（否则本用例无意义）。
+  const withDefault = aggregateAudit([audit], {
+    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+  });
+  assert.equal(
+    withDefault.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity').calibration,
+    'uncalibrated'
+  );
+  // 换成缺块的 partial profile：仍须未标定、不升级。
+  const agg = aggregateAudit([audit], {
+    profile: partialProfile,
+    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+  });
+  const d = agg.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity');
+  assert.equal(d.calibration, 'uncalibrated');
+  assert.notEqual(d.aggregate_severity, 'realism_failure');
+  assert.equal(d.band_state, null);
+});
+
+test('a profile block without a calibrated key is not trusted (D4 N5)', () => {
+  // 第三条 fail-open 通路：块在、但没声明 calibrated。严格 fail-closed 语义下，
+  // 「没声明」不等于「已标定」——只有显式 calibrated:true 才算已标定。
+  const audit = {
+    profile: { id: 'p', version: '0' },
+    findings: [],
+    stats: [
+      { detector_id: 'ignored_interception_opportunity', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
+    ],
+    pass_outcomes: {},
+  };
+  const profileWithoutCalibrationKey = {
+    ...DEFAULT_AUDIT_PROFILE,
+    // 覆盖掉带 calibrated:false 的默认块，改成「只部分覆盖、没有 calibrated 键」。
+    ignored_interception: { defender_speed: 6.0, arrival_margin: 0.5 },
+  };
+  const agg = aggregateAudit([audit], {
+    profile: profileWithoutCalibrationKey,
+    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+  });
+  const d = agg.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity');
+  assert.equal(d.calibration, 'uncalibrated');
+  assert.notEqual(d.aggregate_severity, 'realism_failure');
+  assert.equal(d.band_state, null);
+});
+
+test('runAudit rejects malformed events/players containers (fail-loud, not silent)', () => {
+  // 与 schema_version 版本门同族的 fail-open：此前 events 缺失/null/非数组会被静默当成
+  // 空数组，audit 出全零结果（「静默 = 断裂潜伏」正是本 change 的立项理由）。
+  const base = { schema_version: AUDIT_INPUT_SCHEMA_VERSION };
+  for (const bad of [
+    { ...base }, // events 缺失
+    { ...base, events: null },
+    { ...base, events: 'nope' },
+    { ...base, events: {} },
+  ]) {
+    assert.throws(() => runAuditRaw(bad), /events must be an array/, JSON.stringify(bad));
+  }
+  for (const bad of [
+    { ...base, events: [], players: null },
+    { ...base, events: [], players: [] },
+    { ...base, events: [], players: 'x' },
+  ]) {
+    assert.throws(() => runAuditRaw(bad), /players must be an object/, JSON.stringify(bad));
+  }
+  // 合法空输入仍正常。
+  const ok = runAuditRaw({ ...base, events: [], players: {} });
+  assert.deepEqual(ok.findings, []);
+});
+
+test('D1 priority: detail out-evidence wins over result==="out" (observable behaviour)', () => {
+  // design D1 把「优先认 detail」列为契约的一部分。用一条 result==='out' 且 detail 出界的
+  // 输入把优先级钉成可观测行为：out_evidence 必须是 'event.detail'，不是 'event.result'。
+  // （否则将来有人把 result 分支提到前面，新引擎数据上 out_evidence 标签会悄悄变形。）
+  const { findings } = runAudit({
+    events: [
+      {
+        index: 0, t: 1, type: 'pass',
+        result: 'out', detail: 'out_sideline',
+        nearest_defender_distance: 12, pass_distance: 25,
+      },
+    ],
+  });
+  const f = findings.find((x) => x.detector_id === 'unforced_out');
+  assert.equal(f.severity, 'realism_warning');
+  assert.equal(f.features.out_evidence, 'event.detail');
+  assert.equal(f.features.out_reason, 'out_sideline');
+  // pass_outcomes 也走同一契约（分类为 out）。
+  const { pass_outcomes } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'out', detail: 'out_sideline', nearest_defender_distance: 12 },
+    ],
+  });
+  assert.equal(pass_outcomes.unpressured.out_count, 1);
 });

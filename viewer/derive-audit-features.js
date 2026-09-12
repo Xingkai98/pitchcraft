@@ -10,6 +10,11 @@
 //
 // 无 DOM、无 WASM、无网络。确定性：同一输入产生同一输出。
 
+// audit_input 的形状版本（P21 D6）。detector 读的字段契约会在版本里演进；消费方
+// （tools/detectors.mjs 的 runAudit）入口校验它，缺失或未知即报错，避免「字段悄悄换了
+// 写法、detector 静默读空」这类断裂再次潜伏。定义在生产方，tools 侧再导出。
+export const AUDIT_INPUT_SCHEMA_VERSION = 'audit-input/1';
+
 const round3 = (n) => Math.round(n * 1000) / 1000;
 
 // 推导参数（viewer 侧可观测事实的阈值；audit profile 的阈值仍由 detectors 裁决）。
@@ -419,6 +424,7 @@ export function deriveAuditInput({
   });
 
   return {
+    schema_version: AUDIT_INPUT_SCHEMA_VERSION,
     events: meterEvents,
     players,
     features_derived: {

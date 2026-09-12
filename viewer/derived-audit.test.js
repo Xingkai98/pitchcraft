@@ -9,6 +9,7 @@ import { Game } from './game.js';
 import { captureObservation } from './observation.js';
 import { runAudit } from '../tools/detectors.mjs';
 import { validateObservationBundle } from '../tools/bundle.mjs';
+import { DETECTOR_FIELD_CONTRACT } from '../tools/detector-field-contract.mjs';
 
 const MATCH_CONFIG = { match_duration_seconds: 2700, demo_mode: false };
 
@@ -162,4 +163,242 @@ test('evidence genuinely unavailable still preserves unknown (no fabrication)', 
     const unknown = findings.find((f) => f.detector_id === detectorId && f.severity === 'unknown');
     assert.ok(unknown, `detector ${detectorId} should emit unknown when evidence is missing`);
   }
+});
+
+// --- P21 派生层字段保留契约（活体守卫） -------------------------------------
+// 契约清单（tools/detector-field-contract.mjs）声明 `detail` 等字段由某层生产。但
+// tools/detector-field-contract.test.mjs 吃的是**冻结的** fixture 快照 + 只扫
+// tools/detectors.mjs 源码——**它看不见 viewer/derive-audit-features.js 是否真的把
+// 字段保留下来**。审阅实测：在 derivePassEvent 里 `delete out.detail` 后，tools 368 绿、
+// viewer 288 绿，而真实出界球完整复现原始症状（unknown + out_count=0）。
+// 这一组测试走**真实 derive 链路**（现场 capture，不读落盘 fixture），把那一层钉住。
+
+test('derive layer preserves the fields the contract says it produces (live capture)', () => {
+  // 引擎直出字段必须原样保留到 audit_input（derive 层用 {...e} 复制，不得删改）。
+  // 对事件本身携带的每个字段都断言保留——不预设某一事件带哪些字段。
+  const bundle = captureAt(30);
+  const pass = bundle.audit_input.events.find((e) => e.type === 'pass');
+  assert.ok(pass, 'window should include a pass');
+  const engineEvent = events.find((e) => e.type === 'pass' && e.t === 30);
+  for (const f of Object.keys(engineEvent)) {
+    assert.ok(
+      Object.prototype.hasOwnProperty.call(pass, f),
+      `derive layer dropped engine field "${f}" — audit_input no longer carries it`
+    );
+  }
+  // 对带 detail 的真实形状单独钉（下面那条用例覆盖出界场景）。
+});
+
+test('a real out-of-play pass keeps its detail through the derive layer (D1 live guard)', () => {
+  // 用 detail 型出界（不是几何型）：这正是 P21 D1 修的形状。若 derive 层丢掉 detail，
+  // 这里会从 realism_warning 退化成 unknown——原始症状的活体版本。
+  const outEvents = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineups },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    // 引擎真实出界形状：result=contested + detail=out_* + 落点被 clamp 到边界（y2=0）。
+    // home 9 在左半场无人区传球，防守者都在右半场 → 无压力（nearest_defender_distance > 8）。
+    { t: 20, type: 'pass', subject: 9, from: 9, x: 0.42, y: 0.72, x2: 0.42, y2: 0, speed: 15, result: 'contested', detail: 'out_sideline' },
+  ];
+  const game = new Game(outEvents, lineups, 'continuous');
+  game.seekTo(20);
+  const bundle = captureObservation({
+    game, seed: 42, config: MATCH_CONFIG, opts: deterministic(),
+  });
+  const pass = bundle.audit_input.events.find((e) => e.type === 'pass');
+  assert.equal(pass.detail, 'out_sideline', 'derive layer must preserve the engine detail field');
+  const { findings, pass_outcomes } = runAudit(bundle.audit_input);
+  const f = findings.find((x) => x.detector_id === 'unforced_out' && x.event_index === pass.index);
+  assert.ok(f, JSON.stringify(findings));
+  assert.notEqual(f.severity, 'unknown', 'a real out pass must not degrade to unknown');
+  assert.equal(f.features.out_evidence, 'event.detail');
+  assert.ok(
+    pass_outcomes.unpressured.out_count + pass_outcomes.pressured.out_count >= 1,
+    'the out pass must be counted as out'
+  );
+});
+
+// 契约声称「derive 层生产」的每个字段，都必须能被真实 capture 产出。只钉 t/x/y 是不够的：
+// 审阅实测，删掉 is_gk / dead_ball / moved_toward_goal / moved_toward_ball /
+// defender_moved_toward_corridor / defender_id 的生产者，tools+viewer 两套全绿，而
+// detector 行为实际会变（如 is_gk 位丢失 → 门将被当站桩候选，产 realism_warning）。
+// 这组守卫把契约里 producer:'derive' 的字段逐个用真实 capture 钉住。
+const DEAD_BALL_EVENTS = [
+  { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineups },
+  { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+  { t: 10, type: 'pass', subject: 9, from: 9, to: 5, x: 0.3, y: 0.5, x2: 0.7, y2: 0.5, speed: 8, result: 'success' },
+  { t: 50, type: 'pass', subject: 9, from: 9, to: 5, x: 0.45, y: 0.75, x2: 0.58, y2: 0.75, speed: 3, result: 'success' },
+  { t: 80, type: 'whistle', subject: 0, x: 0.5, y: 0.5 },
+];
+
+function collectCapturedKeys(times) {
+  const eventKeys = new Set();
+  const snapshotKeys = new Set();
+  for (const t of times) {
+    const game = new Game(DEAD_BALL_EVENTS, lineups, 'continuous');
+    game.seekTo(t);
+    const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+    for (const e of bundle.audit_input.events) {
+      for (const k of Object.keys(e)) eventKeys.add(k);
+    }
+    for (const s of Object.values(bundle.audit_input.players).flat()) {
+      for (const k of Object.keys(s)) snapshotKeys.add(k);
+    }
+  }
+  return { eventKeys, snapshotKeys };
+}
+
+test('derive layer produces every field the contract marks producer:derive (live capture)', () => {
+  // t=51 触发 responsibility/moved_toward_*，t=80 触发 dead_ball；pass 事件触发 defender_*。
+  const { eventKeys, snapshotKeys } = collectCapturedKeys([51, 80]);
+  const produced = new Set([...eventKeys, ...snapshotKeys]);
+  assert.ok(snapshotKeys.size > 3, 'capture should produce more than the skeleton snapshot fields');
+
+  for (const [entryId, entry] of Object.entries(DETECTOR_FIELD_CONTRACT)) {
+    for (const [field, producer] of Object.entries(entry.producers)) {
+      if (producer !== 'derive') continue;
+      assert.ok(
+        produced.has(field),
+        `${entryId} contract says "${field}" is produced by the derive layer, but no live ` +
+          `capture ever emits it — the derive layer dropped its producer`
+      );
+    }
+  }
+  // 逐字段点名断言（比上面更直白，失败时一眼看出丢了哪个）。
+  for (const f of [
+    'is_gk', 'dead_ball', 'moved_toward_goal', 'moved_toward_ball',
+    'responsibility', 'responsibility_source',
+  ]) {
+    assert.ok(snapshotKeys.has(f), `derive layer dropped snapshot field "${f}"`);
+  }
+  for (const f of ['defender_id', 'defender_moved_toward_corridor']) {
+    assert.ok(eventKeys.has(f), `derive layer dropped pass-event field "${f}"`);
+  }
+});
+
+test('derive layer produces defender_moved_toward_corridor:true when a defender closes (live)', () => {
+  // 真实数据里该字段全是 false（实测 fixture true=0 / false=4），所以「删掉 true 分支」
+  // 不会被任何真实窗口发现。这里构造一个防守者确实朝走廊移动的 capture，把 true 分支钉住
+  // ——否则删掉 `out.defender_moved_toward_corridor = true;` 两套测试全绿（审阅实测）。
+  const movLineup = [
+    { id: 0, team: 'home', x: 0.02, y: 0.5 },
+    { id: 9, team: 'home', x: 0.45, y: 0.5 },
+    { id: 16, team: 'away', x: 0.72, y: 0.2 },
+  ];
+  const movEvents = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: movLineup },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    // home 9 沿 y=0.5 直传；away 16 从 y=0.2 跑到 y=0.5（朝走廊移动）。
+    { t: 30, type: 'pass', subject: 9, from: 9, to: 5, x: 0.3, y: 0.5, x2: 0.7, y2: 0.5, speed: 8, result: 'success' },
+    { t: 30, type: 'beat', movers: [{ id: 16, from_x: 0.72, from_y: 0.2, to_x: 0.72, to_y: 0.5, speed: 8, action: 'run' }] },
+    { t: 40, type: 'beat', movers: [{ id: 16, from_x: 0.72, from_y: 0.5, to_x: 0.72, to_y: 0.5, speed: 8, action: 'run' }] },
+  ];
+  const game = new Game(movEvents, movLineup, 'continuous');
+  game.seekTo(30);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const pass = bundle.audit_input.events.find((e) => e.type === 'pass');
+  assert.equal(
+    pass.defender_moved_toward_corridor,
+    true,
+    'derive layer must set the true branch when a defender closes on the corridor'
+  );
+});
+
+test('the dropped-snapshot-field guard has teeth (self-check)', () => {
+  // 自检：手工构造一个「缺 is_gk 的快照集合」，确认上面的断言会拒绝它。防「守卫永远绿」。
+  const { snapshotKeys } = collectCapturedKeys([51]);
+  assert.equal(snapshotKeys.has('is_gk'), true, 'real capture must produce is_gk');
+  const withoutGk = new Set(snapshotKeys);
+  withoutGk.delete('is_gk');
+  const dropped = ['is_gk'].filter((f) => !withoutGk.has(f));
+  assert.deepEqual(dropped, ['is_gk'], 'guard must surface a dropped snapshot field');
+});
+
+test('both goalkeepers are marked is_gk, not just the home one (live)', () => {
+  // 只断言「is_gk 键存在」太弱：把标记改成只打主队门将（删掉 `|| id === 21`）仍会全绿，
+  // 而真实数据上客队门将（id 21）若丢位会被 inactive_responsibility 当站桩候选
+  // （审阅实测：60 次真实 capture 里有 1 次告警数从 2 变 3）。逐个断言两台门将都带位。
+  const { snapshotKeys } = collectCapturedKeys([51, 80]);
+  assert.ok(snapshotKeys.has('is_gk'), 'capture must produce is_gk');
+  const game = new Game(DEAD_BALL_EVENTS, lineups, 'continuous');
+  game.seekTo(51);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const players = bundle.audit_input.players;
+  for (const gkId of [0, 21]) {
+    const snaps = players[gkId];
+    assert.ok(Array.isArray(snaps) && snaps.length > 0, `expected snapshots for keeper ${gkId}`);
+    assert.ok(
+      snaps.every((s) => s.is_gk === true),
+      `keeper ${gkId} snapshots must all carry is_gk:true`
+    );
+  }
+});
+
+test('a goalkeeper snapshot is never flagged as an inactive defender (is_gk live)', () => {
+  // is_gk 位丢失的**行为后果**：门将（id 0/21）静止时会被 inactive_responsibility 当站桩
+  // 候选产 realism_warning。真实 capture 里门将位必须存在，且门将不产该告警。
+  const { snapshotKeys } = collectCapturedKeys([80]);
+  assert.ok(snapshotKeys.has('is_gk'), 'capture must mark goalkeeper snapshots with is_gk');
+  const game = new Game(DEAD_BALL_EVENTS, lineups, 'continuous');
+  game.seekTo(80);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const { findings } = runAudit(bundle.audit_input);
+  const warnings = findings.filter(
+    (f) => f.detector_id === 'inactive_responsibility' && f.severity === 'realism_warning'
+  );
+  // 死球窗口（whistle）下不应有站桩告警（dead_ball 位 + is_gk 位共同兜住）。
+  assert.deepEqual(warnings, [], JSON.stringify(warnings));
+});
+
+test('derive layer produces moved_toward_goal:true when a player advances (live)', () => {
+  // 与 defender_moved_toward_corridor 同理：真实 fixture 里这两个位可能全 false，
+  // 「删掉 true 分支」不会被真实窗口发现。构造一个球员明确朝球门推进的 capture 钉住它——
+  // 否则该位若退化，inactive_responsibility 会把移动中的球员误报为站桩。
+  const lineup = [
+    { id: 0, team: 'home', x: 0.02, y: 0.5 },
+    { id: 2, team: 'home', x: 0.30, y: 0.5 },
+    { id: 9, team: 'home', x: 0.45, y: 0.5 },
+    { id: 16, team: 'away', x: 0.72, y: 0.45 },
+    { id: 15, team: 'away', x: 0.52, y: 0.75 },
+  ];
+  const evts = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 50, type: 'pass', subject: 9, from: 9, to: 5, x: 0.45, y: 0.75, x2: 0.58, y2: 0.75, speed: 3, result: 'success' },
+    { t: 50, type: 'beat', movers: [{ id: 2, from_x: 0.30, from_y: 0.5, to_x: 0.62, to_y: 0.5, speed: 8, action: 'run' }] },
+    { t: 55, type: 'beat', movers: [{ id: 2, from_x: 0.62, from_y: 0.5, to_x: 0.95, to_y: 0.5, speed: 8, action: 'run' }] },
+  ];
+  const game = new Game(evts, lineup, 'continuous');
+  game.seekTo(51);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const snaps = Object.values(bundle.audit_input.players).flat();
+  assert.ok(
+    snaps.some((s) => s.moved_toward_goal === true),
+    'derive layer must set moved_toward_goal:true for a player advancing toward goal'
+  );
+});
+
+test('derive layer produces moved_toward_ball:true when a player closes on the ball (live)', () => {
+  const lineup = [
+    { id: 0, team: 'home', x: 0.02, y: 0.5 },
+    { id: 2, team: 'home', x: 0.30, y: 0.2 },
+    { id: 9, team: 'home', x: 0.45, y: 0.5 },
+    { id: 16, team: 'away', x: 0.72, y: 0.45 },
+    { id: 15, team: 'away', x: 0.52, y: 0.75 },
+  ];
+  const evts = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 50, type: 'pass', subject: 9, from: 9, to: 5, x: 0.45, y: 0.75, x2: 0.58, y2: 0.75, speed: 3, result: 'success' },
+    // id 2 从 (0.30,0.20) 跑向球的落点附近 (0.58,0.70) → 到球距离明显减小。
+    { t: 50, type: 'beat', movers: [{ id: 2, from_x: 0.30, from_y: 0.2, to_x: 0.58, to_y: 0.7, speed: 8, action: 'run' }] },
+    { t: 55, type: 'beat', movers: [{ id: 2, from_x: 0.58, from_y: 0.7, to_x: 0.58, to_y: 0.75, speed: 8, action: 'run' }] },
+  ];
+  const game = new Game(evts, lineup, 'continuous');
+  game.seekTo(51);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const snaps = Object.values(bundle.audit_input.players).flat();
+  assert.ok(
+    snaps.some((s) => s.moved_toward_ball === true),
+    'derive layer must set moved_toward_ball:true for a player closing on the ball'
+  );
 });

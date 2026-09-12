@@ -17,6 +17,7 @@ import {
   DEFAULT_RUNNER_CONFIG,
 } from './runner.mjs';
 import { ClaudeCodeAdapter, redactKey, sanitizeChildEnv } from './provider.mjs';
+import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
 const FAKE_KEY = 'sk-ant-fake-secret-value-0001';
 
@@ -44,7 +45,7 @@ const validBundle = () => ({
     players: [],
     ball: { x: 0.5, y: 0.5 },
   },
-  audit_input: { events: [], players: {} },
+  audit_input: { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} },
   source_revision: 'abc123',
 });
 
@@ -958,11 +959,12 @@ test('runDiagnosis audits bundle.audit_input (meter), not raw normalized viewer 
     },
     source_revision: 'abc123',
     audit_input: {
+      schema_version: AUDIT_INPUT_SCHEMA_VERSION,
       events: [
         {
           index: 0, type: 'pass', result: 'out',
           x: 52.5, y: 34, x2: 94.5, y2: 34,
-          nearest_defender_distance: 12, pass_distance: 40, target_distance: 50,
+          nearest_defender_distance: 12, pass_distance: 40,
         },
       ],
       players: {},
@@ -1071,6 +1073,39 @@ test('runDiagnosis rejects a bundle missing audit_input (no silent fallback to r
   assert.equal(task.status, 'failed');
   assert.equal(task.failure_kind, 'invalid_bundle');
   assert.ok(task.errors.some((e) => /missing required field: audit_input/.test(e)));
+});
+
+test('runDiagnosis rejects an audit_input with a missing/unknown schema_version (P21 D6)', async () => {
+  for (const [mutate, pattern] of [
+    [(b) => { delete b.audit_input.schema_version; }, /missing schema_version/],
+    [(b) => { b.audit_input.schema_version = 'audit-input/999'; }, /unsupported audit_input schema_version/],
+  ]) {
+    const dir = mkdtempSync(join(tmpdir(), 'runner-test-'));
+    const bundle = validBundle();
+    mutate(bundle);
+    const bundlePath = mkBundleFile(dir, bundle);
+    const auditPath = join(dir, 'audit.json');
+    const adapter = {
+      run: async () => {
+        throw new Error('should not be called');
+      },
+    };
+    const task = await runDiagnosis({
+      bundlePath,
+      auditPath,
+      replayInstructions: 'x',
+      sourceRevision: 'r',
+      tasksDir: join(dir, 'tasks'),
+      adapter,
+      env: { ANTHROPIC_API_KEY: FAKE_KEY },
+    });
+    assert.equal(task.status, 'failed');
+    assert.equal(task.failure_kind, 'invalid_audit_input');
+    assert.ok(
+      task.errors.some((e) => pattern.test(e)),
+      `expected an audit_input error matching ${pattern}, got ${JSON.stringify(task.errors)}`
+    );
+  }
 });
 
 test('runDiagnosis rejects an invalid bundle as failed/invalid_bundle with a status_history', async () => {

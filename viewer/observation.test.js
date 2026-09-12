@@ -14,6 +14,7 @@ import {
   deriveDiagnosisEndpoint,
 } from './observation.js';
 import { validateObservationBundle } from '../tools/bundle.mjs';
+import { AUDIT_INPUT_SCHEMA_VERSION } from './derive-audit-features.js';
 
 const MATCH_CONFIG = { match_duration_seconds: 2700, demo_mode: false };
 
@@ -100,6 +101,8 @@ test('captureObservation attaches audit_input with meter events and pass_distanc
   // detector-specific fields stay absent (no fabricated evidence)
   assert.equal(pass.nearest_defender_distance, undefined);
   assert.equal(pass.corridor_distance, undefined);
+  // P21 D6：真实采集出来的 audit_input 必须带形状版本号，否则 runAudit 会拒绝。
+  assert.equal(b.audit_input.schema_version, AUDIT_INPUT_SCHEMA_VERSION);
   // bundle still passes the shared validator (incl. credential check on audit_input)
   const { valid, errors } = validateObservationBundle(b);
   assert.equal(valid, true, JSON.stringify(errors));

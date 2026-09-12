@@ -10,6 +10,7 @@ import { fileURLToPath } from 'node:url';
 // CLI 脚本绝对路径：从任意 cwd 跑测试都能 spawn 到正确脚本（不依赖 process.cwd()）。
 const QUEUE_CLI = join(dirname(fileURLToPath(import.meta.url)), 'queue-cli.mjs');
 import { buildRunArgs, isCaptured, isRerunnable, isActionable, statusHint } from './queue-cli.mjs';
+import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
 test('P14 queue-cli: isCaptured only true for captured status', () => {
   assert.equal(isCaptured({ status: 'captured' }), true);
@@ -39,7 +40,7 @@ test('P14 queue-cli: buildRunArgs derives bundle/audit/replay/revision and passe
     seed: '42',
     source_revision: 'abc123',
     match_time: 100,
-    audit_input: { events: [], players: {} },
+    audit_input: { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} },
   };
   const args = buildRunArgs({ tasksDir: dir, taskId: 'task-1', bundle, opts: { permission: 'read-only', maxRetry: '2' } });
   assert.ok(args.includes('--bundle'));
@@ -116,7 +117,7 @@ test('P20 queue-cli confirm: writes confirmation + confirmed status to the task 
   const dir = mkdtempSync(join(tmpdir(), 'queue-cli-p20-'));
   const bundle = {
     seed: '42', source_revision: 'abc', match_time: 51, statement: '踢出边线',
-    audit_input: { events: [], players: {} },
+    audit_input: { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} },
     lineup: [{ id: 7, team: 'home' }],
     events: [{ index: 55, t: 51, type: 'pass', subject: 7, from: 7, result: 'contested', detail: 'out_sideline' }],
   };
@@ -186,7 +187,7 @@ test('P20 runProposal: 对已 confirmed 任务重新提案，状态保持 confir
     window: { before: 5, after: 5 }, events: [{ index: 55, type: 'pass', subject: 7 }],
     engine_snapshot: { kind: 'event-stream', source: 'engine-event-stream', match_time: 51, current_event_index: 0, event_count: 1, window: { before: 5, after: 5 }, lineup: [] },
     viewer_snapshot: { match_time: 51, current_event_index: 0, event_count: 1, play_time: 51, players: [], ball: { x: 0.5, y: 0.5 } },
-    audit_input: { events: [], players: {} }, source_revision: 'abc',
+    audit_input: { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} }, source_revision: 'abc',
   };
   writeFileSync(join(tasksDir, 'c1.bundle.json'), JSON.stringify(bundle));
   writeFileSync(join(tasksDir, 'c1.task.json'), JSON.stringify({
@@ -304,7 +305,7 @@ test('P20 runProposal: 保留非 captured 起源的历史（不写空 status_his
     window: { before: 5, after: 5 }, events: [{ index: 55, type: 'pass', subject: 7 }],
     engine_snapshot: { kind: 'event-stream', source: 'engine-event-stream', match_time: 51, current_event_index: 0, event_count: 1, window: { before: 5, after: 5 }, lineup: [] },
     viewer_snapshot: { match_time: 51, current_event_index: 0, event_count: 1, play_time: 51, players: [], ball: { x: 0.5, y: 0.5 } },
-    audit_input: { events: [], players: {} }, source_revision: 'abc',
+    audit_input: { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} }, source_revision: 'abc',
   };
   writeFileSync(join(tasksDir, 'h1.bundle.json'), JSON.stringify(bundle));
   // 首态是 awaiting_confirmation（非 captured），随后被确认。
@@ -339,7 +340,7 @@ test('P20 queue-cli propose: --model 端到端落进任务文件的 provider.mod
     window: { before: 5, after: 5 }, events: [{ index: 55, type: 'pass', subject: 7 }],
     engine_snapshot: { kind: 'event-stream', source: 'engine-event-stream', match_time: 51, current_event_index: 0, event_count: 1, window: { before: 5, after: 5 }, lineup: [] },
     viewer_snapshot: { match_time: 51, current_event_index: 0, event_count: 1, play_time: 51, players: [], ball: { x: 0.5, y: 0.5 } },
-    audit_input: { events: [], players: {} }, source_revision: 'abc',
+    audit_input: { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} }, source_revision: 'abc',
   };
   writeFileSync(join(dir, 'pf.bundle.json'), JSON.stringify(bundle));
   writeFileSync(join(dir, 'pf.task.json'), JSON.stringify({
