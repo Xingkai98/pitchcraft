@@ -282,11 +282,19 @@ test('contract covers every detector and every entry is internally consistent', 
     for (const f of entry.legacy_reads) {
       assert.ok(!entry.reads.includes(f), `${id}: ${f} cannot be both reads and legacy_reads`);
     }
-    // producers 里的生产方必须是已知取值。
+    // producers 里的生产方必须是已知取值，且**每个 producer 键都必须是被读取的字段**
+    // （reads ∪ legacy_reads）——否则是没人读的僵尸生产登记（审阅实测：加
+    // `producers.zz_ghost = 'derive'` 两套全绿；它不影响行为，但契约清单自洽性该兜住）。
+    const readable = allowedReadKeys(entry);
     for (const [field, producer] of Object.entries(entry.producers)) {
       assert.ok(
         ['engine', 'derive', 'viewer'].includes(producer),
         `${id}.producers.${field} has unknown producer ${producer}`
+      );
+      assert.ok(
+        readable.has(field),
+        `${id}.producers registers "${field}" but the entry never reads it — ` +
+          `a producer for an unread field is dead contract weight`
       );
     }
     // known_gaps 条目必须在 KNOWN_GAPS 里登记，且该条确实指向本 detector。
