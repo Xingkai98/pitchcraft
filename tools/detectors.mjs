@@ -88,7 +88,9 @@ const round3 = (n) => Math.round(n * 1000) / 1000;
 
 // Invariant checks that must hold for ANY bundle, independent of realism.
 // Violations are `invariant_violation` findings (bugs), never warnings.
-function detectInvariants(events, players, profile) {
+// 导出供契约漂移守卫（tools/detector-field-contract.test.mjs）逐 detector 断言它只读自己
+// 契约里声明的字段——只按并集断言会漏掉「A 读了 B 的字段」这类串读。
+export function detectInvariants(events, players, profile) {
   const findings = [];
   const cfg = profile.invariants;
   const eps = cfg.time_order_epsilon;
@@ -290,7 +292,7 @@ function outReasonOf(event, outEvidence) {
   return 'no_pressure_out';
 }
 
-function detectUnforcedOut(events, profile) {
+export function detectUnforcedOut(events, profile) {
   const findings = [];
   const threshold = profile.unforced_out.pressure_distance;
   for (const event of events) {
@@ -417,7 +419,7 @@ function inactiveRuns(sorted, profile) {
   return runs;
 }
 
-function detectInactiveResponsibility(players, profile) {
+export function detectInactiveResponsibility(players, profile) {
   const findings = [];
   const cfg = profile.inactive_responsibility;
   for (const [rawId, snapshots] of Object.entries(players ?? {})) {
@@ -482,7 +484,7 @@ function detectInactiveResponsibility(players, profile) {
 
 // --- ignored_interception_opportunity ---------------------------------------
 
-function detectIgnoredInterception(events, profile) {
+export function detectIgnoredInterception(events, profile) {
   const findings = [];
   const cfg = profile.ignored_interception;
   for (const event of events) {

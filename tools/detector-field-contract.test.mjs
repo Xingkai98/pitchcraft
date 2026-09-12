@@ -14,7 +14,14 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
-import { runAudit } from './detectors.mjs';
+import {
+  runAudit,
+  detectInvariants,
+  detectUnforcedOut,
+  detectInactiveResponsibility,
+  detectIgnoredInterception,
+  DEFAULT_AUDIT_PROFILE,
+} from './detectors.mjs';
 import {
   DETECTOR_FIELD_CONTRACT,
   KNOWN_GAPS,
@@ -198,14 +205,25 @@ function syntheticLegacyInput() {
   };
 }
 
-test('every declared legacy read is genuinely read by some detector', () => {
+test('every declared legacy read is genuinely read by its detector', () => {
   // legacy_reads 允许无生产者，但不能是没人读的僵尸条目（否则清单在自说自话）。
-  const recorded = recordReads(syntheticLegacyInput());
+  // 这里也逐 detector 归属：读到的键必须落在**那个 detector** 的 legacy_reads 里。
+  const perDetector = {};
+  for (const id of Object.keys(DETECTOR_ENTRY)) perDetector[id] = new Set();
+  for (const w of FIXTURE.windows) {
+    for (const [id, run] of Object.entries(DETECTOR_ENTRY)) {
+      for (const k of recordReads(syntheticLegacyInput(), run)) perDetector[id].add(k);
+      // 真实窗口也过一遍，保证 legacy 分支即使真实数据不触发也有归属记录。
+      for (const k of recordReads(w.audit_input, run)) perDetector[id].add(k);
+    }
+  }
   for (const [id, entry] of Object.entries(DETECTOR_FIELD_CONTRACT)) {
+    const reads = perDetector[id];
+    if (!reads) continue;
     for (const field of entry.legacy_reads) {
       assert.ok(
-        recorded.has(field),
-        `${id} declares legacy read "${field}" but no detector code ever reads it`
+        reads.has(field),
+        `${id} declares legacy read "${field}" but its implementation never reads it`
       );
     }
   }
@@ -225,7 +243,7 @@ const NON_FIELD_PROPS = new Set([
 
 // 用记录型 Proxy 包住 audit_input，跑一遍 runAudit，收集所有被 get 到的键。
 // 只记录「普通对象上的非数字字符串键」——数组下标与数组/对象方法是结构访问，不是字段读取。
-function recordReads(input) {
+function recordReads(input, fn) {
   const reads = new Set();
   const cache = new WeakMap();
   const wrap = (value) => {
@@ -243,28 +261,75 @@ function recordReads(input) {
     cache.set(value, proxy);
     return proxy;
   };
-  runAudit(wrap(input));
+  fn(wrap(input));
   return reads;
 }
 
-// 跑遍所有真实窗口（含各有标记的快照），合并读到的键——覆盖比单窗口更全。
+const recordAuditReads = (input) => recordReads(input, (pi) => runAudit(pi));
+
+// 逐 detector 直接调用，把读键**归属到具体 detector**——按并集断言会漏掉
+// 「detector A 读了契约里只属于 B 的字段」这类串读（审阅发现的守卫盲区）。
+const DETECTOR_ENTRY = {
+  baseline_invariant: (pi) =>
+    detectInvariants(pi.events ?? [], pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
+  unforced_out: (pi) => detectUnforcedOut(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
+  inactive_responsibility: (pi) =>
+    detectInactiveResponsibility(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
+  ignored_interception_opportunity: (pi) =>
+    detectIgnoredInterception(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
+};
+
+// 逐 detector 跑遍所有真实窗口，返回 { detector_id: Set(读到的键) }。
+function recordReadsPerDetector() {
+  const perDetector = {};
+  for (const id of Object.keys(DETECTOR_ENTRY)) perDetector[id] = new Set();
+  for (const w of FIXTURE.windows) {
+    for (const [id, run] of Object.entries(DETECTOR_ENTRY)) {
+      for (const k of recordReads(w.audit_input, run)) perDetector[id].add(k);
+    }
+  }
+  return perDetector;
+}
+
+// 全部窗口的并集读键（用于「清单里没有僵尸字段」的反向覆盖）。
 function recordReadsAcrossFixture() {
   const reads = new Set();
   for (const w of FIXTURE.windows) {
-    for (const k of recordReads(w.audit_input)) reads.add(k);
+    for (const k of recordAuditReads(w.audit_input)) reads.add(k);
   }
   return reads;
 }
 
-test('detector implementations only read fields declared in the contract', () => {
-  const recorded = recordReadsAcrossFixture();
-  const allowed = allAllowedReadKeys();
-  const undeclared = [...recorded].filter((k) => !allowed.has(k));
-  assert.deepEqual(
-    undeclared,
-    [],
-    `detector code reads fields missing from detector-field-contract.mjs: ${undeclared.join(', ')}`
-  );
+test('each detector only reads fields its own contract entry declares', () => {
+  // 逐 detector 归属断言（不是并集）：A 读了只登记在 B 名下的字段 → 这条会红。
+  const perDetector = recordReadsPerDetector();
+  for (const [id, reads] of Object.entries(perDetector)) {
+    const entry = DETECTOR_FIELD_CONTRACT[id];
+    assert.ok(entry, `detector ${id} has no contract entry`);
+    const allowed = allowedReadKeys(entry);
+    const undeclared = [...reads].filter((k) => !allowed.has(k) && !AUDIT_INPUT_TOP_LEVEL_KEYS.includes(k));
+    assert.deepEqual(
+      undeclared,
+      [],
+      `${id} reads fields not declared in its own contract entry: ${undeclared.join(', ')}`
+    );
+  }
+});
+
+test('no contract read is declared by a detector that does not read it (cross-detector guard)', () => {
+  // 反向：契约说 detector X 读字段 F，但 X 实际没读 F（F 只在别的 detector 下出现）→ 僵尸声明。
+  const perDetector = recordReadsPerDetector();
+  for (const [id, entry] of Object.entries(DETECTOR_FIELD_CONTRACT)) {
+    const reads = perDetector[id];
+    if (!reads) continue; // pass_outcomes 不是 detector，另行覆盖
+    for (const field of entry.reads) {
+      if (AUDIT_INPUT_TOP_LEVEL_KEYS.includes(field)) continue;
+      assert.ok(
+        reads.has(field),
+        `${id} declares read "${field}" but its implementation never reads it`
+      );
+    }
+  }
 });
 
 test('the drift guard actually catches an undeclared read (self-check)', () => {
@@ -286,19 +351,12 @@ test('the drift guard actually catches an undeclared read (self-check)', () => {
     ['detail'],
     'the guard must surface a read field that the contract fails to declare'
   );
-});
-
-test('every contract read is exercised by the fixture-driven drift guard', () => {
-  // 反向覆盖：契约声明的 reads 若一个都没被真读到，说明清单里有僵尸字段。
-  const recorded = recordReadsAcrossFixture();
-  for (const [id, entry] of Object.entries(DETECTOR_FIELD_CONTRACT)) {
-    for (const field of entry.reads) {
-      assert.ok(
-        recorded.has(field),
-        `${id} declares read "${field}" but no detector code reads it in the drift guard`
-      );
-    }
-  }
+  // 逐 detector 归属守卫的自检：跨 detector 的字段必须被逐 detector 判定拒绝。
+  // 例：`corridor_distance` 只登记在 ignored_interception_opportunity 名下，
+  // 逐 detector 的允许集里 unforced_out 不该有它。
+  const unforcedAllowed = allowedReadKeys(DETECTOR_FIELD_CONTRACT.unforced_out);
+  assert.equal(unforcedAllowed.has('corridor_distance'), false);
+  assert.equal(unforcedAllowed.has('detail'), true);
 });
 
 // --- 4. schema_version 版本保护 (D6) ----------------------------------------
