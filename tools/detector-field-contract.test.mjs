@@ -84,14 +84,39 @@ const NON_INPUT_PROPERTIES = {
 // 「本应是输入字段却忘了登记」的名字（如 `zz_hidden`）洗白，因为那类名字不在此集合里。
 const NON_INPUT_INTERNAL_KEYS = new Set(['detector_id', 'severity', 'reason', 'features', 'thresholds']);
 
+// 三种读取形态都要扫——只扫点读会漏掉解构与字符串下标（审阅实测：解构/方括号 + 分支不被
+// 任何 guard 输入触发 = 全绿逃逸）。而 `const { corridor_distance } = event` 正是
+// detectors.mjs 现在就在用的写法，不是假想。
+//   ① 点读      base.prop
+//   ② 解构      const { a, b } = base   /   ({ a } = base)
+//   ③ 字符串下标 base['prop'] / base["prop"]
 function sourceFieldReads(src = DETECTORS_SOURCE) {
   const code = stripComments(src);
   const reads = new Set();
   for (const base of INPUT_BASE_VARS) {
-    const re = new RegExp(`\\b${base}\\.([a-zA-Z_][a-zA-Z0-9_]*)`, 'g');
     const allowed = NON_INPUT_PROPERTIES[base] ?? new Set();
-    for (const m of code.matchAll(re)) {
-      if (!allowed.has(m[1])) reads.add(m[1]);
+    const add = (name) => {
+      if (!allowed.has(name)) reads.add(name);
+    };
+    // ① 点读
+    for (const m of code.matchAll(new RegExp(`\\b${base}\\.([a-zA-Z_][a-zA-Z0-9_]*)`, 'g'))) {
+      add(m[1]);
+    }
+    // ② 解构：`const { ... } = base` / `let { ... } = base` / `({ ... } = base)`
+    // 模式内用 `[^{}]*`（不许再嵌 `{`）：否则遇到 `if (x) { const { a } = event }` 会从外层
+    // 大括号起匹配，把 `const` 当成字段名（抓到了变异却报错名字，也可能漏掉真字段）。
+    for (const m of code.matchAll(
+      new RegExp(`(?:const|let|var)?\\s*\\{([^{}]*)\\}\\s*=\\s*${base}\\b`, 'g')
+    )) {
+      for (const part of m[1].split(',')) {
+        // `a` / `a: alias` / `a = default` → 取最前面的标识符
+        const name = part.trim().match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)/);
+        if (name) add(name[1]);
+      }
+    }
+    // ③ 字符串下标
+    for (const m of code.matchAll(new RegExp(`\\b${base}\\[\\s*['"]([^'"]+)['"]\\s*\\]`, 'g'))) {
+      add(m[1]);
     }
   }
   return reads;
@@ -190,22 +215,60 @@ test('source-level: injection self-check — the scanner detects a planted read 
   const planted = `
     export function detectUnforcedOut(events, profile) {
       for (const event of events) {
-        if (event.planted_undeclared_field === 7) continue;
+        if (event.planted_dot === 7) continue;
       }
     }`;
   const reads = sourceFieldReads(planted);
   assert.ok(
-    reads.has('planted_undeclared_field'),
+    reads.has('planted_dot'),
     'scanner must surface a field read that exists in the source text'
   );
   // 反向：真实源码里不存在的字段不该出现（防扫描器把任意词都当字段）。
-  assert.equal(reads.has('planted_undeclared_field'), true);
-  assert.equal(sourceFieldReads(DETECTORS_SOURCE).has('planted_undeclared_field'), false);
+  assert.equal(sourceFieldReads(DETECTORS_SOURCE).has('planted_dot'), false);
 
   // 端到端：把种植读取接进「未声明即红」的判决，确认非空。
   const declared = allAllowedReadKeys();
   const undeclared = [...reads].filter((f) => !declared.has(f));
-  assert.deepEqual(undeclared, ['planted_undeclared_field']);
+  assert.deepEqual(undeclared, ['planted_dot']);
+});
+
+test('source-level: the scanner covers destructuring and bracket reads (F1 proof)', () => {
+  // 三种读取形态各注入一例，确认都被扫出。只钉点读会让解构/方括号 + 未被输入触发的分支
+  // 全绿逃逸（审阅实测），而解构正是 detectors.mjs 现在就在用的写法。
+  const cases = [
+    [`const { destructured_field } = event;`, 'destructured_field'],
+    // `{ key: alias }` 读取的是源对象的 **key**（别名只是本地名字），所以扫出 key。
+    [`const { source_key: local_alias } = event;`, 'source_key'],
+    [`let { plain_field, other_field } = event;`, 'plain_field'],
+    [`({ reassigned_field } = event);`, 'reassigned_field'],
+    [`void event['bracket_field'];`, 'bracket_field'],
+    [`void event["double_quoted_field"];`, 'double_quoted_field'],
+    [`void s.snapshot_dot_field;`, 'snapshot_dot_field'],
+  ];
+  for (const [src, expected] of cases) {
+    assert.ok(
+      sourceFieldReads(src).has(expected),
+      `scanner must surface "${expected}" from: ${src}`
+    );
+  }
+  // 真实源码里解构读取（corridor_distance/pass_distance/pass_speed）必须被抓到——
+  // 这些是 declared 字段，所以行为守卫也覆盖；这里确认扫描器同样看得见。
+  const real = sourceFieldReads(DETECTORS_SOURCE);
+  for (const f of ['corridor_distance', 'pass_distance', 'pass_speed']) {
+    assert.ok(real.has(f), `scanner must see the real destructured read "${f}"`);
+  }
+});
+
+test('source-level: the top-level allowlist is pinned to the exact known keys (F2 top-level)', () => {
+  // AUDIT_INPUT_TOP_LEVEL_KEYS 与 NON_INPUT_PROPERTIES 是同一类白名单：它并进允许集、且
+  // 逐条目守卫会跳过它。若没有约束，「加一个顶层键 + 读它」就能掩蔽未声明读取（审阅实测）。
+  // 钉成精确集合：新增顶层键必须是有意为之（同时改这里），不能顺手洗白。
+  assert.deepEqual(
+    [...AUDIT_INPUT_TOP_LEVEL_KEYS].sort(),
+    ['events', 'players', 'schema_version'],
+    'AUDIT_INPUT_TOP_LEVEL_KEYS changed — add a comment explaining the new top-level field ' +
+      'and update this pin so it cannot be used to mask an undeclared read'
+  );
 });
 
 test('source-level: the non-input allowlist cannot mask an undeclared field (F2b)', () => {
@@ -754,4 +817,18 @@ test('a gap that names a produced field records why the producer is not enough',
   // 反向：真实 fixture 确实产出了 dead_ball（whistle 窗口），所以不能登记成 unproducible。
   const dead = allRealSnapshots().filter((s) => s.dead_ball === true);
   assert.ok(dead.length > 0, 'the real fixture must carry produced dead_ball snapshots');
+});
+
+test('source-level: destructuring scan reads the field name, not a neighbouring keyword (F1 precision)', () => {
+  // 回归：解构正则若允许模式内嵌 `{`，会从外层大括号起匹配，把 `const` 当成字段名。
+  // 这里直接验证「块内解构」扫出的名字是字段本身。
+  const planted = `
+    export function detectUnforcedOut(events, profile) {
+      for (const event of events) {
+        if (false) { const { zz_inner_field } = event; void zz_inner_field; }
+      }
+    }`;
+  const reads = sourceFieldReads(planted);
+  assert.ok(reads.has('zz_inner_field'), 'scanner must name the destructured field');
+  assert.equal(reads.has('const'), false, 'scanner must not mistake a keyword for a field');
 });

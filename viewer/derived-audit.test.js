@@ -328,3 +328,57 @@ test('a goalkeeper snapshot is never flagged as an inactive defender (is_gk live
   // 死球窗口（whistle）下不应有站桩告警（dead_ball 位 + is_gk 位共同兜住）。
   assert.deepEqual(warnings, [], JSON.stringify(warnings));
 });
+
+test('derive layer produces moved_toward_goal:true when a player advances (live)', () => {
+  // 与 defender_moved_toward_corridor 同理：真实 fixture 里这两个位可能全 false，
+  // 「删掉 true 分支」不会被真实窗口发现。构造一个球员明确朝球门推进的 capture 钉住它——
+  // 否则该位若退化，inactive_responsibility 会把移动中的球员误报为站桩。
+  const lineup = [
+    { id: 0, team: 'home', x: 0.02, y: 0.5 },
+    { id: 2, team: 'home', x: 0.30, y: 0.5 },
+    { id: 9, team: 'home', x: 0.45, y: 0.5 },
+    { id: 16, team: 'away', x: 0.72, y: 0.45 },
+    { id: 15, team: 'away', x: 0.52, y: 0.75 },
+  ];
+  const evts = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 50, type: 'pass', subject: 9, from: 9, to: 5, x: 0.45, y: 0.75, x2: 0.58, y2: 0.75, speed: 3, result: 'success' },
+    { t: 50, type: 'beat', movers: [{ id: 2, from_x: 0.30, from_y: 0.5, to_x: 0.62, to_y: 0.5, speed: 8, action: 'run' }] },
+    { t: 55, type: 'beat', movers: [{ id: 2, from_x: 0.62, from_y: 0.5, to_x: 0.95, to_y: 0.5, speed: 8, action: 'run' }] },
+  ];
+  const game = new Game(evts, lineup, 'continuous');
+  game.seekTo(51);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const snaps = Object.values(bundle.audit_input.players).flat();
+  assert.ok(
+    snaps.some((s) => s.moved_toward_goal === true),
+    'derive layer must set moved_toward_goal:true for a player advancing toward goal'
+  );
+});
+
+test('derive layer produces moved_toward_ball:true when a player closes on the ball (live)', () => {
+  const lineup = [
+    { id: 0, team: 'home', x: 0.02, y: 0.5 },
+    { id: 2, team: 'home', x: 0.30, y: 0.2 },
+    { id: 9, team: 'home', x: 0.45, y: 0.5 },
+    { id: 16, team: 'away', x: 0.72, y: 0.45 },
+    { id: 15, team: 'away', x: 0.52, y: 0.75 },
+  ];
+  const evts = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 50, type: 'pass', subject: 9, from: 9, to: 5, x: 0.45, y: 0.75, x2: 0.58, y2: 0.75, speed: 3, result: 'success' },
+    // id 2 从 (0.30,0.20) 跑向球的落点附近 (0.58,0.70) → 到球距离明显减小。
+    { t: 50, type: 'beat', movers: [{ id: 2, from_x: 0.30, from_y: 0.2, to_x: 0.58, to_y: 0.7, speed: 8, action: 'run' }] },
+    { t: 55, type: 'beat', movers: [{ id: 2, from_x: 0.58, from_y: 0.7, to_x: 0.58, to_y: 0.75, speed: 8, action: 'run' }] },
+  ];
+  const game = new Game(evts, lineup, 'continuous');
+  game.seekTo(51);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const snaps = Object.values(bundle.audit_input.players).flat();
+  assert.ok(
+    snaps.some((s) => s.moved_toward_ball === true),
+    'derive layer must set moved_toward_ball:true for a player closing on the ball'
+  );
+});
