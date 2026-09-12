@@ -6,7 +6,8 @@
 //!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）
 //!   ——`#[ignore]`，verify.sh 第 5 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
 //! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、
-//!   速度上界、门将贴门线、事件 t 范围）——默认 `cargo test` 就跑（15 场）
+//!   速度上界、门将贴门线、事件 t 范围、罚下球员零参与）——默认 `cargo test` 就跑
+//!   （SEEDS_L2=300 场，P23 起加宽：15 场窗口覆盖不到红牌派生路径，会使门假绿；debug 实测 ~150s）
 //! - golden master：10 个 canary seed 的统计摘要 + 事件流哈希，防静默漂移——默认跑（10 场）
 //!   （L2+golden 共 25 场，debug 实测 ~9s；L1 200 场 release 实测 ~16s）
 //!
@@ -31,8 +32,15 @@ const DUR: f64 = 5400.0;
 const SEEDS_L1: u32 = 200;
 /// L1 聚合 seed 起点（窗口错开，见 SEEDS_L1 注释：P13 fix 后 1..=200 是头球分布的高温伪样本）。
 const SEEDS_L1_START: u64 = 401;
-/// L2 不变量循环 seed 数（不变量应处处成立，10-20 个 seed 足够暴露违规）。
-const SEEDS_L2: u32 = 15;
+/// L2 不变量循环 seed 数。
+///
+/// P23 教训：`1..=15` 窗口里只有 seed 9 出红牌，而「罚下球员仍参与」的漏路径最早出现在 **seed 260**
+/// （红牌约 1/6 场，15 seed 平均只 2-3 张牌，覆盖不到稀有派生路径——如进球后开球落在罚下者身上）。
+/// 窄窗口会让 L2 门在实际被违反时仍全绿（假绿）。改用 **SEEDS_L2 = 300**：覆盖 ~50 张红牌，
+/// 足以命中开球/接球退化路径。代价：debug 下 300 场聚合实测 ~150s（原先 15 场 ~7s）——
+/// 这正是"让不变量真的守得住"的必要开销；如需快速本地循环可 `cargo test --test realism l2_sent_off_kickoff_seeds`
+/// （4 个定点 seed，<1s）。
+const SEEDS_L2: u32 = 300;
 /// golden master canary seed 集（固定，防对特定 seed 过拟合）。
 const GOLDEN_SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
 
@@ -140,6 +148,36 @@ fn mover_speeds(e: &str) -> Vec<f64> {
     out
 }
 
+/// beat 的 movers 数组内所有 id（罚下球员参与检测用）。
+/// movers 数组内每个对象是 `{"id":N,...}`，无嵌套数组 → 首个 `]` 即数组结束。
+fn mover_ids(e: &str) -> Vec<i32> {
+    let needle = "\"movers\":[";
+    let i = match e.find(needle) {
+        Some(i) => i,
+        None => return vec![],
+    };
+    let rest = &e[i + needle.len()..];
+    let end = match rest.find(']') {
+        Some(e) => e,
+        None => return vec![],
+    };
+    let arr = &rest[..end];
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while let Some(pos) = arr[idx..].find("\"id\":") {
+        let start = idx + pos + 5;
+        let num: String = arr[start..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '-')
+            .collect();
+        if let Ok(v) = num.parse::<i32>() {
+            out.push(v);
+        }
+        idx = start + num.len();
+    }
+    out
+}
+
 fn parse_score(s: &str) -> Option<(u32, u32)> {
     let (h, a) = s.split_once('-')?;
     Some((h.parse().ok()?, a.parse().ok()?))
@@ -222,6 +260,10 @@ struct MatchStats {
     speed_violations: Vec<String>,
     gk_violations: usize,
     t_out_of_range: usize,
+    // P23 罚下球员参与（见 L2 requirement：罚下球员不得参与任何事件）
+    n_sent_off_participation: usize,
+    sent_off_violations: Vec<String>,
+    kickoff_self_pass: usize,
     // golden
     stream_hash: u64,
 }
@@ -243,12 +285,45 @@ fn aggregate(seed: u64) -> MatchStats {
     let mut whistle_score: Option<(u32, u32)> = None;
     let mut goal_home = 0u32;
     let mut goal_away = 0u32;
+    // P23：从 `foul[card=red]` 重建罚下集合（红牌事件是唯一对外可见的罚下信号；二黄升级红在
+    // 事件流里就展示为 card=red，故集合精确）。集合在「处理完本条事件后」更新——红牌事件本身
+    // 的 subject（吃牌者）不算违规（那是他被罚下的那一刻）。
+    let mut sent_off = [false; 22];
 
     for e in &events {
         let ty = event_type(e);
         let t = field_num(e, "t").unwrap_or(f64::NAN);
         if t.is_nan() || t < -0.001 || t > DUR + 0.001 {
             st.t_out_of_range += 1;
+        }
+        // 罚下球员参与检查（先于本事件的加集：红牌事件本身不计违规）：
+        // subject（beat 的 main.subject 即持球者）/ movers[].id / carrier / interceptor。
+        let mut participants: Vec<(&'static str, i32)> = Vec::new();
+        if let Some(s) = field_num(e, "subject") {
+            participants.push(("subject", s as i32));
+        }
+        for id in mover_ids(e) {
+            participants.push(("movers[].id", id));
+        }
+        if let Some(c) = field_num(e, "carrier") {
+            participants.push(("carrier", c as i32));
+        }
+        if let Some(i) = field_num(e, "interceptor") {
+            participants.push(("interceptor", i as i32));
+        }
+        // `to`（传球/开球接球者）——命中即会随后成为 carrier（PassCaught → main.subject），
+        // 是"当前未参与但即将参与"的入口。`from` 不单列：pass/kickoff 事件的 subject == from。
+        if let Some(t2) = field_num(e, "to") {
+            participants.push(("to", t2 as i32));
+        }
+        for (field, id) in participants {
+            if id >= 0 && id < 22 && sent_off[id as usize] {
+                st.n_sent_off_participation += 1;
+                if st.sent_off_violations.len() < 8 {
+                    st.sent_off_violations
+                        .push(format!("t={:.1} {} {}={} 已罚下仍参与", t, ty, field, id));
+                }
+            }
         }
         match ty.as_str() {
             "beat" => {
@@ -410,7 +485,16 @@ fn aggregate(seed: u64) -> MatchStats {
                 st.n_foul += 1;
                 match field_str(e, "card").as_deref() {
                     Some("yellow") => st.n_foul_yellow += 1,
-                    Some("red") => st.n_foul_red += 1,
+                    Some("red") => {
+                        st.n_foul_red += 1;
+                        // 红牌（含二黄升级）→ 罚下集合加入 subject（犯规者）。此后其不得再出现在
+                        // 任何事件（D2：subject / movers[].id / carrier / interceptor）。
+                        if let Some(s) = field_num(e, "subject") {
+                            if (0..22).contains(&(s as i32)) {
+                                sent_off[s as usize] = true;
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -439,6 +523,14 @@ fn aggregate(seed: u64) -> MatchStats {
                     if success {
                         st.n_tackle_far_success += 1;
                     }
+                }
+            }
+            "kickoff" => {
+                // P23：开球者/接球者不得为同一人（自传退化——两 id 均合法未罚下，零参与不变量抓不到）。
+                let from = field_num(e, "from").unwrap_or(-1.0) as i32;
+                let to = field_num(e, "to").unwrap_or(-2.0) as i32;
+                if from >= 0 && from == to {
+                    st.kickoff_self_pass += 1;
                 }
             }
             "whistle" => {
@@ -818,6 +910,36 @@ fn l2_cross_event_invariants() {
         );
         assert_eq!(st.gk_violations, 0, "seed {} 门将位置违例", seed);
         assert_eq!(st.t_out_of_range, 0, "seed {} 事件 t 越界", seed);
+        // P23：罚下球员零参与（D2 不变量）。红牌后不得出现在 subject / movers[].id / carrier /
+        // interceptor / to。
+        assert_eq!(
+            st.n_sent_off_participation, 0,
+            "seed {} 罚下球员仍参与比赛 {} 次：{:?}",
+            seed, st.n_sent_off_participation, st.sent_off_violations
+        );
+        // P23：开球者≠接球者（自传退化——两 id 均合法未罚下，零参与不变量抓不到）。
+        assert_eq!(st.kickoff_self_pass, 0, "seed {} 开球 from==to 自传 {}", seed, st.kickoff_self_pass);
+    }
+}
+
+/// P23：罚下球员不得参与——定向 seed 守卫（宽窗口之外的定点钉死）。
+///
+/// `l2_cross_event_invariants` 现已用 SEEDS_L2=300 覆盖到这些 seed；本测试再把宽扫（1..=2000，
+/// 564 张红牌）暴露过的具体退化 seed 单列钉死——它们命中「进球后开球/接球落在罚下球员身上」：
+/// 罚下者恰是硬编码的开球者（home→9 / away→12）或接球者（10/11），该路径不经过 `compute_movers`
+/// （`advance_dead_ball` 手动 push mover），且早期 L2 的 15 seed 窗口守不住。
+/// 引擎确定性 → 永不 flaky；先断言确有红牌，防止将来引擎改动让这些 seed 变成空跑。
+#[test]
+fn l2_sent_off_kickoff_seeds() {
+    for seed in [260u64, 884, 1271, 1658] {
+        let st = aggregate(seed);
+        assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
+        assert_eq!(
+            st.n_sent_off_participation, 0,
+            "seed {} 罚下球员仍参与比赛 {} 次：{:?}",
+            seed, st.n_sent_off_participation, st.sent_off_violations
+        );
+        assert_eq!(st.kickoff_self_pass, 0, "seed {} 开球 from==to 自传", seed);
     }
 }
 
@@ -966,3 +1088,7 @@ fn gm_canary_seeds() {
         );
     }
 }
+
+
+
+
