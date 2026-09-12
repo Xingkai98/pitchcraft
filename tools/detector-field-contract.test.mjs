@@ -110,6 +110,55 @@ function deriveInputBaseVars(code) {
   )) {
     vars.add(m[1]);
   }
+
+  // **调用点传播**：把逐事件逻辑抽成 helper 是常规重构，helper 的形参名爱叫什么叫什么
+  // （`function isLost(pass)` / `const f = (candidate) => …`）。只认循环变量与回调形参时，
+  // 改名后的 helper 形参读会被完全漏掉（审阅实测：形参叫 `ev`/`pass`/`item` 都逃逸）。
+  // 做法：建函数形参表 → 扫调用点 → 若实参是已推导的基变量或输入容器，把对应形参名并入
+  // 基变量集 → 迭代到不动点（函数可互相转发）。
+  const signatures = [];
+  // function name(a, b) {   /   const name = (a, b) =>   /   const name = function (a, b)
+  for (const m of code.matchAll(
+    /(?:function\s+([A-Za-z0-9_$]+)\s*\(([^)]*)\)|(?:const|let|var)\s+([A-Za-z0-9_$]+)\s*=\s*(?:function\s*)?\(([^)]*)\)\s*=>)/g
+  )) {
+    const name = m[1] ?? m[3];
+    const rawParams = m[2] ?? m[4] ?? '';
+    const params = rawParams
+      .split(',')
+      .map((p) => p.trim().replace(/=.*$/, '').replace(/^\.\.\./, '').trim())
+      .map((p) => p.match(/^([a-zA-Z_$][a-zA-Z0-9_$]*)$/))
+      .map((p) => (p ? p[1] : null));
+    if (name) signatures.push({ name, params });
+  }
+  const callArgs = (callee) => {
+    const re = new RegExp(`\\b${callee}\\s*\\(([^)]*)\\)`, 'g');
+    const out = [];
+    for (const m of code.matchAll(re)) {
+      out.push(
+        m[1]
+          .split(',')
+          .map((a) => a.trim())
+      );
+    }
+    return out;
+  };
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const { name, params } of signatures) {
+      for (const args of callArgs(name)) {
+        params.forEach((param, i) => {
+          if (!param || vars.has(param)) return;
+          const arg = (args[i] ?? '').trim();
+          // 实参是已推导基变量，或直接是输入容器本身 → 该形参也是输入基变量。
+          if (vars.has(arg) || INPUT_CONTAINERS.includes(arg)) {
+            vars.add(param);
+            changed = true;
+          }
+        });
+      }
+    }
+  }
   return [...vars];
 }
 
@@ -227,20 +276,22 @@ test('source-level: the discoverability guard catches a variable detector id (se
   assert.equal(DETECTOR_ID_FORWARDING.has('detectorId'), true);
 });
 
-// **已知残留缺口（诚实登记，非静默）**——静态扫描对**语法形态**有盲区，两类：
+// **已知残留缺口（诚实登记，非静默）**——静态扫描对**语法形态**有盲区：
 //
 // ① detector id 侧：若一个 helper 把 id 作为**形参**接收（`detector_id: detectorId` 是已登记
 //    转发点），而调用点又用非字面量传入（`make(ghostIdVar)`），这个 id 不以字面量出现在源码里，
 //    上面的守卫看不见。彻底修法是引入 **detector 注册表**（runAudit 遍历注册表而非内联 4 次
 //    调用），使「有哪些 detector」成为运行时可枚举的事实——小幅重构，超出本 change 范围，
 //    留给新增 detector 的 issue（#34/#35）一并处理。
-// ② 字段读侧：扫描器已覆盖 点读 / 可选链 / 解构 / 字符串下标，且基变量**从代码推导**
-//    （循环绑定 + 回调形参，不再硬编码名字）。仍扫不到的是：把事件拷进一个**非输入容器
-//    命名的局部量**再读（`const x = event; x.zz`）、或计算下标 `event[k]`。
-//    这两类都要先写一段「看起来无意义」的中转代码，属刻意规避而非自然写法。
+// ② 字段读侧：扫描器已覆盖 点读 / 可选链 / 解构 / 字符串下标 / 改名循环变量 / 回调形参 /
+//    **helper 形参（调用点传播到不动点）**。仍扫不到的两类：
+//    (a) 把事件拷进非输入命名的局部量再读（`const x = event; x.zz`）；
+//    (b) 计算下标 `event[k]`（k 是变量，不是字面量）。
+//    两者都要先写一段「看起来无意义」的中转代码，属刻意规避而非自然写法。
 //
-// 判据：需要**刻意写死代码 / 无意义中转**才能绕过的，登记为已知局限；**自然写法**能触发的
-// （改循环变量名、解构、可选链、helper 形参读事件）都必须被守卫抓住——这几类已全部覆盖。
+// 判据：需要**刻意写死代码 / 无意义中转 / 变量下标**才能绕过的，登记为已知局限；
+// **自然写法**能触发的（改循环变量名、解构、可选链、helper 形参读事件）都必须被守卫
+// 抓住——这几类已全部覆盖（helper 形参经调用点传播，见 deriveInputBaseVars 末尾）。
 
 test('source-level: every input field read in detectors.mjs is declared somewhere (F2)', () => {
   // 不看执行、只看文本：任何分支里的未声明读取都会被这条抓到，与是否被输入覆盖无关。
@@ -318,6 +369,26 @@ test('source-level: the scanner covers destructuring and bracket reads (F1 proof
   assert.ok(
     sourceFieldReads(`for (const [id, sn] of Object.entries(players)) { void sn.snap_field; }`).has('snap_field'),
     'scanner must derive destructured loop bindings from players'
+  );
+  // helper 形参：把逐事件逻辑抽成 helper 是常规重构，形参名不可预测。调用点传播必须把
+  // 「实参是输入基变量」的形参也纳入——否则形参叫 ev/candidate 就能让扫描闭眼（审阅实测）。
+  assert.ok(
+    sourceFieldReads(
+      `function check(ev) { return ev.helper_field; }\nfor (const event of events) { check(event); }`
+    ).has('helper_field'),
+    'scanner must propagate through helper call sites (param named ev)'
+  );
+  assert.ok(
+    sourceFieldReads(
+      `const f = (candidate) => candidate.arrow_field;\nfor (const event of events) { f(event); }`
+    ).has('arrow_field'),
+    'scanner must propagate through arrow-helper call sites'
+  );
+  assert.ok(
+    sourceFieldReads(
+      `const g = (p) => p.chained_field;\nconst h = (e2) => g(e2);\nfor (const event of events) { h(event); }`
+    ).has('chained_field'),
+    'scanner must propagate transitively (h → g) to a fixpoint'
   );
   // 真实源码里解构读取（corridor_distance/pass_distance/pass_speed）必须被抓到——
   // 这些是 declared 字段，所以行为守卫也覆盖；这里确认扫描器同样看得见。
@@ -900,4 +971,32 @@ test('source-level: destructuring scan reads the field name, not a neighbouring 
   const reads = sourceFieldReads(planted);
   assert.ok(reads.has('zz_inner_field'), 'scanner must name the destructured field');
   assert.equal(reads.has('const'), false, 'scanner must not mistake a keyword for a field');
+});
+
+const DERIVE_SOURCE = readFileSync(join(HERE, '..', 'viewer', 'derive-audit-features.js'), 'utf8');
+
+test('responsibility trigger values produced by derive match the values detectors accept (N2)', () => {
+  // 值契约（枚举）此前无守卫：把 derive 层产出的 `possession_transition` 改名为 `transition`
+  // 两套全绿，但真实数据上该 trigger 静默失效（审阅实测 60 次 capture 里 6 次输出变化）。
+  // 注意：不能只查 fixture——7 个窗口只采到 `ball_entered_zone`，`possession_transition`
+  // 在别的窗口才出现。所以**从 derive 源码里**枚举它可能产出的值，再与 detector 接受的集合比对。
+  const produced = new Set();
+  for (const m of DERIVE_SOURCE.matchAll(/\bresponsibility\s*=\s*'([^']+)'/g)) produced.add(m[1]);
+  assert.ok(produced.size > 0, 'could not find any responsibility assignment in derive source');
+  // 也把 fixture 里实际采到的值并进来（双保险）。
+  for (const w of FIXTURE.windows) {
+    for (const snaps of Object.values(w.audit_input.players)) {
+      for (const s of snaps) if (s.responsibility) produced.add(s.responsibility);
+    }
+  }
+  // RESPONSIBILITY_TRIGGERS 是 detectors.mjs 内部常量；从源码文本解析（避免为测试导出内部量）。
+  const m = /const RESPONSIBILITY_TRIGGERS = \[([^\]]*)\]/.exec(DETECTORS_SOURCE);
+  assert.ok(m, 'could not locate RESPONSIBILITY_TRIGGERS in detectors.mjs');
+  const accepted = new Set([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]));
+  const unaccepted = [...produced].filter((v) => !accepted.has(v));
+  assert.deepEqual(
+    unaccepted,
+    [],
+    `derive layer can produce responsibility values the detector does not accept: ${unaccepted.join(', ')}`
+  );
 });

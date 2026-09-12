@@ -313,6 +313,26 @@ test('the dropped-snapshot-field guard has teeth (self-check)', () => {
   assert.deepEqual(dropped, ['is_gk'], 'guard must surface a dropped snapshot field');
 });
 
+test('both goalkeepers are marked is_gk, not just the home one (live)', () => {
+  // 只断言「is_gk 键存在」太弱：把标记改成只打主队门将（删掉 `|| id === 21`）仍会全绿，
+  // 而真实数据上客队门将（id 21）若丢位会被 inactive_responsibility 当站桩候选
+  // （审阅实测：60 次真实 capture 里有 1 次告警数从 2 变 3）。逐个断言两台门将都带位。
+  const { snapshotKeys } = collectCapturedKeys([51, 80]);
+  assert.ok(snapshotKeys.has('is_gk'), 'capture must produce is_gk');
+  const game = new Game(DEAD_BALL_EVENTS, lineups, 'continuous');
+  game.seekTo(51);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const players = bundle.audit_input.players;
+  for (const gkId of [0, 21]) {
+    const snaps = players[gkId];
+    assert.ok(Array.isArray(snaps) && snaps.length > 0, `expected snapshots for keeper ${gkId}`);
+    assert.ok(
+      snaps.every((s) => s.is_gk === true),
+      `keeper ${gkId} snapshots must all carry is_gk:true`
+    );
+  }
+});
+
 test('a goalkeeper snapshot is never flagged as an inactive defender (is_gk live)', () => {
   // is_gk 位丢失的**行为后果**：门将（id 0/21）静止时会被 inactive_responsibility 当站桩
   // 候选产 realism_warning。真实 capture 里门将位必须存在，且门将不产该告警。
