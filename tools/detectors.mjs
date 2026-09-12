@@ -298,6 +298,31 @@ function detectUnforcedOut(events, profile) {
 
     const hasLanding = typeof event.x2 === 'number' && typeof event.y2 === 'number';
     const outEvidence = outEvidenceOf(event, profile);
+    const base = {
+      detector_id: 'unforced_out',
+      event_index: event.index,
+      match_time: event.t ?? null,
+      entity_id: null,
+    };
+    const markedBase = { out_evidence: outEvidence, out_reason: outReasonOf(event, outEvidence) };
+
+    // Exclusion comes FIRST (P21 D2): a corner/throw_in/free_kick/clearance pass is a dead-ball
+    // restart or a deliberate clearance, never an "unforced out" candidate — whether or not it
+    // carried out evidence. Checking it only after the out-evidence gate used to let an excluded
+    // pass with no out evidence fall into the near-boundary branch and be reported as
+    // "cannot prove an out event", which mislabels it.
+    const excluded = exclusionTokensOf(event);
+    if (excluded.length > 0) {
+      findings.push({
+        ...base,
+        id: `unforced_out:${event.index}`,
+        severity: 'unknown',
+        reason: `excluded: ${excluded.join(',')}`,
+        features: markedBase,
+        thresholds: {},
+      });
+      continue;
+    }
 
     if (!outEvidence) {
       // Not recorded out and the landing is inside the pitch. A landing close to
@@ -308,11 +333,8 @@ function detectUnforcedOut(events, profile) {
           profile.unforced_out.boundary_margin
       ) {
         findings.push({
+          ...base,
           id: `unforced_out:${event.index}`,
-          detector_id: 'unforced_out',
-          event_index: event.index,
-          match_time: event.t ?? null,
-          entity_id: null,
           severity: 'unknown',
           reason: 'pass lands near boundary but result is not out; cannot prove an out event',
           features: {
@@ -324,26 +346,6 @@ function detectUnforcedOut(events, profile) {
           thresholds: { boundary_margin: profile.unforced_out.boundary_margin },
         });
       }
-      continue;
-    }
-
-    const base = {
-      detector_id: 'unforced_out',
-      event_index: event.index,
-      match_time: event.t ?? null,
-      entity_id: null,
-    };
-    const markedBase = { out_evidence: outEvidence, out_reason: outReasonOf(event, outEvidence) };
-    const excluded = exclusionTokensOf(event);
-    if (excluded.length > 0) {
-      findings.push({
-        ...base,
-        id: `unforced_out:${event.index}`,
-        severity: 'unknown',
-        reason: `excluded: ${excluded.join(',')}`,
-        features: markedBase,
-        thresholds: {},
-      });
       continue;
     }
     if (typeof event.nearest_defender_distance !== 'number') {

@@ -837,9 +837,13 @@ test('ignored_interception findings are marked calibrated:false (D4)', () => {
   }
 });
 
-test('DEFAULT_AUDIT_PROFILE marks ignored_interception as uncalibrated (D4)', () => {
+test('DEFAULT_AUDIT_PROFILE marks only ignored_interception as uncalibrated (D4)', () => {
   assert.equal(DEFAULT_AUDIT_PROFILE.ignored_interception.calibrated, false);
-  assert.notEqual(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, false);
+  // 其余 detector 的配置块不带 calibrated 字段（缺席 = 已标定）。用严格断言钉住「缺席」，
+  // 而不是 `notEqual(false)`——后者对 undefined 也成立，等于没测。
+  assert.equal(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, undefined);
+  assert.equal(DEFAULT_AUDIT_PROFILE.inactive_responsibility.calibrated, undefined);
+  assert.equal(DEFAULT_AUDIT_PROFILE.invariants.calibrated, undefined);
 });
 
 test('aggregateAudit does not escalate an uncalibrated detector, even above band (D4)', () => {
@@ -880,4 +884,25 @@ test('aggregateAudit reports calibration for every detector summary (D4)', () =>
   for (const d of agg.detectors) {
     assert.ok(['calibrated', 'uncalibrated'].includes(d.calibration), d.detector_id);
   }
+});
+
+test('an excluded pass is excluded even without out evidence (D2 ordering)', () => {
+  // 回归：排除位判定曾排在「出界证据门」之后，导致一个没有出界证据的角球（落点离边线 2m、
+  // 在界内）掉进 near-boundary 分支，被报成「cannot prove an out event」——把死球重开
+  // 误标成「无法判断的疑似出界」。排除位必须优先于出界证据门。
+  const { findings, pass_outcomes } = runAudit({
+    events: [
+      // 角球：无出界证据、落点在边界附近（会命中 near-boundary 分支的条件）。
+      {
+        index: 0, t: 1, type: 'pass', detail: 'corner', result: 'success',
+        x2: 103, y2: 30, nearest_defender_distance: 12, pass_distance: 20,
+      },
+    ],
+  });
+  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
+  assert.equal(unforced.length, 1, JSON.stringify(findings));
+  assert.match(unforced[0].reason, /excluded: corner/);
+  assert.doesNotMatch(unforced[0].reason, /near boundary/);
+  assert.equal(pass_outcomes.excluded.sample_count, 1);
+  assert.equal(pass_outcomes.unpressured.sample_count, 0);
 });
