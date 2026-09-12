@@ -68,17 +68,27 @@ const stripComments = (src) =>
 // start/end 是 run 的首末快照）。只扫这些变量的属性读取——其余（profile/events/findings/
 // sorted/...）是内部结构，不属 audit_input 字段契约。
 const INPUT_BASE_VARS = ['event', 'e', 's', 'start', 'end'];
-const READ_RE = new RegExp(`\\b(?:${INPUT_BASE_VARS.join('|')})\\.([a-zA-Z_][a-zA-Z0-9_]*)`, 'g');
 
-// 明确排除：`s.detector_id` 是在 aggregateAudit 里读**聚合 stat 对象**（内部结构），
-// 不是读 audit_input 字段。登记在此，免得被误判为「未声明字段」。
-const NON_INPUT_READS = new Set(['detector_id']);
+// **非输入读取的显式白名单**（baseVar → 允许的属性集）：当一个短名既是输入形参、又在别处
+// 指向内部对象时，用这条精确声明「这个对象上的这个属性不是 audit_input 字段」。每条都必须
+// 有注释说明为什么——白名单会削弱守卫，不得随意添加。
+const NON_INPUT_PROPERTIES = {
+  // aggregateAudit 里 `(audit?.stats ?? []).find((s) => s.detector_id === id)`：这里的 `s`
+  // 是聚合 **stat 形**（内部结构），不是 audit_input 的球员快照。detector_id 也因此不在
+  // 契约的 reads 里。审阅实测：不排除它会误报为「未声明字段」。
+  s: new Set(['detector_id']),
+};
 
-function sourceFieldReads() {
-  const code = stripComments(DETECTORS_SOURCE);
+function sourceFieldReads(src = DETECTORS_SOURCE) {
+  const code = stripComments(src);
   const reads = new Set();
-  for (const m of code.matchAll(READ_RE)) reads.add(m[1]);
-  for (const k of NON_INPUT_READS) reads.delete(k);
+  for (const base of INPUT_BASE_VARS) {
+    const re = new RegExp(`\\b${base}\\.([a-zA-Z_][a-zA-Z0-9_]*)`, 'g');
+    const allowed = NON_INPUT_PROPERTIES[base] ?? new Set();
+    for (const m of code.matchAll(re)) {
+      if (!allowed.has(m[1])) reads.add(m[1]);
+    }
+  }
   return reads;
 }
 
@@ -116,11 +126,40 @@ test('source-level: the source scanner actually detects reads (self-check)', () 
   assert.ok(reads.has('detail'), 'scanner must find event.detail');
   assert.ok(reads.has('nearest_defender_distance'), 'scanner must find the pressure-field read');
   assert.ok(reads.has('responsibility'), 'scanner must find the snapshot responsibility read');
-  // 反向：从允许集剔除一个确被读取的字段 → 源码守卫必须报出来。
-  const declared = new Set(allAllowedReadKeys());
-  declared.delete('detail');
-  const flagged = [...reads].filter((f) => !declared.has(f));
-  assert.deepEqual(flagged, ['detail'], 'source guard must surface a read missing from the contract');
+});
+
+test('source-level: injection self-check — the scanner detects a planted read (F2 proof)', () => {
+  // 这才是真正的自检：往一份**合成源码**里种一个未声明读取，确认扫描器抓得到。
+  // （上一版自检是从「允许集」里删字段再看判决非空——那只验证了集合差运算，没验证
+  //  扫描器真的能看见代码里的读取，是一条假绿自检，由审阅发现。）
+  const planted = `
+    export function detectUnforcedOut(events, profile) {
+      for (const event of events) {
+        if (event.planted_undeclared_field === 7) continue;
+      }
+    }`;
+  const reads = sourceFieldReads(planted);
+  assert.ok(
+    reads.has('planted_undeclared_field'),
+    'scanner must surface a field read that exists in the source text'
+  );
+  // 反向：真实源码里不存在的字段不该出现（防扫描器把任意词都当字段）。
+  assert.equal(reads.has('planted_undeclared_field'), true);
+  assert.equal(sourceFieldReads(DETECTORS_SOURCE).has('planted_undeclared_field'), false);
+
+  // 端到端：把种植读取接进「未声明即红」的判决，确认非空。
+  const declared = allAllowedReadKeys();
+  const undeclared = [...reads].filter((f) => !declared.has(f));
+  assert.deepEqual(undeclared, ['planted_undeclared_field']);
+});
+
+test('source-level: the e. base genuinely covers the event-shaped reads (non-input allowlist is explicit)', () => {
+  // 显式登记非输入属性，避免「e. 既是事件又是别的对象」被静默计入字段契约。
+  // 这条断言保证白名单本身是有意的（键名合法、注释说明来源）。
+  for (const [base, props] of Object.entries(NON_INPUT_PROPERTIES)) {
+    assert.ok(INPUT_BASE_VARS.includes(base), `non-input allowlist key ${base} is not a scanned base var`);
+    assert.ok(props instanceof Set, `non-input allowlist for ${base} must be a Set`);
+  }
 });
 
 // --- 1. 契约清单自身的完整性 ------------------------------------------------
