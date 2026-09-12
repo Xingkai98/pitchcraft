@@ -86,8 +86,16 @@ function deriveInputBaseVars(code) {
   const vars = new Set(INPUT_BASE_VARS_FALLBACK);
   const containers = INPUT_CONTAINERS.join('|');
   // for (const X of <container>)  /  for (const X of <container> ?? [])  /  Object.entries(<container>)
+  // 字符类必须同时排除 `]` 和**换行**：只排除 `]` 时 `[^\]]*` 会跨行贪婪匹配，把下一个
+  // `for` 整个吞进分组（实测产生 2292 字符的 runaway），使被吞的那个函数（computePassOutcomes）
+  // 的循环绑定永远推导不出来、只能靠 fallback 硬编码名兜住——改名即失明（审阅实测）。
+  // 容器名后要跟**词边界或 `(`**：`(?:sorted)` 会误匹配 `sortedReasons`（`sorted` 是其
+  // 前缀），把 `reason` 当成输入绑定（审阅发现的假阳性根因）。
   const loopRes = [
-    new RegExp(`for\\s*\\(\\s*const\\s+(\\[?[^\\]]*\\]?)\\s+of\\s+(?:Object\\.entries\\()?(?:${containers})`, 'g'),
+    new RegExp(
+      `for\\s*\\(\\s*const\\s+(\\[?[^\\]\\n]*\\]?)\\s+of\\s+(?:Object\\.entries\\()?(?:${containers})\\b`,
+      'g'
+    ),
   ];
   for (const re of loopRes) {
     for (const m of code.matchAll(re)) {
@@ -999,4 +1007,54 @@ test('responsibility trigger values produced by derive match the values detector
     [],
     `derive layer can produce responsibility values the detector does not accept: ${unaccepted.join(', ')}`
   );
+});
+
+test('source-level: every input-container loop binding is derived, not fallback-covered', () => {
+  // 这条把「推导 vs 兜底」变成可观测事实：正则若漏掉某个 `for (const X of events|players|…)`
+  // （如跨行贪婪吞并），X 会落入 INPUT_BASE_VARS_FALLBACK 的硬编码名字，改名即失明。
+  // 断言每个循环绑定名都出现在 deriveInputBaseVars 的结果里，且不是靠 fallback 碰巧命中。
+  const code = stripComments(DETECTORS_SOURCE);
+  const containers = INPUT_CONTAINERS.join('|');
+  const re = new RegExp(
+    `for\\s*\\(\\s*const\\s+(\\[?[^\\]\\n]*\\]?)\\s+of\\s+(?:Object\\.entries\\()?(?:${containers})\\b`,
+    'g'
+  );
+  const derived = new Set(deriveInputBaseVars(code));
+  const bindings = [];
+  for (const m of code.matchAll(re)) {
+    const raw = m[1].trim();
+    const names = raw.startsWith('[')
+      ? raw.replace(/[[\]]/g, '').split(',').map((p) => p.trim())
+      : [raw];
+    bindings.push(...names);
+  }
+  assert.ok(bindings.length > 0, 'found no input-container loop bindings — regex is broken');
+  const missing = bindings.filter((n) => !derived.has(n));
+  assert.deepEqual(
+    missing,
+    [],
+    `loop bindings not derived (would be invisible if renamed): ${missing.join(', ')}`
+  );
+  // 非绑定名不该被推导（确保推导不是「把任意名字都塞进去」）：`sortedReasons` 是内部容器，
+  // 它的绑定 `reason` 不在输入容器里。
+  assert.equal(derived.has('reason'), false, 'non-input binding must NOT be derived');
+
+  // **有牙自检**：真实源码里所有循环绑定恰好都叫 fallback 名（`event`）或能从别处推出，
+  // 所以拿 pristine 源码测不出「正则吞掉某个绑定」。用一段合成的、绑定名唯一的源码验证
+  // ——正则若跨行贪婪吞并（漏 `\n`），这个绑定就推导不出来。
+  const synthetic = [
+    'for (const onlyBinding of events) {',
+    '  void onlyBinding.a;',
+    '}',
+    'for (const secondBinding of players) {',
+    '  void secondBinding.b;',
+    '}',
+  ].join('\n');
+  const synthDerived = new Set(deriveInputBaseVars(synthetic));
+  for (const b of ['onlyBinding', 'secondBinding']) {
+    assert.ok(
+      synthDerived.has(b),
+      `binding "${b}" must be derived — a runaway regex would swallow it`
+    );
+  }
 });
