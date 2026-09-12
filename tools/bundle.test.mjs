@@ -5,6 +5,7 @@ import {
   redactCredentials,
   assertNoCredentials,
 } from './bundle.mjs';
+import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
 const validBundle = () => ({
   schema_version: '1',
@@ -31,6 +32,7 @@ const validBundle = () => ({
     ball: { x: 0.5, y: 0.5 },
   },
   audit_input: {
+    schema_version: AUDIT_INPUT_SCHEMA_VERSION,
     events: [],
     players: {},
   },

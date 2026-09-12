@@ -602,7 +602,16 @@ export async function runDiagnosis({
   // 2. Deterministic audit runs before any diagnosis. `audit_input` is a required
   //    bundle field (validator rejects bundles without it), so there is no silent
   //    fallback that would audit raw normalized viewer coordinates as meters.
-  const audit = runAudit(bundle.audit_input);
+  //    P21 D6：runAudit 还会校验 audit_input 的 schema_version（缺失/未知即抛错）。
+  //    这里捕获成任务失败（与 bundle_read_error/invalid_bundle 同一处理路径），而不是让
+  //    异常抛穿后台任务——后台任务抛穿会连任务记录都留不下，反而是另一种静默。
+  let audit;
+  try {
+    audit = runAudit(bundle.audit_input);
+  } catch (e) {
+    task.errors.push(`audit_input rejected: ${e.message}`);
+    return finalize('failed', { failure_kind: 'invalid_audit_input' });
+  }
   const auditReport = {
     profile: audit.profile,
     source_revision: displayBundleRevision,

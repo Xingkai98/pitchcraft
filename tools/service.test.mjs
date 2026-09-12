@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createService, main, parseArgs } from './service.mjs';
 import { verifyProblem, REPO_ROOT } from './actions.mjs';
+import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
 const FAKE_KEY = 'sk-ant-fake-secret-value-0001';
 const LOCAL_ORIGIN = 'http://localhost:8000';
@@ -38,7 +39,7 @@ const validBundle = () => ({
     players: [],
     ball: { x: 0.5, y: 0.5 },
   },
-  audit_input: { events: [], players: {} },
+  audit_input: { schema_version: AUDIT_INPUT_SCHEMA_VERSION, events: [], players: {} },
   source_revision: 'abc123',
 });
 

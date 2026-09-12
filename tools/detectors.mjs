@@ -6,6 +6,8 @@
 // network, no Claude/API calls. When evidence cannot prove a conclusion, a
 // detector emits an `unknown` finding with a reason instead of guessing.
 
+import { AUDIT_INPUT_SCHEMA_VERSION } from '../viewer/derive-audit-features.js';
+
 export const DEFAULT_AUDIT_PROFILE = {
   id: 'p10-mvp',
   version: '0.1.0',
@@ -28,6 +30,9 @@ export const DEFAULT_AUDIT_PROFILE = {
     defender_speed: 6.0,
     // Extra seconds a defender must arrive early to count as an opportunity.
     arrival_margin: 0.5,
+    // P21 D4：本 detector 的告警率尚未用真实比赛标定（标定归 #36）。未标定 → 聚合层
+    // 不因超出参考 band 升级为 realism_failure，也不把它当可信线索；仅降级静音。
+    calibrated: false,
   },
   // Baseline invariant checks: things that must hold regardless of realism.
   invariants: {
@@ -60,6 +65,19 @@ const RESPONSIBILITY_TRIGGERS = [
   'possession_transition',
   'defensive_line_moved',
 ];
+
+// detector_id → profile 里对应配置块的键。两者并不总是同名（历史原因：detector 叫
+// `ignored_interception_opportunity`，配置块叫 `ignored_interception`），所以显式映射，
+// 别靠字符串拼。D4 的 calibrated 标记就靠它把 finding/detector 摘要挂回配置。
+const DETECTOR_PROFILE_KEY = {
+  baseline_invariant: 'invariants',
+  unforced_out: 'unforced_out',
+  inactive_responsibility: 'inactive_responsibility',
+  ignored_interception_opportunity: 'ignored_interception',
+};
+
+const isUncalibrated = (detectorId, profile) =>
+  profile?.[DETECTOR_PROFILE_KEY[detectorId]]?.calibrated === false;
 
 const distance = (a, b) =>
   Math.hypot((a.x ?? 0) - (b.x ?? 0), (a.y ?? 0) - (b.y ?? 0));
@@ -204,14 +222,26 @@ function detectInvariants(events, players, profile) {
 
 // --- unforced_out -----------------------------------------------------------
 
-const EXCLUSION_KEYS = [
-  'dead_ball',
-  'clearance',
-  'corner',
-  'throw_in',
-  'goal_kick',
-  'contested',
-];
+// P21 D2：死球/战术传球的排除位读 `detail` 字符串集合——这是引擎真实的表达方式。
+// 此前读的布尔位（dead_ball/clearance/corner/throw_in/goal_kick/contested）引擎一个都不产：
+//   - contested：引擎用它表达**出界**（与 detail:out_* 共存），当排除位会误杀真出界 → 删。
+//   - dead_ball / goal_kick：无生产者，且死球重开已由 corner/throw_in/free_kick 表达 → 删。
+//     （门球开大脚无 detail，无法靠 detail 映射，登记为 known gap K1。）
+const EXCLUSION_DETAILS = ['corner', 'throw_in', 'free_kick', 'clearance'];
+
+// 兼容分支：旧合成 fixture 仍可能带布尔排除位。布尔位与 detail 任一命中即排除。
+// 只保留语义正确的三个（clearance/corner/throw_in）；contested/dead_ball/goal_kick 不在此列。
+const EXCLUSION_LEGACY_KEYS = ['clearance', 'corner', 'throw_in'];
+
+// 判定一个 pass 事件是否被排除（死球重开 / 有意解围）。返回命中的 token 列表，空即未排除。
+// token 用 detail 值或布尔键名，便于 reason 里直接可读（如 `excluded: corner`）。
+function exclusionTokensOf(event) {
+  const tokens = EXCLUSION_DETAILS.filter((d) => event.detail === d);
+  for (const k of EXCLUSION_LEGACY_KEYS) {
+    if (event[k] === true) tokens.push(k);
+  }
+  return tokens;
+}
 
 // Distance (meters) of a landing point to the nearest pitch boundary. Coordinates
 // are assumed to span [0, width] x [0, height]; anything beyond an edge has
@@ -228,12 +258,20 @@ function isOutOfPitch(x2, y2, pitch) {
   return x2 < 0 || x2 > pitch.width || y2 < 0 || y2 > pitch.height;
 }
 
-// Out-of-play evidence for a pass:
-//   - explicit `result === 'out'` from the event stream, or
-//   - geometric evidence: the landing point is beyond the pitch rectangle.
-// A near-boundary-but-inside landing is NOT out-of-play evidence (it may just be
-// a risky pass that stayed in).
+// 出界 detail 值（引擎直出，P21 D1）。
+const OUT_DETAILS = ['out_sideline', 'out_goal_line'];
+
+// Out-of-play evidence for a pass, in priority order (P21 D1):
+//   1. `detail === 'out_sideline' | 'out_goal_line'` — the engine's REAL signal. Real out
+//      passes carry `result:"contested"` (no discrimination) + one of these details, and
+//      their landing coords are clamp01'd back onto the line, so geometry cannot see it.
+//   2. explicit `result === 'out'` — compatibility (old fixtures / a future explicit field).
+//   3. geometric evidence: landing strictly beyond the pitch rectangle — defensive branch;
+//      usually unreachable after clamp01, but kept for non-clamped inputs.
+// A near-boundary-but-inside landing is NOT out-of-play evidence (it may just be a risky
+// pass that stayed in).
 function outEvidenceOf(event, profile) {
+  if (OUT_DETAILS.includes(event.detail)) return 'event.detail';
   if (event.result === 'out') return 'event.result';
   if (
     typeof event.x2 === 'number' &&
@@ -243,6 +281,13 @@ function outEvidenceOf(event, profile) {
     return 'landing_out_of_bounds';
   }
   return null;
+}
+
+// 出界原因（P21 D3）：不再读 `event.out_reason`（无人产），改由证据源推导。
+function outReasonOf(event, outEvidence) {
+  if (OUT_DETAILS.includes(event.detail)) return event.detail;
+  if (outEvidence === 'landing_out_of_bounds') return 'out_of_bounds_landing';
+  return 'no_pressure_out';
 }
 
 function detectUnforcedOut(events, profile) {
@@ -288,14 +333,15 @@ function detectUnforcedOut(events, profile) {
       match_time: event.t ?? null,
       entity_id: null,
     };
-    const excluded = EXCLUSION_KEYS.filter((k) => event[k] === true);
+    const markedBase = { out_evidence: outEvidence, out_reason: outReasonOf(event, outEvidence) };
+    const excluded = exclusionTokensOf(event);
     if (excluded.length > 0) {
       findings.push({
         ...base,
         id: `unforced_out:${event.index}`,
         severity: 'unknown',
         reason: `excluded: ${excluded.join(',')}`,
-        features: { out_evidence: outEvidence, out_reason: event.out_reason ?? null },
+        features: markedBase,
         thresholds: {},
       });
       continue;
@@ -306,7 +352,7 @@ function detectUnforcedOut(events, profile) {
         id: `unforced_out:${event.index}`,
         severity: 'unknown',
         reason: 'cannot prove pass-out pressure context (nearest_defender_distance missing)',
-        features: { out_evidence: outEvidence, out_reason: event.out_reason ?? null },
+        features: markedBase,
         thresholds: {},
       });
       continue;
@@ -314,10 +360,8 @@ function detectUnforcedOut(events, profile) {
     if (event.nearest_defender_distance > threshold) {
       const features = {
         out_evidence: outEvidence,
-        out_reason:
-          event.out_reason ?? (outEvidence === 'landing_out_of_bounds' ? 'out_of_bounds_landing' : 'no_pressure_out'),
+        out_reason: outReasonOf(event, outEvidence),
         pass_distance: event.pass_distance ?? null,
-        target_distance: event.target_distance ?? null,
         defender_distance: event.nearest_defender_distance,
         pressure_level: 'none',
         sample_count: 1,
@@ -399,9 +443,11 @@ function detectInactiveResponsibility(players, profile) {
 
     for (const [from, to] of inactiveRuns(sorted, profile)) {
       const run = sorted.slice(from, to + 1);
-      const disqualified = run.some(
-        (s) => s.dead_ball === true || s.is_gk === true || s.formation_hold === true
-      );
+      // P21 D5/K3：此前还判 `formation_hold === true`，但该字段没有任何生产者（引擎内部
+      // 决策事实、viewer 不可观测、derive 层不推导）——那句永远是 false，是死代码，删掉。
+      // 引擎内部事实无从观测这件事由 done 判定（is_gk / dead_ball / moved_toward_*）+ 责任
+      // 触发器共同兜住；契约清单把它登记为 known gap（issue #28）。
+      const disqualified = run.some((s) => s.dead_ball === true || s.is_gk === true);
       if (disqualified) continue;
       const moved = run.some(
         (s) => s.moved_toward_goal === true || s.moved_toward_ball === true
@@ -489,18 +535,12 @@ function detectIgnoredInterception(events, profile) {
 
 // --- pass outcome / pressure buckets -----------------------------------------
 
-// Classify a single pass's outcome from observable evidence. `result === 'out'`
-// or a landing point beyond the pitch rectangle is out; success/complete is a
-// success; anything else/missing is unknown unless the geometry proves out.
+// Classify a single pass's outcome from observable evidence, reusing the same
+// out-evidence contract as unforced_out (P21 D1) so the two never drift: detail
+// out_* (the engine's real signal) / explicit result==='out' / geometric out are
+// all `out`; success/complete is a success; anything else/missing is unknown.
 function classifyPassOutcome(event, profile) {
-  if (event.result === 'out') return 'out';
-  if (
-    typeof event.x2 === 'number' &&
-    typeof event.y2 === 'number' &&
-    isOutOfPitch(event.x2, event.y2, profile.pitch)
-  ) {
-    return 'out';
-  }
+  if (outEvidenceOf(event, profile) !== null) return 'out';
   if (event.result === 'success' || event.result === 'complete') return 'success';
   return 'unknown_outcome';
 }
@@ -508,8 +548,8 @@ function classifyPassOutcome(event, profile) {
 // Bucket ordinary passes by pressure context (using the unforced_out pressure
 // threshold and the event's nearest_defender_distance) and by outcome. Tactical/
 // dead-ball pass contexts are excluded from the ordinary-pass buckets, matching
-// the unforced_out EXCLUSION_KEYS. Missing pressure evidence lands in
-// `unknown_pressure` — never fabricated.
+// the unforced_out exclusion contract (detail set + legacy boolean keys).
+// Missing pressure evidence lands in `unknown_pressure` — never fabricated.
 function computePassOutcomes(events, profile) {
   const buckets = {
     unpressured: { sample_count: 0, out_count: 0, success_count: 0, unknown_outcome_count: 0 },
@@ -520,7 +560,7 @@ function computePassOutcomes(events, profile) {
   const threshold = profile.unforced_out.pressure_distance;
   for (const event of events ?? []) {
     if (event.type !== 'pass') continue;
-    if (EXCLUSION_KEYS.some((k) => event[k] === true)) {
+    if (exclusionTokensOf(event).length > 0) {
       excluded += 1;
       continue;
     }
@@ -561,6 +601,21 @@ function statsFor(detectorId, samples, findings) {
 }
 
 export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
+  // P21 D6：audit_input 必须携带已知 schema_version。缺失/未知 → 抛错，而不是按默认
+  // 静默继续——静默正是字段断裂能潜伏几个月的原因（detector 读空字段、输出全 unknown）。
+  const version = input?.schema_version;
+  if (version === undefined) {
+    throw new Error(
+      `audit_input is missing schema_version (expected "${AUDIT_INPUT_SCHEMA_VERSION}")`
+    );
+  }
+  if (version !== AUDIT_INPUT_SCHEMA_VERSION) {
+    throw new Error(
+      `unsupported audit_input schema_version ${JSON.stringify(version)} ` +
+        `(expected "${AUDIT_INPUT_SCHEMA_VERSION}")`
+    );
+  }
+
   const events = Array.isArray(input?.events) ? input.events : [];
   const players = input?.players ?? {};
 
@@ -575,6 +630,12 @@ export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
     ...inactiveFindings,
     ...interceptionFindings,
   ].map((f) => ({ ...f, profile_id: profile.id, profile_version: profile.version }));
+
+  // P21 D4：未标定 detector（calibrated:false）的告警带 calibrated:false 出厂，聚合层据此
+  // 降级。标记按 detector 逐条加上，保证「未标定」这件事跟着 finding 走，不靠调用方记住。
+  for (const f of findings) {
+    if (isUncalibrated(f.detector_id, profile)) f.calibrated = false;
+  }
 
   const stats = [
     statsFor('baseline_invariant', events.length, invariantFindings),
@@ -693,6 +754,11 @@ export function aggregateAudit(
       profile.aggregation?.reference_bands?.[id] ||
       null;
 
+    // P21 D4：未标定 detector 的告警不参与 band 升级——band 是「真实比赛标定过的参考区间」
+    // 概念，拿未标定的 detector 去比会产出不可信的 realism_failure。这里只降级、不隐藏：
+    // anomaly_count/rate 照常计入，摘要额外带 calibration:'uncalibrated' 供报告层识别。
+    const calibrated = !isUncalibrated(id, profile);
+
     let bandState = null;
     // Aggregate severity is about anomalies. No samples -> unknown (no data);
     // samples but zero anomalies -> null (clean, nothing to report); anomalies
@@ -700,7 +766,7 @@ export function aggregateAudit(
     // escalates to realism_failure.
     let aggregateSeverity =
       samples === 0 ? 'unknown' : anomalyCount > 0 ? 'realism_warning' : null;
-    if (band && typeof band.max === 'number' && rate !== null) {
+    if (calibrated && band && typeof band.max === 'number' && rate !== null) {
       if (rate > band.max) {
         bandState = 'above';
         aggregateSeverity = 'realism_failure';
@@ -734,6 +800,9 @@ export function aggregateAudit(
         : null,
       band_state: bandState,
       aggregate_severity: aggregateSeverity,
+      // P21 D4：'uncalibrated' = 该 detector 的告警率尚无真实比赛标定，报告层不应把它
+      // 当可信线索（ignored_interception）。'calibrated' = 常规。
+      calibration: calibrated ? 'calibrated' : 'uncalibrated',
     });
   }
 
