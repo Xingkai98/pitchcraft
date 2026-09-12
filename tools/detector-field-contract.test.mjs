@@ -394,3 +394,19 @@ test('a real out pass is not misclassified as excluded-by-contested (D2 regressi
     assert.doesNotMatch(f.reason ?? '', /excluded/, `${label} must not be excluded`);
   }
 });
+
+test('a gap that names a produced field records why the producer is not enough', () => {
+  // dead_ball 有生产者（whistle 路径有效），但 isDeadBallEvent 里还有同类死分支
+  // （result==="out" / kickoff x2），真实数据里出界/进球后被标成死球。这不是「字段没人产」，
+  // 而是「产出的覆盖面不够」——登记为 semantic gap，并断言它的字段确实有生产者，
+  // 免得有人把它误当 unproducible 去改 detector（该修的是 derive 层）。
+  const gap = KNOWN_GAPS.dead_ball_event_detection;
+  assert.equal(gap.kind, 'semantic');
+  assert.equal(gap.detector_fields.inactive_responsibility, 'dead_ball');
+  const entry = DETECTOR_FIELD_CONTRACT.inactive_responsibility;
+  assert.ok(entry.producers.dead_ball, 'dead_ball has a (partial) producer, hence a semantic gap');
+  assert.ok(entry.known_gaps.includes('dead_ball_event_detection'));
+  // 反向：真实 fixture 确实产出了 dead_ball（whistle 窗口），所以不能登记成 unproducible。
+  const dead = allRealSnapshots().filter((s) => s.dead_ball === true);
+  assert.ok(dead.length > 0, 'the real fixture must carry produced dead_ball snapshots');
+});
