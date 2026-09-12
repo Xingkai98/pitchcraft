@@ -1057,6 +1057,7 @@ fn pick_close_down_players(st: &MatchState, defend_team: u32, target: (f64, f64)
         if !is_team { continue; }
         if id == 0 || id == 21 { continue; } // 门将不 close_down
         if id == st.carrier { continue; }
+        if st.sent_off[id as usize] { continue; } // 罚下球员不逼抢
         let d = (st.pos[id as usize].0 - target.0).powi(2) + (st.pos[id as usize].1 - target.1).powi(2);
         cand.push((d, id));
     }
@@ -1153,6 +1154,7 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     let mut actions = vec!["run".to_string(); 22];
     for id in 0..22i32 {
         if excluded.contains(&id) || id == st.carrier { continue; }
+        if st.sent_off[id as usize] { continue; } // 罚下球员不产目标（→ 不产 mover、不参与 repulsion）
         if id == 0 || id == 21 { continue; } // 门将最后单独处理
         if close_down_ids.contains(&id) {
             targets[id as usize] = Some(close_down_stop(st.pos[id as usize], close_down_target));
@@ -1197,6 +1199,7 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     let mut movers = Vec::new();
     for id in 0..22i32 {
         if excluded.contains(&id) || id == st.carrier { continue; }
+        if st.sent_off[id as usize] { continue; } // 罚下门将也不产 keeper_return
         let from = st.pos[id as usize];
         let (target, action, speed) = if id == 0 || id == 21 {
             let tx = if id == 0 { 0.02 } else { 0.98 };
@@ -1255,7 +1258,7 @@ fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
                 let victim = st.carrier;
                 let victim_pos = st.pos[victim as usize];
                 let def_home = st.possession != 0;
-                let (def_id, _, dist) = nearest_defender(&st.pos, victim_pos, def_home);
+                let (def_id, _, dist) = nearest_defender(st, victim_pos, def_home);
                 let same_pair = st.last_tackle_pair == Some((def_id, victim));
                 let far = dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng);
                 // 总是产 tackle（数量稳定）；same_pair 强制 fail、far 降成功率（15%）、贴防正常 50/50
@@ -1322,7 +1325,7 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
     let home = st.possession == 0;
-    let (to, to_pos) = nearest_teammate(&st.pos, from_pos, home, from);
+    let (to, to_pos) = nearest_teammate(st, from_pos, home, from);
     let rx = st.pos[to as usize].0;
     let ry = st.pos[to as usize].1;
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
@@ -1378,7 +1381,7 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
     let meters = distance_meters(from_pos, (clamp01(lx), clamp01(ly)));
     // 拦截者 = 离落点最近的对方外场球员；拦截概率按"拦截者到落点距离"分档（贴防高、中距中、远离低），
     // 长传额外加成。传失（失准）固定 PASS_MISS_P，球权不直接丢——球到落点变松散球双方争。
-    let (def_id, _, def_dist_m) = nearest_defender(&st.pos, (clamp01(lx), clamp01(ly)), !home);
+    let (def_id, _, def_dist_m) = nearest_defender(st, (clamp01(lx), clamp01(ly)), !home);
     let base = if def_dist_m <= INTERCEPT_D_TIGHT_M {
         INTERCEPT_P_TIGHT
     } else if def_dist_m <= INTERCEPT_D_MID_M {
@@ -1608,12 +1611,15 @@ fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events:
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
     let home = st.possession == 0;
-    // 最靠前的队友（dist_to_goal 最小，非门将）
+    // 最靠前的队友（dist_to_goal 最小，非门将；罚下球员不接球）
     let mut best = -1;
     let mut best_d = f64::MAX;
     for id in 1..=20 {
         let is_team = if home { id <= 10 } else { id >= 11 };
         if !is_team || id == from {
+            continue;
+        }
+        if st.sent_off[id as usize] {
             continue;
         }
         let d = dist_to_goal_m(st, id);
@@ -1660,7 +1666,7 @@ fn emit_tackle_highlight_impl(st: &mut MatchState, rng: &mut SeededRng, events: 
     let victim = st.carrier;
     let victim_pos = st.pos[victim as usize];
     let def_home = st.possession != 0;
-    let (def_id, def_pos, _) = nearest_defender(&st.pos, victim_pos, def_home);
+    let (def_id, def_pos, _) = nearest_defender(st, victim_pos, def_home);
     let success = if same_pair {
         false
     } else if far {
@@ -2028,7 +2034,7 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     let throwing = st.possession;
     let home = throwing == 0;
     let thrower = nearest_in_team(st, out_pos, throwing); // 掷球者（非门将，在边线）
-    let (to, to_pos) = nearest_teammate(&st.pos, out_pos, home, thrower);
+    let (to, to_pos) = nearest_teammate(st, out_pos, home, thrower);
     let rx = st.pos[to as usize].0;
     let ry = st.pos[to as usize].1;
     let lead = 0.1 + (rng.next_u64() % 20) as f64 / 100.0;
@@ -2063,7 +2069,7 @@ fn emit_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     let kicking = st.possession; // 犯规后球权方（被犯规方）
     let home = kicking == 0;
     let kicker = nearest_in_team(st, spot, kicking);
-    let (to, to_pos) = nearest_teammate(&st.pos, spot, home, kicker);
+    let (to, to_pos) = nearest_teammate(st, spot, home, kicker);
     let rx = st.pos[to as usize].0;
     let ry = st.pos[to as usize].1;
     let lead = 0.1 + (rng.next_u64() % 20) as f64 / 100.0;
@@ -2269,7 +2275,7 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
 /// 头球摆渡：pass 给队友（subject=攻方 chaser，无 detail、h=0），接球者持球
 fn emit_header_flick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, header: i32, pos: (f64, f64)) {
     let home = st.possession == 0;
-    let (to, to_pos) = nearest_teammate(&st.pos, pos, home, header);
+    let (to, to_pos) = nearest_teammate(st, pos, home, header);
     let rx = st.pos[to as usize].0;
     let ry = st.pos[to as usize].1;
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
@@ -2607,14 +2613,16 @@ fn clinical_goal_window(possession: u32, goal_p: u64, saved_p: u64) -> (u64, u64
     (goal_lo, saved_hi)
 }
 
-/// 找离位置 pos 最近的防守方球员（tackle 用：防守者只抢附近的人，避免跨半场狂奔）。
+/// 找离位置 target 最近的防守方球员（tackle/拦截用：防守者只抢附近的人，避免跨半场狂奔）。
 /// 用实时 pos[]（非静态站位）。`def_home` = 防守方是否 home。
-/// 排除门将（home GK id=0，away GK id=21）——门将不参与抢断。
+/// 排除门将（home GK id=0，away GK id=21）——门将不参与抢断；排除罚下球员（红牌/二黄）。
 /// 返回 (id, 位置, 距离米)。
-fn nearest_defender(pos: &[(f64, f64)], target: (f64, f64), def_home: bool) -> (i32, (f64, f64), f64) {
+fn nearest_defender(st: &MatchState, target: (f64, f64), def_home: bool) -> (i32, (f64, f64), f64) {
+    let pos = &st.pos;
     let mut best = None;
     let mut best_dist = f64::MAX;
     for (id, &p) in pos.iter().enumerate() {
+        if st.sent_off[id] { continue; } // 罚下球员不参与抢断/拦截
         let is_def = if def_home { id <= 10 } else { id >= 11 };
         if !is_def { continue; }
         // 门将不参与抢断（避免门将跑出禁区铲人）
@@ -2721,12 +2729,16 @@ fn offset_in_bounds(from: (f64, f64), dir: (f64, f64), dist: f64) -> (f64, f64) 
 /// from_id = 传球者，排除自己。用**当前** pos[]（实时位置）选人，
 /// 而非静态站位——Phase C 的 off_ball_run 让球员漂移，若用静态站位选人，
 /// 接球者会在极短球飞行时间内被迫冲刺超远距离（审阅 major：receiver sprint）。
-fn nearest_teammate(pos: &[(f64, f64)], from_pos: (f64, f64), home: bool, from_id: i32) -> (i32, (f64, f64)) {
+/// 传球/发球目标选择（含角球/界外球/头球摆渡）。罚下球员（红牌/二黄）不得成为目标
+/// ——否则其随后会成为 carrier（PassCaught → main.subject），重新"上场"。
+fn nearest_teammate(st: &MatchState, from_pos: (f64, f64), home: bool, from_id: i32) -> (i32, (f64, f64)) {
+    let pos = &st.pos;
     let mut best = None;
     let mut best_dist = f64::MAX;
     for (id, &p) in pos.iter().enumerate() {
         let is_teammate = if home { id <= 10 } else { id >= 11 };
         if !is_teammate || id as i32 == from_id { continue; }
+        if st.sent_off[id] { continue; } // 罚下球员不接球
         let d = (p.0 - from_pos.0).powi(2) + (p.1 - from_pos.1).powi(2);
         if d < best_dist {
             best_dist = d;
@@ -3628,6 +3640,103 @@ mod tests {
             // 重叠球员应被 repulsion 推开（单拍 to 间距显著 > 原始 0）
             assert!(d > 0.005, "重叠球员应被 repulsion 分开（d={:.4}）", d);
         }
+    }
+
+    // ---- P23 罚下球员不得再参与比赛 ----
+
+    /// 构造"某球员被罚下"的确定场景：球在右半、home 持球、carrier=9。
+    /// 返回一个已知会产 mover 的球员 id（其队形目标离当前位置足够远）。
+    fn sent_off_scene() -> (MatchState, SeededRng) {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.ball_pos = (0.8, 0.5);
+        st.possession = 0;
+        st.carrier = 9;
+        // 把 id 5 放离其队形目标足够远的位置，保证未罚下时必产 mover（对照组）
+        st.pos[5] = (0.95, 0.05);
+        (st, SeededRng::new(7))
+    }
+
+    #[test]
+    fn p23_sent_off_produces_no_mover() {
+        // 对照组：未罚下时 id 5 应产 mover（证明场景有效——不是"本来就不动"）
+        let (mut st, mut rng) = sent_off_scene();
+        let movers = compute_movers(&mut st, &mut rng, 1.0, &[9]);
+        assert!(
+            movers.iter().any(|m| m.id == 5),
+            "对照组失败：未罚下的 id 5 应产 mover（场景设置无效）"
+        );
+        // 实验组：罚下后 id 5 不得出现在 movers
+        let (mut st, mut rng) = sent_off_scene();
+        st.sent_off[5] = true;
+        let movers = compute_movers(&mut st, &mut rng, 1.0, &[9]);
+        assert!(
+            !movers.iter().any(|m| m.id == 5),
+            "罚下球员 id 5 仍产 mover：{:?}",
+            movers.iter().map(|m| m.id).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn p23_sent_off_keeper_produces_no_keeper_return() {
+        // 对照组：门将离门 → 产 keeper_return
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.pos[0] = (0.2, 0.5);
+        st.ball_pos = (0.8, 0.5);
+        st.possession = 0;
+        st.carrier = 9;
+        let mut rng = SeededRng::new(7);
+        let movers = compute_movers(&mut st, &mut rng, 1.0, &[9]);
+        assert!(
+            movers.iter().any(|m| m.id == 0 && m.action == "keeper_return"),
+            "对照组失败：未罚下门将离门应产 keeper_return"
+        );
+        // 实验组：门将被罚下 → 不产 keeper_return（罚下门将不得再上场）
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.pos[0] = (0.2, 0.5);
+        st.ball_pos = (0.8, 0.5);
+        st.possession = 0;
+        st.carrier = 9;
+        st.sent_off[0] = true;
+        let movers = compute_movers(&mut st, &mut rng, 1.0, &[9]);
+        assert!(
+            !movers.iter().any(|m| m.id == 0),
+            "罚下门将 id 0 仍产 mover：{:?}",
+            movers.iter().map(|m| (m.id, m.action.clone())).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn p23_sent_off_not_picked_as_tackler() {
+        // 罚下球员比合法防守者更近，也不得被 nearest_defender 选中
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        let target = (0.5, 0.5);
+        st.pos[4] = (0.51, 0.5); // 罚下者最近（home 防守方）
+        st.pos[5] = (0.6, 0.5); // 合法防守者较远
+        // 对照组：未罚下时 id 4 最近，应被选中
+        let (id, _, _) = nearest_defender(&st, target, true);
+        assert_eq!(id, 4, "对照组失败：未罚下的 id 4 应被选为抢断者");
+        // 实验组：罚下后不得被选中（改选次近的合法防守者 id 5）
+        st.sent_off[4] = true;
+        let (id, _, _) = nearest_defender(&st, target, true);
+        assert_eq!(id, 5, "罚下球员 id 4 被选为抢断者");
+    }
+
+    #[test]
+    fn p23_sent_off_not_picked_as_close_down() {
+        // 罚下球员比队友更近，也不得被 pick_close_down_players 选中
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        let target = (0.5, 0.5);
+        st.pos[11] = (0.51, 0.5); // 罚下者最近（away）
+        st.pos[12] = (0.55, 0.5); // 合法队友次近
+        st.pos[13] = (0.9, 0.9);  // 其余队友远处
+        st.sent_off[11] = true;
+        let picked = pick_close_down_players(&st, 1, target, 2);
+        assert!(!picked.contains(&11), "罚下球员 id 11 被选为 close_down：{:?}", picked);
+        assert!(picked.contains(&12), "合法队友 id 12 应被选中：{:?}", picked);
     }
 
     // ---- P6 门球 + 进球回中圈测试 ----

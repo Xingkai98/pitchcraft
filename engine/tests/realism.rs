@@ -140,6 +140,36 @@ fn mover_speeds(e: &str) -> Vec<f64> {
     out
 }
 
+/// beat 的 movers 数组内所有 id（罚下球员参与检测用）。
+/// movers 数组内每个对象是 `{"id":N,...}`，无嵌套数组 → 首个 `]` 即数组结束。
+fn mover_ids(e: &str) -> Vec<i32> {
+    let needle = "\"movers\":[";
+    let i = match e.find(needle) {
+        Some(i) => i,
+        None => return vec![],
+    };
+    let rest = &e[i + needle.len()..];
+    let end = match rest.find(']') {
+        Some(e) => e,
+        None => return vec![],
+    };
+    let arr = &rest[..end];
+    let mut out = Vec::new();
+    let mut idx = 0;
+    while let Some(pos) = arr[idx..].find("\"id\":") {
+        let start = idx + pos + 5;
+        let num: String = arr[start..]
+            .chars()
+            .take_while(|c| c.is_ascii_digit() || *c == '-')
+            .collect();
+        if let Ok(v) = num.parse::<i32>() {
+            out.push(v);
+        }
+        idx = start + num.len();
+    }
+    out
+}
+
 fn parse_score(s: &str) -> Option<(u32, u32)> {
     let (h, a) = s.split_once('-')?;
     Some((h.parse().ok()?, a.parse().ok()?))
@@ -222,6 +252,9 @@ struct MatchStats {
     speed_violations: Vec<String>,
     gk_violations: usize,
     t_out_of_range: usize,
+    // P23 罚下球员参与（见 L2 requirement：罚下球员不得参与任何事件）
+    n_sent_off_participation: usize,
+    sent_off_violations: Vec<String>,
     // golden
     stream_hash: u64,
 }
@@ -243,12 +276,40 @@ fn aggregate(seed: u64) -> MatchStats {
     let mut whistle_score: Option<(u32, u32)> = None;
     let mut goal_home = 0u32;
     let mut goal_away = 0u32;
+    // P23：从 `foul[card=red]` 重建罚下集合（红牌事件是唯一对外可见的罚下信号；二黄升级红在
+    // 事件流里就展示为 card=red，故集合精确）。集合在「处理完本条事件后」更新——红牌事件本身
+    // 的 subject（吃牌者）不算违规（那是他被罚下的那一刻）。
+    let mut sent_off = [false; 22];
 
     for e in &events {
         let ty = event_type(e);
         let t = field_num(e, "t").unwrap_or(f64::NAN);
         if t.is_nan() || t < -0.001 || t > DUR + 0.001 {
             st.t_out_of_range += 1;
+        }
+        // 罚下球员参与检查（先于本事件的加集：红牌事件本身不计违规）：
+        // subject（beat 的 main.subject 即持球者）/ movers[].id / carrier / interceptor。
+        let mut participants: Vec<(&'static str, i32)> = Vec::new();
+        if let Some(s) = field_num(e, "subject") {
+            participants.push(("subject", s as i32));
+        }
+        for id in mover_ids(e) {
+            participants.push(("movers[].id", id));
+        }
+        if let Some(c) = field_num(e, "carrier") {
+            participants.push(("carrier", c as i32));
+        }
+        if let Some(i) = field_num(e, "interceptor") {
+            participants.push(("interceptor", i as i32));
+        }
+        for (field, id) in participants {
+            if id >= 0 && id < 22 && sent_off[id as usize] {
+                st.n_sent_off_participation += 1;
+                if st.sent_off_violations.len() < 8 {
+                    st.sent_off_violations
+                        .push(format!("t={:.1} {} {}={} 已罚下仍参与", t, ty, field, id));
+                }
+            }
         }
         match ty.as_str() {
             "beat" => {
@@ -410,7 +471,16 @@ fn aggregate(seed: u64) -> MatchStats {
                 st.n_foul += 1;
                 match field_str(e, "card").as_deref() {
                     Some("yellow") => st.n_foul_yellow += 1,
-                    Some("red") => st.n_foul_red += 1,
+                    Some("red") => {
+                        st.n_foul_red += 1;
+                        // 红牌（含二黄升级）→ 罚下集合加入 subject（犯规者）。此后其不得再出现在
+                        // 任何事件（D2：subject / movers[].id / carrier / interceptor）。
+                        if let Some(s) = field_num(e, "subject") {
+                            if (0..22).contains(&(s as i32)) {
+                                sent_off[s as usize] = true;
+                            }
+                        }
+                    }
                     _ => {}
                 }
             }
@@ -818,6 +888,12 @@ fn l2_cross_event_invariants() {
         );
         assert_eq!(st.gk_violations, 0, "seed {} 门将位置违例", seed);
         assert_eq!(st.t_out_of_range, 0, "seed {} 事件 t 越界", seed);
+        // P23：罚下球员零参与（D2 不变量）。红牌后不得出现在 subject / movers[].id / carrier / interceptor。
+        assert_eq!(
+            st.n_sent_off_participation, 0,
+            "seed {} 罚下球员仍参与比赛 {} 次：{:?}",
+            seed, st.n_sent_off_participation, st.sent_off_violations
+        );
     }
 }
 
@@ -966,3 +1042,5 @@ fn gm_canary_seeds() {
         );
     }
 }
+
+
