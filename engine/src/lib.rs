@@ -1541,7 +1541,7 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     events.push(event);
     let participants = vec![(shooter, shooter_pos), (gk_id, (x2, y2))];
     let outcome = if result == "goal" {
-        let kickoff_id = kickoff_pick(st, if home { 12 } else { 9 });
+        let kickoff_id = kickoff_pick(st, if home { 12 } else { 9 }, -1);
         // 比分在高亮结束（finalize）确认，不在射门时刻递增
         HighlightOutcome::ShotGoal { kickoff_id, ball_end: (x2, y2) }
     } else if result == "off_target" {
@@ -1767,7 +1767,7 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             // 比分在高亮结束（finalize）时确认——不在射门时刻递增（避免比赛在飞行中结束仍计分）
             st.ball_pos = ball_end;
             if kickoff_id <= 10 { st.away_score += 1; } else { st.home_score += 1; }
-            let receiver = kickoff_pick(st, if st.possession == 0 { 11 } else { 10 });
+            let receiver = kickoff_pick(st, if st.possession == 0 { 11 } else { 10 }, kickoff_id);
             st.carrier = -1;
             st.dead_ball = Some(DeadBall { goal: true, remaining: 2, preparing: false, kickoff_id, kicked: false, receiver, kickoff_end: 0.0 });
             let movers = compute_movers(st, rng, t, &[kickoff_id]);
@@ -2246,7 +2246,7 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     });
     let participants = vec![(header, pos), (gk_id, (x2, y2))];
     let outcome = if result == "goal" {
-        let kickoff_id = kickoff_pick(st, if home { 12 } else { 9 });
+        let kickoff_id = kickoff_pick(st, if home { 12 } else { 9 }, -1);
         HighlightOutcome::ShotGoal { kickoff_id, ball_end: (x2, y2) }
     } else if result == "off_target" {
         HighlightOutcome::ShotOffTarget
@@ -2616,22 +2616,25 @@ fn clinical_goal_window(possession: u32, goal_p: u64, saved_p: u64) -> (u64, u64
 /// 进球后开球者/接球者选择：默认用固定 id（开球者 home 丢球→9 / away 丢球→12；接球者丢球方
 /// 10/11），若默认者已被罚下则在该队外场（1-10 / 11-20）中按 id 顺序确定性取下一个未被罚下者。
 /// 罚下球员不得成为开球者/接球者——否则会以 `subject`/`carrier` 身份重新进入比赛（P23）。
+/// `avoid`：额外排除的 id（接球者选择时传开球者，避免 `from == to` 的自传退化——两 id 都是
+/// 合法未罚下球员，P23 零参与不变量抓不到，需此处显式排除）。
 /// 无人被罚下时恒返回 default_id → 不改变既有事件流。
-fn kickoff_pick(st: &MatchState, default_id: i32) -> i32 {
-    if !st.sent_off[default_id as usize] {
+fn kickoff_pick(st: &MatchState, default_id: i32, avoid: i32) -> i32 {
+    if !st.sent_off[default_id as usize] && default_id != avoid {
         return default_id;
     }
     let (lo, hi) = if default_id <= 10 { (1, 10) } else { (11, 20) }; // 门将不参与开球
     let span = hi - lo + 1;
     for step in 1..span {
         let id = lo + (default_id - lo + step) % span;
-        if !st.sent_off[id as usize] {
+        if !st.sent_off[id as usize] && id != avoid {
             return id;
         }
     }
-    // 退化态：该队 10 名外场全部罚下（规则上可达的边界——每队最多 10 张红牌，门将不产犯规）。
-    // 门将恒不被罚下，由其开球；优于返回已罚下球员（那会违反 P23 不变量）。
-    if default_id <= 10 { 0 } else { 21 }
+    // 退化态：该队外场全部罚下或仅剩 avoid（规则上可达的边界——每队最多 10 张红牌，门将不产
+    // 犯规）。门将恒不被罚下，由其顶上；优于返回已罚下球员或自传（那会违反 P23 不变量）。
+    let gk = if default_id <= 10 { 0 } else { 21 };
+    if gk != avoid { gk } else { default_id }
 }
 
 /// 找离位置 target 最近的防守方球员（tackle/拦截用：防守者只抢附近的人，避免跨半场狂奔）。
@@ -3785,24 +3788,41 @@ mod tests {
         let lineup = default_lineup();
         let mut st = MatchState::new(&lineup, 5400.0);
         // 无人罚下：恒返回默认（不改变既有事件流）
-        assert_eq!(kickoff_pick(&st, 9), 9);
-        assert_eq!(kickoff_pick(&st, 12), 12);
-        assert_eq!(kickoff_pick(&st, 10), 10);
-        assert_eq!(kickoff_pick(&st, 11), 11);
+        assert_eq!(kickoff_pick(&st, 9, -1), 9);
+        assert_eq!(kickoff_pick(&st, 12, -1), 12);
+        assert_eq!(kickoff_pick(&st, 10, -1), 10);
+        assert_eq!(kickoff_pick(&st, 11, -1), 11);
         // 默认被罚下 → 按 id 顺序取该队下一个未被罚下者
         st.sent_off[9] = true;
-        assert_eq!(kickoff_pick(&st, 9), 10);
+        assert_eq!(kickoff_pick(&st, 9, -1), 10);
         st.sent_off[10] = true;
-        assert_eq!(kickoff_pick(&st, 9), 1); // 9,10 已罚下 → 回绕到 1
+        assert_eq!(kickoff_pick(&st, 9, -1), 1); // 9,10 已罚下 → 回绕到 1
         st.sent_off[12] = true;
-        assert_eq!(kickoff_pick(&st, 12), 13);
+        assert_eq!(kickoff_pick(&st, 12, -1), 13);
+        // avoid（接球者选择时=开球者）：默认未罚下但与 avoid 相同 → 跳过，取下一个
+        assert_eq!(kickoff_pick(&st, 11, -1), 11);
+        assert_eq!(kickoff_pick(&st, 11, 11), 13, "receiver 应跳过 kickoff_id 12（12 被罚下）与 avoid 11");
         // 全队外场罚下 → 回退门将（home 0 / away 21；理论不可达但规则允许）
         for id in 1..=10 {
             st.sent_off[id] = true;
         }
-        assert_eq!(kickoff_pick(&st, 9), 0);
+        assert_eq!(kickoff_pick(&st, 9, -1), 0);
         // 跨队不串：9 被罚下只影响 home 侧（11-20）
-        assert_eq!(kickoff_pick(&st, 11), 11);
+        assert_eq!(kickoff_pick(&st, 11, -1), 11);
+    }
+
+    #[test]
+    fn p23_kickoff_receiver_never_equals_kicker() {
+        // 自传退化守卫：开球者与接球者不得为同一人（两 id 都合法未罚下，L2 零参与抓不到）。
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        // 最坏情形：home 丢球，开球者 9 被罚下 → 开球者回绕到 10；接球者默认 10 被 avoid 排除 → 11？
+        // 构造：home 侧 9 罚下，away 侧 11 罚下，验证 kicker/receiver 不相等。
+        st.sent_off[9] = true;
+        st.sent_off[11] = true;
+        let kicker = kickoff_pick(&st, 9, -1); // home 丢球开球者
+        let receiver = kickoff_pick(&st, 10, kicker); // home 丢球接球者
+        assert_ne!(kicker, receiver, "开球者与接球者不得相同（kicker={} receiver={}）", kicker, receiver);
     }
 
     #[test]
@@ -3825,9 +3845,9 @@ mod tests {
         let (id, _) = nearest_teammate(&st, target, true, 0);
         assert_eq!(id, 0);
         // kickoff_pick：home 外场全罚下 → 回退门将 0（不返回罚下球员）
-        assert_eq!(kickoff_pick(&st, 9), 0);
+        assert_eq!(kickoff_pick(&st, 9, -1), 0);
         // away 侧不受影响
-        assert_eq!(kickoff_pick(&st, 12), 12);
+        assert_eq!(kickoff_pick(&st, 12, -1), 12);
     }
 
     // ---- P6 门球 + 进球回中圈测试 ----

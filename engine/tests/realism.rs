@@ -6,7 +6,8 @@
 //!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）
 //!   ——`#[ignore]`，verify.sh 第 5 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
 //! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、
-//!   速度上界、门将贴门线、事件 t 范围）——默认 `cargo test` 就跑（15 场）
+//!   速度上界、门将贴门线、事件 t 范围、罚下球员零参与）——默认 `cargo test` 就跑
+//!   （SEEDS_L2=300 场，P23 起加宽：15 场窗口覆盖不到红牌派生路径，会使门假绿；debug 实测 ~150s）
 //! - golden master：10 个 canary seed 的统计摘要 + 事件流哈希，防静默漂移——默认跑（10 场）
 //!   （L2+golden 共 25 场，debug 实测 ~9s；L1 200 场 release 实测 ~16s）
 //!
@@ -31,8 +32,15 @@ const DUR: f64 = 5400.0;
 const SEEDS_L1: u32 = 200;
 /// L1 聚合 seed 起点（窗口错开，见 SEEDS_L1 注释：P13 fix 后 1..=200 是头球分布的高温伪样本）。
 const SEEDS_L1_START: u64 = 401;
-/// L2 不变量循环 seed 数（不变量应处处成立，10-20 个 seed 足够暴露违规）。
-const SEEDS_L2: u32 = 15;
+/// L2 不变量循环 seed 数。
+///
+/// P23 教训：`1..=15` 窗口里只有 seed 9 出红牌，而「罚下球员仍参与」的漏路径最早出现在 **seed 260**
+/// （红牌约 1/6 场，15 seed 平均只 2-3 张牌，覆盖不到稀有派生路径——如进球后开球落在罚下者身上）。
+/// 窄窗口会让 L2 门在实际被违反时仍全绿（假绿）。改用 **SEEDS_L2 = 300**：覆盖 ~50 张红牌，
+/// 足以命中开球/接球退化路径。代价：debug 下 300 场聚合实测 ~150s（原先 15 场 ~7s）——
+/// 这正是"让不变量真的守得住"的必要开销；如需快速本地循环可 `cargo test --test realism l2_sent_off_kickoff_seeds`
+/// （4 个定点 seed，<1s）。
+const SEEDS_L2: u32 = 300;
 /// golden master canary seed 集（固定，防对特定 seed 过拟合）。
 const GOLDEN_SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
 
@@ -255,6 +263,7 @@ struct MatchStats {
     // P23 罚下球员参与（见 L2 requirement：罚下球员不得参与任何事件）
     n_sent_off_participation: usize,
     sent_off_violations: Vec<String>,
+    kickoff_self_pass: usize,
     // golden
     stream_hash: u64,
 }
@@ -514,6 +523,14 @@ fn aggregate(seed: u64) -> MatchStats {
                     if success {
                         st.n_tackle_far_success += 1;
                     }
+                }
+            }
+            "kickoff" => {
+                // P23：开球者/接球者不得为同一人（自传退化——两 id 均合法未罚下，零参与不变量抓不到）。
+                let from = field_num(e, "from").unwrap_or(-1.0) as i32;
+                let to = field_num(e, "to").unwrap_or(-2.0) as i32;
+                if from >= 0 && from == to {
+                    st.kickoff_self_pass += 1;
                 }
             }
             "whistle" => {
@@ -893,23 +910,25 @@ fn l2_cross_event_invariants() {
         );
         assert_eq!(st.gk_violations, 0, "seed {} 门将位置违例", seed);
         assert_eq!(st.t_out_of_range, 0, "seed {} 事件 t 越界", seed);
-        // P23：罚下球员零参与（D2 不变量）。红牌后不得出现在 subject / movers[].id / carrier / interceptor。
+        // P23：罚下球员零参与（D2 不变量）。红牌后不得出现在 subject / movers[].id / carrier /
+        // interceptor / to。
         assert_eq!(
             st.n_sent_off_participation, 0,
             "seed {} 罚下球员仍参与比赛 {} 次：{:?}",
             seed, st.n_sent_off_participation, st.sent_off_violations
         );
+        // P23：开球者≠接球者（自传退化——两 id 均合法未罚下，零参与不变量抓不到）。
+        assert_eq!(st.kickoff_self_pass, 0, "seed {} 开球 from==to 自传 {}", seed, st.kickoff_self_pass);
     }
 }
 
-/// P23：罚下球员不得参与——定向 seed 补充。
+/// P23：罚下球员不得参与——定向 seed 守卫（宽窗口之外的定点钉死）。
 ///
-/// `l2_cross_event_invariants` 的 1..=15 窗口里只有 seed 9 出红牌，且不含「进球后开球」落在罚下
-/// 球员身上的场景。宽扫 1..=2000（564 张红牌）曾暴露 4 个 seed 有此场景：罚下者恰是硬编码的开球者
-/// （home→9 / away→12）或接球者（10/11），会以 subject/carrier 身份重新进入比赛——该路径不经过
-/// `compute_movers`（`advance_dead_ball` 手动 push mover），只靠上面 15 seed 窗口守不住。
-/// 这里显式钉住这几个 seed，作为开球路径的回归守卫（引擎确定性 → 永不 flaky）。
-/// 这些 seed 实测均含红牌（seed 260/884/1271/1658），保证不是空跑。
+/// `l2_cross_event_invariants` 现已用 SEEDS_L2=300 覆盖到这些 seed；本测试再把宽扫（1..=2000，
+/// 564 张红牌）暴露过的具体退化 seed 单列钉死——它们命中「进球后开球/接球落在罚下球员身上」：
+/// 罚下者恰是硬编码的开球者（home→9 / away→12）或接球者（10/11），该路径不经过 `compute_movers`
+/// （`advance_dead_ball` 手动 push mover），且早期 L2 的 15 seed 窗口守不住。
+/// 引擎确定性 → 永不 flaky；先断言确有红牌，防止将来引擎改动让这些 seed 变成空跑。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
     for seed in [260u64, 884, 1271, 1658] {
@@ -920,6 +939,7 @@ fn l2_sent_off_kickoff_seeds() {
             "seed {} 罚下球员仍参与比赛 {} 次：{:?}",
             seed, st.n_sent_off_participation, st.sent_off_violations
         );
+        assert_eq!(st.kickoff_self_pass, 0, "seed {} 开球 from==to 自传", seed);
     }
 }
 
@@ -1068,6 +1088,7 @@ fn gm_canary_seeds() {
         );
     }
 }
+
 
 
 
