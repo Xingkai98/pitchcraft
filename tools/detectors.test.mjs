@@ -886,10 +886,12 @@ test('aggregateAudit reports calibration for every detector summary (D4)', () =>
   }
 });
 
-test('an excluded pass is excluded even without out evidence (D2 ordering)', () => {
+test('an excluded pass near the boundary is not mislabelled as a doubtful out (D2 ordering)', () => {
   // 回归：排除位判定曾排在「出界证据门」之后，导致一个没有出界证据的角球（落点离边线 2m、
   // 在界内）掉进 near-boundary 分支，被报成「cannot prove an out event」——把死球重开
-  // 误标成「无法判断的疑似出界」。排除位必须优先于出界证据门。
+  // 误标成「无法判断的疑似出界」。
+  // 正确行为：排除位传球不是 unforced out 候选 → 不产 finding（只在 pass_outcomes.excluded
+  // 里计数）。这样既不误标，也不会给每个死球重开都塞一条 unknown 噪音（实测一场约 36 次）。
   const { findings, pass_outcomes } = runAudit({
     events: [
       // 角球：无出界证据、落点在边界附近（会命中 near-boundary 分支的条件）。
@@ -899,10 +901,50 @@ test('an excluded pass is excluded even without out evidence (D2 ordering)', () 
       },
     ],
   });
-  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
-  assert.equal(unforced.length, 1, JSON.stringify(findings));
-  assert.match(unforced[0].reason, /excluded: corner/);
-  assert.doesNotMatch(unforced[0].reason, /near boundary/);
+  assert.deepEqual(
+    findings.filter((f) => f.detector_id === 'unforced_out'),
+    [],
+    JSON.stringify(findings)
+  );
   assert.equal(pass_outcomes.excluded.sample_count, 1);
   assert.equal(pass_outcomes.unpressured.sample_count, 0);
+});
+
+test('excluded passes do not inflate the unknown count (D2 noise guard)', () => {
+  // 死球重开在一场比赛里约 36 次。若每次都给 unforced_out 塞一条 unknown finding，
+  // 诊断报告会被噪音淹没。排除位传球必须完全静默（只计入 pass_outcomes.excluded）。
+  const events = [];
+  for (let i = 0; i < 36; i++) {
+    events.push({
+      index: i,
+      t: i * 10,
+      type: 'pass',
+      detail: ['corner', 'throw_in', 'free_kick', 'clearance'][i % 4],
+      result: 'success',
+      x2: 50,
+      y2: 34,
+      nearest_defender_distance: 12,
+      pass_distance: 20,
+    });
+  }
+  const { findings, stats, pass_outcomes } = runAudit({ events });
+  assert.deepEqual(findings.filter((f) => f.detector_id === 'unforced_out'), []);
+  const uf = stats.find((s) => s.detector_id === 'unforced_out');
+  assert.equal(uf.unknown, 0);
+  assert.equal(uf.samples, 36);
+  assert.equal(pass_outcomes.excluded.sample_count, 36);
+});
+
+test('an excluded pass WITH out evidence still reports the exclusion (D2 compat)', () => {
+  // 旧合成 fixture 的兼容语义：带出界证据的排除位传球仍产出一条 `excluded: <key>` unknown
+  // finding（P10 既有测试钉住的行为），不被 near-boundary 或 pressure 分支抢走。
+  const input = {
+    events: [
+      { index: 11, t: 110, type: 'pass', result: 'out', nearest_defender_distance: 15.0, clearance: true },
+    ],
+  };
+  const { findings } = runAudit(input);
+  const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
+  assert.equal(unforced.length, 1, JSON.stringify(findings));
+  assert.match(unforced[0].reason, /excluded: clearance/);
 });

@@ -308,25 +308,16 @@ export function detectUnforcedOut(events, profile) {
     };
     const markedBase = { out_evidence: outEvidence, out_reason: outReasonOf(event, outEvidence) };
 
-    // Exclusion comes FIRST (P21 D2): a corner/throw_in/free_kick/clearance pass is a dead-ball
-    // restart or a deliberate clearance, never an "unforced out" candidate — whether or not it
-    // carried out evidence. Checking it only after the out-evidence gate used to let an excluded
-    // pass with no out evidence fall into the near-boundary branch and be reported as
-    // "cannot prove an out event", which mislabels it.
     const excluded = exclusionTokensOf(event);
-    if (excluded.length > 0) {
-      findings.push({
-        ...base,
-        id: `unforced_out:${event.index}`,
-        severity: 'unknown',
-        reason: `excluded: ${excluded.join(',')}`,
-        features: markedBase,
-        thresholds: {},
-      });
-      continue;
-    }
 
     if (!outEvidence) {
+      // Excluded pass with no out evidence (P21 D2): a corner/throw_in/free_kick/clearance is a
+      // dead-ball restart or a deliberate clearance — not an unforced-out candidate at all, so
+      // no finding. It still shows up in `pass_outcomes.excluded`. This branch MUST come before
+      // the near-boundary check: otherwise an excluded pass landing near a line gets reported as
+      // "cannot prove an out event", mislabelling a corner as a doubtful out (and, if handled by
+      // emitting an exclusion finding instead, would add one noise `unknown` per restart).
+      if (excluded.length > 0) continue;
       // Not recorded out and the landing is inside the pitch. A landing close to
       // the boundary is ambiguous: cannot prove an out event -> unknown.
       if (
@@ -350,6 +341,22 @@ export function detectUnforcedOut(events, profile) {
       }
       continue;
     }
+
+    // Excluded pass that ALSO has out evidence: report the exclusion explicitly (compat with the
+    // pre-P21 synthetic fixtures that assert an `excluded: <key>` finding). The common real-data
+    // case is the branch above, which stays quiet.
+    if (excluded.length > 0) {
+      findings.push({
+        ...base,
+        id: `unforced_out:${event.index}`,
+        severity: 'unknown',
+        reason: `excluded: ${excluded.join(',')}`,
+        features: markedBase,
+        thresholds: {},
+      });
+      continue;
+    }
+
     if (typeof event.nearest_defender_distance !== 'number') {
       findings.push({
         ...base,
