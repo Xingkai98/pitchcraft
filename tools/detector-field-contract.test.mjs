@@ -64,10 +64,54 @@ const stripComments = (src) =>
     .map((l) => l.replace(/\/\/.*$/, ''))
     .join('\n');
 
-// 输入形状的基变量名：事件用 event/e，快照用 s/start/end（inactive_responsibility 里
-// start/end 是 run 的首末快照）。只扫这些变量的属性读取——其余（profile/events/findings/
-// sorted/...）是内部结构，不属 audit_input 字段契约。
-const INPUT_BASE_VARS = ['event', 'e', 's', 'start', 'end'];
+// 输入形状的基变量名**从代码里推导**，不用硬编码清单——硬编码时把循环变量改个名
+// （`for (const event of events)` → `for (const ev of events)`）就能让整个源码扫描闭眼
+// （审阅实测）。推导规则：绑定自「**输入形状的容器**」的循环变量与回调形参都是基变量。
+// 容器清单只放真正的 audit_input 负载，**不放**内部数组（findings/list/unknown 等）——
+// 放了会把内部对象（finding/audit stat）误当输入，产生假阳性。
+const INPUT_CONTAINERS = ['events', 'players', 'sorted', 'snaps', 'run'];
+// 兜底：即便推导漏了某种绑定形态，这几个最常见名字仍然扫。
+const INPUT_BASE_VARS_FALLBACK = ['event', 'e', 's', 'start', 'end'];
+// 数组/对象自带属性与方法：不是 audit_input 字段（扫描器把容器绑定的变量也当基变量后，
+// 会顺带看到 `.length` / `.forEach` 之类的读，必须排除）。
+const NON_FIELD_SOURCE_READS = new Set([
+  'length', 'forEach', 'map', 'filter', 'some', 'every', 'find', 'findIndex',
+  'indexOf', 'lastIndexOf', 'includes', 'push', 'pop', 'shift', 'unshift',
+  'slice', 'splice', 'join', 'concat', 'flat', 'flatMap', 'reduce', 'sort',
+  'reverse', 'entries', 'values', 'keys', 'hasOwnProperty', 'constructor',
+  'toString', 'valueOf', 'at', 'fill', 'copyWithin', 'then',
+]);
+
+function deriveInputBaseVars(code) {
+  const vars = new Set(INPUT_BASE_VARS_FALLBACK);
+  const containers = INPUT_CONTAINERS.join('|');
+  // for (const X of <container>)  /  for (const X of <container> ?? [])  /  Object.entries(<container>)
+  const loopRes = [
+    new RegExp(`for\\s*\\(\\s*const\\s+(\\[?[^\\]]*\\]?)\\s+of\\s+(?:Object\\.entries\\()?(?:${containers})`, 'g'),
+  ];
+  for (const re of loopRes) {
+    for (const m of code.matchAll(re)) {
+      const binding = m[1].trim();
+      if (binding.startsWith('[')) {
+        // 解构绑定 [rawId, snaps]：取各名字（rawId 是键、snaps 是值，两个都算可能的基变量）
+        for (const part of binding.replace(/[[\]]/g, '').split(',')) {
+          const name = part.trim().match(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/);
+          if (name) vars.add(name[0]);
+        }
+      } else {
+        const name = binding.match(/^[a-zA-Z_$][a-zA-Z0-9_$]*$/);
+        if (name) vars.add(name[0]);
+      }
+    }
+  }
+  // 回调形参：<container>.some((X) => / .filter((X) => / .map((X) => / .forEach((X) =>
+  for (const m of code.matchAll(
+    new RegExp(`(?:${containers})\\.(?:some|filter|map|forEach|find|every)\\s*\\(\\s*\\(?\\s*([a-zA-Z_$][a-zA-Z0-9_$]*)`, 'g')
+  )) {
+    vars.add(m[1]);
+  }
+  return [...vars];
+}
 
 // **非输入读取的显式白名单**（baseVar → 允许的属性集）：当一个短名既是输入形参、又在别处
 // 指向内部对象时，用这条精确声明「这个对象上的这个属性不是 audit_input 字段」。每条都必须
@@ -93,20 +137,22 @@ const NON_INPUT_INTERNAL_KEYS = new Set(['detector_id', 'severity', 'reason', 'f
 function sourceFieldReads(src = DETECTORS_SOURCE) {
   const code = stripComments(src);
   const reads = new Set();
-  for (const base of INPUT_BASE_VARS) {
+  const bases = deriveInputBaseVars(code);
+  for (const base of bases) {
     const allowed = NON_INPUT_PROPERTIES[base] ?? new Set();
     const add = (name) => {
-      if (!allowed.has(name)) reads.add(name);
+      if (!allowed.has(name) && !NON_FIELD_SOURCE_READS.has(name)) reads.add(name);
     };
-    // ① 点读
-    for (const m of code.matchAll(new RegExp(`\\b${base}\\.([a-zA-Z_][a-zA-Z0-9_]*)`, 'g'))) {
+    const b = base.replace(/\$/g, '\\$');
+    // ① 点读（含可选链 `?.`）
+    for (const m of code.matchAll(new RegExp(`\\b${b}\\s*\\??\\.\\s*([a-zA-Z_][a-zA-Z0-9_]*)`, 'g'))) {
       add(m[1]);
     }
     // ② 解构：`const { ... } = base` / `let { ... } = base` / `({ ... } = base)`
     // 模式内用 `[^{}]*`（不许再嵌 `{`）：否则遇到 `if (x) { const { a } = event }` 会从外层
     // 大括号起匹配，把 `const` 当成字段名（抓到了变异却报错名字，也可能漏掉真字段）。
     for (const m of code.matchAll(
-      new RegExp(`(?:const|let|var)?\\s*\\{([^{}]*)\\}\\s*=\\s*${base}\\b`, 'g')
+      new RegExp(`(?:const|let|var)?\\s*\\{([^{}]*)\\}\\s*=\\s*${b}\\b`, 'g')
     )) {
       for (const part of m[1].split(',')) {
         // `a` / `a: alias` / `a = default` → 取最前面的标识符
@@ -114,8 +160,8 @@ function sourceFieldReads(src = DETECTORS_SOURCE) {
         if (name) add(name[1]);
       }
     }
-    // ③ 字符串下标
-    for (const m of code.matchAll(new RegExp(`\\b${base}\\[\\s*['"]([^'"]+)['"]\\s*\\]`, 'g'))) {
+    // ③ 字符串下标（含动态下标的变量名——变量名本身不是字段，但下标里的**字面量**是）
+    for (const m of code.matchAll(new RegExp(`\\b${b}\\s*\\[\\s*['"]([^'"]+)['"]\\s*\\]`, 'g'))) {
       add(m[1]);
     }
   }
@@ -181,12 +227,20 @@ test('source-level: the discoverability guard catches a variable detector id (se
   assert.equal(DETECTOR_ID_FORWARDING.has('detectorId'), true);
 });
 
-// **已知残留缺口（诚实登记，非静默）**：若一个 helper 把 id 作为**形参**接收，并在 helper
-// 体内写 `detector_id: detectorId`（属于已登记的转发点），而调用点又用非字面量传入 id，
-// 那么这个 id 不会以字面量形式出现在源码里，上面的守卫看不见它。彻底修法是在 detectors.mjs
-// 引入**detector 注册表**（runAudit 遍历注册表而非内联 4 次调用），使「有哪些 detector」
-// 成为运行时可枚举的事实——那是一次小幅重构，超出本 change 范围，留给新增 detector 的
-// issue（#34/#35）一并处理。当前 4 个 detector 全部以字面量登记，故本缺口不影响现状。
+// **已知残留缺口（诚实登记，非静默）**——静态扫描对**语法形态**有盲区，两类：
+//
+// ① detector id 侧：若一个 helper 把 id 作为**形参**接收（`detector_id: detectorId` 是已登记
+//    转发点），而调用点又用非字面量传入（`make(ghostIdVar)`），这个 id 不以字面量出现在源码里，
+//    上面的守卫看不见。彻底修法是引入 **detector 注册表**（runAudit 遍历注册表而非内联 4 次
+//    调用），使「有哪些 detector」成为运行时可枚举的事实——小幅重构，超出本 change 范围，
+//    留给新增 detector 的 issue（#34/#35）一并处理。
+// ② 字段读侧：扫描器已覆盖 点读 / 可选链 / 解构 / 字符串下标，且基变量**从代码推导**
+//    （循环绑定 + 回调形参，不再硬编码名字）。仍扫不到的是：把事件拷进一个**非输入容器
+//    命名的局部量**再读（`const x = event; x.zz`）、或计算下标 `event[k]`。
+//    这两类都要先写一段「看起来无意义」的中转代码，属刻意规避而非自然写法。
+//
+// 判据：需要**刻意写死代码 / 无意义中转**才能绕过的，登记为已知局限；**自然写法**能触发的
+// （改循环变量名、解构、可选链、helper 形参读事件）都必须被守卫抓住——这几类已全部覆盖。
 
 test('source-level: every input field read in detectors.mjs is declared somewhere (F2)', () => {
   // 不看执行、只看文本：任何分支里的未声明读取都会被这条抓到，与是否被输入覆盖无关。
@@ -251,6 +305,20 @@ test('source-level: the scanner covers destructuring and bracket reads (F1 proof
       `scanner must surface "${expected}" from: ${src}`
     );
   }
+  // 可选链与动态推导的基变量（改名后的循环变量）也要扫出——硬编码名字时改个循环变量名
+  // 就能让扫描闭眼（审阅实测的真实绕过路径）。
+  assert.ok(
+    sourceFieldReads(`for (const ev of events) { void ev?.opt_field; }`).has('opt_field'),
+    'scanner must see an optional-chained read on a derived base'
+  );
+  assert.ok(
+    sourceFieldReads(`for (const ev of events) { void ev.renamed_base_field; }`).has('renamed_base_field'),
+    'scanner must derive the loop binding name (not a hardcoded list)'
+  );
+  assert.ok(
+    sourceFieldReads(`for (const [id, sn] of Object.entries(players)) { void sn.snap_field; }`).has('snap_field'),
+    'scanner must derive destructured loop bindings from players'
+  );
   // 真实源码里解构读取（corridor_distance/pass_distance/pass_speed）必须被抓到——
   // 这些是 declared 字段，所以行为守卫也覆盖；这里确认扫描器同样看得见。
   const real = sourceFieldReads(DETECTORS_SOURCE);
@@ -277,8 +345,9 @@ test('source-level: the non-input allowlist cannot mask an undeclared field (F2b
   // 约束：白名单里的每个属性名都必须是**契约已声明**的字段。这样它只能用来澄清
   // 「这个已声明字段在这里不是输入字段」，无法把未声明字段洗白。
   const declared = allAllowedReadKeys();
+  const scannedBases = new Set(deriveInputBaseVars(stripComments(DETECTORS_SOURCE)));
   for (const [base, props] of Object.entries(NON_INPUT_PROPERTIES)) {
-    assert.ok(INPUT_BASE_VARS.includes(base), `non-input allowlist key ${base} is not a scanned base var`);
+    assert.ok(scannedBases.has(base), `non-input allowlist key ${base} is not a scanned base var`);
     assert.ok(props instanceof Set, `non-input allowlist for ${base} must be a Set`);
     for (const prop of props) {
       // 白名单只允许两种东西：契约已声明的字段（澄清它在此处非输入），或 detector 自产的

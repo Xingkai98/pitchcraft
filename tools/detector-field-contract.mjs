@@ -196,7 +196,7 @@ export const KNOWN_GAPS = {
     kind: 'semantic',
     detector_fields: { inactive_responsibility: 'dead_ball' },
     reason:
-      'derive 层的 dead_ball 快照位确有生产者（whistle 路径实测有效），但它的判定函数 isDeadBallEvent 里还有两条同类死分支：`pass && result === "out"`（引擎从不产 result==="out"，实测 0 次）与 `kickoff && x2 === undefined`（真实 kickoff 带 x2）。加上取的是「最近一个事件」（通常是 beat），真实数据里出界/进球后并不会被标成死球。影响：死球期间的站桩可能被 inactive_responsibility 误报。修法要动 derive 层「最近非 beat 事件」的口径，属 P21 决定范围之外，故显式登记。',
+      'derive 层的 dead_ball 快照位确有生产者（whistle 路径有效），但它的判定函数 isDeadBallEvent 里还有两条同类死分支：`pass && result === "out"`（当前引擎不产 result==="out"，见 #25；若 #25 之后引擎改产，该分支会复活）与 `kickoff && x2 === undefined`（真实 kickoff 带 x2）。加上取的是「最近一个事件」（通常是 beat），真实数据里出界/进球后并不会被标成死球。影响：死球期间的站桩可能被 inactive_responsibility 误报。修法要动 derive 层「最近非 beat 事件」的口径，属 P21 决定范围之外，故显式登记。',
     issue: '#26',
   },
 };

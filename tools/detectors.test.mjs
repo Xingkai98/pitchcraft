@@ -1067,3 +1067,29 @@ test('runAudit rejects malformed events/players containers (fail-loud, not silen
   const ok = runAuditRaw({ ...base, events: [], players: {} });
   assert.deepEqual(ok.findings, []);
 });
+
+test('D1 priority: detail out-evidence wins over result==="out" (observable behaviour)', () => {
+  // design D1 把「优先认 detail」列为契约的一部分。用一条 result==='out' 且 detail 出界的
+  // 输入把优先级钉成可观测行为：out_evidence 必须是 'event.detail'，不是 'event.result'。
+  // （否则将来有人把 result 分支提到前面，新引擎数据上 out_evidence 标签会悄悄变形。）
+  const { findings } = runAudit({
+    events: [
+      {
+        index: 0, t: 1, type: 'pass',
+        result: 'out', detail: 'out_sideline',
+        nearest_defender_distance: 12, pass_distance: 25,
+      },
+    ],
+  });
+  const f = findings.find((x) => x.detector_id === 'unforced_out');
+  assert.equal(f.severity, 'realism_warning');
+  assert.equal(f.features.out_evidence, 'event.detail');
+  assert.equal(f.features.out_reason, 'out_sideline');
+  // pass_outcomes 也走同一契约（分类为 out）。
+  const { pass_outcomes } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'out', detail: 'out_sideline', nearest_defender_distance: 12 },
+    ],
+  });
+  assert.equal(pass_outcomes.unpressured.out_count, 1);
+});
