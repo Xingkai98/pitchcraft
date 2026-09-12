@@ -81,6 +81,10 @@ test('every finding carries profile_id and profile_version', () => {
   for (const f of findings) {
     assert.equal(f.profile_id, DEFAULT_AUDIT_PROFILE.id);
     assert.equal(f.profile_version, DEFAULT_AUDIT_PROFILE.version);
+    // 每个 finding 必须能归属到某个 detector：缺 detector_id 的 finding 在 viewer 里退化
+    // 成占位符、也让「detector_id 全在契约里」的守卫看不见它（审阅发现的假绿通路）。
+    assert.equal(typeof f.detector_id, 'string', JSON.stringify(f));
+    assert.ok(f.detector_id.length > 0);
   }
 });
 
@@ -839,13 +843,22 @@ test('ignored_interception findings are marked calibrated:false (D4)', () => {
   }
 });
 
-test('DEFAULT_AUDIT_PROFILE marks only ignored_interception as uncalibrated (D4)', () => {
+test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (D4)', () => {
+  // 标定状态必须**显式**声明（isUncalibrated 只认 calibrated:true；「没声明」= 未标定，
+  // fail-closed）。默认 profile 里只有 ignored_interception 未标定，其余显式 true。
+  // 配置块 = 与 detector 对应的对象块（非顶层标量/非 pitch/aggregation）。
+  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'ignored_interception', 'invariants']) {
+    const block = DEFAULT_AUDIT_PROFILE[blockKey];
+    assert.equal(
+      typeof block.calibrated,
+      'boolean',
+      `DEFAULT_AUDIT_PROFILE.${blockKey} must explicitly declare calibrated`
+    );
+  }
   assert.equal(DEFAULT_AUDIT_PROFILE.ignored_interception.calibrated, false);
-  // 其余 detector 的配置块不带 calibrated 字段（缺席 = 已标定）。用严格断言钉住「缺席」，
-  // 而不是 `notEqual(false)`——后者对 undefined 也成立，等于没测。
-  assert.equal(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, undefined);
-  assert.equal(DEFAULT_AUDIT_PROFILE.inactive_responsibility.calibrated, undefined);
-  assert.equal(DEFAULT_AUDIT_PROFILE.invariants.calibrated, undefined);
+  assert.equal(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, true);
+  assert.equal(DEFAULT_AUDIT_PROFILE.inactive_responsibility.calibrated, true);
+  assert.equal(DEFAULT_AUDIT_PROFILE.invariants.calibrated, true);
 });
 
 test('aggregateAudit does not escalate an uncalibrated detector, even above band (D4)', () => {
@@ -996,6 +1009,32 @@ test('a partial custom profile cannot make a known-uncalibrated detector look ca
   // 换成缺块的 partial profile：仍须未标定、不升级。
   const agg = aggregateAudit([audit], {
     profile: partialProfile,
+    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+  });
+  const d = agg.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity');
+  assert.equal(d.calibration, 'uncalibrated');
+  assert.notEqual(d.aggregate_severity, 'realism_failure');
+  assert.equal(d.band_state, null);
+});
+
+test('a profile block without a calibrated key is not trusted (D4 N5)', () => {
+  // 第三条 fail-open 通路：块在、但没声明 calibrated。严格 fail-closed 语义下，
+  // 「没声明」不等于「已标定」——只有显式 calibrated:true 才算已标定。
+  const audit = {
+    profile: { id: 'p', version: '0' },
+    findings: [],
+    stats: [
+      { detector_id: 'ignored_interception_opportunity', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
+    ],
+    pass_outcomes: {},
+  };
+  const profileWithoutCalibrationKey = {
+    ...DEFAULT_AUDIT_PROFILE,
+    // 覆盖掉带 calibrated:false 的默认块，改成「只部分覆盖、没有 calibrated 键」。
+    ignored_interception: { defender_speed: 6.0, arrival_margin: 0.5 },
+  };
+  const agg = aggregateAudit([audit], {
+    profile: profileWithoutCalibrationKey,
     referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
   });
   const d = agg.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity');

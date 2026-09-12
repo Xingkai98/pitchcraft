@@ -46,6 +46,83 @@ const allRealEvents = () => FIXTURE.windows.flatMap((w) => w.audit_input.events)
 const allRealSnapshots = () =>
   FIXTURE.windows.flatMap((w) => Object.values(w.audit_input.players).flat());
 
+// --- 0. 源码级断言（F1/F2）：不依赖执行覆盖 --------------------------------
+//
+// 行为驱动的守卫只能看见「喂进去的输入走到」的路径——触发条件落在 fixture 窗口之外的
+// 新 detector，或某个未被输入覆盖的分支里的未声明读取，都能全绿逃逸（审阅实测 M23/M24）。
+// 契约是声明式的，守卫就该有声明式的一面。这两条源码扫描不看执行，只看代码文本。
+// 分工：源码级 = 「有没有未声明的字段/ detector」（与触发条件无关）；
+//      行为级 = 「读键归属到哪个条目」（跨条目串读，见下方逐条目守卫）。
+
+const DETECTORS_SOURCE = readFileSync(join(HERE, 'detectors.mjs'), 'utf8');
+
+// 去掉 // 注释（整行 + 行尾），避免注释里提到的字段名被当成读取。
+const stripComments = (src) =>
+  src
+    .split('\n')
+    .filter((l) => !l.trim().startsWith('//'))
+    .map((l) => l.replace(/\/\/.*$/, ''))
+    .join('\n');
+
+// 输入形状的基变量名：事件用 event/e，快照用 s/start/end（inactive_responsibility 里
+// start/end 是 run 的首末快照）。只扫这些变量的属性读取——其余（profile/events/findings/
+// sorted/...）是内部结构，不属 audit_input 字段契约。
+const INPUT_BASE_VARS = ['event', 'e', 's', 'start', 'end'];
+const READ_RE = new RegExp(`\\b(?:${INPUT_BASE_VARS.join('|')})\\.([a-zA-Z_][a-zA-Z0-9_]*)`, 'g');
+
+// 明确排除：`s.detector_id` 是在 aggregateAudit 里读**聚合 stat 对象**（内部结构），
+// 不是读 audit_input 字段。登记在此，免得被误判为「未声明字段」。
+const NON_INPUT_READS = new Set(['detector_id']);
+
+function sourceFieldReads() {
+  const code = stripComments(DETECTORS_SOURCE);
+  const reads = new Set();
+  for (const m of code.matchAll(READ_RE)) reads.add(m[1]);
+  for (const k of NON_INPUT_READS) reads.delete(k);
+  return reads;
+}
+
+test('source-level: no detector_id literal exists without a contract entry (F1)', () => {
+  // 行为守卫只覆盖「被输入触发」的 detector。源码扫描不依赖触发条件：只要代码里写下
+  // `detector_id: 'x'`（或 `statsFor('x'`），x 就必须在契约里——否则新 detector 静默逃逸。
+  const code = stripComments(DETECTORS_SOURCE);
+  const ids = new Set();
+  for (const m of code.matchAll(/detector_id:\s*'([^']+)'/g)) ids.add(m[1]);
+  for (const m of code.matchAll(/statsFor\(\s*'([^']+)'/g)) ids.add(m[1]);
+  assert.ok(ids.size > 0, 'source scan found no detector_id literals — scan is broken');
+  const undeclared = [...ids].filter((id) => !(id in DETECTOR_FIELD_CONTRACT));
+  assert.deepEqual(
+    undeclared,
+    [],
+    `detectors.mjs declares detector ids with no contract entry: ${undeclared.join(', ')}`
+  );
+});
+
+test('source-level: every input field read in detectors.mjs is declared somewhere (F2)', () => {
+  // 不看执行、只看文本：任何分支里的未声明读取都会被这条抓到，与是否被输入覆盖无关。
+  // 字段归属到哪个条目由下面的行为级逐条目守卫负责（两者互补）。
+  const declared = allAllowedReadKeys();
+  const undeclared = [...sourceFieldReads()].filter((f) => !declared.has(f));
+  assert.deepEqual(
+    undeclared,
+    [],
+    `detectors.mjs reads input fields declared nowhere in the contract: ${undeclared.join(', ')}`
+  );
+});
+
+test('source-level: the source scanner actually detects reads (self-check)', () => {
+  // 防「扫描器永远空集」：确认真实源码确实扫出了已知字段。
+  const reads = sourceFieldReads();
+  assert.ok(reads.has('detail'), 'scanner must find event.detail');
+  assert.ok(reads.has('nearest_defender_distance'), 'scanner must find the pressure-field read');
+  assert.ok(reads.has('responsibility'), 'scanner must find the snapshot responsibility read');
+  // 反向：从允许集剔除一个确被读取的字段 → 源码守卫必须报出来。
+  const declared = new Set(allAllowedReadKeys());
+  declared.delete('detail');
+  const flagged = [...reads].filter((f) => !declared.has(f));
+  assert.deepEqual(flagged, ['detail'], 'source guard must surface a read missing from the contract');
+});
+
 // --- 1. 契约清单自身的完整性 ------------------------------------------------
 
 test('the contract covers every detector runAudit actually emits (no unregistered detector)', () => {
@@ -159,6 +236,20 @@ test('known gaps are internally consistent with reads/producers', () => {
       e.known_gaps.includes(gapId)
     );
     assert.ok(referenced, `known gap ${gapId} is registered but no detector references it`);
+  }
+  // 引用完整性（N2/N4）：gap ↔ entry 必须**双向**一致。
+  //   正向：KNOWN_GAPS[g].detector_fields 里登记的每个条目，都必须在自己的 known_gaps 里
+  //         引用回 g——否则是「登记了却没人 attach」的僵尸引用；反之，某条目悄悄删掉一条
+  //         引用也会被发现（该 gap 若仍被别处引用，孤儿检查抓不到）。
+  for (const [gapId, gap] of Object.entries(KNOWN_GAPS)) {
+    for (const [entryId, field] of Object.entries(gap.detector_fields)) {
+      const entry = DETECTOR_FIELD_CONTRACT[entryId];
+      assert.ok(entry, `known gap ${gapId} names unknown contract entry ${entryId}`);
+      assert.ok(
+        entry.known_gaps.includes(gapId),
+        `known gap ${gapId} lists ${entryId}.${field} but ${entryId}.known_gaps does not reference it back`
+      );
+    }
   }
 });
 

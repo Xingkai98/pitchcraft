@@ -17,6 +17,9 @@ export const DEFAULT_AUDIT_PROFILE = {
     // Landing within this distance (meters) of a touchline/goal line counts as
     // near-boundary. Coordinates are assumed to span [0, pitch.width] x [0, pitch.height].
     boundary_margin: 3.0,
+    // D4 的标定状态必须**显式**声明（isUncalibrated 只认 calibrated:true）。默认对已知可靠
+    // 的 detector 标 true，未标定的显式标 false ——「没声明」一律按未标定处理（fail-closed）。
+    calibrated: true,
   },
   pitch: { width: 105, height: 68 },
   inactive_responsibility: {
@@ -24,6 +27,7 @@ export const DEFAULT_AUDIT_PROFILE = {
     static_duration: 3.0,
     // Consecutive snapshots closer than this (meters) count as stationary.
     stationary_epsilon: 0.5,
+    calibrated: true,
   },
   ignored_interception: {
     // Defender's sprint speed (m/s) used to derive arrival time.
@@ -41,6 +45,8 @@ export const DEFAULT_AUDIT_PROFILE = {
     // Fraction of the pitch dimension a coordinate may legally exceed (a ball
     // that just crossed the line). Coordinates far beyond this are a bug.
     bounds_tolerance: 0.05,
+    // 不变量违规是 bug、不看标定带（band max=0），但 D4 的标记仍显式声明。
+    calibrated: true,
   },
   // Multi-seed aggregation reference bands. MVP has no calibrated real-match
   // band (design.md open question), so bands default to "warnings are
@@ -77,18 +83,19 @@ const DETECTOR_PROFILE_KEY = {
   ignored_interception_opportunity: 'ignored_interception',
 };
 
-// 未标定判定，一律 fail-closed：**无法证明「已标定」就算未标定**。两条路径都保守：
+// 未标定判定，严格 fail-closed：**只有显式声明 `calibrated: true` 才算已标定**，其余一律
+// 算未标定。三条保守路径：
 //   - detector_id 不在映射表（新 detector 忘了登记）→ 未标定；
-//   - 映射到块键，但调用方 profile 里整个块缺失（自定义 partial profile）→ 未标定。
-// 若只覆盖前者，一个不含 `ignored_interception` 块的自定义 profile 会让已知未标定的
-// detector 被当成已标定并升级 realism_failure（审阅发现的 fail-open）。
+//   - 映射到块键，但调用方 profile 里整个块缺失（自定义 partial profile）→ 未标定；
+//   - 块在、但没有 `calibrated` 键（只部分覆盖了块）→ 未标定。
+// 前两条曾各自 fail-open（审阅发现），第三条同理——「没声明」不等于「已标定」。
 // 「新 detector 必须登记」由契约测试在测试期兜住（见 detector-field-contract.test.mjs）。
 const isUncalibrated = (detectorId, profile) => {
   const blockKey = DETECTOR_PROFILE_KEY[detectorId];
   if (blockKey === undefined) return true;
   const block = profile?.[blockKey];
   if (block === undefined) return true;
-  return block.calibrated === false;
+  return block.calibrated !== true;
 };
 
 const distance = (a, b) =>
