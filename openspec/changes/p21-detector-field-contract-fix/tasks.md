@@ -25,6 +25,13 @@
 - [ ] P4.1 从 `.scratch/tasks/*.bundle.json` 抽取真实 audit_input 形状作 fixture（`tools/fixtures/`）
 - [ ] P4.2 `detectors.test.mjs` 主输入换成真实形状；保留合成边界用例（result:'out' 兼容 / 几何出界防御 / 布尔排除位兼容）
 - [ ] P4.3 新增契约断言测试：契约清单每个 reads 字段在真实 audit_input 有生产者或登记 known-gap
+      （实现口径比本条更严：reads 字段**一律要求有生产者**，known-gap 只在
+      `kind:'unproducible'` 时用于豁免无生产者的字段；`semantic`/`removed` 两类 gap 是
+      登记说明而非豁免。见 `tools/detector-field-contract.mjs` 的 KNOWN_GAPS。）
+      ※ 另有两条超出本任务书的守卫，来自审阅加固：`tools/detector-field-contract.test.mjs`
+      的**源码级**扫描（抓「未被输入触发」的新 detector 与分支内未声明读取）与
+      `viewer/derived-audit.test.js` 的**派生层活体守卫**（抓「派生层丢字段」——
+      契约测试吃冻结快照，看不见这一层）。
 
 ## P5. 测试 + 收尾
 

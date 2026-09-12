@@ -17,8 +17,14 @@
 //   'derive'  viewer/derive-audit-features.js 推导（米制化/几何事实/可观测代理）。
 //   'viewer'  viewer 采集层直出（事件索引、时间戳、快照采样）。
 //
-// 边界：本模块只描述「相对真实 audit_input 的字段契约」。它不描述字段语义（那在
-// protocol.js / derive-audit-features.js），也不覆盖 #25 要改的引擎侧编码。
+// 边界：本模块是「detector **读取面**」的清单——只列 detector 会去读的字段及其生产方，
+// **不是引擎产出面的清单**（引擎真实事件还有 subject/from/speed/… 等 detector 不读的字段，
+// 不在此登记）。它也不描述字段语义（那在 protocol.js / derive-audit-features.js），
+// 不覆盖 #25 要改的引擎侧编码。
+//
+// 注意：「有生产者」是按**当前派生层实现**判定的，而派生层的字段保留由
+// viewer/derived-audit.test.js 的活体守卫钉住（活体守卫走真实 captureObservation，
+// 不读冻结 fixture）——契约测试本身吃的是落盘快照，看不见派生层是否丢字段。
 
 // audit_input 的版本号定义在生产方（viewer/derive-audit-features.js，浏览器可 import），
 // 这里再导出，让 tools 侧有单一引用点。viewer 不能 import tools（浏览器静态服务只服务

@@ -305,6 +305,9 @@ function outEvidenceOf(event, profile) {
 }
 
 // 出界原因（P21 D3）：不再读 `event.out_reason`（无人产），改由证据源推导。
+// 两个调用点都在 `outEvidence !== null` 之后，而本函数与 outEvidenceOf 用的是同一组
+// OUT_DETAILS / 几何判据，所以两支必命中其一——第三支只是防御性兜底（若将来有人单独
+// 改了一侧的判据，这里不会返回 undefined 而是给出一个可读值）。
 function outReasonOf(event, outEvidence) {
   if (OUT_DETAILS.includes(event.detail)) return event.detail;
   if (outEvidence === 'landing_out_of_bounds') return 'out_of_bounds_landing';
