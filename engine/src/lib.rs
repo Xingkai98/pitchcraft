@@ -2629,7 +2629,9 @@ fn kickoff_pick(st: &MatchState, default_id: i32) -> i32 {
             return id;
         }
     }
-    default_id // 全队罚下（不可达）：兜底保持确定性
+    // 退化态：该队 10 名外场全部罚下（规则上可达的边界——每队最多 10 张红牌，门将不产犯规）。
+    // 门将恒不被罚下，由其开球；优于返回已罚下球员（那会违反 P23 不变量）。
+    if default_id <= 10 { 0 } else { 21 }
 }
 
 /// 找离位置 target 最近的防守方球员（tackle/拦截用：防守者只抢附近的人，避免跨半场狂奔）。
@@ -2652,7 +2654,15 @@ fn nearest_defender(st: &MatchState, target: (f64, f64), def_home: bool) -> (i32
             best = Some((id as i32, p));
         }
     }
-    let (id, p) = best.unwrap();
+    let (id, p) = match best {
+        Some(b) => b,
+        // 退化态：防守方外场全部罚下（规则可达的极端——每队最多 10 张红牌，门将不产犯规）。
+        // 门将恒不被罚下 → 由其顶上，保持函数 total（不 panic）且不返回罚下球员。
+        None => {
+            let gk = if def_home { 0usize } else { 21 };
+            (gk as i32, st.pos[gk])
+        }
+    };
     (id, p, best_dist)
 }
 
@@ -2764,7 +2774,19 @@ fn nearest_teammate(st: &MatchState, from_pos: (f64, f64), home: bool, from_id: 
             best = Some((id as i32, p));
         }
     }
-    best.unwrap()
+    match best {
+        Some(b) => b,
+        // 退化态：己方外场全部罚下。门将恒不被罚下 → 由其接球；若传球者本人就是门将
+        // （无队友可传），返回自身位置保持 total（不 panic、不返回罚下球员）。
+        None => {
+            let gk = if home { 0i32 } else { 21 };
+            if gk != from_id {
+                (gk, st.pos[gk as usize])
+            } else {
+                (from_id, from_pos)
+            }
+        }
+    }
 }
 
 /// 传球落点：在传球者与接球者之间，偏向接球者前方（lead）
@@ -3774,8 +3796,38 @@ mod tests {
         assert_eq!(kickoff_pick(&st, 9), 1); // 9,10 已罚下 → 回绕到 1
         st.sent_off[12] = true;
         assert_eq!(kickoff_pick(&st, 12), 13);
+        // 全队外场罚下 → 回退门将（home 0 / away 21；理论不可达但规则允许）
+        for id in 1..=10 {
+            st.sent_off[id] = true;
+        }
+        assert_eq!(kickoff_pick(&st, 9), 0);
         // 跨队不串：9 被罚下只影响 home 侧（11-20）
         assert_eq!(kickoff_pick(&st, 11), 11);
+    }
+
+    #[test]
+    fn p23_all_outfield_sent_off_is_total_and_never_returns_sent_off() {
+        // 退化态：某队 10 名外场全部罚下（每队最多 10 红，门将不产犯规）。三个选择器都必须
+        // total（不 panic）且不返回罚下球员——由恒不被罚下的门将顶上。
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        for id in 1..=10 {
+            st.sent_off[id] = true; // home 外场清空（门将 0 保留）
+        }
+        let target = (0.5, 0.5);
+        // nearest_defender：home 防守方无可选外场 → 回退门将 0（非罚下）
+        let (id, _, _) = nearest_defender(&st, target, true);
+        assert_eq!(id, 0, "home 外场全罚下时应回退门将 0，而非 panic 或返回罚下球员");
+        // nearest_teammate：home 传球者 id=1（已罚下，仅用于构造）→ 回退门将 0
+        let (id, _) = nearest_teammate(&st, target, true, 3);
+        assert_eq!(id, 0, "home 队友全罚下时应回退门将 0");
+        // 传球者本人是门将 → 无队友可传，返回自身（仍 total，不 panic）
+        let (id, _) = nearest_teammate(&st, target, true, 0);
+        assert_eq!(id, 0);
+        // kickoff_pick：home 外场全罚下 → 回退门将 0（不返回罚下球员）
+        assert_eq!(kickoff_pick(&st, 9), 0);
+        // away 侧不受影响
+        assert_eq!(kickoff_pick(&st, 12), 12);
     }
 
     // ---- P6 门球 + 进球回中圈测试 ----

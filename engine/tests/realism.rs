@@ -302,6 +302,11 @@ fn aggregate(seed: u64) -> MatchStats {
         if let Some(i) = field_num(e, "interceptor") {
             participants.push(("interceptor", i as i32));
         }
+        // `to`（传球/开球接球者）——命中即会随后成为 carrier（PassCaught → main.subject），
+        // 是"当前未参与但即将参与"的入口。`from` 不单列：pass/kickoff 事件的 subject == from。
+        if let Some(t2) = field_num(e, "to") {
+            participants.push(("to", t2 as i32));
+        }
         for (field, id) in participants {
             if id >= 0 && id < 22 && sent_off[id as usize] {
                 st.n_sent_off_participation += 1;
