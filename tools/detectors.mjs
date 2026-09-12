@@ -602,19 +602,26 @@ function statsFor(detectorId, samples, findings) {
   };
 }
 
+// 提示：旧 bundle（本 change 之前用旧 viewer 采集的）没有版本号。设计上必须**响亮失败**
+// 而不是拿陈旧形状的数据静默审计（那正是字段断裂潜伏的机制）。给一句可操作的补救话，
+// 免得只看到一句版本号对不上。
+const AUDIT_INPUT_VERSION_HINT =
+  're-capture the observation with the current viewer (older bundles predate the versioned audit_input)';
+
 export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
   // P21 D6：audit_input 必须携带已知 schema_version。缺失/未知 → 抛错，而不是按默认
   // 静默继续——静默正是字段断裂能潜伏几个月的原因（detector 读空字段、输出全 unknown）。
   const version = input?.schema_version;
   if (version === undefined) {
     throw new Error(
-      `audit_input is missing schema_version (expected "${AUDIT_INPUT_SCHEMA_VERSION}")`
+      `audit_input is missing schema_version (expected "${AUDIT_INPUT_SCHEMA_VERSION}"): ` +
+        AUDIT_INPUT_VERSION_HINT
     );
   }
   if (version !== AUDIT_INPUT_SCHEMA_VERSION) {
     throw new Error(
       `unsupported audit_input schema_version ${JSON.stringify(version)} ` +
-        `(expected "${AUDIT_INPUT_SCHEMA_VERSION}")`
+        `(expected "${AUDIT_INPUT_SCHEMA_VERSION}"): ${AUDIT_INPUT_VERSION_HINT}`
     );
   }
 

@@ -791,14 +791,14 @@ test('a legacy synthetic target_distance never reaches features (D3)', () => {
 test('runAudit rejects an audit_input without schema_version', () => {
   assert.throws(
     () => runAuditRaw({ events: [], players: {} }),
-    /missing schema_version/
+    /missing schema_version.*re-capture/s
   );
 });
 
 test('runAudit rejects an audit_input with an unknown schema_version', () => {
   assert.throws(
     () => runAuditRaw({ schema_version: 'audit-input/999', events: [], players: {} }),
-    /unsupported audit_input schema_version/
+    /unsupported audit_input schema_version.*re-capture/s
   );
 });
 
