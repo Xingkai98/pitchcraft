@@ -20,6 +20,7 @@ import {
   detectUnforcedOut,
   detectInactiveResponsibility,
   detectIgnoredInterception,
+  computePassOutcomes,
   DEFAULT_AUDIT_PROFILE,
 } from './detectors.mjs';
 import {
@@ -210,16 +211,20 @@ test('every declared legacy read is genuinely read by its detector', () => {
   // 这里也逐 detector 归属：读到的键必须落在**那个 detector** 的 legacy_reads 里。
   const perDetector = {};
   for (const id of Object.keys(DETECTOR_ENTRY)) perDetector[id] = new Set();
-  for (const w of FIXTURE.windows) {
+  const inputs = [
+    syntheticLegacyInput(),
+    ...FIXTURE.windows.map((w) => w.audit_input),
+    ...BRANCH_COVERAGE_INPUTS,
+  ];
+  for (const input of inputs) {
     for (const [id, run] of Object.entries(DETECTOR_ENTRY)) {
-      for (const k of recordReads(syntheticLegacyInput(), run)) perDetector[id].add(k);
-      // 真实窗口也过一遍，保证 legacy 分支即使真实数据不触发也有归属记录。
-      for (const k of recordReads(w.audit_input, run)) perDetector[id].add(k);
+      for (const k of recordReads(input, run)) perDetector[id].add(k);
     }
   }
   for (const [id, entry] of Object.entries(DETECTOR_FIELD_CONTRACT)) {
+    // 不静默跳过：没有 runner 的条目由「every contract entry has a drift-guard runner」兜住。
     const reads = perDetector[id];
-    if (!reads) continue;
+    assert.ok(reads, `no drift-guard runner for ${id}`);
     for (const field of entry.legacy_reads) {
       assert.ok(
         reads.has(field),
@@ -267,8 +272,10 @@ function recordReads(input, fn) {
 
 const recordAuditReads = (input) => recordReads(input, (pi) => runAudit(pi));
 
-// 逐 detector 直接调用，把读键**归属到具体 detector**——按并集断言会漏掉
-// 「detector A 读了契约里只属于 B 的字段」这类串读（审阅发现的守卫盲区）。
+// 逐条目直接调用，把读键**归属到具体条目**——按并集断言会漏掉
+// 「条目 A 读了契约里只属于 B 的字段」这类串读（审阅发现的守卫盲区）。
+// 注意：pass_outcomes 不是 detector，但它和 unforced_out 共享出界/排除位契约，
+// 也必须有自己的 runner；否则它在守卫里会被静默跳过（审阅发现的第二个盲区）。
 const DETECTOR_ENTRY = {
   baseline_invariant: (pi) =>
     detectInvariants(pi.events ?? [], pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
@@ -277,15 +284,58 @@ const DETECTOR_ENTRY = {
     detectInactiveResponsibility(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
   ignored_interception_opportunity: (pi) =>
     detectIgnoredInterception(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
+  pass_outcomes: (pi) => computePassOutcomes(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
 };
 
-// 逐 detector 跑遍所有真实窗口，返回 { detector_id: Set(读到的键) }。
+// 真实窗口是主输入，但真实数据不一定走遍每个分支（例如真实 pass 都带 detail，于是
+// 「无 detail 的普通传球」这条读 result 的路径就不会被走到）。守卫要断言「契约声明的读
+// 确实被实现读到」，就必须把这几个分支也喂进去——否则会把真实存在但未被 fixture 覆盖的
+// 读误判成僵尸声明。这些合成输入是**为分支覆盖而造**，形状取自 protocol.js 的合法枚举。
+const BRANCH_COVERAGE_INPUTS = [
+  // 普通传球（无 detail）：走 classifyPassOutcome 的 result 分支。
+  {
+    schema_version: AUDIT_INPUT_SCHEMA_VERSION,
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'success', x: 50, y: 30, x2: 60, y2: 30, nearest_defender_distance: 12, pass_distance: 10 },
+      { index: 1, t: 2, type: 'pass', x: 50, y: 30, x2: 60, y2: 30, nearest_defender_distance: 12, pass_distance: 10 },
+    ],
+    players: {},
+  },
+  // 责任快照：走 inactive_responsibility 的 disqualified/moved 分支。
+  {
+    schema_version: AUDIT_INPUT_SCHEMA_VERSION,
+    events: [],
+    players: {
+      4: [
+        { t: 1, x: 5, y: 5, responsibility: 'ball_entered_zone' },
+        { t: 4.5, x: 5.05, y: 5, responsibility: 'ball_entered_zone', dead_ball: true },
+        { t: 6, x: 5.1, y: 5, responsibility: 'ball_entered_zone', is_gk: true },
+        { t: 8, x: 9, y: 5, responsibility: 'ball_entered_zone', moved_toward_goal: true },
+        { t: 10, x: 9, y: 9, responsibility: 'ball_entered_zone', moved_toward_ball: true },
+      ],
+    },
+  },
+];
+
+test('every contract entry has a drift-guard runner (no silently-skipped entry)', () => {
+  // 防「条目没有 runner → 逐条目断言里被静默 continue 跳过」这个盲区：
+  // 契约里每个条目都必须能在 DETECTOR_ENTRY 里找到归属 runner。
+  for (const id of Object.keys(DETECTOR_FIELD_CONTRACT)) {
+    assert.ok(
+      typeof DETECTOR_ENTRY[id] === 'function',
+      `contract entry ${id} has no runner in the drift guard — its reads would go unchecked`
+    );
+  }
+});
+
+// 逐条目跑遍真实窗口 + 分支覆盖输入，返回 { 条目 id: Set(读到的键) }。
 function recordReadsPerDetector() {
   const perDetector = {};
   for (const id of Object.keys(DETECTOR_ENTRY)) perDetector[id] = new Set();
-  for (const w of FIXTURE.windows) {
+  const inputs = [...FIXTURE.windows.map((w) => w.audit_input), ...BRANCH_COVERAGE_INPUTS];
+  for (const input of inputs) {
     for (const [id, run] of Object.entries(DETECTOR_ENTRY)) {
-      for (const k of recordReads(w.audit_input, run)) perDetector[id].add(k);
+      for (const k of recordReads(input, run)) perDetector[id].add(k);
     }
   }
   return perDetector;
@@ -316,12 +366,13 @@ test('each detector only reads fields its own contract entry declares', () => {
   }
 });
 
-test('no contract read is declared by a detector that does not read it (cross-detector guard)', () => {
-  // 反向：契约说 detector X 读字段 F，但 X 实际没读 F（F 只在别的 detector 下出现）→ 僵尸声明。
+test('no contract read is declared by an entry that does not read it (cross-entry guard)', () => {
+  // 反向：契约说条目 X 读字段 F，但 X 实际没读 F（F 只在别的条目下出现）→ 僵尸声明。
   const perDetector = recordReadsPerDetector();
   for (const [id, entry] of Object.entries(DETECTOR_FIELD_CONTRACT)) {
+    // 不静默跳过（pass_outcomes 也有 runner）；缺 runner 由专门用例报错。
     const reads = perDetector[id];
-    if (!reads) continue; // pass_outcomes 不是 detector，另行覆盖
+    assert.ok(reads, `no drift-guard runner for ${id}`);
     for (const field of entry.reads) {
       if (AUDIT_INPUT_TOP_LEVEL_KEYS.includes(field)) continue;
       assert.ok(

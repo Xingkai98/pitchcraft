@@ -561,7 +561,9 @@ function classifyPassOutcome(event, profile) {
 // dead-ball pass contexts are excluded from the ordinary-pass buckets, matching
 // the unforced_out exclusion contract (detail set + legacy boolean keys).
 // Missing pressure evidence lands in `unknown_pressure` — never fabricated.
-function computePassOutcomes(events, profile) {
+// 导出供契约漂移守卫逐条目断言：pass_outcomes 不是 detector，但和 unforced_out 共享
+// 出界/排除位契约，守卫要把它当独立条目归属读键（否则它的 legacy_reads 会成为盲区）。
+export function computePassOutcomes(events, profile) {
   const buckets = {
     unpressured: { sample_count: 0, out_count: 0, success_count: 0, unknown_outcome_count: 0 },
     pressured: { sample_count: 0, out_count: 0, success_count: 0, unknown_outcome_count: 0 },

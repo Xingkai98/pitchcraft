@@ -131,19 +131,18 @@ export const DETECTOR_FIELD_CONTRACT = {
 
   // pass_outcomes 不是 detector，是 runAudit 的普通传球分桶统计；它和 unforced_out 共享
   // 排除位契约，所以一并登记，防止两处再漂移。
+  // 注意 reads 必须精确反映实现：分桶只按 type / 排除位 / nearest_defender_distance / 出界
+  // 结果，不读 t/index/pass_distance（那是 finding 与其它 detector 才需要的信息）。
   pass_outcomes: {
-    reads: [...EVENT_SKELETON, 'result', 'detail', 'x2', 'y2', 'nearest_defender_distance', 'pass_distance'],
+    reads: ['type', 'result', 'detail', 'x2', 'y2', 'nearest_defender_distance'],
     legacy_reads: ['corner', 'throw_in', 'clearance'],
     producers: {
-      t: 'engine',
       type: 'engine',
-      index: 'viewer',
       result: 'engine',
       detail: 'engine',
       x2: 'derive',
       y2: 'derive',
       nearest_defender_distance: 'derive',
-      pass_distance: 'derive',
     },
     known_gaps: ['goal_kick_exclusion'],
     notes: '排除位与出界分类复用 unforced_out 的同一契约（D1/D2）。',
