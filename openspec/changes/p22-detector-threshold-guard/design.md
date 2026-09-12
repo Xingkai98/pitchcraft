@@ -29,7 +29,7 @@ P21 的字段契约守卫钉「读的字段有没有生产者」，钉不住「�
 |---|---|---|---|
 | unforced_out | `nearest_defender_distance > threshold` | 无压迫 = **严格大于** 8.0 | ✅ P1.1 |
 | inactive_responsibility | `distance(...) >= stationary_epsilon`（跑段分割） | 移动 = **≥** 0.5 | ✅ P1.2 |
-| inactive_responsibility | `static_duration < static_duration`（是否够久） | 告警 = **严格小于** 3.0 | ✅ P1.3 |
+| inactive_responsibility | `staticDuration < cfg.static_duration`（是否够久） | 告警 = **严格小于** 3.0 | ✅ P1.3 |
 | ignored_interception | `defenderArrival + margin < ballArrival` | 机会 = **严格小于** | ✅ P1.4 |
 | pass_outcomes | `nearest_defender_distance > threshold`（unpressured 桶） | 同 unforced_out | ✅ P1.5 |
 | aggregateAudit | `rate > band.max`（band 升级） | 超带 = **严格大于**（`baseline_invariant` max=0，干净 rate=0 不升级） | ✅ P1.6 |
