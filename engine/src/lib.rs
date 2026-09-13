@@ -512,7 +512,7 @@ fn nearest_in_team(st: &MatchState, target: (f64, f64), team: u32) -> i32 {
     for (id, &p) in pos.iter().enumerate() {
         let is_team = if team == 0 { id <= 10 } else { id >= 11 };
         if !is_team { continue; }
-        if id == 0 || id == 21 { continue; } // 门将不追松散球
+        if id == 0 || id == 21 { continue; } // 门将不追松散球（退化态全队罚下时回退门将，见函数尾）
         if st.sent_off[id] { continue; }
         let d = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
         if d < best_d { best_d = d; best = id as i32; }
@@ -1937,7 +1937,7 @@ fn corner_flag(out_pos: (f64, f64)) -> (f64, f64) {
     (x, y)
 }
 
-/// 开始界外球：掷球者 = 接球方离出界点最近外场球员（非门将），进入 RestartPrep 准备期
+/// 开始界外球：掷球者 = 接球方离出界点最近外场球员（正常态非门将；该队外场全罚下时回退门将），进入 RestartPrep 准备期
 fn start_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, out_pos: (f64, f64), throwing: u32) {
     let target = throw_in_spot(out_pos);
     let player = nearest_in_team(st, target, throwing);
@@ -2040,7 +2040,7 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     let out_pos = st.ball_pos; // 出界点（掷球者已走位到边线）
     let throwing = st.possession;
     let home = throwing == 0;
-    let thrower = nearest_in_team(st, out_pos, throwing); // 掷球者（非门将，在边线）
+    let thrower = nearest_in_team(st, out_pos, throwing); // 掷球者（正常态非门将；退化态回退门将）
     let (to, to_pos) = nearest_teammate(st, out_pos, home, thrower);
     let rx = st.pos[to as usize].0;
     let ry = st.pos[to as usize].1;
@@ -3868,6 +3868,12 @@ mod tests {
         assert_eq!(kickoff_pick(&st, 12, -1), 12);
         // nearest_in_team（P24）：home 外场全罚下 → 回退门将 0（不返回 -1，避免 st.pos[-1] panic）
         assert_eq!(nearest_in_team(&st, target, 0), 0, "home 外场全罚下时 nearest_in_team 应回退门将 0");
+        // away 侧对称：away 外场全罚下 → 回退门将 21
+        let mut st3 = MatchState::new(&lineup, 5400.0);
+        for id in 11..=20 {
+            st3.sent_off[id] = true; // away 外场清空（门将 21 保留）
+        }
+        assert_eq!(nearest_in_team(&st3, target, 1), 21, "away 外场全罚下时 nearest_in_team 应回退门将 21");
         // 对照组：未全罚下 → 返回最近外场（非门将 0）
         let mut st2 = MatchState::new(&lineup, 5400.0);
         st2.pos[1] = (0.6, 0.5); // 把外场 id 1 放离 target 更近
