@@ -646,7 +646,10 @@ fn l1_shot_result_distributions() {
     let far45: usize = stats.iter().map(|s| s.n_shot_far45).sum();
     assert_eq!(far45, 0, "存在距门 >45m 射门（{}），应已消除", far45);
 
-    // 射门/场（P9 射门槽 35%）
+    // 射门/场。P29 起射门由 hazard 涌现（不再由槽位 35% 直接决定），这条带是**经验体量带**
+    // （「集锦不塌缩 / 不爆炸」），不是配额断言——射门数由几何 + hazard 掷定产生。
+    // 方向性断言（「近门/无压更易起脚」）在引擎内：`p29_window_commit_rate_falls_with_pressure`
+    // 与 `p29_hazard_factor_directions`（D4：断言方向而非固定数量）。
     let shots_per = regular as f64 / n;
     assert!((6.0..=11.0).contains(&shots_per), "普通射门/场 {:.2} ∉ [6,11]", shots_per);
 
@@ -700,14 +703,15 @@ fn l1_tackle_dilution_and_slot_mix() {
     // 注意：overall/close 带只捕获整体大偏差（成功率崩塌/暴涨）；TACKLE_EAGERNESS=0.5 使 15% 与 50%
     // 两路严格 50/50，互换后加权均值不变 → 分支间互换由 golden master 全流哈希守护（结果改变级联改流）。
 
-    // 槽位相对 mix：纯普通射门（槽位射门，排除角球派生头球）vs 抢断 ≈ 35/22 ≈ 1.59（P9 射门槽 30→35）。
-    // 死球/重开占用使绝对槽位数不固定 → 断言比值。用普通射门计数避免头球灌水。
+    // 射门 vs 抢断的经验体量比。**P29 起不再是槽位配额比**（旧：「声明 35/22≈1.59」——2B 后
+    // 射门由 hazard 涌现，与槽位 roll 的比例脱钩）；这里退化为「两类事件量级相当」的 sanity
+    // 带（防某一类塌缩/爆炸）。方向性断言见引擎内 `p29_window_commit_rate_falls_with_pressure`。
     let shots_regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
     assert!(shots_regular >= 800, "普通射门总数不足：{}", shots_regular);
     let ratio = shots_regular as f64 / tackles as f64;
     assert!(
         (1.0..=1.8).contains(&ratio),
-        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]（声明 35/22≈1.59）",
+        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]（P29 经验体量带，非槽位配额）",
         ratio
     );
 
@@ -924,14 +928,18 @@ fn l2_cross_event_invariants() {
 
 /// P23：罚下球员不得参与——定向 seed 守卫（宽窗口之外的定点钉死）。
 ///
-/// `l2_cross_event_invariants` 现已用 SEEDS_L2=300 覆盖到这些 seed；本测试再把宽扫（1..=2000，
-/// 564 张红牌）暴露过的具体退化 seed 单列钉死——它们命中「进球后开球/接球落在罚下球员身上」：
-/// 罚下者恰是硬编码的开球者（home→9 / away→12）或接球者（10/11），该路径不经过 `compute_movers`
-/// （`advance_dead_ball` 手动 push mover），且早期 L2 的 15 seed 窗口守不住。
-/// 引擎确定性 → 永不 flaky；先断言确有红牌，防止将来引擎改动让这些 seed 变成空跑。
+/// `l2_cross_event_invariants` 现已用 SEEDS_L2=300 覆盖到「罚下球员参与」的宽扫；本测试再把
+/// **含红牌且同时有进球**的具体 seed 单列钉死——进球后开球/接球会走 `advance_dead_ball` 的手动
+/// mover 路径（不经过 `compute_movers`），且硬编码开球者（home→9 / away→12）或接球者（10/11）
+/// 恰为罚下者时最易暴露退化；早期 L2 的 15 seed 窗口守不住。
+///
+/// P29 更新：原固定 seed（260/884/1271/1658）是 P23 时点引擎的产物；2B 改变 RNG 消费序列后
+/// 这些 seed 不再含红牌（守卫会空跑），故按当前引擎重新扫描（1..=2000，523 张红牌）取
+/// 「红牌 + 进球」的 seed 钉死。引擎确定性 → 永不 flaky；先断言确有红牌，防止将来引擎改动
+/// 让这些 seed 再次变成空跑。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [260u64, 884, 1271, 1658] {
+    for seed in [2u64, 5, 18, 52] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -949,13 +957,18 @@ fn l2_sent_off_kickoff_seeds() {
 // v2 = 迁移之后（`tests/golden-v2/`）。旧基线保留不覆盖，可逐 seed 回归对比（D6：
 // 事件数量/时序/比分必须与 v1 完全一致，只有出界 pass 字段值变 → stream_hash 变）。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 2）落 v2；需要对比 v1 时读 v1 目录。
+// P29 D4：v3 = 射门机会迁移之后（`tests/golden-v3/`）。这是 #25 里**第一个改变可观测行为**
+// 的版本——射门由 hazard 涌现、`shot_setup` 可被抢断打断 → 事件流会变，v3 与 v1/v2 逐 seed
+// **必然不同**（不再是「只有协议字段变」的等价迁移）。v1/v2 保留不覆盖，作历史对照。
+//
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 3）落 v3；需要对比旧版本时读旧目录。
 
 /// 模型版本 → golden 基线目录名。
 fn golden_dir(model_version: u32) -> &'static str {
     match model_version {
         1 => "tests/golden",
         2 => "tests/golden-v2",
+        3 => "tests/golden-v3",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1117,30 +1130,47 @@ fn gm_canary_seeds() {
     }
 }
 
-/// P27 D6 硬验收：v1 基线（P27 之前）与当前 v2 引擎**逐 seed** 对比。
-/// 本 change 只改出界 pass 的 JSON 字段值，不改变 RNG 消费顺序 → 事件数量、类型分布、
-/// 比分必须与 v1 完全一致（`assert_golden_fields_match` 的 28 个字段），
-/// **只有** `stream_hash` 因出界字段值变而不同（若相同说明出界字段没真正改——本测试也会红）。
+/// P29 D4 硬验收：旧 golden 基线（v1 / v2）**保留不覆盖**，且当前引擎与它们**确实不同**。
+///
+/// 2B 改变可观测行为（射门由 hazard 涌现 + 起脚窗口可被抢断），因此：
+/// - v1/v2 目录必须仍然存在且自洽（可读、字段非负）——不得被重基线覆盖（D4「v1/v2 保留」）；
+/// - 当前流必须与 v1 **和** v2 都不同（若相同说明 2B 没真正改变行为 → 红）；
+/// - v2 与 v1 之间的 P27 关系（计数一致、仅出界字段变）仍应成立——这是历史基线的自洽性，
+///   与当前引擎无关，保留为回归对照（P27 D6 的原始断言在此继续守着旧对）。
 #[test]
-fn gm_v1_regression_counts_unchanged() {
+fn gm_legacy_baselines_preserved_and_differs() {
     let mut seeds_with_out = 0;
     for seed in GOLDEN_SEEDS {
         let st = aggregate(seed);
         let gold_v1 = read_golden(1, seed);
-        let hash_same = assert_golden_fields_match(seed, &gold_v1, &st, "v1");
+        let gold_v2 = read_golden(2, seed);
+        // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）
+        assert!(gold_v1.n_events > 0 && gold_v2.n_events > 0, "seed {} 旧基线读取异常", seed);
+        // 2. P27 历史对：v1 与 v2 计数一致、只有出界字段值不同（旧对自洽，非本 change 引入）
+        let v1_v2_hash_same = assert_golden_fields_match(seed, &gold_v1, &gold_v2, "v1-vs-v2");
         assert!(
-            !hash_same,
-            "seed {} 的 v2 流哈希与 v1 相同——本 change 应至少改变出界 pass 的字段值",
+            !v1_v2_hash_same,
+            "seed {}：v2 与 v1 的流哈希应不同（P27 出界字段值变）——历史基线对已损坏",
             seed
         );
-        // v1/v2 出界计数（按 detail 分桶，与协议字段无关）必须一致：出界触发概率不变。
-        assert_eq!(gold_v1.n_out_goal_line, st.n_out_goal_line, "seed {} v1 出底线计数", seed);
-        assert_eq!(gold_v1.n_out_sideline, st.n_out_sideline, "seed {} v1 出边线计数", seed);
-        if st.n_out_goal_line + st.n_out_sideline > 0 {
+        assert_eq!(gold_v1.n_out_goal_line, gold_v2.n_out_goal_line, "seed {} v1/v2 出底线计数", seed);
+        assert_eq!(gold_v1.n_out_sideline, gold_v2.n_out_sideline, "seed {} v1/v2 出边线计数", seed);
+        // 3. 当前（v3）必须与两个旧基线都不同——2B 真的改了行为（否则本 change 名不副实）
+        assert!(
+            gold_v1.stream_hash != st.stream_hash,
+            "seed {}：当前流哈希与 v1 相同——2B 应改变可观测行为（射门 hazard 未生效？）",
+            seed
+        );
+        assert!(
+            gold_v2.stream_hash != st.stream_hash,
+            "seed {}：当前流哈希与 v2 相同——2B 应改变可观测行为（射门 hazard 未生效？）",
+            seed
+        );
+        if gold_v1.n_out_goal_line + gold_v1.n_out_sideline > 0 {
             seeds_with_out += 1;
         }
     }
-    assert!(seeds_with_out > 0, "10 个 canary seed 里应有 seed 产出出界 pass（否则哈希不变无法解释）");
+    assert!(seeds_with_out > 0, "10 个 canary seed 里应有 seed 产出出界 pass（否则假设不成立）");
 }
 
 
