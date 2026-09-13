@@ -217,18 +217,22 @@ impl Event {
     }
 }
 
-/// 当前引擎/协议模型版本（P27 起 = 2）。
+/// 当前引擎/协议模型版本（P29 起 = 3）。
 /// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
 /// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
+/// v3：P29 射门机会迁移（射门由 hazard 五因子涌现，非槽强制；`shot_setup` 可被抢断打断）——
+///     **第一个改变可观测行为的版本**（事件流变、golden 重基线、频率变）。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 2;
+pub const MODEL_VERSION: u32 = 3;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
-/// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起）。
-/// **当前只用于 golden 目录选择**（v1 `tests/golden/`、v2 `tests/golden-v2/`，旧基线保留不覆盖），
-/// **不切换引擎行为**——同一代码对两个版本都产出相同事件流，v1 基线是 P27 之前引擎的冻结产物。
-/// 将来若需按版本分支行为（阶段 2/3），在此字段上实现。
+/// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起，
+/// v3 = P29 射门机会迁移起）。
+/// **当前只用于 golden 目录选择**（v1 `tests/golden/`、v2 `tests/golden-v2/`、
+/// v3 `tests/golden-v3/`，旧基线保留不覆盖），**不切换引擎行为**——同一代码对所有版本都产出
+/// 相同事件流，旧基线是相应时点引擎的冻结产物。将来若需按版本分支行为（阶段 3），在此字段上
+/// 实现。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
     pub match_duration_seconds: f64,
@@ -430,6 +434,50 @@ pub const BOX_DIST_M: f64 = 16.5;
 /// 禁区弧边界（m）——分桶边界（禁区内 ≤16.5 / 禁区弧 16.5-25 / 远射 >25）
 pub const ARC_DIST_M: f64 = 25.0;
 
+// ---- P29 射门 hazard（#25 阶段 2B）----
+//
+// 射门从「槽位/推进到射程即射」改由 hazard 五因子打分**涌现**（D1/D2）。
+// 公式形状（grill 定稿）：`score = base + distance_quality + angle_quality + space_available
+// - defensive_pressure - cooldown_penalty`；`hazard = exp(score)`；`p = 1 - exp(-hazard * window)`。
+//
+// `SHOT_FACTOR_GAIN` 说明：五因子各自量纲 ∈ [0,1]，因子和全幅仅 ~5 nats——不足以同时满足
+// 「好机会每 tick 概率可用」与「差机会显著更低」（需 ~4 nats 区分度 + 居中）。增益把因子和
+// 映射到 hazard 的 log 尺度（`hazard = e^BASE · e^(GAIN·Σ)`，同一函数族内的标定常数）。
+/// hazard 基线倾向（log 尺度）
+const BASE_SHOT_TENDENCY: f64 = -4.0;
+/// 五因子增益（log 尺度缩放，见上方说明）
+const SHOT_FACTOR_GAIN: f64 = 2.5;
+/// 起脚窗口长度（tick，D1）：推进到射程后在此窗口内由 hazard 决定射/转/被抢断
+const SHOT_WINDOW_TICKS: u32 = 2;
+/// 最近防守者压迫尺度（米）：≤ 此距离按满压迫计，≥ 则无压迫
+const SHOT_PRESSURE_NEAR_M: f64 = 8.0;
+/// 第二防守者压迫尺度（米）
+const SHOT_PRESSURE_SECOND_M: f64 = 16.0;
+/// 射门冷却（tick）：最近一次射门后的局部衰减窗口。
+/// **只读局部计时器**（最近一射后的 tick 数），不读「本场已射多少次」——C 路原则（D2）。
+const SHOT_COOLDOWN_TICKS: u32 = 8;
+/// 射门空间可用性：防守者距离 ≤ 此值视为完全无空间
+const SHOT_SPACE_MIN_M: f64 = 2.0;
+/// 射门空间可用性：防守者距离 ≥ 此值视为完全自由
+const SHOT_SPACE_MAX_M: f64 = 8.0;
+/// hazard 掷定粒度（与 `maybe_open_foul` 同口径：千分位）
+const SHOT_ROLL_SCALE: f64 = 1000.0;
+/// 起脚窗口压迫分桶（方向性观测）：最近防守者 ≤ 此值 → 「贴身」桶
+const SHOT_WINDOW_TIGHT_M: f64 = 4.0;
+/// 起脚窗口压迫分桶：最近防守者 ≥ 此值 → 「无压」桶
+const SHOT_WINDOW_FREE_M: f64 = 8.0;
+
+/// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
+fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
+    if nearest_defender_m <= SHOT_WINDOW_TIGHT_M {
+        0
+    } else if nearest_defender_m >= SHOT_WINDOW_FREE_M {
+        1
+    } else {
+        2
+    }
+}
+
 // ---- 主场优势参数（pilot 3:home-advantage）----
 /// 主客不对称 = 两个"home 正向 / away 不压"的**微差**通道，合并统计（双方合计）基本不变，
 /// 因此不挤压前两轮已标定带（射门桶比例 / 犯规 / 传球成功率）的合并口径。全部判定仍走 SeededRng、
@@ -614,6 +662,10 @@ enum OpportunityTrigger {
     FallbackDeadline,
     /// 持球超时过渡传球（PASS_BREAK：carrier 持球过久，球权需要流动）
     HoldTimeout,
+    /// P29 起脚窗口（D1）：`shot_setup` 推进到射程后，每 tick 由 hazard 打分决定射/转/被抢断。
+    /// 只走统一评估（`build_action_plan`），**不开启 `ActionOpportunity`**——窗口是独立于
+    /// 机会 deadline 的状态机（推进期间机会恒已失效）。
+    ShotWindow,
 }
 
 impl OpportunityTrigger {
@@ -623,6 +675,9 @@ impl OpportunityTrigger {
             OpportunityTrigger::NaturalDeadline => OpportunityReason::DeadlineElapsed,
             OpportunityTrigger::FallbackDeadline => OpportunityReason::SlotFallback,
             OpportunityTrigger::HoldTimeout => OpportunityReason::HoldTimeout,
+            // 起脚窗口不开启 ActionOpportunity（见枚举注释）；该 reason 只用于保持 total，
+            // 不会出现在任何存活机会上（`advance_action_opportunity` 的 assert 守着这点）。
+            OpportunityTrigger::ShotWindow => OpportunityReason::ShotWindow,
         }
     }
 }
@@ -633,6 +688,8 @@ enum OpportunityReason {
     DeadlineElapsed,
     SlotFallback,
     HoldTimeout,
+    /// P29：起脚窗口触发（不开启 ActionOpportunity，见 `OpportunityTrigger::ShotWindow`）
+    ShotWindow,
     PossessionChanged,
     DeadBall,
     Restart,
@@ -656,6 +713,11 @@ enum CarrierAction {
     Dribble,
     Pass { target: Option<i32> },
     Shoot,
+    /// P29（D1/D2）：起脚窗口内背向球门（`angle_cos <= 0`）→ 禁止 Shoot 候选，转入死球
+    /// （界外球/角球重开）。**结构性不可达**：窗口进门前守卫要求面向球门，且推进只沿进攻 x
+    /// 正向移动（y 不变、|y-0.5| 不增）→ 窗口内 `angle_cos` 恒 > 0。保留变体是为了让
+    /// D2「背向禁止 Shoot」在候选层有落点，而不是只活在纯函数里。
+    AwardDeadBall(DeadBallKind),
 }
 
 /// 防守者候选动作（D3 第 2/5 级）
@@ -714,6 +776,8 @@ enum CarrierExecution {
     DriveThenShoot { target_dist: f64 },
     /// 出界重开（`emit_pass_out_play_slot`）
     PassOut { kind: DeadBallKind },
+    /// P29 起脚窗口：已到射程，直接进入起脚窗口（等待 hazard 判定射/转/被抢断）
+    EnterShotWindow { target_dist: f64 },
 }
 
 /// 2A 执行绑定（防守侧）
@@ -839,12 +903,35 @@ struct OpportunityTally {
     exec_pass: u64,
     exec_forward_pass: u64,
     exec_drive_then_shoot: u64,
+    /// P29 起脚窗口：推进到射程、进入窗口的执行次数
+    exec_enter_shot_window: u64,
     exec_pass_out_corner: u64,
     exec_pass_out_throw_in: u64,
     exec_continue: u64,
     /// 未被模块归因的射门（正常应为 0）。射门可由「射门推进 / 向前传球」在后续 tick 才落地，
     /// 无法在执行点直接计数，故用 `module_shot_pending` 标记归因；本桶非 0 = 有射门绕过了模块。
     shots_unattributed: u64,
+    // ---- P29 起脚窗口（#25 阶段 2B，D1）----
+    /// 推进到射程、进入起脚窗口的次数
+    shot_window_entries: u64,
+    /// 窗口内 hazard 判定命中（`committed = true` → 产 Shot）的次数
+    shot_window_commits: u64,
+    /// 窗口内被抢断打断（canceled → tackle，不产 Shot）的次数
+    shot_window_tackles: u64,
+    /// 窗口内 hazard 未命中、且无人抢断 → 本 tick 持球等待（窗口继续计时）的次数
+    shot_window_holds: u64,
+    /// 窗口耗尽仍未提交、转为继续带球（「转」）的次数
+    shot_window_expiries: u64,
+    /// 进入窗口 / 提交 按起脚距离分桶（0=禁区内 1=禁区弧 2=远射）
+    shot_window_entries_by_bucket: [u64; 3],
+    shot_window_commits_by_bucket: [u64; 3],
+    /// 进入窗口 / 提交 按**进入时压迫**分桶：0 = 贴身（最近防守者 ≤ `SHOT_WINDOW_TIGHT_M`）、
+    /// 1 = 无压（≥ `SHOT_WINDOW_FREE_M`）、2 = 中间。
+    /// 方向性门用：无压窗口的提交率应高于贴身窗口——这是 D2 的 `defensive_pressure` 因子在
+    /// 真实数据上的直接度量（距离方向会被「远射窗口只在突围时出现」的联合分布混淆，见
+    /// `.p29-progress.md`；压迫方向不受此混淆）。
+    shot_window_entries_by_pressure: [u64; 3],
+    shot_window_commits_by_pressure: [u64; 3],
 }
 
 impl Default for OpportunityTally {
@@ -882,10 +969,20 @@ impl Default for OpportunityTally {
             exec_pass: 0,
             exec_forward_pass: 0,
             exec_drive_then_shoot: 0,
+            exec_enter_shot_window: 0,
             exec_pass_out_corner: 0,
             exec_pass_out_throw_in: 0,
             exec_continue: 0,
             shots_unattributed: 0,
+            shot_window_entries: 0,
+            shot_window_commits: 0,
+            shot_window_tackles: 0,
+            shot_window_holds: 0,
+            shot_window_expiries: 0,
+            shot_window_entries_by_bucket: [0; 3],
+            shot_window_commits_by_bucket: [0; 3],
+            shot_window_entries_by_pressure: [0; 3],
+            shot_window_commits_by_pressure: [0; 3],
         }
     }
 }
@@ -904,7 +1001,8 @@ impl OpportunityTally {
             // 开启类原因不走失效路径
             OpportunityReason::DeadlineElapsed
             | OpportunityReason::SlotFallback
-            | OpportunityReason::HoldTimeout => {}
+            | OpportunityReason::HoldTimeout
+            | OpportunityReason::ShotWindow => {}
             // 球权改变 / 死球 / 重开走防御网路径，见 invalidate_action_opportunity 调用点
             OpportunityReason::PossessionChanged
             | OpportunityReason::DeadBall
@@ -1048,6 +1146,9 @@ fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
         OpportunityTrigger::NaturalDeadline => st.opportunity_tally.natural_deadline += 1,
         OpportunityTrigger::FallbackDeadline => st.opportunity_tally.fallback_deadline += 1,
         OpportunityTrigger::HoldTimeout => st.opportunity_tally.hold_timeout += 1,
+        // 起脚窗口不开启 `ActionOpportunity`（D1）：它由 `shot_setup` 状态机驱动，
+        // 独立于机会 deadline；窗口 taily 见 `advance_shot_setup` 的窗口相。
+        OpportunityTrigger::ShotWindow => {}
     }
     st.action_opportunity = Some(ActionOpportunity {
         carrier,
@@ -1097,7 +1198,7 @@ fn defender_goal_side(st: &MatchState, carrier_pos: (f64, f64)) -> bool {
 /// - `NaturalDeadline`：2A 决策中性——不承诺任何行动、零 RNG、零事件；2B 射门 hazard 在此接管。
 /// - `HoldTimeout`：持球过久 → 过渡传球（不出界，P7 语义）。
 fn evaluate_carrier_action(
-    st: &MatchState,
+    st: &mut MatchState,
     rng: &mut SeededRng,
     trigger: OpportunityTrigger,
 ) -> CarrierPlan {
@@ -1117,7 +1218,60 @@ fn evaluate_carrier_action(
             exec: CarrierExecution::Pass { allow_out: false },
         },
         OpportunityTrigger::FallbackDeadline => evaluate_fallback_carrier_action(st, rng),
+        // P29 D1/D2：起脚窗口的持球候选由 hazard 五因子掷定——**唯一到达 Shoot 的路径**。
+        // - 背向球门（angle_cos <= 0）→ 禁止 Shoot，转死球重开（不消耗 RNG）
+        // - 否则掷定：命中 → 提交射门（`committed = true`）；未命中 → 本 tick 不承诺行动
+        OpportunityTrigger::ShotWindow => {
+            let facing = shot_opportunity_features(st, st.carrier).facing_goal();
+            if !facing {
+                // 结构性不可达（推进只沿进攻 x 正向、窗口进门前守卫面向球门），保留为
+                // D2「背向禁止 Shoot」在候选层的落点。
+                let kind = DeadBallKind::ThrowIn;
+                CarrierPlan {
+                    action: Some(CarrierAction::AwardDeadBall(kind)),
+                    dead_ball: Some(kind),
+                    situation: None,
+                    exec: CarrierExecution::PassOut { kind },
+                }
+            } else if shot_hazard_hits(st, rng) {
+                // 提交点（D1）：置 `committed` → 防守侧不再产 Tackle（不可回溯）。
+                // 提交按「进入时压迫桶」归桶（与进入同口径，供提交率方向门）。
+                let pressure_bucket = {
+                    let s = st.shot_setup.as_ref().expect("窗口内应有 shot_setup");
+                    s.entry_pressure_bucket
+                };
+                if let Some(s) = st.shot_setup.as_mut() {
+                    s.committed = true;
+                }
+                st.opportunity_tally.shot_window_commits += 1;
+                let bucket = shot_bucket_index(dist_to_goal_m(st, st.carrier));
+                st.opportunity_tally.shot_window_commits_by_bucket[bucket] += 1;
+                st.opportunity_tally.shot_window_commits_by_pressure[pressure_bucket] += 1;
+                CarrierPlan {
+                    action: Some(CarrierAction::Shoot),
+                    dead_ball: None,
+                    situation: None,
+                    exec: CarrierExecution::Shoot,
+                }
+            } else {
+                CarrierPlan {
+                    action: None,
+                    dead_ball: None,
+                    situation: None,
+                    exec: CarrierExecution::ContinueDribble,
+                }
+            }
+        }
     }
+}
+
+/// P29 D2：起脚窗口的一次 hazard 掷定（1 次 RNG）。`p_shot = 1 - exp(-e^score * 1)`——
+/// 单 tick 概率（窗口长度体现在「最多掷 `SHOT_WINDOW_TICKS` 次」上）。
+fn shot_hazard_hits(st: &MatchState, rng: &mut SeededRng) -> bool {
+    let f = shot_opportunity_features(st, st.carrier);
+    let p = shot_hazard_probability(compute_shot_score(&f), 1.0);
+    let roll = rng.next_u64() % SHOT_ROLL_SCALE as u64;
+    (roll as f64) < p * SHOT_ROLL_SCALE
 }
 
 /// fallback 情境 → 候选行动。RNG 消费与旧 `roll_highlight` 逐字节一致（等价性要求，D5）。
@@ -1137,12 +1291,16 @@ fn evaluate_fallback_carrier_action(st: &MatchState, rng: &mut SeededRng) -> Car
         // 门将不射（同旧 Shot 情境守卫）→ 改普通传球；不额外消耗 RNG
         FallbackSituation::Shot if gk_holding => simple_pass(true),
         FallbackSituation::Shot => {
-            // 所有射门情境都采样目标射门距离（RNG）；carrier 已在目标距离内直接射，否则推进。
-            // 三态分流（射 / 向前传球推进 / 带球推进）语义与旧 Shot 槽一致。
+            // 所有射门情境都采样目标射门距离（RNG）；carrier 已在目标距离内 → 直接进起脚窗口，
+            // 否则推进（远段向前传球 / 带球推进）。三态分流语义与旧 Shot 槽一致，仅把
+            // 「到射程即射」改为「到射程进窗口（hazard 决定）」（P29 D1）。
             let target = sample_shot_target(rng);
             let dist = dist_to_goal_m(st, carrier);
             let (action, exec) = if dist <= target {
-                (CarrierAction::Shoot, CarrierExecution::Shoot)
+                (
+                    CarrierAction::Shoot,
+                    CarrierExecution::EnterShotWindow { target_dist: target },
+                )
             } else if dist > SHOT_PASS_ADVANCE_M {
                 (
                     CarrierAction::Pass { target: None },
@@ -1217,6 +1375,34 @@ fn evaluate_defensive_action(
             }
         }
         OpportunityTrigger::HoldTimeout => (DefensiveAction::None, DefensiveExecution::None),
+        // P29 D3：起脚窗口内的防守候选——贴身且决定上抢 → Tackle（打断射门序列，见
+        // `advance_shot_setup` 的窗口相：**抢断成败都取消射门**，成败只决定球权去向）。
+        // 不贴身 / 没积极性 → None（无事件防守，窗口继续计时）。
+        // **D1 不可回溯**：`committed = true`（hazard 已提交射门）时直接返回 None 且不消耗
+        // RNG——防守者不能把已提交的射门改写成 tackle。
+        OpportunityTrigger::ShotWindow => {
+            if st.shot_setup.as_ref().map_or(false, |s| s.committed) {
+                return (DefensiveAction::None, DefensiveExecution::None);
+            }
+            let victim = st.carrier;
+            if victim < 0 || victim > 21 {
+                return (DefensiveAction::None, DefensiveExecution::None);
+            }
+            let victim_pos = st.pos[victim as usize];
+            let def_home = st.possession != 0;
+            let (def_id, _, dist) = nearest_defender(st, victim_pos, def_home);
+            let same_pair = st.last_tackle_pair == Some((def_id, victim));
+            // 窗口触发时传球/推进已结束，防守者尚未贴身 → `far` 的「远离阈值」语义不适用，
+            // 恒 false；是否上抢由 `should_tackle`（与 fallback 抢断槽同积极性）决定。
+            if dist <= TACKLE_DISTANCE_THRESHOLD_METERS && should_tackle(rng) {
+                (
+                    DefensiveAction::Tackle { same_pair, far: false },
+                    DefensiveExecution::Tackle { same_pair, far: false },
+                )
+            } else {
+                (DefensiveAction::None, DefensiveExecution::None)
+            }
+        }
         OpportunityTrigger::FallbackDeadline => {
             match carrier.situation {
                 Some(FallbackSituation::Tackle)
@@ -1256,6 +1442,8 @@ fn resolve_action_opportunity(carrier: &CarrierPlan, defensive: DefensiveAction)
         Some(CarrierAction::Shoot) => ActionResolution::CarrierAction(CarrierAction::Shoot),
         Some(a @ CarrierAction::Pass { .. }) => ActionResolution::CarrierAction(a),
         Some(CarrierAction::Dribble) => ActionResolution::CarrierAction(CarrierAction::Dribble),
+        // 背向球门（D2 禁止 Shoot）→ 死球重开；第 1 级（`carrier.dead_ball` 已在函数头处理）。
+        Some(CarrierAction::AwardDeadBall(kind)) => ActionResolution::DeadBall(kind),
         None => match defensive {
             DefensiveAction::Contain => ActionResolution::DefensiveContainment,
             DefensiveAction::Jockey => ActionResolution::DefensiveJockey,
@@ -1280,6 +1468,8 @@ fn build_action_plan(
             Some(CarrierAction::Dribble) => t.carrier_dribble += 1,
             Some(CarrierAction::Pass { .. }) => t.carrier_pass += 1,
             Some(CarrierAction::Shoot) => t.carrier_shoot += 1,
+            // 背向球门转死球：不算持球候选动作（无事件对手），只记死球结算
+            Some(CarrierAction::AwardDeadBall(_)) => {}
             None => {}
         }
         match defensive {
@@ -1372,6 +1562,9 @@ fn execute_action_resolution(
             ActionResolution::CarrierAction(CarrierAction::Shoot) => t.res_carrier_shoot += 1,
             ActionResolution::CarrierAction(CarrierAction::Pass { .. }) => t.res_carrier_pass += 1,
             ActionResolution::CarrierAction(CarrierAction::Dribble) => t.res_carrier_dribble += 1,
+            // 背向球门（D2）转死球重开——结算层与 `resolve_action_opportunity` 同构，
+            // 计死球桶（不谎报为持球动作结算）。
+            ActionResolution::CarrierAction(CarrierAction::AwardDeadBall(_)) => t.res_dead_ball += 1,
             ActionResolution::DeadBall(_) => t.res_dead_ball += 1,
             ActionResolution::InterruptedByTackle => t.res_interrupted_tackle += 1,
             ActionResolution::InterruptedByFoul => t.res_interrupted_foul += 1,
@@ -1413,17 +1606,23 @@ fn execute_action_resolution(
             }
             CarrierExecution::ForwardPass => {
                 st.opportunity_tally.exec_forward_pass += 1;
-                // 射门槽的向前传球完成即接射门（P9 桥接）——标记归因，落地时计入 exec_shoot
-                st.module_shot_pending = true;
+                // P29（D1）：向前传球只是**推进**到射程的手段，不再预置射门归因——落点
+                // 接起脚窗口，射门由 hazard 决定（窗口可能转/被抢断，序列未必产 Shot）。
                 emit_forward_pass_highlight(st, rng, events, t);
             }
             CarrierExecution::DriveThenShoot { target_dist } => {
                 st.opportunity_tally.exec_drive_then_shoot += 1;
-                st.module_shot_pending = true; // 到射程即起脚（advance_shot_setup 终局）
-                st.shot_setup = Some(ShotSetup {
-                    drive_ticks_left: SHOT_DRIVE_MAX_TICKS,
-                    target_dist,
-                });
+                // P29（D1）：不再「到射程即射」——带球推进只是**推进**到射程的手段，
+                // 落点接起脚窗口（`module_shot_pending` 只在窗口 hazard 提交时置位）。
+                st.shot_setup = Some(ShotSetup::new(target_dist, false));
+                advance_shot_setup(st, rng, events, t);
+            }
+            // P29 起脚窗口：已到射程 → 进入窗口（本 tick 只带球一拍，不射）。hazard 掷定
+            // 推迟到下一 tick 的窗口相（`shot_window_plan`）——掷两次会重复消费 RNG，也违反
+            // 「进窗口」与「窗口内决策」的相位区分（D1）。
+            CarrierExecution::EnterShotWindow { target_dist } => {
+                st.opportunity_tally.exec_enter_shot_window += 1;
+                st.shot_setup = Some(ShotSetup::new(target_dist, false));
                 advance_shot_setup(st, rng, events, t);
             }
             // 理论上不可达（PassOut 必与 dead_ball 同构 → DeadBall 结算优先）；保持 total 不 panic
@@ -1480,6 +1679,9 @@ struct MatchState {
     has_yellow: [bool; 22],    // 球员是否已吃黄（二黄同人 → 升级红牌罚下）
     sent_off: [bool; 22],      // 罚下球员（红牌 / 二黄）；此后其所在队按"少一人"处理（本试点仅屏蔽其成为 carrier/chaser）
     foul_cooldown_ticks: u32,  // 距上次犯规 tick（≤ FOUL_MIN_GAP_TICKS 内不产犯规）
+    /// P29 射门冷却（#25 阶段 2B）：距最近一次射门的 tick 数（局部衰减计时器，供 hazard
+    /// 的 `cooldown_penalty`）。**不读「本场已射多少次」**——C 路原则（D2）。
+    shot_cooldown_ticks: u32,
     // P28 持球行动机会（#25 阶段 2A）：当前机会 + 观测计数器（tally 只写、不进事件流、不耗 RNG）
     action_opportunity: Option<ActionOpportunity>,
     opportunity_tally: OpportunityTally,
@@ -1491,10 +1693,43 @@ struct MatchState {
 /// 过度连发观感差且挤压槽位——>11 tick（≥11s）才允许下一次犯规。
 pub const FOUL_MIN_GAP_TICKS: u32 = 11;
 
-/// P9 射门推进（带球向球门推进；到目标射门距离或步数上限后射门）
+/// P9 射门推进（带球向球门推进）+ P29 起脚窗口。
+///
+/// 两相状态（D1）：
+/// - **推进相**（`window_ticks == 0`）：carrier 向球门带球，到 `target_dist` 或步数耗尽 → 进窗口。
+/// - **起脚窗口**（`window_ticks > 0`）：每 tick 由 hazard 打分决定射/转/被抢断；`committed = true`
+///   才产 Shot 事件，此后不可回溯（被抢断不再改写为 tackle）。
 struct ShotSetup {
     drive_ticks_left: u32,
     target_dist: f64, // 推进到目标射门距离（采样自起脚分布）后起脚
+    /// 是否已进入起脚窗口（推进到射程 / 步数耗尽时置位）
+    in_window: bool,
+    /// 窗口内已消耗的决策 tick 数；达到 `SHOT_WINDOW_TICKS` 仍未提交 → 「转」（放弃射门）
+    window_ticks: u32,
+    /// 已提交射门（hazard 判定命中，D1）。**被 `evaluate_defensive_action` 读取**：提交后
+    /// 防守侧不再产 Tackle（不可回溯），也不再消耗 RNG。
+    committed: bool,
+    /// 推进相累计 tick 数（起脚距离分桶的方向性观测，见 `OpportunityTally`）
+    approach_ticks: u32,
+    /// 进入窗口时的压迫桶（`shot_pressure_bucket`）——提交/未提交按**进入时**的压迫归桶，
+    /// 供「无压窗口提交率 > 贴身窗口提交率」的方向性门使用。
+    entry_pressure_bucket: usize,
+}
+
+impl ShotSetup {
+    /// 新建一个射门序列（推进相起点）。`in_window` 由调用方按「当前是否已在射程内」决定
+    /// （`finalize_highlight` 的传球落点可能已在射程内 → 直接进窗口）。
+    fn new(target_dist: f64, in_window: bool) -> Self {
+        ShotSetup {
+            drive_ticks_left: SHOT_DRIVE_MAX_TICKS,
+            target_dist,
+            in_window,
+            window_ticks: 0,
+            committed: false,
+            approach_ticks: 0,
+            entry_pressure_bucket: 0,
+        }
+    }
 }
 
 /// P9 采样目标射门距离（对齐真实起脚分布：禁区内 ~58% / 禁区弧 ~27% / 远射 ~15%）。
@@ -1570,6 +1805,7 @@ impl MatchState {
             has_yellow: [false; 22],
             sent_off: [false; 22],
             foul_cooldown_ticks: 0,
+            shot_cooldown_ticks: 0, // 开球时无冷却（penalty = 0）
             action_opportunity: None,
             opportunity_tally: OpportunityTally::default(),
             module_shot_pending: false,
@@ -2476,9 +2712,53 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     events.push(beat_event(t, None, None, movers));
 }
 
-/// P9 射门推进：carrier 向球门带球推进（goal-directed main beat），**最后一步精确落到目标射门距离**
-/// （步长 = min(5m, 剩余距离)），使起脚分布严格跟随采样。到目标或步数耗尽即射门。
+/// P29 D1：标记 `shot_setup` 进入起脚窗口，并记录方向性观测（按起脚距离 / 进入时压迫分桶）。
+/// 三个进入点（推进到目标 / 步数耗尽 / `finalize_highlight` 的传球落点）共用，保证桶计数一致。
+fn enter_shot_window(st: &mut MatchState, dist_m: f64) {
+    let pressure_bucket = {
+        let c = st.pos[st.carrier as usize];
+        let (_, _, near_m) = nearest_defender(st, c, st.possession != 0);
+        shot_pressure_bucket(near_m)
+    };
+    if let Some(s) = st.shot_setup.as_mut() {
+        s.in_window = true;
+        s.window_ticks = 0;
+        s.entry_pressure_bucket = pressure_bucket;
+    }
+    st.opportunity_tally.shot_window_entries += 1;
+    st.opportunity_tally.shot_window_entries_by_bucket[shot_bucket_index(dist_m)] += 1;
+    st.opportunity_tally.shot_window_entries_by_pressure[pressure_bucket] += 1;
+}
+
+/// 起脚窗口的过渡 beat（主 beat 落在 carrier 当前点，无位移）：进窗口 tick 与「转」tick 的
+/// 通用输出，保持 tick 有 beat（beat 间隙契约）。
+fn emit_shot_window_beat(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let carrier = st.carrier;
+    let p = st.pos[carrier as usize];
+    st.ball_pos = p;
+    st.last_emitted[carrier as usize] = p;
+    let movers = compute_movers(st, rng, t, &[carrier]);
+    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    events.push(beat_event(t, Some(MainAction {
+        subject: carrier, x: p.0, y: p.1, x2: p.0, y2: p.1,
+        speed: 0.0, touch_freq: 1.5,
+    }), None, movers));
+}
+
+/// P9/P29 射门推进 + 起脚窗口（D1 两相状态机）。
+///
+/// - **推进相**（`!in_window`）：carrier 向球门带球推进（goal-directed main beat），步长 =
+///   min(5m, 剩余到目标距离)——与 P9 逐 tick 同构（只沿 x 移动、同 RNG 消费）。
+///   到目标 `target_dist` 或步数耗尽 → **进入起脚窗口**（本 tick 只带球一拍，不射）。
+/// - **起脚窗口**（`in_window`）：走统一模块 `build_shot_window_plan`——
+///   1. hazard 命中（`committed = true`）→ 立即产 Shot（防守侧不再评估，D1 不可回溯）；
+///   2. 未提交且被抢断 → 取消射门（内部 `shot_setup = None`）→ tackle（→ 松散球），不产 Shot；
+///   3. 未提交且无人抢 → 窗口计时；耗尽 `SHOT_WINDOW_TICKS` → 「转」（放弃射门，继续带球）。
 fn advance_shot_setup(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    if st.shot_setup.as_ref().map_or(false, |s| s.in_window) {
+        shot_window_plan(st, rng, events, t);
+        return;
+    }
     let (ticks_left, target) = {
         let s = st.shot_setup.as_ref().unwrap();
         (s.drive_ticks_left, s.target_dist)
@@ -2486,9 +2766,9 @@ fn advance_shot_setup(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     let carrier = st.carrier;
     let dist = dist_to_goal_m(st, carrier);
     if dist <= target + 1e-6 || ticks_left == 0 {
-        // 已到目标距离（或步数耗尽强射）
-        st.shot_setup = None;
-        emit_shot_highlight(st, rng, events, t);
+        // 到达目标距离 / 步数耗尽 → 进入起脚窗口（**不立即射**，D1）
+        enter_shot_window(st, dist);
+        emit_shot_window_beat(st, rng, events, t);
         return;
     }
     // 精确落点：步长 = min(5m, 剩余到目标的距离)
@@ -2500,13 +2780,53 @@ fn advance_shot_setup(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     st.pos[carrier as usize] = (nx, p.1);
     st.ball_pos = (nx, p.1);
     st.last_emitted[carrier as usize] = (nx, p.1);
-    st.shot_setup.as_mut().unwrap().drive_ticks_left -= 1;
+    {
+        let s = st.shot_setup.as_mut().unwrap();
+        s.drive_ticks_left -= 1;
+        s.approach_ticks += 1;
+    }
     let movers = compute_movers(st, rng, t, &[carrier]);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     events.push(beat_event(t, Some(MainAction {
         subject: carrier, x: p.0, y: p.1, x2: nx, y2: p.1,
         speed: CARRIER_SPEED_MS, touch_freq: 1.5,
     }), None, movers));
+}
+
+/// P29 起脚窗口的一个决策 tick（D1/D2/D3）。
+/// 复用 2A 的统一模块：候选（hazard 射门）→ 防守竞争（抢断）→ 结算 → 执行。
+fn shot_window_plan(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    let plan = build_action_plan(st, rng, OpportunityTrigger::ShotWindow);
+    let committed = plan.carrier.action == Some(CarrierAction::Shoot);
+    if committed {
+        // 提交：本 tick 就地起脚（`emit_shot_highlight` 读 carrier 当前位置为起脚点）
+        st.shot_setup = None;
+        execute_action_resolution(st, rng, events, t, Some(plan));
+        return;
+    }
+    if plan.resolution == ActionResolution::InterruptedByTackle {
+        // D3：起脚窗口内被抢断 → 取消射门序列（内部状态 canceled），产 tackle（→ 松散球），
+        // 不产 Shot。抢断**成败都取消射门**（高亮占用该 tick，起脚节奏丢失）；成败只决定
+        // 球权去向（success → 松散球 / fail → 留在原持球者）。
+        st.shot_setup = None;
+        st.opportunity_tally.shot_window_tackles += 1;
+        execute_action_resolution(st, rng, events, t, Some(plan));
+        return;
+    }
+    // 未提交、未被抢断：本 tick 持球等待，窗口计时推进
+    let ticks = {
+        let s = st.shot_setup.as_mut().unwrap();
+        s.window_ticks += 1;
+        s.window_ticks
+    };
+    if ticks >= SHOT_WINDOW_TICKS {
+        // 「转」：窗口耗尽仍未提交 → 放弃射门，继续带球（观察/分球留待下一次机会）
+        st.shot_setup = None;
+        st.opportunity_tally.shot_window_expiries += 1;
+    } else {
+        st.opportunity_tally.shot_window_holds += 1;
+    }
+    emit_shot_window_beat(st, rng, events, t);
 }
 
 /// P9 射门推进（远段）：向前传球给进攻方向最靠前队友，完成后接射门/带球（shot_pending_after_pass 桥接）。
@@ -2642,14 +2962,12 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
                 st.shot_pending_after_pass = false;
                 let dist = dist_to_goal_m(st, receiver);
                 let target = sample_shot_target(rng);
-                if dist <= target {
-                    emit_shot_highlight(st, rng, events, t);
-                    return;
+                // P29 D1：已到射程 → 进入起脚窗口（不直接射）；否则带球推进到射程
+                let already_in_range = dist <= target;
+                st.shot_setup = Some(ShotSetup::new(target, already_in_range));
+                if already_in_range {
+                    enter_shot_window(st, dist);
                 }
-                st.shot_setup = Some(ShotSetup {
-                    drive_ticks_left: SHOT_DRIVE_MAX_TICKS,
-                    target_dist: target,
-                });
             }
             emit_beat_with_main(st, rng, events, t);
         }
@@ -3522,6 +3840,143 @@ fn shot_bucket(dist_m: f64) -> (u64, u64) {
         (7, 22)
     } else {
         (4, 11)
+    }
+}
+
+// ==== P29 射门 hazard 五因子（#25 阶段 2B，D1/D2）====
+//
+// 全部为纯函数（几何量进、打分/概率出，零 RNG、零状态），便于方向性单测。
+
+/// 一次起脚机会的几何特征（D2 五因子的输入）。量纲：距离米、余弦无量纲、冷却 tick。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct ShotOpportunityFeatures {
+    /// 到所攻球门的纵深距离（米，`dist_to_goal_m`）
+    distance_m: f64,
+    /// 持球者→所攻球门中心方向 与 进攻方向 的夹角余弦（-1..1）。
+    /// ≤ 0 = 背向/平行球门线（D2：禁止 Shoot 候选）。
+    angle_cos: f64,
+    /// 最近防守者距离（米，门将/罚下者不计，同 `nearest_defender` 口径）
+    nearest_defender_m: f64,
+    /// 第二近防守者距离（米）
+    second_defender_m: f64,
+    /// 距最近一次射门的 tick 数（局部衰减计时器，0 = 刚射过）
+    cooldown_ticks: u32,
+}
+
+impl ShotOpportunityFeatures {
+    /// D2：背向球门 → 禁止 Shoot 候选（不进 hazard 掷定，窗口内该 tick 无射门候选）
+    fn facing_goal(&self) -> bool {
+        self.angle_cos > 0.0
+    }
+
+    /// 距离因子：分段复用 `shot_bucket` 的桶边界（禁区内/禁区弧/远射），线性内插：
+    /// 6-16.5m → 0.9-1.0、16.5-25m → 0.45-0.9、25-35m → 0.05-0.45、>35m → 0-0.05。
+    fn distance_quality(&self) -> f64 {
+        let d = self.distance_m;
+        if d <= 6.0 {
+            1.0
+        } else if d <= BOX_DIST_M {
+            lerp(1.0, 0.9, (d - 6.0) / (BOX_DIST_M - 6.0))
+        } else if d <= ARC_DIST_M {
+            lerp(0.9, 0.45, (d - BOX_DIST_M) / (ARC_DIST_M - BOX_DIST_M))
+        } else if d <= 35.0 {
+            lerp(0.45, 0.05, (d - ARC_DIST_M) / (35.0 - ARC_DIST_M))
+        } else {
+            lerp(0.05, 0.0, (d - 35.0) / (PITCH_LENGTH_M - 35.0))
+        }
+    }
+
+    /// 角度因子：正对球门中路→1；边路→低；背向→0（`min(0)` 钳制，D2）。
+    fn angle_quality(&self) -> f64 {
+        clamp01(self.angle_cos.max(0.0))
+    }
+
+    /// 可用空间（D2）：`0.65 * 最近防守者空间 + 0.35 * 第二防守者空间`。
+    /// 单个防守者的空间打分：≤2m→0、2-8m 线性、≥8m→1。
+    fn space_available(&self) -> f64 {
+        0.65 * shot_space_score(self.nearest_defender_m)
+            + 0.35 * shot_space_score(self.second_defender_m)
+    }
+
+    /// 防守压迫（D2）：`0.65 * 最近 + 0.35 * 第二`，各自按尺度线性衰减到 0。
+    fn defensive_pressure(&self) -> f64 {
+        0.65 * clamp01(1.0 - self.nearest_defender_m / SHOT_PRESSURE_NEAR_M)
+            + 0.35 * clamp01(1.0 - self.second_defender_m / SHOT_PRESSURE_SECOND_M)
+    }
+
+    /// 冷却惩罚（D2）：`shot_cooldown_ticks / SHOT_COOLDOWN_TICKS` ∈ [0,1]。
+    /// 局部计时器衰减——不读全场射门数（C 路原则）。
+    fn cooldown_penalty(&self) -> f64 {
+        (self.cooldown_ticks.min(SHOT_COOLDOWN_TICKS) as f64) / SHOT_COOLDOWN_TICKS as f64
+    }
+}
+
+/// 线性内插（`t` 先钳制到 [0,1]）
+fn lerp(a: f64, b: f64, t: f64) -> f64 {
+    a + (b - a) * clamp01(t)
+}
+
+/// 单个防守者的「可用空间」打分（D2）：≤2m→0、2-8m 线性、≥8m→1。
+fn shot_space_score(d_m: f64) -> f64 {
+    clamp01((d_m - SHOT_SPACE_MIN_M) / (SHOT_SPACE_MAX_M - SHOT_SPACE_MIN_M))
+}
+
+/// 起脚距离桶下标（0=禁区内 / 1=禁区弧 / 2=远射），与 `shot_bucket` 边界及 realism 的
+/// `n_box/n_arc/n_far` 同口径。供起脚窗口的**方向性**观测分桶（非配额）。
+fn shot_bucket_index(dist_m: f64) -> usize {
+    if dist_m <= BOX_DIST_M {
+        0
+    } else if dist_m <= ARC_DIST_M {
+        1
+    } else {
+        2
+    }
+}
+
+/// D2：`score = base + gain * (distance + angle + space - pressure - cooldown)`。
+/// 纯函数、零 RNG、零状态；越界输入由各因子内部钳制（不 panic）。
+fn compute_shot_score(f: &ShotOpportunityFeatures) -> f64 {
+    let factors = f.distance_quality() + f.angle_quality() + f.space_available()
+        - f.defensive_pressure()
+        - f.cooldown_penalty();
+    BASE_SHOT_TENDENCY + SHOT_FACTOR_GAIN * factors
+}
+
+/// D2：`p = 1 - exp(-exp(score) * window)`——hazard 为 `exp(score)` 的泊松率。
+/// `window = 1.0` 即单 tick 起脚概率；`window = n` 为几何不变时 n tick 的累计概率
+/// （`1 - (1-p_1)^n` 的等价闭式）。返回值恒 ∈ [0,1)。
+fn shot_hazard_probability(score: f64, window: f64) -> f64 {
+    let hazard = score.exp();
+    1.0 - (-(hazard * window.max(0.0))).exp()
+}
+
+/// 持球者→所攻球门中心 与 进攻方向 的夹角余弦（真实米，含 y 角向）。
+/// x/y 前向分量：home 攻 x=1、away 攻 x=0，球门中心恒在 y=0.5。
+/// 退化（持球者恰在球门中心点）→ 1.0（正对，贴门必进形态）。
+fn shot_angle_cos(st: &MatchState, id: i32) -> f64 {
+    let home = st.possession == 0;
+    let p = st.pos[id as usize];
+    let dx = if home { (1.0 - p.0) * PITCH_LENGTH_M } else { p.0 * PITCH_LENGTH_M };
+    let dy = if home { (0.5 - p.1) * PITCH_WIDTH_M } else { (p.1 - 0.5) * PITCH_WIDTH_M };
+    let len = dx.hypot(dy);
+    if len < 1e-9 {
+        1.0
+    } else {
+        (dx / len).clamp(-1.0, 1.0)
+    }
+}
+
+/// 从 MatchState 提取起脚几何特征（零 RNG、零状态）。
+fn shot_opportunity_features(st: &MatchState, carrier: i32) -> ShotOpportunityFeatures {
+    let c = st.pos[carrier as usize];
+    let def_home = st.possession != 0;
+    let (_, _, near_m) = nearest_defender(st, c, def_home);
+    ShotOpportunityFeatures {
+        distance_m: dist_to_goal_m(st, carrier),
+        angle_cos: shot_angle_cos(st, carrier),
+        nearest_defender_m: near_m,
+        second_defender_m: second_nearest_defender_m(st, c, def_home),
+        cooldown_ticks: st.shot_cooldown_ticks,
     }
 }
 
@@ -5494,7 +5949,11 @@ mod tests {
         // P7 核心：5 分钟与 90 分钟比赛产出同一数量级的核心精彩事件（槽位机制，不随时长漂移）。
         // 核心事件 = shot + corner 发球 + throw_in 掷球 + tackle + 进球。
         // spec：5min 核心事件 ≥ 90min 的 60%（5min 物理容纳 ~20 槽、90min ~24 槽）。
-        // 多 seed（1-20）防单 seed 侥幸。
+        //
+        // P29 窗口加宽：5min 侧的 seed 数从 20 提到 100。理由——5min 进球/场是低均值计数
+        // （真实率 ~0.6-0.7），20 seed 下采样标准差 ~0.1（相对 ~15%），旧窗口实测 1.05 而长程
+        // 真值 0.72（偏离 45%），断言实际靠运气过。90min 侧每场计数高得多、20 seed 已稳，保持
+        // 不变以控成本（90min tick 数是 5min 的 18 倍，扩大它才贵）。
         let mut count = |dur: f64, seed: u64| -> [usize; 5] {
             let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false, model_version: MODEL_VERSION });
             let evts = json_events(&s);
@@ -5516,13 +5975,17 @@ mod tests {
             }
             [shot, corner, throw_in, tackle, goal]
         };
-        let n = 20usize;
+        let n5 = 100usize; // 5min 侧加宽（见上）
+        let n90 = 20usize;
         let mut a5 = [0usize; 5];
         let mut a90 = [0usize; 5];
-        for seed in 1..=n as u64 {
+        for seed in 1..=n5 as u64 {
             let c5 = count(300.0, seed);
+            for i in 0..5 { a5[i] += c5[i]; }
+        }
+        for seed in 1..=n90 as u64 {
             let c90 = count(5400.0, seed);
-            for i in 0..5 { a5[i] += c5[i]; a90[i] += c90[i]; }
+            for i in 0..5 { a90[i] += c90[i]; }
         }
         let names = ["shot", "corner", "throw_in", "tackle", "goal"];
         // 5min 核心事件 ≥ 90min 的 ~53%（ratio ≤ 1.9）；进球最差可接受 ratio ≤ 2.5（小样本波动）。
@@ -5530,15 +5993,17 @@ mod tests {
         // P13 fix：失败传球让 90min 抢断略降（5.0 vs 7）、5min 抢断 2.6（tackle 槽在高密度短比赛里
         // 因失败传球把球权切走而部分让位）→ tackle ratio 实测 1.94，限放宽到 2.1（仍守住"数量级一致"）。
         for i in 0..5 {
-            let v5 = a5[i] as f64 / n as f64;
-            let v90 = a90[i] as f64 / n as f64;
+            let v5 = a5[i] as f64 / n5 as f64;
+            let v90 = a90[i] as f64 / n90 as f64;
             let ratio = v90 / v5.max(0.5);
             let limit = if i == 4 { 2.5 } else if i == 3 { 2.1 } else { 1.9 };
             assert!(ratio <= limit, "{} 数量级不一致：5min {:.1} vs 90min {:.1}（ratio {:.2}，限 {:.2}）", names[i], v5, v90, ratio, limit);
         }
-        // 5min 也要有足够的精彩内容（集锦）：进球 ≥0.5、shot ≥4
-        assert!(a5[4] as f64 / n as f64 >= 0.5, "5min 进球过少（{:.1}）", a5[4] as f64 / n as f64);
-        assert!(a5[0] as f64 / n as f64 >= 4.0, "5min 射门过少（{:.1}）", a5[0] as f64 / n as f64);
+        // 5min 也要有足够的精彩内容（集锦）：进球 ≥0.5、shot ≥4。P29 起射门由 hazard 门控
+        // （不再「到射程即射」），实测 5min shot 5.5/场、进球 0.62/场（加宽窗口 100 seed）；
+        // 均为「集锦不塌缩」的体量下界，非频率目标。
+        assert!(a5[4] as f64 / n5 as f64 >= 0.5, "5min 进球过少（{:.2}）", a5[4] as f64 / n5 as f64);
+        assert!(a5[0] as f64 / n5 as f64 >= 4.0, "5min 射门过少（{:.2}）", a5[0] as f64 / n5 as f64);
     }
 
     // ==== P28 持球行动机会（#25 阶段 2A）纯函数测试 ====
@@ -5692,6 +6157,8 @@ mod tests {
                         Some(CarrierAction::Shoot) => ActionResolution::CarrierAction(CarrierAction::Shoot),
                         Some(a @ CarrierAction::Pass { .. }) => ActionResolution::CarrierAction(a),
                         Some(CarrierAction::Dribble) => ActionResolution::CarrierAction(CarrierAction::Dribble),
+                        // P29：背向球门（D2）转死球——第 1 级（dead_ball 已置位，见上分支）
+                        Some(CarrierAction::AwardDeadBall(k)) => ActionResolution::DeadBall(k),
                         None => match d {
                             DefensiveAction::Contain => ActionResolution::DefensiveContainment,
                             DefensiveAction::Jockey => ActionResolution::DefensiveJockey,
@@ -5835,6 +6302,373 @@ mod tests {
             "实测 deadline 上界 {} 越界",
             tally.deadline_max
         );
+    }
+
+    // ==== P29 射门 hazard + 起脚窗口（#25 阶段 2B）测试 ====
+
+    /// P29 D2：hazard 五因子的**方向**（控制变量法——每个因子单独变化，其余固定）。
+    /// 这是 D2「近门/正对/无压 → 高；远射/边路/贴身 → 低」的最强证据（不受真实数据
+    /// 联合分布混淆；引擎级分桶对比会被压力/角度的联合分布污染，见 progress 记录）。
+    #[test]
+    fn p29_hazard_factor_directions() {
+        let p = |f: &ShotOpportunityFeatures| shot_hazard_probability(compute_shot_score(f), 1.0);
+        // 基准：正对球门、10m、无防守者、无冷却
+        let base = ShotOpportunityFeatures {
+            distance_m: 10.0,
+            angle_cos: 1.0,
+            nearest_defender_m: 12.0,
+            second_defender_m: 20.0,
+            cooldown_ticks: 0,
+        };
+        let p_base = p(&base);
+
+        // 距离：越远越低（同角度/同空间）
+        let far = ShotOpportunityFeatures { distance_m: 30.0, ..base };
+        assert!(p(&far) < p_base, "远射 p({}) 应低于近门 p({})", p(&far), p_base);
+        // 单调：距离递增，p 不增
+        let mut prev = f64::INFINITY;
+        for d in [6.0f64, 12.0, 18.0, 25.0, 32.0, 40.0] {
+            let cur = p(&ShotOpportunityFeatures { distance_m: d, ..base });
+            assert!(cur <= prev + 1e-12, "距离 {}m 处 p 应不增（{:.4} → {:.4}）", d, prev, cur);
+            prev = cur;
+        }
+
+        // 角度：边路（cos 小）低于正对（cos 大）
+        let wide = ShotOpportunityFeatures { angle_cos: 0.2, ..base };
+        assert!(p(&wide) < p_base, "边路 p({}) 应低于正对 p({})", p(&wide), p_base);
+
+        // 压迫：贴身（最近防守者 1m）低于无人贴身
+        let pressed = ShotOpportunityFeatures { nearest_defender_m: 1.0, ..base };
+        assert!(p(&pressed) < p_base, "贴身 p({}) 应低于无压 p({})", p(&pressed), p_base);
+
+        // 空间：两个防守者都很远 > 一个近
+        let crowded = ShotOpportunityFeatures { nearest_defender_m: 3.0, second_defender_m: 4.0, ..base };
+        assert!(p(&crowded) < p_base, "被包围 p({}) 应低于开阔 p({})", p(&crowded), p_base);
+
+        // 冷却：刚射过低于无冷却
+        let hot = ShotOpportunityFeatures { cooldown_ticks: SHOT_COOLDOWN_TICKS, ..base };
+        assert!(p(&hot) < p_base, "冷却中 p({}) 应低于无冷却 p({})", p(&hot), p_base);
+
+        // 综合方向：近门+正对+无压 vs 远射+边路+贴身
+        let good = ShotOpportunityFeatures {
+            distance_m: 8.0, angle_cos: 0.98, nearest_defender_m: 15.0,
+            second_defender_m: 25.0, cooldown_ticks: 0,
+        };
+        let bad = ShotOpportunityFeatures {
+            distance_m: 32.0, angle_cos: 0.1, nearest_defender_m: 1.0,
+            second_defender_m: 2.0, cooldown_ticks: SHOT_COOLDOWN_TICKS,
+        };
+        assert!(p(&good) > 0.5, "好机会 p_shot 应很高（实测 {:.3}）", p(&good));
+        assert!(p(&bad) < 0.05, "差机会 p_shot 应很低（实测 {:.3}）", p(&bad));
+        assert!(p(&good) > p(&bad) * 10.0, "好/差机会 p_shot 应拉开量级");
+    }
+
+    /// P29 D2：`p_shot = 1 - exp(-exp(score) * window)` 的形状与边界。
+    #[test]
+    fn p29_hazard_probability_shape() {
+        // 概率恒 ∈ [0,1]。score 很大时 hazard = e^score 天文数字 → `1 - exp(-huge)` 在 f64
+        // 下饱和到恰好 1.0（正确行为：几乎必然起脚，不是缺陷）；score 很小时 → 0。
+        for score in [-20.0f64, -5.0, -1.0, 0.0, 1.0, 5.0, 20.0] {
+            let p = shot_hazard_probability(score, 1.0);
+            assert!((0.0..=1.0).contains(&p), "score {} → p {} 越界", score, p);
+        }
+        assert!(shot_hazard_probability(-20.0, 1.0) < 1e-6, "极低 score 应几近不射");
+        assert_eq!(shot_hazard_probability(20.0, 1.0), 1.0, "天文 hazard 应饱和到 1.0");
+        // 单调递增
+        assert!(shot_hazard_probability(-3.0, 1.0) < shot_hazard_probability(-1.0, 1.0));
+        // window 线性放大累计概率：p(2 tick) > p(1 tick)，且 1-(1-p1)^2 等价
+        let p1 = shot_hazard_probability(-1.0, 1.0);
+        let p2 = shot_hazard_probability(-1.0, 2.0);
+        assert!(p2 > p1, "2 tick 累计概率应高于 1 tick");
+        assert!((p2 - (1.0 - (1.0 - p1).powi(2))).abs() < 1e-12, "窗口自洽：p2 应等于 1-(1-p1)^2");
+        // window = 0 → 不射
+        assert_eq!(shot_hazard_probability(0.0, 0.0), 0.0);
+    }
+
+    /// P29 D2：背向球门 → 禁止 Shoot 候选（`facing_goal` 为假）。
+    #[test]
+    fn p29_back_to_goal_forbids_shoot_candidate() {
+        let facing = |cos: f64| ShotOpportunityFeatures {
+            distance_m: 12.0, angle_cos: cos, nearest_defender_m: 20.0,
+            second_defender_m: 30.0, cooldown_ticks: 0,
+        }.facing_goal();
+        assert!(facing(1.0), "正对球门应允许 Shoot");
+        assert!(facing(0.01), "略微面向球门应允许 Shoot");
+        assert!(!facing(0.0), "平行门线应禁止 Shoot");
+        assert!(!facing(-0.5), "背向球门应禁止 Shoot");
+        // 角度因子对背向钳制为 0（不产生负贡献）
+        assert_eq!(
+            ShotOpportunityFeatures { distance_m: 12.0, angle_cos: -0.9, nearest_defender_m: 20.0,
+                second_defender_m: 30.0, cooldown_ticks: 0 }.angle_quality(),
+            0.0
+        );
+    }
+
+    /// P29 D2：距离分段复用 `shot_bucket` 边界（6-16.5→0.9-1.0 / 16.5-25→0.45-0.9 /
+    /// 25-35→0.05-0.45 / >35→0-0.05），且在边界处连续。
+    #[test]
+    fn p29_distance_quality_reuses_shot_bucket_bands() {
+        let dq = |d: f64| ShotOpportunityFeatures {
+            distance_m: d, angle_cos: 1.0, nearest_defender_m: 20.0,
+            second_defender_m: 30.0, cooldown_ticks: 0,
+        }.distance_quality();
+        assert!((dq(6.0) - 1.0).abs() < 1e-9, "6m 应为满分 1.0");
+        assert!((dq(BOX_DIST_M) - 0.9).abs() < 1e-9, "禁区线应为 0.9");
+        assert!((dq(ARC_DIST_M) - 0.45).abs() < 1e-9, "禁区弧线应为 0.45");
+        assert!((dq(35.0) - 0.05).abs() < 1e-9, "35m 应为 0.05");
+        // 桶边界与 shot_bucket 一致：边界两侧同桶（≤ 而非 <）
+        assert!(dq(16.5) > dq(16.6), "禁区线内应高于线外");
+        assert!(dq(25.0) > dq(25.1), "弧线内应高于弧线外");
+        // 单调不增
+        let mut prev = f64::INFINITY;
+        for d in [0.0f64, 6.0, 11.0, 16.5, 20.0, 25.0, 30.0, 35.0, 50.0, 105.0] {
+            let c = dq(d);
+            assert!(c <= prev + 1e-12 && (0.0..=1.0).contains(&c), "距离 {}m 的 dq {} 越界/非单调", d, c);
+            prev = c;
+        }
+    }
+
+    /// P29 D2：`cooldown_penalty` 只读**局部**计时器（非「本场射门数」）——C 路原则。
+    /// 结构性证据：`ShotOpportunityFeatures` 里根本没有全场射门计数可用；这里再钉死
+    /// 「penalty 只随 shot_cooldown_ticks 变」。
+    #[test]
+    fn p29_cooldown_is_local_not_match_wide() {
+        let cp = |ticks: u32| ShotOpportunityFeatures {
+            distance_m: 12.0, angle_cos: 1.0, nearest_defender_m: 20.0,
+            second_defender_m: 30.0, cooldown_ticks: ticks,
+        }.cooldown_penalty();
+        assert_eq!(cp(0), 0.0, "无冷却 → 无惩罚");
+        assert_eq!(cp(SHOT_COOLDOWN_TICKS), 1.0, "满冷却 → 满惩罚");
+        assert!((cp(SHOT_COOLDOWN_TICKS / 2) - 0.5).abs() < 1e-9);
+        // 超上限钳制（不产生 >1 的惩罚，避免负 hazard）
+        assert_eq!(cp(SHOT_COOLDOWN_TICKS * 10), 1.0, "冷却惩罚应钳制到 1");
+    }
+
+    /// P29 D1：把 MatchState 摆成「carrier 已到射程、进入起脚窗口」的几何，供窗口行为测试。
+    /// 默认：home 9 持球、距门 ~7m、正对球门、防守者远（无压）。
+    fn window_state(defenders_at: &[(i32, f64, f64)]) -> MatchState {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.possession = 0;
+        st.carrier = 9;
+        for id in 0..22usize {
+            st.pos[id] = (0.5, 0.5);
+        }
+        // 9 在 x=0.933（距右门 7m）、y=0.5（正对球门中心）
+        st.pos[9] = (0.9333, 0.5);
+        // 防守者（away 11-20）默认全部摆到远端（无压）
+        for id in 11..=20usize {
+            st.pos[id] = (0.05, 0.5);
+        }
+        for &(id, x, y) in defenders_at {
+            st.pos[id as usize] = (x, y);
+        }
+        st
+    }
+
+    /// P29 D1：推进到射程 → 进入起脚窗口（**不立即射**）。推进相与窗口相的区分。
+    #[test]
+    fn p29_window_not_shot_on_arrival() {
+        let mut st = window_state(&[]);
+        // 距门 7m > target 3m → 推进相（一 tick 只推进，不射）
+        st.shot_setup = Some(ShotSetup::new(3.0, false));
+        let mut rng = SeededRng::new(11);
+        let mut events = Vec::new();
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        // 推进相：仍无 shot_setup 终局、无 shot 事件
+        assert!(st.shot_setup.is_some(), "推进相不应清空 shot_setup");
+        assert!(!st.shot_setup.as_ref().unwrap().in_window, "距门 7m 尚未进窗口");
+        assert!(!events.iter().any(|e| e.type_ == EventType::Shot), "推进相不应产 Shot");
+    }
+
+    /// P29 D1：到射程 → 进窗口（不射）；窗口内 hazard 命中才产 Shot。
+    #[test]
+    fn p29_window_arrival_enters_window_without_shooting() {
+        let mut st = window_state(&[]);
+        // target = 10m > 当前 7m → 已在射程内 → 本 tick 应进窗口
+        st.shot_setup = Some(ShotSetup::new(10.0, false));
+        let mut rng = SeededRng::new(3);
+        let mut events = Vec::new();
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        let s = st.shot_setup.as_ref().expect("进窗口后 shot_setup 应存活（等待 hazard）");
+        assert!(s.in_window, "到射程应进入起脚窗口");
+        assert_eq!(s.window_ticks, 0, "进窗口 tick 尚未消耗窗口决策 tick");
+        assert!(!s.committed, "进窗口 tick 不应提交");
+        assert!(!events.iter().any(|e| e.type_ == EventType::Shot), "进窗口 tick 不应产 Shot（D1）");
+        assert_eq!(st.opportunity_tally.shot_window_entries, 1, "应记录一次窗口进入");
+    }
+
+    /// P29 D1：hazard 命中 → `committed = true` → 产 Shot；且**提交后不可回溯**——
+    /// 即便防守者贴身，也不会被改写成 tackle（`evaluate_defensive_action` 见 committed 即返回 None）。
+    #[test]
+    fn p29_committed_is_irreversible() {
+        // 极端好机会（正对、近门、无压）→ hazard 饱和 → 必提交
+        let mut st = window_state(&[]);
+        st.pos[9] = (0.98, 0.5); // 距门 ~2m
+        st.shot_setup = Some(ShotSetup::new(5.0, true));
+        // 提交后：防守者评估必须直接 None（不可回溯），且不消耗 RNG
+        st.shot_setup.as_mut().unwrap().committed = true;
+        let mut rng = SeededRng::new(9);
+        let mut probe = SeededRng::new(9);
+        let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow,
+            &CarrierPlan { action: Some(CarrierAction::Shoot), dead_ball: None, situation: None,
+                exec: CarrierExecution::Shoot });
+        assert_eq!(d, DefensiveAction::None, "提交后防守动作应为 None（不可回溯）");
+        assert_eq!(rng.next_u64(), probe.next_u64(), "提交后防守评估不应消耗 RNG");
+    }
+
+    /// P29 D1：提交射门 → 立即产 Shot 事件，`shot_setup` 清空（序列终结）。
+    #[test]
+    fn p29_commit_produces_shot_and_clears_setup() {
+        let mut st = window_state(&[]);
+        st.pos[9] = (0.99, 0.5); // 贴门、正对 → hazard 必中
+        st.shot_setup = Some(ShotSetup::new(5.0, true));
+        let mut rng = SeededRng::new(1);
+        let mut events = Vec::new();
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        assert!(st.shot_setup.is_none(), "提交射门后 shot_setup 应清空");
+        assert_eq!(
+            events.iter().filter(|e| e.type_ == EventType::Shot).count(), 1,
+            "提交应恰好产出一条 Shot"
+        );
+        assert_eq!(st.opportunity_tally.shot_window_commits, 1);
+        assert_eq!(st.opportunity_tally.exec_shoot, 1, "射门应归因到模块执行绑定");
+    }
+
+    /// P29 D3：起脚窗口内被抢断 → **不产 Shot**，产 tackle（→ 松散球），射门序列取消。
+    #[test]
+    fn p29_window_tackle_cancels_without_shot() {
+        // 每个 seed 重建状态（MatchState 非 Clone）：远射距离（hazard 低）+ 防守者贴身
+        // （同点 0m，dist ≤ 阈值上抢恒真）。
+        let build = || {
+            let mut st = window_state(&[(11, 0.58, 0.5)]);
+            st.pos[9] = (0.58, 0.5); // 中圈附近 → 远射距离
+            st.shot_setup = Some(ShotSetup::new(30.0, true));
+            st
+        };
+        let mut saw_tackle = false;
+        for seed in 1..=40u64 {
+            let mut st = build();
+            let mut rng = SeededRng::new(seed);
+            let mut events = Vec::new();
+            advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+            let shots = events.iter().filter(|e| e.type_ == EventType::Shot).count();
+            let tackles = events.iter().filter(|e| e.type_ == EventType::Tackle).count();
+            assert!(shots + tackles <= 1, "seed {}：同一 tick 不得既产 Shot 又产 Tackle", seed);
+            if tackles > 0 {
+                saw_tackle = true;
+                assert_eq!(shots, 0, "seed {}：被抢断的窗口 tick 不得同时产 Shot（D3 因果正确）", seed);
+                assert!(st.shot_setup.is_none(), "seed {}：被抢断后射门序列应取消", seed);
+                assert_eq!(st.opportunity_tally.shot_window_tackles, 1);
+            }
+        }
+        assert!(saw_tackle, "40 seed 内应至少出现一次窗口内被抢断（否则测试空跑）");
+    }
+
+    /// P29 D2/D4：起脚窗口的**方向性**——无压窗口的提交率高于贴身窗口。
+    /// 这是「射门不是配置的数量，而是 hazard 在真实几何下涌现」的引擎内直接证据：
+    /// 进入窗口的机会按**进入时压迫**分桶，**提交率**应随压迫下降。
+    ///
+    /// 为什么用压迫而非距离做这条门：距离方向在真实数据里被**联合分布混淆**——推进相的
+    /// 射门序列在远射距离进入窗口，往往正是因为 carrier 已摆脱防守（无压）才能推进那么远，
+    /// 于是「远射」桶的样本天然偏无压、提交率反而不低（实测近门 99.3% vs 远射 100%）。
+    /// 压迫维度没有这层混淆：它是 hazard 里 `defensive_pressure` 因子的直接对照。
+    /// 距离因子的方向由 `p29_hazard_factor_directions`（纯函数控制变量）钉死。
+    #[test]
+    fn p29_window_commit_rate_falls_with_pressure() {
+        let mut agg = OpportunityTally::default();
+        for seed in 401..=700u64 {
+            let (st, _events) = run_match(seed, 5400.0);
+            let t = st.opportunity_tally;
+            agg.shot_window_entries += t.shot_window_entries;
+            agg.shot_window_commits += t.shot_window_commits;
+            agg.shot_window_tackles += t.shot_window_tackles;
+            agg.shot_window_holds += t.shot_window_holds;
+            agg.shot_window_expiries += t.shot_window_expiries;
+            // 覆盖口径诚实性（防空转守卫的窗口版）：每个窗口恰以一个终局结束——提交 /
+            // 被抢断 / 转。等待是中间态，不构成终局。该等式把「窗口决策 tick 总数」与
+            // 「窗口数」绑死：若有窗口 tick 产事件却未记账（绕回旧路径），此式立刻不等。
+            // 终场时可能残留一个未终结的窗口（比赛结束时窗口刚开），故允许至多 1 的差。
+            let ends = t.shot_window_commits + t.shot_window_tackles + t.shot_window_expiries;
+            assert!(
+                ends == t.shot_window_entries || ends + 1 == t.shot_window_entries,
+                "seed {}：窗口终局数({}) 应等于进入数({})（至多差 1 = 终场残留窗口）——有窗口丢失或重复终局",
+                seed, ends, t.shot_window_entries
+            );
+            for b in 0..3 {
+                agg.shot_window_entries_by_pressure[b] += t.shot_window_entries_by_pressure[b];
+                agg.shot_window_commits_by_pressure[b] += t.shot_window_commits_by_pressure[b];
+            }
+        }
+        // 覆盖：贴身 / 无压两桶都要有进入（否则「方向」无样本）
+        for (b, name) in [(0usize, "贴身"), (1, "无压")] {
+            assert!(agg.shot_window_entries_by_pressure[b] >= 20,
+                "{}桶 窗口进入样本不足（{}）——方向断言会空跑", name, agg.shot_window_entries_by_pressure[b]);
+        }
+        assert!(agg.shot_window_commits > 0, "窗口从未提交（hazard 塌缩到 0？）");
+        let rate = |b: usize| {
+            agg.shot_window_commits_by_pressure[b] as f64
+                / agg.shot_window_entries_by_pressure[b].max(1) as f64
+        };
+        // 方向：无压窗口提交率 > 贴身窗口提交率（D2 `defensive_pressure` 因子在真实数据上的落点）
+        assert!(
+            rate(1) > rate(0),
+            "无压窗口提交率({:.3}) 应高于贴身窗口提交率({:.3})——hazard 未体现压迫方向（D2/D4）",
+            rate(1), rate(0)
+        );
+        // 数量级 sanity：整体提交率不应饱和（否则「到射程即射」回潮，hazard 只是装饰）
+        let overall = agg.shot_window_commits as f64 / agg.shot_window_entries.max(1) as f64;
+        assert!(
+            overall < 0.995,
+            "窗口提交率 {:.4} 接近饱和——hazard 未真正门控（射门退化为槽强制）", overall
+        );
+    }
+
+    /// P29 防空转守卫（#25 阶段 2B）：起脚窗口真承重——射门**只**由窗口提交产生，
+    /// 且窗口的每个分支都被真实命中。若把 2B 退回「到射程即射」（绕过窗口），
+    /// `shot_window_commits` 会与事件流 shot 数脱钩 → 红。
+    #[test]
+    fn p29_shot_window_is_live_and_only_shot_path() {
+        let mut agg = OpportunityTally::default();
+        let mut bound_shots = 0u64;
+        for seed in 1..=20u64 {
+            let (st, events) = run_match(seed, 5400.0);
+            let t = st.opportunity_tally;
+            let ev_shots = count_bound_events(&events)[0]; // shot（detail 非 header）
+            // 1. 执行绑定：窗口提交数 == 事件流射门数（射门的唯一来源是窗口提交）。
+            //    退回「到射程即射」→ commits 归零而 shot 事件仍在 → 红。
+            assert_eq!(
+                t.shot_window_commits, ev_shots,
+                "seed {}：窗口提交数({}) 应等于事件流射门数({})——射门不是唯一由起脚窗口产生（2B 被绕过？）",
+                seed, t.shot_window_commits, ev_shots
+            );
+            assert_eq!(t.exec_shoot, ev_shots, "seed {}：射门执行绑定计数与事件流不符", seed);
+            assert_eq!(t.shots_unattributed, 0, "seed {}：有射门绕过了模块归因", seed);
+            agg.shot_window_entries += t.shot_window_entries;
+            agg.shot_window_commits += t.shot_window_commits;
+            agg.shot_window_tackles += t.shot_window_tackles;
+            agg.shot_window_expiries += t.shot_window_expiries;
+            agg.exec_enter_shot_window += t.exec_enter_shot_window;
+            for b in 0..3 {
+                agg.shot_window_entries_by_bucket[b] += t.shot_window_entries_by_bucket[b];
+            }
+            bound_shots += ev_shots;
+        }
+        // 2. 窗口进入 / 提交 / 被抢断三条分支都在 20 场里被真实命中（不空跑）。
+        assert!(agg.shot_window_entries > 0, "起脚窗口从未进入（2B 未接线？）");
+        assert!(agg.shot_window_commits > 0, "窗口从未提交射门");
+        assert!(agg.shot_window_tackles > 0, "窗口内从未被抢断（D3 未覆盖——抢断分支空跑）");
+        // `exec_enter_shot_window`（「fallback 情境直达射程 → 直接进窗口」的执行绑定）也必须
+        // 真实命中，否则是只写不读的死计数器（P28 审阅同类问题）。
+        assert!(agg.exec_enter_shot_window > 0,
+            "「到射程直接进窗口」的执行绑定从未生效（计数 0——该分支不可达或未接线）");
+        // 3. 起脚距离三桶都应有进入样本（「Shot 由几何涌现，不是桶配额」的前提是各位置都会到射程）。
+        for b in 0..3 {
+            assert!(agg.shot_window_entries_by_bucket[b] > 0,
+                "起脚距离桶 {} 从未进入窗口（窗口未覆盖该位置）", b);
+        }
+        // 4. 窗口提交是射门的唯一生产者：两处计数应一致。
+        assert_eq!(bound_shots, agg.shot_window_commits, "射门数 ≠ 窗口提交数（存在绕过窗口的射门）");
     }
 
     /// 跑一场比赛（与 `simulate` 同构：tick 循环 + 终场前高亮排空），返回状态与事件流。
