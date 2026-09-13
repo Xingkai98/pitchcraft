@@ -5564,8 +5564,8 @@ mod tests {
         );
         // 钳制边界：公式层两极可达。注意 danger 在 `opportunity_geometry` 里是三因子连乘
         // （proximity × central × forward），要 danger≈1 需同时「贴对方门线 + 正中路 +
-        // 身前 30m 无人」——实战几乎不可能，故实测 deadline_min 通常为 4 而非 3（见
-        // `p28_action_opportunity_is_live` 的探针结论）。这里断言的是**钳制区间**成立，不是
+        // 身前 30m 无人」——实战几乎不可能，故实测 deadline_min 通常为 4 而非 3（实测范围见
+        // `p28_deadline_bounds_over_full_match`）。这里断言的是**钳制区间**成立，不是
         // 「3 常现」；spec 的 [3,12] 亦指钳制区间。
         assert_eq!(compute_action_deadline(1.0, 1.0, 0.0), MIN_ACTION_DEADLINE_TICKS);
         assert_eq!(compute_action_deadline(0.0, 0.0, 1.0), MAX_ACTION_DEADLINE_TICKS);
