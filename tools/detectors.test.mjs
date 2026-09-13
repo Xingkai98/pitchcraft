@@ -708,7 +708,8 @@ test('aggregateAudit pass_outcomes is deterministic and preserves unknown_outcom
 // --- P21 L1：真实 audit_input 形状回归（P4.2/P5.1） ---------------------------
 // 前面的合成输入覆盖边界；下面这组用真实引擎采集链路产出的 audit_input
 // （tools/fixtures/real-audit-input.json），钉住「detector 对真实数据不再瞎」这件事。
-// 真实出界传球形状：result:"contested" + detail:"out_*" + 落点被 clamp01 钳回边界。
+// 真实出界传球形状（P27 起）：result:"out" + out_side + out_pos（真实越界坐标）+
+// detail:"out_*" + 落点投影被 clamp01 钳回边界。
 
 test('real out-of-play pass yields an unforced_out realism_warning via result (P27 D4)', () => {
   const w = realWindow('out_sideline');

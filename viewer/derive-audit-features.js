@@ -164,6 +164,9 @@ function possessionTransitionTimes(events, lineupMap) {
 }
 
 // 可观测死球标记：whistle、goal、out、无开球动作的 kickoff。
+// 注：`pass && result === 'out'` 与 `kickoff && x2 === undefined` 两支在真实数据上不可达——
+// 调用方取的是「最近一个事件」（latestEventAt），而每条出界 pass 后紧跟同 t 的 beat（P27 实测
+// 113/113），kickoff 也带 x2。分支保留为语义表达；死球标记实际靠 whistle + 球静止。
 function isDeadBallEvent(e) {
   if (!e) return false;
   if (e.type === 'whistle') return true;
