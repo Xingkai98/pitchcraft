@@ -498,28 +498,33 @@ fn slot_hold_max(match_duration: f64) -> u32 {
 /// 避免 90 分钟比赛 carrier 在球门旁停 200+ tick（观感：前锋来回小幅运动很久）。
 pub const PASS_BREAK_TICKS: u32 = 12;
 
-/// P7：槽位高亮类型（每槽必产一个高亮，类型固定比例保证精彩事件数量稳定）
-enum HighlightSlot {
-    Shot,    // 射门
-    Corner,  // 角球（直接进入角球重开）
-    ThrowIn, // 界外球（直接进入界外球重开）
-    Tackle,  // 抢断
-    Pass,    // 普通传球（可能出界派生额外界外球/门球）
+/// P28：fallback 触发时抽到的**情境**（旧 `HighlightSlot` 槽位类型的降级形态）。
+///
+/// 语义变了，抽签值没变：旧槽位抽到的是「本槽必产哪个事件」，新模型抽到的是「持球者面对哪种
+/// 局面」——由 `evaluate_carrier_action` / `evaluate_defensive_action` 依情境产候选行动再结算。
+/// 2A 内抽签比例仍是旧配额（D5 行为等价要求逐字节一致）；2B/2C 起由真实 hazard / 接触竞争取代。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum FallbackSituation {
+    Shot,    // 射门局面
+    Corner,  // 死球 → 角球重开
+    ThrowIn, // 死球 → 界外球重开
+    Tackle,  // 被贴身逼抢局面
+    Pass,    // 普通出球局面（可能出界派生额外界外球/门球）
 }
 
-/// 槽位类型分配（P9）：Shot 35% / Corner 12% / ThrowIn 18% / Tackle 22% / Pass 13%
-fn roll_highlight_slot(rng: &mut SeededRng) -> HighlightSlot {
+/// fallback 情境分配（P9）：Shot 35% / Corner 12% / ThrowIn 18% / Tackle 22% / Pass 13%
+fn roll_fallback_situation(rng: &mut SeededRng) -> FallbackSituation {
     let roll = rng.next_u64() % 100;
     if roll < 35 {
-        HighlightSlot::Shot
+        FallbackSituation::Shot
     } else if roll < 47 {
-        HighlightSlot::Corner
+        FallbackSituation::Corner
     } else if roll < 65 {
-        HighlightSlot::ThrowIn
+        FallbackSituation::ThrowIn
     } else if roll < 87 {
-        HighlightSlot::Tackle
+        FallbackSituation::Tackle
     } else {
-        HighlightSlot::Pass
+        FallbackSituation::Pass
     }
 }
 
@@ -568,6 +573,874 @@ fn nearest_any(st: &MatchState, target: (f64, f64)) -> i32 {
     }
 }
 
+// ==== P28 持球行动机会（#25 阶段 2A）====
+//
+// 开放比赛的行动评估从「槽位配额先定事件类型、再反推场上动作」改为
+// 「持球行动机会 → carrier 候选行动 → defender 竞争 → 结算 → 执行」。
+//
+// 2A 只建模块 + 接线，**不改变可观测行为**（事件流逐字节等价，design D5/D6）：
+// - fallback（槽位到期）路径：新模块**真承重**——由它抽情境、定候选行动、结算，再经 2A 执行绑定
+//   落回既有 emit；删掉执行绑定 → 该 tick 无事件可产（防空转守卫）。
+// - 自然 deadline 路径：2A 内**决策中性**（结算恒为「继续带球」，零 RNG、零事件），可见证据是
+//   tally 与 deadline 几何；2B 起射门 hazard 接管该路径。
+// - 槽位抽签在 2A 仍是旧配额（等价性要求），但抽到的是「情境」而非「事件类型」；2B/2C 起由
+//   真实 hazard / 接触竞争取代，阶段 3 删槽位。
+
+/// 行动机会 deadline 基线（tick，D2）
+const BASE_ACTION_DEADLINE_TICKS: u32 = 7;
+/// 危险度压缩系数（越接近球门，决策越急）
+const DANGER_URGENCY: f64 = 4.0;
+/// 压迫压缩系数（防守越近，决策越急）
+const PRESSURE_URGENCY: f64 = 3.0;
+/// 出球空间放宽系数（越好出球，越从容）
+const ESCAPE_BONUS: f64 = 5.0;
+/// deadline 下界 / 上界（tick）
+const MIN_ACTION_DEADLINE_TICKS: u32 = 3;
+const MAX_ACTION_DEADLINE_TICKS: u32 = 12;
+/// 门将持球放宽（D2「门将/本方后场持球允许更长」）：门将持球时对手不能合法上抢，决策时间更长
+const GK_DEADLINE_BONUS_TICKS: u32 = 3;
+/// 压迫归一化尺度（米）：最近 / 第二防守者
+const PRESSURE_NEAR_M: f64 = 25.0;
+const PRESSURE_SECOND_M: f64 = 35.0;
+/// 向前空间归一化尺度（米）：身前（进攻方向）无防守者的推进纵深
+const FORWARD_SPACE_M: f64 = 30.0;
+
+/// 行动机会触发来源（D4：槽位时钟降级为 fallback，只触发评估、不选事件类型）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpportunityTrigger {
+    /// 自然 deadline 到期（D1/D2：几何量算出的持球决策周期）
+    NaturalDeadline,
+    /// 槽位时钟兜底（旧槽位机制降级而来）
+    FallbackDeadline,
+    /// 持球超时过渡传球（PASS_BREAK：carrier 持球过久，球权需要流动）
+    HoldTimeout,
+}
+
+impl OpportunityTrigger {
+    /// 开启机会时记录的原因（D1）
+    fn reason(self) -> OpportunityReason {
+        match self {
+            OpportunityTrigger::NaturalDeadline => OpportunityReason::DeadlineElapsed,
+            OpportunityTrigger::FallbackDeadline => OpportunityReason::SlotFallback,
+            OpportunityTrigger::HoldTimeout => OpportunityReason::HoldTimeout,
+        }
+    }
+}
+
+/// 机会开启 / 失效原因（D1 生命周期：球权改变 / 死球 / 犯规 / 重开时失效）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OpportunityReason {
+    DeadlineElapsed,
+    SlotFallback,
+    HoldTimeout,
+    PossessionChanged,
+    DeadBall,
+    Restart,
+    Foul,
+    PlayBroken,
+}
+
+/// 一次持球行动机会（D1：deadline 到期可重复——结算为「继续带球」时重置 deadline 再等下一次）
+#[derive(Clone, Copy, Debug)]
+struct ActionOpportunity {
+    carrier: i32,
+    age_ticks: u32,
+    deadline_ticks: u32,
+    reason: OpportunityReason,
+}
+
+/// 持球者候选动作（D3 第 3/4 级）。
+/// `target = None` = 无指定接球人的球（出界重开 / 向前推进的长球）；`Some(id)` = 有明确接球人。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum CarrierAction {
+    Dribble,
+    Pass { target: Option<i32> },
+    Shoot,
+}
+
+/// 防守者候选动作（D3 第 2/5 级）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum DefensiveAction {
+    /// 抢断（成败由执行层掷定；`far` = 超阈值抢断降成功率，`same_pair` = 连续同对强制失败）
+    Tackle { same_pair: bool, far: bool },
+    /// 犯规（由既有涌现判定 `maybe_open_foul` 产生；D3 第 2 级「防守中断」）
+    Foul,
+    /// 封堵（无事件防守，D3 第 5 级）
+    Contain,
+    /// 跟防（无事件防守，D3 第 5 级）
+    Jockey,
+    /// 无防守动作
+    None,
+}
+
+/// 出界重开类型（D3 第 1 级「死球 / 重开」）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum DeadBallKind {
+    Corner,
+    ThrowIn,
+}
+
+/// 结算结果（D3 优先级：死球/重开 > 防守中断 > 持球终结 > 持球普通 > 无事件防守 > beat）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum ActionResolution {
+    /// 持球侧行动生效
+    CarrierAction(CarrierAction),
+    /// 球出界 → 死球重开（角球 / 界外球）
+    DeadBall(DeadBallKind),
+    /// 防守中断：抢断（成功与否由执行层掷定）
+    InterruptedByTackle,
+    /// 防守中断：犯规
+    InterruptedByFoul,
+    /// 无事件防守：封堵（持球继续；防守方不产事件）
+    DefensiveContainment,
+    /// 无事件防守：跟防
+    DefensiveJockey,
+    /// 无显著行动（普通带球 beat）
+    NoAction,
+}
+
+/// 2A 执行绑定（持球侧）：把候选行动落回既有 emit。2B/2C 起由真实 hazard / 接触竞争替换。
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum CarrierExecution {
+    /// 继续带球（普通 beat，无高亮事件）
+    ContinueDribble,
+    /// 射门（`emit_shot_highlight`）
+    Shoot,
+    /// 传球（`emit_pass_highlight_inner`；allow_out=false 即 P7 过渡传球不出界语义）
+    Pass { allow_out: bool },
+    /// 射门情境远段向前推进传球（`emit_forward_pass_highlight`）
+    ForwardPass,
+    /// 射门情境带球推进到射程再射（`shot_setup` + `advance_shot_setup`）
+    DriveThenShoot { target_dist: f64 },
+    /// 出界重开（`emit_pass_out_play_slot`）
+    PassOut { kind: DeadBallKind },
+}
+
+/// 2A 执行绑定（防守侧）
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum DefensiveExecution {
+    None,
+    Tackle { same_pair: bool, far: bool },
+}
+
+/// 持球侧行动计划（D3 第 1 步：carrier 先产计划）
+#[derive(Clone, Copy, Debug)]
+struct CarrierPlan {
+    /// 候选动作；`None` = 本 tick 不承诺任何行动（2A 自然 deadline 的中性语义）
+    action: Option<CarrierAction>,
+    /// 计划落成出界重开时的重开类型
+    dead_ball: Option<DeadBallKind>,
+    /// fallback 抽到的情境（仅 FallbackDeadline 触发时 Some）
+    situation: Option<FallbackSituation>,
+    exec: CarrierExecution,
+}
+
+/// 一次行动机会的完整评估结果（D3：carrier 计划 → defender 竞争 → 结算 → 执行）
+#[derive(Clone, Copy, Debug)]
+struct ActionPlan {
+    carrier: CarrierPlan,
+    defensive: DefensiveAction,
+    defensive_exec: DefensiveExecution,
+    resolution: ActionResolution,
+}
+
+impl ActionPlan {
+    /// D3 契约自检：结算优先级必须忠实地由「持球候选 + 防守候选」推出（执行绑定与结算同构）。
+    /// 违约说明结算函数与两侧候选脱节——正是 D3 要防的「类型配额反推动作」复发。
+    fn assert_resolution_consistent(&self) {
+        debug_assert!(
+            match self.resolution {
+                ActionResolution::DeadBall(kind) =>
+                    self.carrier.dead_ball == Some(kind),
+                ActionResolution::InterruptedByTackle =>
+                    matches!(self.defensive, DefensiveAction::Tackle { .. }),
+                ActionResolution::InterruptedByFoul =>
+                    matches!(self.defensive, DefensiveAction::Foul),
+                ActionResolution::DefensiveContainment =>
+                    matches!(self.defensive, DefensiveAction::Contain),
+                ActionResolution::DefensiveJockey =>
+                    matches!(self.defensive, DefensiveAction::Jockey),
+                ActionResolution::NoAction => {
+                    self.carrier.action.is_none()
+                        && matches!(self.defensive, DefensiveAction::None)
+                }
+                ActionResolution::CarrierAction(_) => self.carrier.action.is_some(),
+            },
+            "结算与两侧候选不一致：{:?}",
+            self
+        );
+    }
+
+    /// 持球侧未承诺行动、且防守方也未中断时的「中性」计划（犯规 tick 用：哨停已由判定链完成）
+    fn foul_only(defensive: DefensiveAction) -> ActionPlan {
+        let carrier = CarrierPlan {
+            action: None,
+            dead_ball: None,
+            situation: None,
+            exec: CarrierExecution::ContinueDribble,
+        };
+        ActionPlan {
+            carrier,
+            defensive,
+            defensive_exec: DefensiveExecution::None,
+            resolution: resolve_action_opportunity(&carrier, defensive),
+        }
+    }
+}
+
+/// 2A 观测计数器：只写、不进事件流、不耗 RNG（防空转守卫用）。
+/// 「执行绑定」计数与事件流中对应事件数绑死——若绕过本模块直接走旧路径，计数为 0 而事件仍在 → 守卫红。
+#[derive(Debug, Clone, Copy)]
+struct OpportunityTally {
+    // 触发（按开启次数计）
+    natural_deadline: u64,
+    fallback_deadline: u64,
+    hold_timeout: u64,
+    // deadline 实测范围（校验 [MIN, MAX] 不变量）
+    deadline_min: u32,
+    deadline_max: u32,
+    /// 自然 deadline 真正**到期并被评估**的次数（开启次数见 `natural_deadline`；可重复生命周期
+    /// 使开启数 = 到期数 + 失效后重开数，故须分开计）。
+    natural_deadline_due: u64,
+    // 失效（D1）。只有高亮打断 / 犯规是可实际触达的失效源——球权改变 / 死球 / 重开在接线里
+    // 必先经高亮，高亮起点已即时失效；这三条退化为「不漏」防御网，由 `opportunity_leaks` 守护。
+    invalidated: u64,
+    invalidated_foul: u64,
+    invalidated_play_broken: u64,
+    /// 死球 / 重开 / 球权改变时仍有存活机会的次数——正常恒 0。
+    /// 非 0 说明机会跨越了持球段边界（D1 被违反），或有人移除了高亮起点的失效。
+    opportunity_leaks: u64,
+    // 持球候选动作
+    carrier_dribble: u64,
+    carrier_pass: u64,
+    carrier_shoot: u64,
+    // 防守候选动作
+    defensive_tackle: u64,
+    defensive_foul: u64,
+    defensive_contain: u64,
+    defensive_jockey: u64,
+    defensive_none: u64,
+    // 结算
+    res_carrier_shoot: u64,
+    res_carrier_pass: u64,
+    res_carrier_dribble: u64,
+    res_dead_ball: u64,
+    res_interrupted_tackle: u64,
+    res_interrupted_foul: u64,
+    res_containment: u64,
+    res_jockey: u64,
+    res_no_action: u64,
+    // 执行绑定（与事件流中对应事件数绑死）
+    exec_tackle: u64,
+    exec_shoot: u64,
+    exec_pass: u64,
+    exec_forward_pass: u64,
+    exec_drive_then_shoot: u64,
+    exec_pass_out_corner: u64,
+    exec_pass_out_throw_in: u64,
+    exec_continue: u64,
+    /// 未被模块归因的射门（正常应为 0）。射门可由「射门推进 / 向前传球」在后续 tick 才落地，
+    /// 无法在执行点直接计数，故用 `module_shot_pending` 标记归因；本桶非 0 = 有射门绕过了模块。
+    shots_unattributed: u64,
+}
+
+impl Default for OpportunityTally {
+    fn default() -> Self {
+        OpportunityTally {
+            natural_deadline: 0,
+            fallback_deadline: 0,
+            hold_timeout: 0,
+            deadline_min: u32::MAX,
+            deadline_max: 0,
+            natural_deadline_due: 0,
+            invalidated: 0,
+            invalidated_foul: 0,
+            invalidated_play_broken: 0,
+            opportunity_leaks: 0,
+            carrier_dribble: 0,
+            carrier_pass: 0,
+            carrier_shoot: 0,
+            defensive_tackle: 0,
+            defensive_foul: 0,
+            defensive_contain: 0,
+            defensive_jockey: 0,
+            defensive_none: 0,
+            res_carrier_shoot: 0,
+            res_carrier_pass: 0,
+            res_carrier_dribble: 0,
+            res_dead_ball: 0,
+            res_interrupted_tackle: 0,
+            res_interrupted_foul: 0,
+            res_containment: 0,
+            res_jockey: 0,
+            res_no_action: 0,
+            exec_tackle: 0,
+            exec_shoot: 0,
+            exec_pass: 0,
+            exec_forward_pass: 0,
+            exec_drive_then_shoot: 0,
+            exec_pass_out_corner: 0,
+            exec_pass_out_throw_in: 0,
+            exec_continue: 0,
+            shots_unattributed: 0,
+        }
+    }
+}
+
+impl OpportunityTally {
+    fn note_deadline(&mut self, ticks: u32) {
+        self.deadline_min = self.deadline_min.min(ticks);
+        self.deadline_max = self.deadline_max.max(ticks);
+    }
+
+    fn note_invalidation(&mut self, reason: OpportunityReason) {
+        self.invalidated += 1;
+        match reason {
+            OpportunityReason::Foul => self.invalidated_foul += 1,
+            OpportunityReason::PlayBroken => self.invalidated_play_broken += 1,
+            // 开启类原因不走失效路径
+            OpportunityReason::DeadlineElapsed
+            | OpportunityReason::SlotFallback
+            | OpportunityReason::HoldTimeout => {}
+            // 球权改变 / 死球 / 重开走防御网路径，见 invalidate_action_opportunity 调用点
+            OpportunityReason::PossessionChanged
+            | OpportunityReason::DeadBall
+            | OpportunityReason::Restart => {}
+        }
+    }
+}
+
+/// D2 纯函数：`deadline = clamp(BASE - DANGER_URGENCY*danger - PRESSURE_URGENCY*pressure
+/// + ESCAPE_BONUS*escape_space, MIN, MAX)`。
+/// 三个几何量均为 [0,1]（超出部分先钳制），零 RNG、零状态。
+fn compute_action_deadline(danger: f64, pressure: f64, escape_space: f64) -> u32 {
+    let raw = BASE_ACTION_DEADLINE_TICKS as f64
+        - DANGER_URGENCY * clamp01(danger)
+        - PRESSURE_URGENCY * clamp01(pressure)
+        + ESCAPE_BONUS * clamp01(escape_space);
+    (raw.round() as i64).clamp(
+        MIN_ACTION_DEADLINE_TICKS as i64,
+        MAX_ACTION_DEADLINE_TICKS as i64,
+    ) as u32
+}
+
+/// 位置到所攻球门的纵深比（0 = 对方门线，1 = 己方门线）
+fn goal_depth_ratio(st: &MatchState, pos: (f64, f64)) -> f64 {
+    let home = st.possession == 0;
+    let d_m = if home {
+        (1.0 - pos.0) * PITCH_LENGTH_M
+    } else {
+        pos.0 * PITCH_LENGTH_M
+    };
+    clamp01(d_m / PITCH_LENGTH_M)
+}
+
+/// 向前空间（米）：持球者身前（进攻方向）最近防守者的纵深距离；无 → 全场长。
+/// 门将不计入（门将不参与逼抢，见 `nearest_defender`），罚下球员不计。
+fn forward_space_m(st: &MatchState, carrier: i32) -> f64 {
+    let home = st.possession == 0;
+    let c = st.pos[carrier as usize];
+    let mut best = PITCH_LENGTH_M;
+    for (id, &p) in st.pos.iter().enumerate() {
+        if st.sent_off[id] || id == 0 || id == 21 {
+            continue;
+        }
+        let is_def = if home { id >= 11 } else { id <= 10 };
+        if !is_def {
+            continue;
+        }
+        let ahead = if home { p.0 - c.0 } else { c.0 - p.0 };
+        if ahead <= 0.0 {
+            continue;
+        }
+        best = best.min(ahead * PITCH_LENGTH_M);
+    }
+    best
+}
+
+/// 第二近防守者距离（米）；不足两人 → 全场长。与 `nearest_defender` 同口径（排除门将 / 罚下球员）。
+fn second_nearest_defender_m(st: &MatchState, target: (f64, f64), def_home: bool) -> f64 {
+    let mut best = f64::MAX;
+    let mut second = f64::MAX;
+    for (id, &p) in st.pos.iter().enumerate() {
+        if st.sent_off[id] || id == 0 || id == 21 {
+            continue;
+        }
+        let is_def = if def_home { id <= 10 } else { id >= 11 };
+        if !is_def {
+            continue;
+        }
+        let d = distance_meters(p, target);
+        if d < best {
+            second = best;
+            best = d;
+        } else if d < second {
+            second = d;
+        }
+    }
+    if second == f64::MAX { PITCH_LENGTH_M } else { second }
+}
+
+/// 最佳队友出球空间（米）：所有在场队友中「其到最近防守者距离」的最大值。
+fn best_teammate_space_m(st: &MatchState, carrier: i32) -> f64 {
+    let home = st.possession == 0;
+    let def_home = st.possession != 0;
+    let mut best = 0.0f64;
+    for id in 1..=20usize {
+        let is_team = if home { id <= 10 } else { id >= 11 };
+        if !is_team || st.sent_off[id] || id as i32 == carrier {
+            continue;
+        }
+        let (_, _, d) = nearest_defender(st, st.pos[id], def_home);
+        best = best.max(d);
+    }
+    best
+}
+
+/// 从 MatchState 提取 D2 几何量 `(danger, pressure, escape_space)`，全部 [0,1]，零 RNG。
+/// - danger = 距对方球门反向 × 中路因子 × 向前空间
+/// - pressure = 最近防守者（0.7）+ 第二防守者（0.3）
+/// - escape_space = 最佳队友出球空间（0.6）+ 向前空当（0.4）
+fn opportunity_geometry(st: &MatchState, carrier: i32) -> (f64, f64, f64) {
+    let c = st.pos[carrier as usize];
+    let def_home = st.possession != 0;
+
+    let proximity = clamp01(1.0 - goal_depth_ratio(st, c));
+    let central = clamp01(1.0 - (c.1 - 0.5).abs() / 0.5);
+    let forward = clamp01(forward_space_m(st, carrier) / FORWARD_SPACE_M);
+    let danger = proximity * central * forward;
+
+    let (_, _, near_m) = nearest_defender(st, c, def_home);
+    let second_m = second_nearest_defender_m(st, c, def_home);
+    let pressure = 0.7 * clamp01(1.0 - near_m / PRESSURE_NEAR_M)
+        + 0.3 * clamp01(1.0 - second_m / PRESSURE_SECOND_M);
+
+    let mate_space = clamp01(best_teammate_space_m(st, carrier) / PRESSURE_NEAR_M);
+    let escape_space = 0.6 * mate_space + 0.4 * forward;
+
+    (clamp01(danger), clamp01(pressure), clamp01(escape_space))
+}
+
+/// 本次机会的 deadline（tick）：D2 公式 + 门将放宽。零 RNG。
+fn action_deadline_for(st: &MatchState, carrier: i32) -> u32 {
+    let (danger, pressure, escape_space) = opportunity_geometry(st, carrier);
+    let base = compute_action_deadline(danger, pressure, escape_space);
+    if carrier == 0 || carrier == 21 {
+        (base + GK_DEADLINE_BONUS_TICKS).min(MAX_ACTION_DEADLINE_TICKS)
+    } else {
+        base
+    }
+}
+
+/// 开启 / 重置一次行动机会（D1/D2，零 RNG）：deadline 由几何量公式算出。
+fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
+    let carrier = st.carrier;
+    if carrier < 0 || carrier > 21 {
+        st.action_opportunity = None;
+        return;
+    }
+    let deadline_ticks = action_deadline_for(st, carrier);
+    st.opportunity_tally.note_deadline(deadline_ticks);
+    match trigger {
+        OpportunityTrigger::NaturalDeadline => st.opportunity_tally.natural_deadline += 1,
+        OpportunityTrigger::FallbackDeadline => st.opportunity_tally.fallback_deadline += 1,
+        OpportunityTrigger::HoldTimeout => st.opportunity_tally.hold_timeout += 1,
+    }
+    st.action_opportunity = Some(ActionOpportunity {
+        carrier,
+        age_ticks: 0,
+        deadline_ticks,
+        reason: trigger.reason(),
+    });
+}
+
+/// 机会失效（D1：球权改变 / 死球 / 犯规 / 重开 / 持球段被打断）
+fn invalidate_action_opportunity(st: &mut MatchState, reason: OpportunityReason) {
+    if st.action_opportunity.take().is_some() {
+        st.opportunity_tally.note_invalidation(reason);
+    }
+}
+
+/// D1 防御网：死球 / 重开 / 球权改变时不变量——此处不应存在存活机会。
+/// 当前接线里这些状态都先经高亮（高亮起点已即时失效），所以本函数是纯守卫：
+/// 一旦有人在别处放宽/移除了高亮起点的失效，或未来接线让机会跨越持球段，这里立刻计数 → 守卫红。
+fn assert_opportunity_not_leaked(st: &mut MatchState, at: OpportunityReason) {
+    if st.action_opportunity.is_some() {
+        st.opportunity_tally.opportunity_leaks += 1;
+        invalidate_action_opportunity(st, at);
+    }
+}
+
+/// 持球者的最近队友 id（与 `emit_pass_highlight_inner` 同规则，零 RNG）
+fn carrier_pass_target(st: &MatchState) -> Option<i32> {
+    let carrier = st.carrier;
+    if carrier < 0 || carrier > 21 {
+        return None;
+    }
+    Some(nearest_teammate(st, st.pos[carrier as usize], st.possession == 0, carrier).0)
+}
+
+/// 最近防守者是否在持球者与所攻球门之间（跟防 / 封堵分流用）
+fn defender_goal_side(st: &MatchState, carrier_pos: (f64, f64)) -> bool {
+    let home = st.possession == 0;
+    let (_, def_pos, _) = nearest_defender(st, carrier_pos, !home);
+    let depth = |p: (f64, f64)| if home { p.0 } else { -p.0 }; // 越大越靠所攻球门
+    depth(def_pos) > depth(carrier_pos)
+}
+
+/// D3 第 1 步：carrier 产行动计划。
+/// - `FallbackDeadline`：抽情境（1 次 RNG，与旧槽位同序）→ 映射候选行动；射门情境的
+///   `sample_shot_target` 与三态分流原样保留（RNG 序：情境 → 目标 → …）。
+/// - `NaturalDeadline`：2A 决策中性——不承诺任何行动、零 RNG、零事件；2B 射门 hazard 在此接管。
+/// - `HoldTimeout`：持球过久 → 过渡传球（不出界，P7 语义）。
+fn evaluate_carrier_action(
+    st: &MatchState,
+    rng: &mut SeededRng,
+    trigger: OpportunityTrigger,
+) -> CarrierPlan {
+    match trigger {
+        OpportunityTrigger::NaturalDeadline => CarrierPlan {
+            action: None,
+            dead_ball: None,
+            situation: None,
+            exec: CarrierExecution::ContinueDribble,
+        },
+        OpportunityTrigger::HoldTimeout => CarrierPlan {
+            action: Some(CarrierAction::Pass {
+                target: carrier_pass_target(st),
+            }),
+            dead_ball: None,
+            situation: None,
+            exec: CarrierExecution::Pass { allow_out: false },
+        },
+        OpportunityTrigger::FallbackDeadline => evaluate_fallback_carrier_action(st, rng),
+    }
+}
+
+/// fallback 情境 → 候选行动。RNG 消费与旧 `roll_highlight` 逐字节一致（等价性要求，D5）。
+fn evaluate_fallback_carrier_action(st: &MatchState, rng: &mut SeededRng) -> CarrierPlan {
+    let situation = roll_fallback_situation(rng);
+    let carrier = st.carrier;
+    let gk_holding = carrier == 0 || carrier == 21;
+    let simple_pass = |allow_out: bool| CarrierPlan {
+        action: Some(CarrierAction::Pass {
+            target: carrier_pass_target(st),
+        }),
+        dead_ball: None,
+        situation: Some(situation),
+        exec: CarrierExecution::Pass { allow_out },
+    };
+    match situation {
+        // 门将不射（同旧 Shot 情境守卫）→ 改普通传球；不额外消耗 RNG
+        FallbackSituation::Shot if gk_holding => simple_pass(true),
+        FallbackSituation::Shot => {
+            // 所有射门情境都采样目标射门距离（RNG）；carrier 已在目标距离内直接射，否则推进。
+            // 三态分流（射 / 向前传球推进 / 带球推进）语义与旧 Shot 槽一致。
+            let target = sample_shot_target(rng);
+            let dist = dist_to_goal_m(st, carrier);
+            let (action, exec) = if dist <= target {
+                (CarrierAction::Shoot, CarrierExecution::Shoot)
+            } else if dist > SHOT_PASS_ADVANCE_M {
+                (
+                    CarrierAction::Pass { target: None },
+                    CarrierExecution::ForwardPass,
+                )
+            } else {
+                (
+                    CarrierAction::Shoot,
+                    CarrierExecution::DriveThenShoot { target_dist: target },
+                )
+            };
+            CarrierPlan {
+                action: Some(action),
+                dead_ball: None,
+                situation: Some(situation),
+                exec,
+            }
+        }
+        FallbackSituation::Corner | FallbackSituation::ThrowIn => {
+            let kind = if situation == FallbackSituation::Corner {
+                DeadBallKind::Corner
+            } else {
+                DeadBallKind::ThrowIn
+            };
+            CarrierPlan {
+                action: Some(CarrierAction::Pass { target: None }),
+                dead_ball: Some(kind),
+                situation: Some(situation),
+                exec: CarrierExecution::PassOut { kind },
+            }
+        }
+        // 门将不被抢断（同 Shot 情境守卫）→ 改普通传球
+        FallbackSituation::Tackle if gk_holding => simple_pass(true),
+        // 持球者本意仍是继续带球；是否被中断由防守侧竞争决定（D3）
+        FallbackSituation::Tackle => CarrierPlan {
+            action: Some(CarrierAction::Dribble),
+            dead_ball: None,
+            situation: Some(situation),
+            exec: CarrierExecution::ContinueDribble,
+        },
+        FallbackSituation::Pass => simple_pass(true),
+    }
+}
+
+/// D3 第 2 步：贴身 defender 产防守行动计划。
+/// - fallback 抽到 Tackle（持球者非门将）：按旧次序算 `same_pair` / `far`——`nearest_defender`
+///   （零 RNG）→ `same_pair`（零 RNG）→ `far = dist > 阈值 || !should_tackle(rng)`。
+///   `||` 短路语义原样保留：dist > 12m 时**不消耗** RNG（RNG 序等价的关键）。
+/// - 自然 deadline：纯几何分类（零 RNG）——贴身且在球门侧 → 跟防；贴身但不在球门侧 → 封堵；
+///   无人贴身 → None。
+/// - 其余触发：None（不耗 RNG）。
+fn evaluate_defensive_action(
+    st: &MatchState,
+    rng: &mut SeededRng,
+    trigger: OpportunityTrigger,
+    carrier: &CarrierPlan,
+) -> (DefensiveAction, DefensiveExecution) {
+    match trigger {
+        OpportunityTrigger::NaturalDeadline => {
+            let carrier_id = st.carrier;
+            if carrier_id < 0 || carrier_id > 21 {
+                return (DefensiveAction::None, DefensiveExecution::None);
+            }
+            let c = st.pos[carrier_id as usize];
+            let (_, _, near_m) = nearest_defender(st, c, st.possession != 0);
+            if near_m > TACKLE_DISTANCE_THRESHOLD_METERS {
+                (DefensiveAction::None, DefensiveExecution::None)
+            } else if defender_goal_side(st, c) {
+                (DefensiveAction::Jockey, DefensiveExecution::None)
+            } else {
+                (DefensiveAction::Contain, DefensiveExecution::None)
+            }
+        }
+        OpportunityTrigger::HoldTimeout => (DefensiveAction::None, DefensiveExecution::None),
+        OpportunityTrigger::FallbackDeadline => {
+            match carrier.situation {
+                Some(FallbackSituation::Tackle)
+                    if st.carrier != 0 && st.carrier != 21 =>
+                {
+                    let victim = st.carrier;
+                    let victim_pos = st.pos[victim as usize];
+                    let def_home = st.possession != 0;
+                    let (def_id, _, dist) = nearest_defender(st, victim_pos, def_home);
+                    let same_pair = st.last_tackle_pair == Some((def_id, victim));
+                    let far = dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng);
+                    (
+                        DefensiveAction::Tackle { same_pair, far },
+                        DefensiveExecution::Tackle { same_pair, far },
+                    )
+                }
+                _ => (DefensiveAction::None, DefensiveExecution::None),
+            }
+        }
+    }
+}
+
+/// D3 第 3 步：结算优先级（高 → 低）
+/// 死球/重开 > 防守中断(tackle/foul) > 持球终结(shoot) > 持球普通(pass/dribble)
+/// > 无事件防守(contain/jockey) > beat(NoAction)。
+/// 第 5 级只在持球侧**不承诺行动**时可达（carrier 承诺的传球/带球压过无事件防守）。
+fn resolve_action_opportunity(carrier: &CarrierPlan, defensive: DefensiveAction) -> ActionResolution {
+    if let Some(kind) = carrier.dead_ball {
+        return ActionResolution::DeadBall(kind);
+    }
+    match defensive {
+        DefensiveAction::Tackle { .. } => return ActionResolution::InterruptedByTackle,
+        DefensiveAction::Foul => return ActionResolution::InterruptedByFoul,
+        _ => {}
+    }
+    match carrier.action {
+        Some(CarrierAction::Shoot) => ActionResolution::CarrierAction(CarrierAction::Shoot),
+        Some(a @ CarrierAction::Pass { .. }) => ActionResolution::CarrierAction(a),
+        Some(CarrierAction::Dribble) => ActionResolution::CarrierAction(CarrierAction::Dribble),
+        None => match defensive {
+            DefensiveAction::Contain => ActionResolution::DefensiveContainment,
+            DefensiveAction::Jockey => ActionResolution::DefensiveJockey,
+            _ => ActionResolution::NoAction,
+        },
+    }
+}
+
+/// 评估一次行动机会（D3 全流程）并记 tally。
+fn build_action_plan(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    trigger: OpportunityTrigger,
+) -> ActionPlan {
+    let carrier = evaluate_carrier_action(st, rng, trigger);
+    let (defensive, defensive_exec) = evaluate_defensive_action(st, rng, trigger, &carrier);
+    let resolution = resolve_action_opportunity(&carrier, defensive);
+
+    {
+        let t = &mut st.opportunity_tally;
+        match carrier.action {
+            Some(CarrierAction::Dribble) => t.carrier_dribble += 1,
+            Some(CarrierAction::Pass { .. }) => t.carrier_pass += 1,
+            Some(CarrierAction::Shoot) => t.carrier_shoot += 1,
+            None => {}
+        }
+        match defensive {
+            DefensiveAction::Tackle { .. } => t.defensive_tackle += 1,
+            DefensiveAction::Foul => t.defensive_foul += 1,
+            DefensiveAction::Contain => t.defensive_contain += 1,
+            DefensiveAction::Jockey => t.defensive_jockey += 1,
+            DefensiveAction::None => t.defensive_none += 1,
+        }
+        // 结算计数在**执行层**统一记账（每个评估过的计划恰好执行一次）——见 execute_action_resolution
+    }
+
+    ActionPlan {
+        carrier,
+        defensive,
+        defensive_exec,
+        resolution,
+    }
+}
+
+/// 自然 deadline 生命周期（D1，零 RNG）：无机会则开一个；有则推进 age，到期评估并重置。
+/// 返回 `Some(plan)` 表示本 tick 自然 deadline 到期（2A 结算恒为「继续带球」类）。
+fn advance_action_opportunity(st: &mut MatchState, rng: &mut SeededRng) -> Option<ActionPlan> {
+    // 球权改变 → 旧机会失效（D1）。
+    // 防御网：当前接线里球权改变都经由高亮 / 死球 / 松散球（各自已即时失效），故本分支
+    // 正常不触发；保留是为了不让「持球者换人而机会仍活着」这种未来接线变化悄悄成立。
+    if let Some(opp) = st.action_opportunity {
+        if st.carrier < 0 || opp.carrier != st.carrier {
+            invalidate_action_opportunity(st, OpportunityReason::PossessionChanged);
+        }
+    }
+    if st.action_opportunity.is_none() {
+        open_action_opportunity(st, OpportunityTrigger::NaturalDeadline);
+        return None;
+    }
+    let due = {
+        let opp = st.action_opportunity.as_mut().unwrap();
+        // 存活的机会必然由「开启类」触发源开启（失效路径会 take 掉机会并记失效原因）；
+        // 该不变量把 `reason` 与 D1 生命周期绑死，防止「原因字段只写不读」的空转。
+        debug_assert!(
+            matches!(
+                opp.reason,
+                OpportunityReason::DeadlineElapsed
+                    | OpportunityReason::SlotFallback
+                    | OpportunityReason::HoldTimeout
+            ),
+            "存活机会的 reason 应为开启类：{:?}",
+            opp.reason
+        );
+        opp.age_ticks += 1;
+        opp.age_ticks >= opp.deadline_ticks
+    };
+    if !due {
+        return None;
+    }
+    st.opportunity_tally.natural_deadline_due += 1;
+    let plan = build_action_plan(st, rng, OpportunityTrigger::NaturalDeadline);
+    // 结算为「继续带球」→ 重置 deadline 再等下一次（D1 可重复）
+    open_action_opportunity(st, OpportunityTrigger::NaturalDeadline);
+    Some(plan)
+}
+
+fn note_pass_out(t: &mut OpportunityTally, kind: DeadBallKind) {
+    match kind {
+        DeadBallKind::Corner => t.exec_pass_out_corner += 1,
+        DeadBallKind::ThrowIn => t.exec_pass_out_throw_in += 1,
+    }
+}
+
+/// 统一执行层：把结算落回既有 emit（2A 执行绑定）。`plan=None` = 本 tick 无行动机会（普通带球）。
+fn execute_action_resolution(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    plan: Option<ActionPlan>,
+) {
+    let plan = match plan {
+        Some(p) => p,
+        None => {
+            emit_beat_with_main(st, rng, events, t);
+            return;
+        }
+    };
+    plan.assert_resolution_consistent();
+    {
+        let t = &mut st.opportunity_tally;
+        match plan.resolution {
+            ActionResolution::CarrierAction(CarrierAction::Shoot) => t.res_carrier_shoot += 1,
+            ActionResolution::CarrierAction(CarrierAction::Pass { .. }) => t.res_carrier_pass += 1,
+            ActionResolution::CarrierAction(CarrierAction::Dribble) => t.res_carrier_dribble += 1,
+            ActionResolution::DeadBall(_) => t.res_dead_ball += 1,
+            ActionResolution::InterruptedByTackle => t.res_interrupted_tackle += 1,
+            ActionResolution::InterruptedByFoul => t.res_interrupted_foul += 1,
+            ActionResolution::DefensiveContainment => t.res_containment += 1,
+            ActionResolution::DefensiveJockey => t.res_jockey += 1,
+            ActionResolution::NoAction => t.res_no_action += 1,
+        }
+    }
+    match plan.resolution {
+        ActionResolution::DeadBall(kind) => {
+            debug_assert_eq!(
+                plan.carrier.exec,
+                CarrierExecution::PassOut { kind },
+                "死球结算须与持球侧执行绑定一致"
+            );
+            note_pass_out(&mut st.opportunity_tally, kind);
+            emit_pass_out_play_slot(st, rng, events, t, kind);
+        }
+        ActionResolution::InterruptedByTackle => match plan.defensive_exec {
+            DefensiveExecution::Tackle { same_pair, far } => {
+                st.opportunity_tally.exec_tackle += 1;
+                emit_tackle_highlight_impl(st, rng, events, t, same_pair, far);
+            }
+            DefensiveExecution::None => {
+                st.opportunity_tally.exec_continue += 1;
+                emit_beat_with_main(st, rng, events, t);
+            }
+        },
+        // 犯规的哨停 / 任意球重开已由 `maybe_open_foul` → `emit_foul_and_free_kick` 在本 tick 完成
+        ActionResolution::InterruptedByFoul => {}
+        ActionResolution::CarrierAction(_) => match plan.carrier.exec {
+            CarrierExecution::Shoot => {
+                st.module_shot_pending = true;
+                emit_shot_highlight(st, rng, events, t);
+            }
+            CarrierExecution::Pass { allow_out } => {
+                st.opportunity_tally.exec_pass += 1;
+                emit_pass_highlight_inner(st, rng, events, t, allow_out);
+            }
+            CarrierExecution::ForwardPass => {
+                st.opportunity_tally.exec_forward_pass += 1;
+                // 射门槽的向前传球完成即接射门（P9 桥接）——标记归因，落地时计入 exec_shoot
+                st.module_shot_pending = true;
+                emit_forward_pass_highlight(st, rng, events, t);
+            }
+            CarrierExecution::DriveThenShoot { target_dist } => {
+                st.opportunity_tally.exec_drive_then_shoot += 1;
+                st.module_shot_pending = true; // 到射程即起脚（advance_shot_setup 终局）
+                st.shot_setup = Some(ShotSetup {
+                    drive_ticks_left: SHOT_DRIVE_MAX_TICKS,
+                    target_dist,
+                });
+                advance_shot_setup(st, rng, events, t);
+            }
+            // 理论上不可达（PassOut 必与 dead_ball 同构 → DeadBall 结算优先）；保持 total 不 panic
+            CarrierExecution::PassOut { kind } => {
+                note_pass_out(&mut st.opportunity_tally, kind);
+                emit_pass_out_play_slot(st, rng, events, t, kind);
+            }
+            CarrierExecution::ContinueDribble => {
+                st.opportunity_tally.exec_continue += 1;
+                emit_beat_with_main(st, rng, events, t);
+            }
+        },
+        ActionResolution::DefensiveContainment
+        | ActionResolution::DefensiveJockey
+        | ActionResolution::NoAction => {
+            st.opportunity_tally.exec_continue += 1;
+            emit_beat_with_main(st, rng, events, t);
+        }
+    }
+}
+
 /// v2 比赛状态（固定 tick 推进 + 全员 pos）
 struct MatchState {
     lineup: [(f64, f64); 22],
@@ -603,6 +1476,11 @@ struct MatchState {
     has_yellow: [bool; 22],    // 球员是否已吃黄（二黄同人 → 升级红牌罚下）
     sent_off: [bool; 22],      // 罚下球员（红牌 / 二黄）；此后其所在队按"少一人"处理（本试点仅屏蔽其成为 carrier/chaser）
     foul_cooldown_ticks: u32,  // 距上次犯规 tick（≤ FOUL_MIN_GAP_TICKS 内不产犯规）
+    // P28 持球行动机会（#25 阶段 2A）：当前机会 + 观测计数器（tally 只写、不进事件流、不耗 RNG）
+    action_opportunity: Option<ActionOpportunity>,
+    opportunity_tally: OpportunityTally,
+    /// 模块已发起一次射门序列（直射 / 带球推进 / 向前传球推进），射门落地时归因到 `exec_shoot`。
+    module_shot_pending: bool,
 }
 
 /// 两犯规之间的最短间隔（tick）。犯规后哨停/任意球重开在槽位模型中表现为后续事件重排，
@@ -688,6 +1566,9 @@ impl MatchState {
             has_yellow: [false; 22],
             sent_off: [false; 22],
             foul_cooldown_ticks: 0,
+            action_opportunity: None,
+            opportunity_tally: OpportunityTally::default(),
+            module_shot_pending: false,
         }
     }
 }
@@ -833,17 +1714,21 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     // 1. 死球阶段（transition 不在此阶段，进球/死球已清除）
     if st.dead_ball.is_some() {
         st.ball_pos = (0.5, 0.5); // 死球/准备/kickoff：球在中圈附近（队形目标用）
+        assert_opportunity_not_leaked(st, OpportunityReason::DeadBall); // D1 防御网：死球
         advance_dead_ball(st, rng, events, t);
         return;
     }
     // 1b. 重开准备期（RestartPrep，非 DeadBall）：角球/界外球发球者走位 + 球停固定点
     if st.restart_prep.is_some() {
         st.ball_pos = st.restart_prep.as_ref().unwrap().target; // 球停固定点（角旗/出界点），队形目标用
+        assert_opportunity_not_leaked(st, OpportunityReason::Restart); // D1 防御网：重开
         advance_restart_prep(st, rng, events, t);
         return;
     }
     // 1c. P9 射门推进：carrier 向球门带球推进，到射程或步数上限后射门（推进期间 slot 时钟暂停）
     if st.shot_setup.is_some() {
+        // D1：推进期间持球段被打断，机会失效（推进结束接射门 → 新持球段重新开机会）
+        invalidate_action_opportunity(st, OpportunityReason::PlayBroken);
         advance_shot_setup(st, rng, events, t);
         return;
     }
@@ -859,6 +1744,8 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     // 2. 高亮进行中
     let hl_end = st.highlight.as_ref().map(|h| h.t_end);
     if let Some(t_end) = hl_end {
+        // D1：高亮飞行/交接都是持球段的打断 → 机会失效（须在高亮分支内，否则会每 tick 误杀）
+        invalidate_action_opportunity(st, OpportunityReason::PlayBroken);
         if t >= t_end {
             finalize_highlight(st, rng, events, t);
         } else {
@@ -871,14 +1758,16 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
         }
         return;
     }
-    // 3. 松散球
+    // 3. 松散球（D1 防御网：无持球者却仍有存活机会 = 漏）
     if st.loose.is_some() {
         st.ball_pos = st.loose.as_ref().unwrap().pos;
+        assert_opportunity_not_leaked(st, OpportunityReason::PlayBroken);
         advance_loose(st, rng, events, t);
         return;
     }
-    // 4. 开放比赛：槽位时钟驱动高亮 + 持球过渡（transition 期间暂停，只产 main + movers）
+    // 4. 开放比赛：行动机会驱动高亮 + 持球过渡（transition 期间暂停，只产 main + movers）
     if st.transition.is_some() {
+        assert_opportunity_not_leaked(st, OpportunityReason::PlayBroken); // D1 防御网：攻防转换窗口
         emit_beat_with_main(st, rng, events, t);
     } else {
         st.hold_ticks += 1;
@@ -888,18 +1777,33 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
             st.foul_cooldown_ticks -= 1;
         }
         if st.slot_clock >= st.slot_interval {
-            // 槽位高亮：固定间隔（比赛时长 / 高亮总数），保证精彩事件不随时长漂移
-            roll_highlight(st, rng, events, t);
+            // P28 D4：槽位时钟降级为 fallback 触发——不再 `roll_highlight_slot` 选事件类型，
+            // 改为开一次行动机会 → 统一评估 → 结算 → 执行。
             st.slot_clock = 0;
+            open_action_opportunity(st, OpportunityTrigger::FallbackDeadline);
+            let plan = build_action_plan(st, rng, OpportunityTrigger::FallbackDeadline);
+            execute_action_resolution(st, rng, events, t, Some(plan));
         } else if st.hold_ticks >= PASS_BREAK_TICKS {
             // P7 观感：carrier 持球超过 PASS_BREAK（12s）产普通传球过渡（球权流动），
             // 避免 90 分钟比赛 carrier 在球门旁停 200+ tick（前锋来回小幅运动很久）。
             // 普通传球不出界（指标稳定），不重置槽位时钟（finalize 后 hold_ticks 归零，槽位仍按间隔触发）。
-            emit_pass_highlight_no_out(st, rng, events, t);
+            // P28：同样走「机会 → 评估 → 结算 → 执行」——触发源是持球超时（触发契约有覆盖）。
+            open_action_opportunity(st, OpportunityTrigger::HoldTimeout);
+            let plan = build_action_plan(st, rng, OpportunityTrigger::HoldTimeout);
+            execute_action_resolution(st, rng, events, t, Some(plan));
         } else if maybe_open_foul(st, rng, events, t) {
-            // 贴身持球段犯规（任意球重开已由 emit_foul_and_free_kick 进入 restart_prep，本 tick 到此为止）
+            // 贴身持球段犯规（D3 第 2 级「防守中断」）：防守侧候选 = Foul，持球侧不承诺行动，
+            // 结算走统一优先级函数（不是就地打戳）；哨停/重开已由 emit_foul_and_free_kick 完成，
+            // 故执行层对本结算无事可做。机会在犯规 tick 失效（D1）。
+            invalidate_action_opportunity(st, OpportunityReason::Foul);
+            let plan = ActionPlan::foul_only(DefensiveAction::Foul);
+            st.opportunity_tally.defensive_foul += 1;
+            execute_action_resolution(st, rng, events, t, Some(plan));
         } else {
-            emit_beat_with_main(st, rng, events, t);
+            // 普通 tick：自然 deadline 生命周期（D1）+ 统一执行层。
+            // 2A 内自然 deadline 结算恒为「继续带球」（决策中性，零 RNG、零事件）。
+            let plan = advance_action_opportunity(st, rng);
+            execute_action_resolution(st, rng, events, t, plan);
         }
     }
 }
@@ -1259,71 +2163,23 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     movers
 }
 
-/// 高亮门控（P7 槽位驱动）：每槽必产一个高亮，类型按固定比例（Shot/Corner/ThrowIn/Tackle/Pass），
-/// 保证核心精彩事件（射门/角球/界外球/头球/抢断）数量稳定，不随时长漂移。
-fn roll_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    let slot = roll_highlight_slot(rng);
-    match slot {
-        HighlightSlot::Shot => {
-            // shot 槽：门将不射（改普通传球）。非门将按距离分流（P9 推进后射门）：
-            // ≤射程直接射；>40m 向前传球推进；25-40m 带球推进到射程再射。
-            if st.carrier == 0 || st.carrier == 21 {
-                emit_pass_highlight(st, rng, events, t);
-            } else {
-                // 所有射门槽都采样目标射门距离；carrier 已在目标距离内直接射，否则推进。
-                let target = sample_shot_target(rng);
-                if dist_to_goal_m(st, st.carrier) <= target {
-                    emit_shot_highlight(st, rng, events, t);
-                } else if dist_to_goal_m(st, st.carrier) > SHOT_PASS_ADVANCE_M {
-                    emit_forward_pass_highlight(st, rng, events, t);
-                } else {
-                    st.shot_setup = Some(ShotSetup {
-                        drive_ticks_left: SHOT_DRIVE_MAX_TICKS,
-                        target_dist: target,
-                    });
-                    advance_shot_setup(st, rng, events, t);
-                }
-            }
-        }
-        HighlightSlot::Corner => emit_pass_out_play_slot(st, rng, events, t, HighlightSlot::Corner),
-        HighlightSlot::ThrowIn => emit_pass_out_play_slot(st, rng, events, t, HighlightSlot::ThrowIn),
-        HighlightSlot::Tackle => {
-            // 门将不被抢断（同 Shot 槽 GK 守卫）——门将持球时改普通传球
-            if st.carrier == 0 || st.carrier == 21 {
-                emit_pass_highlight(st, rng, events, t);
-            } else {
-                let victim = st.carrier;
-                let victim_pos = st.pos[victim as usize];
-                let def_home = st.possession != 0;
-                let (def_id, _, dist) = nearest_defender(st, victim_pos, def_home);
-                let same_pair = st.last_tackle_pair == Some((def_id, victim));
-                let far = dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng);
-                // 总是产 tackle（数量稳定）；same_pair 强制 fail、far 降成功率（15%）、贴防正常 50/50
-                emit_tackle_highlight_impl(st, rng, events, t, same_pair, far);
-            }
-        }
-        HighlightSlot::Pass => emit_pass_highlight(st, rng, events, t),
-    }
-}
-
-/// P7 槽位出界：直接产"出界 pass"高亮（球飞向边界，viewer 演绎飞行），复用现有重开流程——
-/// 避免直接设球在固定点造成瞬移。corner 槽 → 进攻端底线出界（source=CornerDirect → 角球）；
-/// throw_in 槽 → 边线出界（source=NormalPass → 对方掷）。
-fn emit_pass_out_play_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, slot: HighlightSlot) {
+/// P7 死球出界：直接产"出界 pass"高亮（球飞向边界，viewer 演绎飞行），复用现有重开流程——
+/// 避免直接设球在固定点造成瞬移。Corner → 进攻端底线出界（source=CornerDirect → 角球）；
+/// ThrowIn → 边线出界（source=NormalPass → 对方掷）。
+fn emit_pass_out_play_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, kind: DeadBallKind) {
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
-    let (raw_x, raw_y, detail, source) = match slot {
-        HighlightSlot::Corner => {
+    let (raw_x, raw_y, detail, source) = match kind {
+        DeadBallKind::Corner => {
             let home = st.possession == 0;
             let x = if home { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
             let y = 0.2 + (rng.next_u64() % 60) as f64 / 100.0;
             (x, y, "out_goal_line", PassOutSource::CornerDirect)
         }
-        HighlightSlot::ThrowIn => {
+        DeadBallKind::ThrowIn => {
             let y = if rng.next_u64() % 2 == 0 { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 } else { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 };
             (from_pos.0, y, "out_sideline", PassOutSource::NormalPass)
         }
-        _ => unreachable!("emit_pass_out_play_slot 只服务 Corner/ThrowIn 槽"),
     };
     let (x2, y2) = (clamp01(raw_x), clamp01(raw_y));
     let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
@@ -1350,17 +2206,10 @@ fn emit_pass_out_play_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mu
 }
 
 /// pass 高亮：起点整数 tick，覆盖 [t, t_end)，参与者 = 传球者(静止) + 接球者(落点)。
-/// P6 批次1：低概率（3-5%）落点出界 → PassOutOfPlay（to=None + detail + source=NormalPass）；普通传球带 h（长传>20m h>0 / 短传≤20m h=0）。
-fn emit_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    emit_pass_highlight_inner(st, rng, events, t, true)
-}
-
-/// P7：普通过渡传球（carrier 持球超 PASS_BREAK 让画面流动）不出界——避免 90 分钟过渡传球
-/// 导致界外球数量级漂移（5min/90min 指标稳定）。`allow_out=false` 时落点恒在界内。
-fn emit_pass_highlight_no_out(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    emit_pass_highlight_inner(st, rng, events, t, false)
-}
-
+/// `allow_out=false`（P7 过渡传球，carrier 持球超 PASS_BREAK 让画面流动）时落点恒在界内——
+/// 避免 90 分钟过渡传球导致界外球数量级漂移（5min/90min 指标稳定）。
+/// P6 批次1：allow_out 时低概率（3-5%）落点出界 → PassOutOfPlay（to=None + detail +
+/// source=NormalPass）；普通传球带 h（长传>20m h>0 / 短传≤20m h=0）。
 fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, allow_out: bool) {
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
@@ -1547,8 +2396,17 @@ fn pass_h(meters: f64, rng: &mut SeededRng) -> f64 {
     }
 }
 
-/// shot 高亮：result=goal/saved/off_target；saved 分扑住/扑出
+/// shot 高亮：result=goal/saved/off_target；saved 分扑住/扑出。
+/// P28 归因：普通射门只能由模块发起的射门序列产生（直射 / 带球推进 / 向前传球推进）——
+/// 落地时按 `module_shot_pending` 计入执行绑定；未归因 = 有射门绕过模块（守卫会红）。
+/// 头球射门走 `emit_header_shot`（角球 battle 派生），不经此处、不计入。
 fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    if st.module_shot_pending {
+        st.module_shot_pending = false;
+        st.opportunity_tally.exec_shoot += 1;
+    } else {
+        st.opportunity_tally.shots_unattributed += 1;
+    }
     let shooter = st.carrier;
     let shooter_pos = st.pos[shooter as usize];
     let home = st.possession == 0;
@@ -1703,11 +2561,6 @@ fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events:
     let movers = compute_movers(st, rng, t, &[from, to]);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     events.push(beat_event(t, None, None, movers));
-}
-
-/// tackle 高亮：时长 1 tick；carrier_from = 接触点（carry-beat 归零）
-fn emit_tackle_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
-    emit_tackle_highlight_impl(st, rng, events, t, false, false)
 }
 
 /// P7：`same_pair`（连续同 pair）强制 fail；`far`（远离阈值）降成功率（15%，偶尔成功）；
@@ -4682,5 +5535,458 @@ mod tests {
         // 5min 也要有足够的精彩内容（集锦）：进球 ≥0.5、shot ≥4
         assert!(a5[4] as f64 / n as f64 >= 0.5, "5min 进球过少（{:.1}）", a5[4] as f64 / n as f64);
         assert!(a5[0] as f64 / n as f64 >= 4.0, "5min 射门过少（{:.1}）", a5[0] as f64 / n as f64);
+    }
+
+    // ==== P28 持球行动机会（#25 阶段 2A）纯函数测试 ====
+
+    /// D2：deadline 公式的方向、边界与钳制（不依赖 MatchState，零 RNG）。
+    #[test]
+    fn p28_action_deadline_formula() {
+        // 基线：无危险、无压迫、无出球空间 → BASE(7)
+        assert_eq!(compute_action_deadline(0.0, 0.0, 0.0), BASE_ACTION_DEADLINE_TICKS);
+        // 危险度 / 压迫压低 deadline
+        assert!(compute_action_deadline(1.0, 0.0, 0.0) < compute_action_deadline(0.0, 0.0, 0.0));
+        assert!(compute_action_deadline(0.0, 1.0, 0.0) < compute_action_deadline(0.0, 0.0, 0.0));
+        // 出球空间抬高 deadline
+        assert!(compute_action_deadline(0.0, 0.0, 1.0) > compute_action_deadline(0.0, 0.0, 0.0));
+        // 「近门 + 受压」明显短于「后场 + 无压 + 有出球空间」
+        let desperate = compute_action_deadline(1.0, 1.0, 0.0);
+        let settled = compute_action_deadline(0.0, 0.0, 1.0);
+        assert!(
+            desperate < settled,
+            "近门受压 deadline({}) 应短于后场从容 deadline({})",
+            desperate,
+            settled
+        );
+        // 钳制边界：极端组合落在 [MIN, MAX] 内，且两极都可达
+        assert_eq!(compute_action_deadline(1.0, 1.0, 0.0), MIN_ACTION_DEADLINE_TICKS);
+        assert_eq!(compute_action_deadline(0.0, 0.0, 1.0), MAX_ACTION_DEADLINE_TICKS);
+        for di in 0..=10 {
+            for pi in 0..=10 {
+                for ei in 0..=10 {
+                    let d = compute_action_deadline(di as f64 / 10.0, pi as f64 / 10.0, ei as f64 / 10.0);
+                    assert!(
+                        (MIN_ACTION_DEADLINE_TICKS..=MAX_ACTION_DEADLINE_TICKS).contains(&d),
+                        "deadline {} 越界（{}/{}/{}）", d, di, pi, ei
+                    );
+                }
+            }
+        }
+        // 越界输入按 [0,1] 钳制后再套公式（不 panic、不越界）：负值 → 全 0 → BASE；
+        // 全 1 → 7 - 4 - 3 + 5 = 5。
+        assert_eq!(compute_action_deadline(-5.0, -5.0, -5.0), BASE_ACTION_DEADLINE_TICKS);
+        assert_eq!(compute_action_deadline(9.0, 9.0, 9.0), 5);
+    }
+
+    /// D3：结算优先级——死球/重开 > 防守中断 > 持球终结 > 持球普通 > 无事件防守 > beat。
+    #[test]
+    fn p28_resolution_priority() {
+        let dribble = CarrierPlan {
+            action: Some(CarrierAction::Dribble),
+            dead_ball: None,
+            situation: None,
+            exec: CarrierExecution::ContinueDribble,
+        };
+        let pass = CarrierPlan {
+            action: Some(CarrierAction::Pass { target: Some(3) }),
+            dead_ball: None,
+            situation: None,
+            exec: CarrierExecution::Pass { allow_out: true },
+        };
+        let shoot = CarrierPlan {
+            action: Some(CarrierAction::Shoot),
+            dead_ball: None,
+            situation: None,
+            exec: CarrierExecution::Shoot,
+        };
+        let out = CarrierPlan {
+            action: Some(CarrierAction::Pass { target: None }),
+            dead_ball: Some(DeadBallKind::Corner),
+            situation: None,
+            exec: CarrierExecution::PassOut { kind: DeadBallKind::Corner },
+        };
+        let idle = CarrierPlan {
+            action: None,
+            dead_ball: None,
+            situation: None,
+            exec: CarrierExecution::ContinueDribble,
+        };
+        let tackle = DefensiveAction::Tackle { same_pair: false, far: false };
+        let contain = DefensiveAction::Contain;
+        let jockey = DefensiveAction::Jockey;
+        let none = DefensiveAction::None;
+
+        // 第 1 级：死球/重开压过一切
+        assert_eq!(resolve_action_opportunity(&out, tackle), ActionResolution::DeadBall(DeadBallKind::Corner));
+        assert_eq!(resolve_action_opportunity(&out, none), ActionResolution::DeadBall(DeadBallKind::Corner));
+        // 第 2 级：防守中断压过持球终结
+        assert_eq!(resolve_action_opportunity(&shoot, tackle), ActionResolution::InterruptedByTackle);
+        assert_eq!(resolve_action_opportunity(&shoot, DefensiveAction::Foul), ActionResolution::InterruptedByFoul);
+        // 第 3 级：持球终结压过无事件防守
+        assert_eq!(resolve_action_opportunity(&shoot, contain), ActionResolution::CarrierAction(CarrierAction::Shoot));
+        assert_eq!(resolve_action_opportunity(&shoot, jockey), ActionResolution::CarrierAction(CarrierAction::Shoot));
+        // 第 4 级：持球普通（pass/dribble）压过无事件防守
+        assert_eq!(resolve_action_opportunity(&pass, contain), ActionResolution::CarrierAction(CarrierAction::Pass { target: Some(3) }));
+        assert_eq!(resolve_action_opportunity(&dribble, jockey), ActionResolution::CarrierAction(CarrierAction::Dribble));
+        // 第 5 级：无事件防守（持球侧未承诺行动时才可见）
+        assert_eq!(resolve_action_opportunity(&idle, contain), ActionResolution::DefensiveContainment);
+        assert_eq!(resolve_action_opportunity(&idle, jockey), ActionResolution::DefensiveJockey);
+        // 第 6 级：无显著行动
+        assert_eq!(resolve_action_opportunity(&idle, none), ActionResolution::NoAction);
+    }
+
+    /// D3 契约：结算是两侧候选的忠实函数（每个可达组合都自洽）。
+    #[test]
+    fn p28_resolution_consistent_with_candidates() {
+        let carriers = [
+            ("dribble", Some(CarrierAction::Dribble), None),
+            ("pass", Some(CarrierAction::Pass { target: Some(5) }), None),
+            ("shoot", Some(CarrierAction::Shoot), None),
+            ("out", Some(CarrierAction::Pass { target: None }), Some(DeadBallKind::ThrowIn)),
+            ("idle", None, None),
+        ];
+        let defensives = [
+            DefensiveAction::Tackle { same_pair: true, far: false },
+            DefensiveAction::Tackle { same_pair: false, far: true },
+            DefensiveAction::Foul,
+            DefensiveAction::Contain,
+            DefensiveAction::Jockey,
+            DefensiveAction::None,
+        ];
+        for (name, action, dead) in carriers {
+            for d in defensives {
+                let plan = CarrierPlan {
+                    action,
+                    dead_ball: dead,
+                    situation: None,
+                    exec: if let Some(k) = dead {
+                        CarrierExecution::PassOut { kind: k }
+                    } else {
+                        CarrierExecution::ContinueDribble
+                    },
+                };
+                let full = ActionPlan {
+                    carrier: plan,
+                    defensive: d,
+                    defensive_exec: DefensiveExecution::None,
+                    resolution: resolve_action_opportunity(&plan, d),
+                };
+                full.assert_resolution_consistent();
+                // 结算必须落在「优先级最高」的那一条上
+                let expected = if dead.is_some() {
+                    ActionResolution::DeadBall(dead.unwrap())
+                } else if matches!(d, DefensiveAction::Tackle { .. }) {
+                    ActionResolution::InterruptedByTackle
+                } else if matches!(d, DefensiveAction::Foul) {
+                    ActionResolution::InterruptedByFoul
+                } else {
+                    match action {
+                        Some(CarrierAction::Shoot) => ActionResolution::CarrierAction(CarrierAction::Shoot),
+                        Some(a @ CarrierAction::Pass { .. }) => ActionResolution::CarrierAction(a),
+                        Some(CarrierAction::Dribble) => ActionResolution::CarrierAction(CarrierAction::Dribble),
+                        None => match d {
+                            DefensiveAction::Contain => ActionResolution::DefensiveContainment,
+                            DefensiveAction::Jockey => ActionResolution::DefensiveJockey,
+                            _ => ActionResolution::NoAction,
+                        },
+                    }
+                };
+                assert_eq!(full.resolution, expected, "carrier={} defensive={:?}", name, d);
+            }
+        }
+    }
+
+    /// D2 + 几何：MatchState 上算出的 deadline 方向正确，且门将持球放宽。
+    #[test]
+    fn p28_deadline_geometry_directions() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.carrier = 9;
+        st.possession = 0;
+        for id in 0..22usize {
+            st.pos[id] = (0.5, 0.5);
+        }
+
+        // 后场、无防守者靠近、队友散开 → 偏长
+        st.pos[9] = (0.2, 0.5);
+        for id in 11..=20usize { st.pos[id] = (0.95, 0.5); } // 防守者全在对面半场
+        st.pos[7] = (0.1, 0.15);
+        st.pos[8] = (0.1, 0.85);
+        let backfield = action_deadline_for(&st, 9);
+
+        // 近门 + 贴身双人包夹 → 偏短
+        st.pos[9] = (0.88, 0.5);
+        st.pos[11] = (0.885, 0.5);
+        st.pos[12] = (0.89, 0.5);
+        let boxed_in = action_deadline_for(&st, 9);
+
+        assert!(
+            boxed_in < backfield,
+            "近门受压 deadline({}) 应短于后场无压 deadline({})",
+            boxed_in,
+            backfield
+        );
+        assert!((MIN_ACTION_DEADLINE_TICKS..=MAX_ACTION_DEADLINE_TICKS).contains(&backfield));
+        assert!((MIN_ACTION_DEADLINE_TICKS..=MAX_ACTION_DEADLINE_TICKS).contains(&boxed_in));
+
+        // 门将持球：同一几何量下 deadline 不短于其几何基线（D2「门将允许更长」）
+        st.pos[0] = (0.05, 0.5);
+        let gk_deadline = action_deadline_for(&st, 0);
+        let (gd, gp, ge) = opportunity_geometry(&st, 0);
+        assert_eq!(
+            gk_deadline,
+            (compute_action_deadline(gd, gp, ge) + GK_DEADLINE_BONUS_TICKS).min(MAX_ACTION_DEADLINE_TICKS),
+            "门将 deadline 应为几何基线 + 放宽（上限封顶）"
+        );
+        assert!(
+            gk_deadline >= compute_action_deadline(gd, gp, ge),
+            "门将 deadline({}) 不应低于其几何基线",
+            gk_deadline
+        );
+        assert!(gk_deadline <= MAX_ACTION_DEADLINE_TICKS);
+    }
+
+    /// 防空转（P27 model_version 教训）：fallback 路径上抽情境必须**恰好消耗 1 次 RNG**，
+    /// 且与旧槽位抽签逐值同构；自然 deadline 路径零 RNG。RNG 序是等价性的地基。
+    #[test]
+    fn p28_fallback_situation_rng_parity() {
+        // 抽情境 = 1 次 roll（与旧 roll_highlight_slot 同构）
+        for seed in 1..=50u64 {
+            let mut a = SeededRng::new(seed);
+            let mut b = SeededRng::new(seed);
+            let s = roll_fallback_situation(&mut a);
+            let roll = b.next_u64() % 100;
+            let expect = if roll < 35 {
+                FallbackSituation::Shot
+            } else if roll < 47 {
+                FallbackSituation::Corner
+            } else if roll < 65 {
+                FallbackSituation::ThrowIn
+            } else if roll < 87 {
+                FallbackSituation::Tackle
+            } else {
+                FallbackSituation::Pass
+            };
+            assert_eq!(s, expect, "seed {} 情境抽签与旧槽位配额不同构", seed);
+            assert_eq!(a.next_u64(), b.next_u64(), "seed {} 抽情境后的 RNG 状态应一致", seed);
+        }
+    }
+
+    /// 防空转（结构性）：自然 deadline 的评估必须零 RNG 且结算为「继续带球」类。
+    #[test]
+    fn p28_natural_deadline_is_decision_neutral() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.carrier = 9;
+        st.pos[9] = (0.5, 0.5);
+        let mut rng = SeededRng::new(7);
+        let mut probe = SeededRng::new(7);
+
+        let plan = build_action_plan(&mut st, &mut rng, OpportunityTrigger::NaturalDeadline);
+        assert!(plan.carrier.action.is_none(), "自然 deadline 在 2A 内不应承诺任何行动");
+        assert!(
+            matches!(
+                plan.resolution,
+                ActionResolution::NoAction
+                    | ActionResolution::DefensiveContainment
+                    | ActionResolution::DefensiveJockey
+            ),
+            "自然 deadline 应结算为无事件类：{:?}",
+            plan.resolution
+        );
+        assert_eq!(
+            plan.carrier.exec,
+            CarrierExecution::ContinueDribble,
+            "自然 deadline 的执行绑定应为继续带球"
+        );
+        // 零 RNG：消费后的状态与「未消费」的探针一致
+        assert_eq!(rng.next_u64(), probe.next_u64(), "自然 deadline 评估不应消耗 RNG");
+    }
+
+    /// deadline 实测范围：跑满一场，每条机会的 deadline 都落在 [MIN, MAX]。
+    #[test]
+    fn p28_deadline_bounds_over_full_match() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut rng = SeededRng::new(3);
+        let mut events = Vec::new();
+        let mut t = TICK_SECONDS;
+        while t < 5400.0 {
+            tick(&mut st, &mut rng, &mut events, t);
+            t += TICK_SECONDS;
+        }
+        let tally = st.opportunity_tally;
+        assert!(tally.deadline_max >= tally.deadline_min, "deadline 范围记录异常");
+        assert!(
+            (MIN_ACTION_DEADLINE_TICKS..=MAX_ACTION_DEADLINE_TICKS).contains(&tally.deadline_min),
+            "实测 deadline 下界 {} 越界",
+            tally.deadline_min
+        );
+        assert!(
+            (MIN_ACTION_DEADLINE_TICKS..=MAX_ACTION_DEADLINE_TICKS).contains(&tally.deadline_max),
+            "实测 deadline 上界 {} 越界",
+            tally.deadline_max
+        );
+    }
+
+    /// 跑一场比赛（与 `simulate` 同构：tick 循环 + 终场前高亮排空），返回状态与事件流。
+    fn run_match(seed: u64, dur: f64) -> (MatchState, Vec<Event>) {
+        let lineup = default_lineup();
+        let mut rng = SeededRng::new(seed);
+        let mut events = Vec::new();
+        let mut st = MatchState::new(&lineup, dur);
+        st.hold_max = slot_hold_max(dur);
+        let mut t = TICK_SECONDS;
+        while t < dur {
+            tick(&mut st, &mut rng, &mut events, t);
+            t += TICK_SECONDS;
+        }
+        while st.highlight.is_some() {
+            finalize_highlight(&mut st, &mut rng, &mut events, dur);
+        }
+        (st, events)
+    }
+
+    /// 从事件流里数出与「执行绑定」一一对应的事件（生产者唯一）：
+    /// - `shot`（detail 非 "header"）：唯一生产者 `emit_shot_highlight`（头球走 emit_header_shot，带 detail=header）
+    /// - `tackle`：唯一生产者 `emit_tackle_highlight_impl`
+    /// - 死球出界 pass（result=out 且无 h/lead）：唯一生产者 `emit_pass_out_play_slot`，
+    ///   按 detail 分角球（out_goal_line）/ 界外球（out_sideline）
+    fn count_bound_events(events: &[Event]) -> [u64; 4] {
+        let mut shot = 0;
+        let mut tackle = 0;
+        let mut out_corner = 0;
+        let mut out_throw_in = 0;
+        for e in events {
+            match e.type_ {
+                EventType::Shot if e.detail.is_none() => shot += 1,
+                EventType::Tackle => tackle += 1,
+                EventType::Pass
+                    if e.result.as_deref() == Some("out") && e.h.is_none() && e.lead.is_none() =>
+                {
+                    match e.detail.as_deref() {
+                        Some("out_goal_line") => out_corner += 1,
+                        Some("out_sideline") => out_throw_in += 1,
+                        _ => {}
+                    }
+                }
+                _ => {}
+            }
+        }
+        [shot, tackle, out_corner, out_throw_in]
+    }
+
+    /// 防空转守卫（P27 model_version 教训的机器门）：跑满多场比赛，断言
+    /// 1. 新模块的每个触发 / 候选 / 结算分支都被真实命中（tally 各桶 > 0）；
+    /// 2. **执行绑定计数与事件流中对应事件数逐条相等**——计数只在统一执行层记账，
+    ///    若把 fallback 执行路径换回旧 `roll_highlight`（绕过新模块），计数恒为 0 而事件照产 → 红。
+    #[test]
+    fn p28_action_opportunity_is_live() {
+        let mut agg = OpportunityTally::default();
+        let mut bound = [0u64; 4];
+        let seeds = 1..=20u64;
+        for seed in seeds {
+            let (st, events) = run_match(seed, 5400.0);
+            let t = st.opportunity_tally;
+            // 逐场先守「计数 vs 事件流」
+            let b = count_bound_events(&events);
+            assert_eq!(t.exec_shoot, b[0], "seed {}: 射门执行绑定计数与 shot 事件数不符", seed);
+            assert_eq!(t.exec_tackle, b[1], "seed {}: 抢断执行绑定计数与 tackle 事件数不符", seed);
+            assert_eq!(t.exec_pass_out_corner, b[2], "seed {}: 角球出界执行绑定计数与事件数不符", seed);
+            assert_eq!(t.exec_pass_out_throw_in, b[3], "seed {}: 界外球执行绑定计数与事件数不符", seed);
+            assert_eq!(t.shots_unattributed, 0, "seed {}: 有射门绕过了模块归因", seed);
+            agg.natural_deadline += t.natural_deadline;
+            agg.natural_deadline_due += t.natural_deadline_due;
+            agg.fallback_deadline += t.fallback_deadline;
+            agg.hold_timeout += t.hold_timeout;
+            agg.invalidated += t.invalidated;
+            agg.invalidated_foul += t.invalidated_foul;
+            agg.invalidated_play_broken += t.invalidated_play_broken;
+            agg.opportunity_leaks += t.opportunity_leaks;
+            agg.carrier_dribble += t.carrier_dribble;
+            agg.carrier_pass += t.carrier_pass;
+            agg.carrier_shoot += t.carrier_shoot;
+            agg.defensive_tackle += t.defensive_tackle;
+            agg.defensive_foul += t.defensive_foul;
+            agg.defensive_contain += t.defensive_contain;
+            agg.defensive_jockey += t.defensive_jockey;
+            agg.defensive_none += t.defensive_none;
+            agg.res_carrier_shoot += t.res_carrier_shoot;
+            agg.res_carrier_pass += t.res_carrier_pass;
+            agg.res_carrier_dribble += t.res_carrier_dribble;
+            agg.res_dead_ball += t.res_dead_ball;
+            agg.res_interrupted_tackle += t.res_interrupted_tackle;
+            agg.res_interrupted_foul += t.res_interrupted_foul;
+            agg.res_containment += t.res_containment;
+            agg.res_jockey += t.res_jockey;
+            agg.res_no_action += t.res_no_action;
+            agg.exec_tackle += t.exec_tackle;
+            agg.exec_shoot += t.exec_shoot;
+            agg.exec_pass += t.exec_pass;
+            agg.exec_forward_pass += t.exec_forward_pass;
+            agg.exec_drive_then_shoot += t.exec_drive_then_shoot;
+            agg.exec_pass_out_corner += t.exec_pass_out_corner;
+            agg.exec_pass_out_throw_in += t.exec_pass_out_throw_in;
+            agg.exec_continue += t.exec_continue;
+            agg.shots_unattributed += t.shots_unattributed;
+            for i in 0..4 {
+                bound[i] += b[i];
+            }
+        }
+
+        // 1. 触发源全覆盖
+        assert!(agg.fallback_deadline > 0, "fallback 触发从未发生");
+        assert!(agg.natural_deadline > 0, "自然 deadline 从未开启");
+        assert!(agg.hold_timeout > 0, "持球超时触发从未发生");
+        // 2. D1 生命周期：deadline 真正到期被评估 + 失效路径覆盖
+        assert!(agg.natural_deadline_due > 0, "自然 deadline 从未真正到期");
+        assert!(agg.invalidated > 0, "机会从未失效");
+        assert!(agg.invalidated_foul > 0, "犯规失效未覆盖");
+        assert!(agg.invalidated_play_broken > 0, "持球段打断失效未覆盖");
+        // D1 不漏：死球/重开/球权改变时都不应存在跨越持球段的存活机会
+        assert_eq!(
+            agg.opportunity_leaks, 0,
+            "存在跨越持球段边界的存活机会（D1 失效契约被违反）"
+        );
+        // 3. 持球候选动作全覆盖（Dribble 来自 fallback 的被逼抢情境）
+        assert!(agg.carrier_shoot > 0, "候选动作 Shoot 从未产生");
+        assert!(agg.carrier_pass > 0, "候选动作 Pass 从未产生");
+        assert!(agg.carrier_dribble > 0, "候选动作 Dribble 从未产生");
+        // 4. 防守候选动作与结算分支（含无事件防守两类）
+        assert!(agg.defensive_tackle > 0, "防守候选 Tackle 从未产生");
+        assert!(agg.defensive_foul > 0, "防守候选 Foul 从未产生");
+        assert!(agg.defensive_contain > 0, "防守候选 Contain 从未产生");
+        assert!(agg.defensive_jockey > 0, "防守候选 Jockey 从未产生");
+        assert!(agg.res_carrier_shoot > 0, "持球终结（射门）结算未覆盖");
+        assert!(agg.res_carrier_pass > 0, "持球普通（传球）结算未覆盖");
+        // `CarrierAction(Dribble)` 在 2A 结构性不可达：唯一的 Dribble 候选来自 fallback 的
+        // 「被逼抢」情境，而该情境必伴随防守候选 Tackle → D3 优先级下结算恒为 InterruptedByTackle。
+        // 2C 引入真实接触竞争（抢断可能不胜出）后可达；此处不谎报覆盖（候选 Dribble 已单独覆盖）。
+        assert_eq!(agg.res_carrier_dribble, 0, "2A 内 Dribble 结算不应出现（D3 优先级所限）");
+        assert!(agg.carrier_dribble > 0, "候选动作 Dribble 从未产生");
+        assert!(agg.res_dead_ball > 0, "死球结算从未发生");
+        assert!(agg.res_interrupted_tackle > 0, "抢断中断结算从未发生");
+        assert!(agg.res_interrupted_foul > 0, "犯规中断结算从未发生");
+        assert!(agg.res_containment > 0 && agg.res_jockey > 0, "无事件防守结算未覆盖");
+        // 5. 执行绑定：计数 > 0（换回旧路径 → 归零 → 红）
+        assert!(agg.exec_shoot > 0, "射门执行绑定从未生效（模块可能被绕过）");
+        assert!(agg.exec_tackle > 0, "抢断执行绑定从未生效");
+        assert!(agg.exec_pass > 0 && agg.exec_continue > 0);
+        assert!(agg.exec_forward_pass > 0, "远段向前推进执行绑定未覆盖");
+        assert!(agg.exec_drive_then_shoot > 0, "带球推进射门执行绑定未覆盖");
+        assert!(agg.exec_pass_out_corner > 0 && agg.exec_pass_out_throw_in > 0);
+        // 6. 聚合口径的绑定必须与聚合事件数一致（跨 20 场累计，防逐场巧合）
+        assert_eq!(agg.exec_shoot, bound[0], "聚合射门绑定计数 ≠ 事件流 shot 数");
+        assert_eq!(agg.exec_tackle, bound[1], "聚合抢断绑定计数 ≠ 事件流 tackle 数");
+        assert_eq!(agg.exec_pass_out_corner, bound[2], "聚合角球出界绑定计数 ≠ 事件数");
+        assert_eq!(agg.exec_pass_out_throw_in, bound[3], "聚合界外球出界绑定计数 ≠ 事件数");
+        assert_eq!(agg.shots_unattributed, 0, "存在未经模块发起即落地的射门");
+        // 7. 自然 deadline 在 2A 内决策中性（D5）：每次「到期被评估」的结算都落在无事件类
+        //    （继续带球 / 封堵 / 跟防），两次计数必须相等——不等即说明该路径产出了承诺行动。
+        assert_eq!(
+            agg.natural_deadline_due,
+            agg.res_containment + agg.res_jockey + agg.res_no_action,
+            "自然 deadline 到期次数应等于无事件结算次数（2A 决策中性）"
+        );
     }
 }
