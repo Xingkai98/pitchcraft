@@ -747,8 +747,11 @@ struct ActionPlan {
 impl ActionPlan {
     /// D3 契约自检：结算优先级必须忠实地由「持球候选 + 防守候选」推出（执行绑定与结算同构）。
     /// 违约说明结算函数与两侧候选脱节——正是 D3 要防的「类型配额反推动作」复发。
+    ///
+    /// 用 `assert!` 而非 `debug_assert!`：发布产物是 release WASM/Tauri，debug_assert 在发布态
+    /// 会静默消失，这条契约就没人守。成本是每次机会评估一次纯比较（全场 ~10³ 量级，可忽略）。
     fn assert_resolution_consistent(&self) {
-        debug_assert!(
+        assert!(
             match self.resolution {
                 ActionResolution::DeadBall(kind) =>
                     self.carrier.dead_ball == Some(kind),
@@ -1316,7 +1319,8 @@ fn advance_action_opportunity(st: &mut MatchState, rng: &mut SeededRng) -> Optio
         let opp = st.action_opportunity.as_mut().unwrap();
         // 存活的机会必然由「开启类」触发源开启（失效路径会 take 掉机会并记失效原因）；
         // 该不变量把 `reason` 与 D1 生命周期绑死，防止「原因字段只写不读」的空转。
-        debug_assert!(
+        // 同样用 `assert!` 保住发布态守护（见 `assert_resolution_consistent` 注释）。
+        assert!(
             matches!(
                 opp.reason,
                 OpportunityReason::DeadlineElapsed
@@ -5558,7 +5562,11 @@ mod tests {
             desperate,
             settled
         );
-        // 钳制边界：极端组合落在 [MIN, MAX] 内，且两极都可达
+        // 钳制边界：公式层两极可达。注意 danger 在 `opportunity_geometry` 里是三因子连乘
+        // （proximity × central × forward），要 danger≈1 需同时「贴对方门线 + 正中路 +
+        // 身前 30m 无人」——实战几乎不可能，故实测 deadline_min 通常为 4 而非 3（见
+        // `p28_action_opportunity_is_live` 的探针结论）。这里断言的是**钳制区间**成立，不是
+        // 「3 常现」；spec 的 [3,12] 亦指钳制区间。
         assert_eq!(compute_action_deadline(1.0, 1.0, 0.0), MIN_ACTION_DEADLINE_TICKS);
         assert_eq!(compute_action_deadline(0.0, 0.0, 1.0), MAX_ACTION_DEADLINE_TICKS);
         for di in 0..=10 {
@@ -5957,6 +5965,9 @@ mod tests {
         assert!(agg.defensive_foul > 0, "防守候选 Foul 从未产生");
         assert!(agg.defensive_contain > 0, "防守候选 Contain 从未产生");
         assert!(agg.defensive_jockey > 0, "防守候选 Jockey 从未产生");
+        // 「无防守动作」是占优桶（自然 deadline 多数 tick 无贴身防守者），必须真实命中；
+        // 它与三个防守动作桶共同构成全分区，故取「四桶之和 = 全部评估次数」作覆盖口径。
+        assert!(agg.defensive_none > 0, "防守候选 None 从未产生");
         assert!(agg.res_carrier_shoot > 0, "持球终结（射门）结算未覆盖");
         assert!(agg.res_carrier_pass > 0, "持球普通（传球）结算未覆盖");
         // `CarrierAction(Dribble)` 在 2A 结构性不可达：唯一的 Dribble 候选来自 fallback 的
