@@ -6743,11 +6743,14 @@ mod tests {
             agg.shot_window_commits_by_pressure[b] as f64
                 / agg.shot_window_entries_by_pressure[b].max(1) as f64
         };
-        // 方向：无压窗口提交率 > 贴身窗口提交率（D2 `defensive_pressure` 因子在真实数据上的落点）
+        // 方向 + **margin**：无压窗口提交率应显著高于贴身窗口（D2 `defensive_pressure` 因子
+        // 在真实数据上的落点）。margin 让这条断言**自身**绑定该因子：删掉 pressure 因子会让
+        // 贴身窗口提交率升向 1.0、gap 收敛到 0 → 断言红（实测 gap ≈ 0.30；阈值 0.10 留余量）。
+        let gap = rate(1) - rate(0);
         assert!(
-            rate(1) > rate(0),
-            "无压窗口提交率({:.3}) 应高于贴身窗口提交率({:.3})——hazard 未体现压迫方向（D2/D4）",
-            rate(1), rate(0)
+            gap > 0.10,
+            "无压窗口提交率({:.3}) 应显著高于贴身窗口提交率({:.3})（gap {:.3} ≤ 0.10）——hazard 未体现压迫方向（D2/D4）",
+            rate(1), rate(0), gap
         );
         // 数量级 sanity：整体提交率不应饱和（否则「到射程即射」回潮，hazard 只是装饰）
         let overall = agg.shot_window_commits as f64 / agg.shot_window_entries.max(1) as f64;
