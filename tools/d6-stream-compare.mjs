@@ -1,6 +1,19 @@
-// D6 确定性边界一次性验证：逐事件对比 change 前（pre.wasm）与 change 后（post.wasm）事件流。
-// 期望：事件数量逐 seed 完全一致、非出界事件逐字节一致、只有出界 pass 的字段值变。
-// 用法：node d6-compare.mjs <pre.wasm> <post.wasm> <seedStart> <seedEnd> [duration]
+// P27 D6 确定性边界验证：逐事件逐字段对比两个引擎 wasm 的事件流。
+// 期望：事件数量逐 seed 完全一致、非出界事件逐字段一致、只有出界 pass 的
+// result/out_side/out_pos 变（detail/x2/y2 仍与旧版一致）。
+//
+// 用途（阶段 2/3 再改出界编码时也复用）：拿改前/改后的 wasm 各跑一遍，证明「只改协议字段、
+// 不改事件数量/时序」。永久回归由 engine/tests/realism.rs 的 gm_v1_regression_counts_unchanged
+// 承担（对 v1 golden 基线），本脚本给出更细的**逐字段**证据。
+//
+// 构建两个 wasm：
+//   (cd engine && cargo build --target wasm32-unknown-unknown --release) \
+//     && cp engine/target/wasm32-unknown-unknown/release/fm_engine.wasm /tmp/post.wasm
+//   git stash && (cd engine && cargo build --target wasm32-unknown-unknown --release) \
+//     && cp engine/target/wasm32-unknown-unknown/release/fm_engine.wasm /tmp/pre.wasm && git stash pop
+//
+// 用法：node tools/d6-stream-compare.mjs <pre.wasm> <post.wasm> <seedStart> <seedEnd> [duration]
+// 退出码：0 = 只有出界字段变（D6 OK）；1 = 出现事件数/非出界字段差异（D6 FAIL）。
 import { readFileSync } from 'node:fs';
 
 const [prePath, postPath, s0, s1, durArg] = process.argv.slice(2);
@@ -96,4 +109,6 @@ console.log(`出界事件数：${outEvents}`);
 console.log(`事件数不一致的 seed 数：${countMismatch}`);
 console.log(`非预期差异总数：${otherFieldDiffs}`);
 if (fieldDiffKinds.size) console.log('差异字段分布：', [...fieldDiffKinds.entries()]);
-console.log(countMismatch === 0 && otherFieldDiffs === 0 ? 'D6 OK：只有出界 pass 的 result/out_side/out_pos 变。' : 'D6 FAIL');
+const ok = countMismatch === 0 && otherFieldDiffs === 0;
+console.log(ok ? 'D6 OK：只有出界 pass 的 result/out_side/out_pos 变。' : 'D6 FAIL');
+process.exit(ok ? 0 : 1);

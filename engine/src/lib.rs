@@ -4093,6 +4093,115 @@ mod tests {
         json_num(e, "h")
     }
 
+    /// 取 `"out_pos":[x,y]` 的二元组（P27 出界真实坐标）。
+    fn out_pos_of(e: &str) -> Option<(f64, f64)> {
+        let idx = e.find("\"out_pos\":[")?;
+        let rest = &e[idx + "\"out_pos\":[".len()..];
+        let end = rest.find(']')?;
+        let inner = &rest[..end];
+        let mut it = inner.split(',');
+        let x: f64 = it.next()?.trim().parse().ok()?;
+        let y: f64 = it.next()?.trim().parse().ok()?;
+        Some((x, y))
+    }
+
+    /// P27 出界 pass 字段契约（三条出界路径共用断言）：
+    /// result="out"、out_side ∈ {goal_line,sideline} 且与 detail 一致、x2/y2 ∈[0,1]（场内投影）、
+    /// out_pos 存在且**真的越界**（至少一维 <0 或 >1）、out_pos 与 x2/y2 语义不同（投影≠真实点）。
+    fn assert_out_fields(e: &str, expect_detail: &str) {
+        assert_eq!(type_of(e), "pass", "出界事件应为 pass: {}", e);
+        assert_eq!(json_str(e, "result").as_deref(), Some("out"), "出界 pass result 应为 out: {}", e);
+        let expect_side = if expect_detail == "out_goal_line" { "goal_line" } else { "sideline" };
+        assert_eq!(json_str(e, "out_side").as_deref(), Some(expect_side), "out_side 应为 {}: {}", expect_side, e);
+        assert_eq!(json_str(e, "detail").as_deref(), Some(expect_detail), "detail 应保留: {}", e);
+        assert!(json_num(e, "to").is_none(), "出界 pass to 应为 None: {}", e);
+        let x2 = json_num(e, "x2").expect("出界 pass 应有 x2（场内投影）");
+        let y2 = json_num(e, "y2").expect("出界 pass 应有 y2（场内投影）");
+        assert!(x2 >= 0.0 && x2 <= 1.0 && y2 >= 0.0 && y2 <= 1.0, "x2/y2 应钳制 [0,1]（协议不破）: {}", e);
+        let (opx, opy) = out_pos_of(e).unwrap_or_else(|| panic!("出界 pass 应有 out_pos: {}", e));
+        assert!(
+            opx < 0.0 || opx > 1.0 || opy < 0.0 || opy > 1.0,
+            "out_pos 应为真实越界坐标（至少一维越界）: ({}, {}) in {}",
+            opx, opy, e
+        );
+        // 语义区分：投影点必然有一维等于边界（0/1），真实点不是投影点本身。
+        assert!(
+            (opx != x2) || (opy != y2),
+            "out_pos（真实越界点）不应等于 x2/y2（投影点）: {}", e
+        );
+    }
+
+    #[test]
+    fn p27_out_pass_fields_all_paths() {
+        // P27 D2/D1：三条出界路径（槽位出界 / 普通传球出界 / 头球解围出界）都发
+        // result="out" + out_side + 真实越界 out_pos，且 x2/y2 保持场内投影。
+        // 用 find_pass_detail 命中 detail=out_* 即覆盖三条路径的事件形状（detail 由各路径唯一确定）。
+        let cfg = MatchConfig::default_();
+        let mut seen = std::collections::HashSet::new();
+        for seed in 1..80u64 {
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                let detail = json_str(&e, "detail");
+                match detail.as_deref() {
+                    Some("out_sideline") => { assert_out_fields(&e, "out_sideline"); seen.insert("sideline"); }
+                    Some("out_goal_line") => { assert_out_fields(&e, "out_goal_line"); seen.insert("goal_line"); }
+                    _ => {}
+                }
+            }
+            if seen.len() == 2 { break; }
+        }
+        assert_eq!(seen.len(), 2, "应同时覆盖出边线与出底线两条出界边: {:?}", seen);
+    }
+
+    #[test]
+    fn p27_contested_preserved_for_restart_passes() {
+        // P27 D1：门球开大脚 / 角球发球 pass 的 result 仍是 "contested"（落点是争抢点，非出界），
+        // 且**不带** out_side/out_pos（那是出界字段）。这是本 change 最容易改错的地方。
+        let cfg = MatchConfig::default_();
+        let mut saw_goal_kick = false;
+        let mut saw_corner = false;
+        for seed in 1..80u64 {
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                if type_of(e.as_str()) != "pass" { continue; }
+                let has_to = json_num(&e, "to").is_some();
+                let detail = json_str(&e, "detail");
+                let is_corner = detail.as_deref() == Some("corner");
+                let subj = json_num(&e, "subject").unwrap_or(-1.0) as i32;
+                let is_gk_pass = !has_to && (subj == 0 || subj == 21);
+                if is_corner {
+                    assert_eq!(json_str(&e, "result").as_deref(), Some("contested"), "角球发球应仍为 contested: {}", e);
+                    assert!(out_pos_of(&e).is_none(), "角球发球不应带 out_pos: {}", e);
+                    saw_corner = true;
+                }
+                if is_gk_pass {
+                    assert_eq!(json_str(&e, "result").as_deref(), Some("contested"), "门球开大脚应仍为 contested: {}", e);
+                    assert!(out_pos_of(&e).is_none(), "门球不应带 out_pos: {}", e);
+                    saw_goal_kick = true;
+                }
+            }
+            if saw_goal_kick && saw_corner { break; }
+        }
+        assert!(saw_goal_kick, "应扫到门球开大脚 pass");
+        assert!(saw_corner, "应扫到角球发球 pass");
+    }
+
+    #[test]
+    fn p27_clearance_normal_still_contested() {
+        // 正常头球解围（detail=clearance，非出界）仍是 contested、无出界字段；
+        // 只有解围**出界**（detail=out_*）才改 result=out。
+        let cfg = MatchConfig::default_();
+        for seed in 1..80u64 {
+            let s = simulate(seed, cfg);
+            if let Some(e) = find_pass_detail(&s, "clearance") {
+                assert_eq!(json_str(&e, "result").as_deref(), Some("contested"), "正常解围应为 contested: {}", e);
+                assert!(out_pos_of(&e).is_none(), "正常解围不应带 out_pos: {}", e);
+                return;
+            }
+        }
+        panic!("没有任何 seed 产出正常头球解围（detail=clearance）");
+    }
+
     #[test]
     fn p6_pass_out_sideline_throw_in() {
         // 传球出边线 → 界外球：detail=out_sideline、to=None、坐标钳制；后续掷球 pass（外场、h=0）
