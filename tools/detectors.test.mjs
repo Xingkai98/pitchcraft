@@ -765,6 +765,132 @@ test('a real contested out pass is not excluded by the contested result (D2)', (
   assert.equal(pass_outcomes.excluded.sample_count, 0);
 });
 
+// --- P26 player_overlap：同队间距（#35 detector 部分） -----------------------
+// 同队判定按 id 范围（0-10 home / 11-21 away，与 derive 层 teamOf 一致）；按 t 对齐；
+// 按球员对聚合；阈值来自 profile.player_overlap.min_distance（默认 2.0）。
+
+test('real windows report a player_overlap realism_warning where teammates crowd (P26)', () => {
+  // 真实 fixture 上只有 corner 窗口同队（home 4/5）贴到 <2m（实测 0.434m）；引擎未修，
+  // detector 必须把这件事暴露出来。#53 修引擎后这些 finding 应归零。
+  const w = realWindow('corner');
+  const { findings } = runAudit(w);
+  const overlap = findings.filter((f) => f.detector_id === 'player_overlap');
+  assert.equal(overlap.length, 1, JSON.stringify(findings));
+  assert.equal(overlap[0].severity, 'realism_warning');
+  assert.equal(overlap[0].entity_id, '4,5');
+  assert.ok(overlap[0].features.min_distance < DEFAULT_AUDIT_PROFILE.player_overlap.min_distance);
+});
+
+test('a window with comfortably spaced teammates reports no player_overlap (P26)', () => {
+  // 反面对照：throw_in 窗口的同队 pair 16/17 最小间距 30.257m ≫ 2m → 不产 finding。
+  // 缺了这条，「detector 对任何同队 pair 都报警」的假阳性写坏也全绿。
+  const w = realWindow('throw_in');
+  const { findings } = runAudit(w);
+  assert.deepEqual(findings.filter((f) => f.detector_id === 'player_overlap'), []);
+});
+
+test('player_overlap threshold is strict < (distance == min_distance is not a finding)', () => {
+  // 阈值方向守卫（镜像 P22 的阈值守卫）：恰等于 min_distance 不报，严格小于才报。
+  // 用 profile 覆写 min_distance 到与合成间距**精确相等**的整数值，避免浮点尾巴。
+  const players = {
+    4: [{ t: 10, x: 0, y: 0 }],
+    5: [{ t: 10, x: 2, y: 0 }],
+  };
+  const profile = {
+    ...DEFAULT_AUDIT_PROFILE,
+    player_overlap: { ...DEFAULT_AUDIT_PROFILE.player_overlap, min_distance: 2 },
+  };
+  assert.deepEqual(
+    runAudit({ players }, profile).findings.filter((f) => f.detector_id === 'player_overlap'),
+    [],
+    'distance exactly equal to min_distance must not be reported (< is strict)'
+  );
+  const closer = {
+    4: [{ t: 10, x: 0, y: 0 }],
+    5: [{ t: 10, x: 1.999, y: 0 }],
+  };
+  const reported = runAudit({ players: closer }, profile).findings.filter(
+    (f) => f.detector_id === 'player_overlap'
+  );
+  assert.equal(reported.length, 1, 'distance just below min_distance must be reported');
+  assert.equal(reported[0].thresholds.min_distance, 2);
+});
+
+test('player_overlap aggregates one finding per teammate pair, not per sample (P26 D2)', () => {
+  // 同一 pair 在多个采样点都 < 阈值 → 只报一条；match_time 取首次越界时刻，
+  // features.min_distance 取窗口内最小间距（不是首次越界的那个间距）。
+  const players = {
+    4: [
+      { t: 10, x: 0, y: 0 },
+      { t: 11, x: 1.5, y: 0 },
+      { t: 12, x: 3, y: 0 },
+      { t: 13, x: 0.8, y: 0 },
+    ],
+    5: [
+      { t: 10, x: 1.0, y: 0 },
+      { t: 11, x: 2.0, y: 0 },
+      // t=12 时两人相距 5m ≥ 阈值 → 不越界（这条让「最小间距跨整个窗口」与「首次越界」
+      // 区分开：若 features 取了首次越界的间距，min_distance 会假成 1.0）。
+      { t: 12, x: 8.0, y: 0 },
+      { t: 13, x: 1.5, y: 0 },
+    ],
+  };
+  const overlap = runAudit({ players }).findings.filter(
+    (f) => f.detector_id === 'player_overlap'
+  );
+  assert.equal(overlap.length, 1, 'one finding per pair, not one per sample');
+  assert.equal(overlap[0].match_time, 10, 'match_time is the first breaching sample');
+  assert.equal(overlap[0].features.min_distance, 0.5, 'min_distance spans the whole window');
+  assert.equal(overlap[0].features.first_breach_time, 10);
+  assert.equal(overlap[0].features.breach_samples, 3);
+  assert.equal(overlap[0].features.aligned_samples, 4);
+});
+
+test('player_overlap never pairs cross-team players (id range defines the team, D1)', () => {
+  // 间距 <2m 但跨队（home 4 / away 11）→ 不是重叠，是对抗中的贴身，不该报。
+  const players = {
+    4: [{ t: 10, x: 0, y: 0 }],
+    11: [{ t: 10, x: 0.5, y: 0 }],
+  };
+  assert.deepEqual(
+    runAudit({ players }).findings.filter((f) => f.detector_id === 'player_overlap'),
+    []
+  );
+});
+
+test('player_overlap skips snapshots whose teammates have no sample at that t (D6)', () => {
+  // 采样点不对齐（某球员某 t 无快照）→ 该 t 跳过，不拿缺失位置当原点。player 5 只在
+  // t=12 有快照，与 4 的 t=10 间距 0.2m——若把缺采样当 (0,0) 会造出一条假 finding。
+  const players = {
+    4: [
+      { t: 10, x: 0.2, y: 0 },
+      { t: 12, x: 40, y: 0 },
+    ],
+    5: [{ t: 12, x: 40.2, y: 0 }],
+  };
+  const overlap = runAudit({ players }).findings.filter(
+    (f) => f.detector_id === 'player_overlap'
+  );
+  assert.equal(overlap.length, 1, JSON.stringify(overlap));
+  assert.equal(overlap[0].match_time, 12, 'the unaligned t=10 must be skipped');
+});
+
+test('player_overlap is registered in the audit stats with a pair count (P26)', () => {
+  // statsFor 集成：stats 行必须存在，否则新 detector 的失败会静默不计数。
+  const { stats } = runAudit({
+    players: {
+      4: [{ t: 10, x: 0, y: 0 }],
+      5: [{ t: 10, x: 0.4, y: 0 }],
+      6: [{ t: 10, x: 50, y: 0 }],
+    },
+  });
+  const stat = stats.find((s) => s.detector_id === 'player_overlap');
+  assert.ok(stat, 'player_overlap must appear in stats');
+  assert.equal(stat.samples, 3, 'three same-team pairs among 4/5/6');
+  assert.equal(stat.determinate, 1);
+  assert.equal(stat.unknown, 0);
+});
+
 // --- P21 D3：不再读无生产者的字段 --------------------------------------------
 
 test('unforced_out features no longer carry target_distance (D3)', () => {
@@ -848,7 +974,7 @@ test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (
   // 标定状态必须**显式**声明（isUncalibrated 只认 calibrated:true；「没声明」= 未标定，
   // fail-closed）。默认 profile 里只有 ignored_interception 未标定，其余显式 true。
   // 配置块 = 与 detector 对应的对象块（非顶层标量/非 pitch/aggregation）。
-  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'ignored_interception', 'invariants']) {
+  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'ignored_interception', 'player_overlap', 'invariants']) {
     const block = DEFAULT_AUDIT_PROFILE[blockKey];
     assert.equal(
       typeof block.calibrated,
@@ -860,6 +986,9 @@ test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (
   assert.equal(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, true);
   assert.equal(DEFAULT_AUDIT_PROFILE.inactive_responsibility.calibrated, true);
   assert.equal(DEFAULT_AUDIT_PROFILE.invariants.calibrated, true);
+  // P26：阈值 2.0m 是真实比赛常识，但告警率未用真实比赛标定（标定归 #36）→ 显式未标定。
+  assert.equal(DEFAULT_AUDIT_PROFILE.player_overlap.calibrated, false);
+  assert.equal(DEFAULT_AUDIT_PROFILE.player_overlap.min_distance, 2.0);
 });
 
 test('aggregateAudit does not escalate an uncalibrated detector, even above band (D4)', () => {
@@ -1226,6 +1355,7 @@ test('threshold direction: near-boundary is strict < (distance == margin is not 
 const GOLDEN_FINDINGS = [
   'clearance | ignored_interception_opportunity | realism_warning | ev=3412 | ent=12',
   'corner | ignored_interception_opportunity | realism_warning | ev=1687 | ent=7',
+  'corner | player_overlap | realism_warning | ev=null | ent=4,5',
   'free_kick | ignored_interception_opportunity | realism_warning | ev=474 | ent=15',
   'free_kick | inactive_responsibility | unknown | ev=null | ent=6',
   'out_goal_line | ignored_interception_opportunity | realism_warning | ev=2523 | ent=17',

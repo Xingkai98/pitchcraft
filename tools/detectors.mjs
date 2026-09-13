@@ -38,6 +38,16 @@ export const DEFAULT_AUDIT_PROFILE = {
     // 不因超出参考 band 升级为 realism_failure，也不把它当可信线索；仅降级静音。
     calibrated: false,
   },
+  player_overlap: {
+    // 同队两球员的最小站位间距（米）。真人比赛同队间距通常 ≥2m（issue #35）；引擎当前
+    // repulsion（REPULSION_MIN_DIST=1.36m + 盲区）会把同队球员贴到 0.1m 级，引擎侧间距
+    // 约束归 #53。detector 只按严格 `<` 判定（恰等于阈值不算重叠）。
+    min_distance: 2.0,
+    // P21 D4 的显式标定声明：只知道阈值（真实比赛常识），不知道**告警率**的真实区间，
+    // 所以与 ignored_interception 同样标未标定——聚合层不因超 band 升级 realism_failure，
+    // 保持 D3 的 realism_warning 语义。告警率标定归 #36。
+    calibrated: false,
+  },
   // Baseline invariant checks: things that must hold regardless of realism.
   invariants: {
     // Out-of-order tolerance for same-instant events (kickoff+whistle at t).
@@ -62,6 +72,13 @@ export const DEFAULT_AUDIT_PROFILE = {
       unforced_out: { min: 0, max: null, source: 'p10-mvp', note: 'no calibrated band; warnings are candidates' },
       inactive_responsibility: { min: 0, max: null, source: 'p10-mvp', note: 'no calibrated band; warnings are candidates' },
       ignored_interception_opportunity: { min: 0, max: null, source: 'p10-mvp', note: 'no calibrated band; warnings are candidates' },
+      player_overlap: {
+        min: 0,
+        max: null,
+        source: 'p10-mvp',
+        note:
+          '#53 修引擎后同队间距应全部 ≥2m，告警归零；告警率本身未用真实比赛标定（#36），故不设 band 上限',
+      },
     },
   },
 };
@@ -81,6 +98,7 @@ const DETECTOR_PROFILE_KEY = {
   unforced_out: 'unforced_out',
   inactive_responsibility: 'inactive_responsibility',
   ignored_interception_opportunity: 'ignored_interception',
+  player_overlap: 'player_overlap',
 };
 
 // 未标定判定，严格 fail-closed：**只有显式声明 `calibrated: true` 才算已标定**，其余一律
@@ -511,6 +529,119 @@ export function detectInactiveResponsibility(players, profile) {
   return findings;
 }
 
+// --- player_overlap ----------------------------------------------------------
+
+// 同队判定（P26 D1）：audit_input.players 的快照字段只有 is_gk/t/x/y，**没有 team**，
+// 只能按 id 范围推——与 viewer/derive-audit-features.js 的 teamOf 同一口径（0-10 home /
+// 11-21 away）。derive 层还会优先读 lineup 覆盖，detector 侧拿不到 lineup，故用纯 id 范围。
+// 范围外的 id（>21 或负数）不属任何队 → 不参与重叠判定。
+function teamOfPlayerId(playerId) {
+  if (typeof playerId !== 'number' || !Number.isInteger(playerId)) return null;
+  if (playerId >= 0 && playerId <= 10) return 'home';
+  if (playerId >= 11 && playerId <= 21) return 'away';
+  return null;
+}
+
+// 有快照的同队球员花名册：{ home: [{playerId, byT}], away: [...] }，byT 是 t → 快照。
+// detector 与 runAudit 的样本量口径共用这一处枚举（避免两处各自算 pair 造成漂移）。
+// 没有任何快照的球员不进花名册——它不构成可评估的 pair 候选。
+function sameTeamRoster(players) {
+  const roster = { home: [], away: [] };
+  for (const [rawId, snaps] of Object.entries(players ?? {})) {
+    if (!Array.isArray(snaps) || snaps.length === 0) continue;
+    // Object.entries 会把数字键字符串化；保留数值 id 以便按 id 范围判队并保证输出稳定。
+    const playerId = /^\d+$/.test(rawId) ? Number(rawId) : rawId;
+    const team = teamOfPlayerId(playerId);
+    if (!team) continue;
+    const byT = new Map();
+    for (const snapshot of snaps) {
+      if (typeof snapshot.t === 'number') byT.set(snapshot.t, snapshot);
+    }
+    if (byT.size > 0) roster[team].push({ playerId, byT });
+  }
+  roster.home.sort((x, y) => x.playerId - y.playerId);
+  roster.away.sort((x, y) => x.playerId - y.playerId);
+  return roster;
+}
+
+// 候选单元 = 同队球员对（C(n,2)）。statsFor 的 samples 用这个口径：告警率 =
+// 越界的同队 pair 数 / 全部同队 pair 数。
+function sameTeamPairCount(roster) {
+  const pairs = (list) => (list.length * (list.length - 1)) / 2;
+  return pairs(roster.home) + pairs(roster.away);
+}
+
+// 同队间距 detector（P26 / issue #35 的 detector 部分）。
+//
+// 判定：同队两球员在观察窗口内**任一采样点**间距 < profile.player_overlap.min_distance
+// （严格 `<`，恰等于阈值不算）→ 该 pair 产出一条 realism_warning。
+//   - 按 pair 聚合（D2）：逐采样点报会刷屏（实测阈值 2m 下每窗口可报 10/17/1 对），
+//     所以一个 pair 只报一条，match_time 取**首次越界**时刻，features 带窗口内**最小**间距。
+//   - severity = realism_warning（D3）：站位重叠是观感问题，不是硬规则违反（区别于
+//     baseline_invariant 的 invariant_violation）。#53 修引擎间距后这些 finding 应归零。
+//   - t 对齐（D6）：按 pair 内一方（id 较小者）的 t 序列升序遍历；另一方在该 t 无快照
+//     则跳过该 t——不拿缺失位置当原点，避免造出假重叠。同理，坐标非有限数也跳过。
+export function detectPlayerOverlap(players, profile) {
+  const threshold = profile.player_overlap.min_distance;
+  const roster = sameTeamRoster(players);
+  const findings = [];
+
+  for (const team of ['home', 'away']) {
+    const members = roster[team];
+    for (let i = 0; i < members.length; i++) {
+      for (let j = i + 1; j < members.length; j++) {
+        const a = members[i];
+        const b = members[j];
+        let minDistance = Infinity;
+        let firstBreach = null;
+        let breachSamples = 0;
+        let alignedSamples = 0;
+        for (const t of [...a.byT.keys()].sort((x, y) => x - y)) {
+          const sa = a.byT.get(t);
+          const sb = b.byT.get(t);
+          if (!sb) continue;
+          if (
+            typeof sa.x !== 'number' || typeof sa.y !== 'number' ||
+            typeof sb.x !== 'number' || typeof sb.y !== 'number'
+          ) {
+            continue;
+          }
+          alignedSamples += 1;
+          const dist = Math.hypot(sa.x - sb.x, sa.y - sb.y);
+          if (dist < minDistance) minDistance = dist;
+          if (dist < threshold) {
+            breachSamples += 1;
+            if (firstBreach === null) firstBreach = t;
+          }
+        }
+        if (firstBreach === null) continue;
+        findings.push({
+          id: `player_overlap:${a.playerId}:${b.playerId}`,
+          detector_id: 'player_overlap',
+          // 重叠是快照层面的事实，没有单个事件可指——锚在 entity_id（两名球员）上。
+          event_index: null,
+          match_time: firstBreach,
+          entity_id: `${a.playerId},${b.playerId}`,
+          severity: 'realism_warning',
+          reason:
+            `same-team players ${a.playerId} and ${b.playerId} closed to ` +
+            `${round3(minDistance)}m (< ${threshold}m)`,
+          features: {
+            player_ids: [a.playerId, b.playerId],
+            team,
+            min_distance: round3(minDistance),
+            first_breach_time: firstBreach,
+            breach_samples: breachSamples,
+            aligned_samples: alignedSamples,
+          },
+          thresholds: { min_distance: threshold },
+        });
+      }
+    }
+  }
+  return findings;
+}
+
 // --- ignored_interception_opportunity ---------------------------------------
 
 export function detectIgnoredInterception(events, profile) {
@@ -677,12 +808,14 @@ export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
   const unforcedFindings = detectUnforcedOut(events, profile);
   const inactiveFindings = detectInactiveResponsibility(players, profile);
   const interceptionFindings = detectIgnoredInterception(events, profile);
+  const overlapFindings = detectPlayerOverlap(players, profile);
 
   const findings = [
     ...invariantFindings,
     ...unforcedFindings,
     ...inactiveFindings,
     ...interceptionFindings,
+    ...overlapFindings,
   ].map((f) => ({ ...f, profile_id: profile.id, profile_version: profile.version }));
 
   // P21 D4：未标定 detector（calibrated:false）的告警带 calibrated:false 出厂，聚合层据此
@@ -708,6 +841,9 @@ export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
       events.filter((e) => e.type === 'pass').length,
       interceptionFindings
     ),
+    // 样本口径 = 同队球员对（C(n,2)），与 detectPlayerOverlap 内部枚举候选 pair 的方式
+    // 共用 sameTeamRoster，避免两处各自算 n 造成 stats 与 finding 口径漂移。
+    statsFor('player_overlap', sameTeamPairCount(sameTeamRoster(players)), overlapFindings),
   ];
 
   return {

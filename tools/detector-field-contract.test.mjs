@@ -20,6 +20,7 @@ import {
   detectUnforcedOut,
   detectInactiveResponsibility,
   detectIgnoredInterception,
+  detectPlayerOverlap,
   computePassOutcomes,
   DEFAULT_AUDIT_PROFILE,
 } from './detectors.mjs';
@@ -480,6 +481,7 @@ test('contract covers every detector and every entry is internally consistent', 
     'unforced_out',
     'inactive_responsibility',
     'ignored_interception_opportunity',
+    'player_overlap',
     'pass_outcomes',
   ]) {
     assert.ok(ids.includes(expected), `contract must cover ${expected}`);
@@ -731,6 +733,7 @@ const DETECTOR_ENTRY = {
     detectInactiveResponsibility(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
   ignored_interception_opportunity: (pi) =>
     detectIgnoredInterception(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
+  player_overlap: (pi) => detectPlayerOverlap(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
   pass_outcomes: (pi) => computePassOutcomes(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
 };
 
