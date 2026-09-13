@@ -216,13 +216,16 @@ test('P27: derive layer meter-izes out_pos to match x2/y2 units (live guard)', (
   assert.equal(f.features.out_evidence, 'event.result');
 });
 
-test('a real out-of-play pass keeps its detail through the derive layer (D1 live guard)', () => {
-  // 用 detail 型出界（不是几何型）：这正是 P21 D1 修的形状。若 derive 层丢掉 detail，
-  // 这里会从 realism_warning 退化成 unknown——原始症状的活体版本。
+test('a P21 legacy out-of-play bundle keeps its detail through the derive layer (D1 compat guard)', () => {
+  // 用 detail 型出界（不是几何型）：这正是 P21 D1 修的形状，**P21 时代的引擎形状**（当前引擎
+  // 自 P27 起改发 result="out"；见上面那条 P27 用例）。此用例的价值是钉住 **P21 兼容分支**：
+  // 旧 bundle（只有 detail，无 result/out_side）经 derive 层仍必须保住 detail 并被判出界——
+  // 若 derive 层丢掉 detail，这里会从 realism_warning 退化成 unknown。这是兼容路径的活体守卫，
+  // 不是当前引擎形状的描述。
   const outEvents = [
     { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineups },
     { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
-    // 引擎真实出界形状：result=contested + detail=out_* + 落点被 clamp 到边界（y2=0）。
+    // P21 旧形状：result=contested + detail=out_* + 落点被 clamp 到边界（y2=0）。
     // home 9 在左半场无人区传球，防守者都在右半场 → 无压力（nearest_defender_distance > 8）。
     { t: 20, type: 'pass', subject: 9, from: 9, x: 0.42, y: 0.72, x2: 0.42, y2: 0, speed: 15, result: 'contested', detail: 'out_sideline' },
   ];
