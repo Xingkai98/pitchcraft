@@ -225,8 +225,10 @@ pub const MODEL_VERSION: u32 = 2;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
-/// P27：`model_version` 标记事件流协议/引擎行为版本（v1 = P27 之前，v2 = P27 出界协议迁移起）。
-/// golden 测试按版本目录读写（v1 `tests/golden/`、v2 `tests/golden-v2/`），旧基线保留不覆盖。
+/// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起）。
+/// **当前只用于 golden 目录选择**（v1 `tests/golden/`、v2 `tests/golden-v2/`，旧基线保留不覆盖），
+/// **不切换引擎行为**——同一代码对两个版本都产出相同事件流，v1 基线是 P27 之前引擎的冻结产物。
+/// 将来若需按版本分支行为（阶段 2/3），在此字段上实现。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
     pub match_duration_seconds: f64,
@@ -237,11 +239,6 @@ pub struct MatchConfig {
 impl MatchConfig {
     pub fn default_() -> Self {
         MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION }
-    }
-
-    /// 90 分钟非 demo（测试/统计/golden 统一入口），显式指定模型版本。
-    pub fn match_90(demo_mode: bool, model_version: u32) -> Self {
-        MatchConfig { match_duration_seconds: 5400.0, demo_mode, model_version }
     }
 }
 

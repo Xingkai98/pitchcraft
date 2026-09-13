@@ -189,6 +189,33 @@ test('derive layer preserves the fields the contract says it produces (live capt
   // 对带 detail 的真实形状单独钉（下面那条用例覆盖出界场景）。
 });
 
+test('P27: derive layer meter-izes out_pos to match x2/y2 units (live guard)', () => {
+  // 审计层坐标单位必须一致：x2/y2 归一化 → 米制，out_pos 也必须米制（且保留越界符号）。
+  // 若 derive 层漏了 out_pos，它会留在归一化单位、与 x2/y2 混用两套单位（阶段 2/3 埋雷）。
+  const outEvents = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineups },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    // P27 新形状：result=out + out_side + out_pos（真实越界，y 为负）+ x2/y2 场内投影。
+    // 起点放主队后场无人区（防守者全在右半场 x≥0.52）→ 无压力，unforced_out 才产 warning。
+    { t: 20, type: 'pass', subject: 9, from: 9, x: 0.1, y: 0.1, x2: 0.1, y2: 0, speed: 15,
+      result: 'out', out_side: 'sideline', out_pos: [0.1, -0.03], detail: 'out_sideline' },
+  ];
+  const game = new Game(outEvents, lineups, 'continuous');
+  game.seekTo(20);
+  const bundle = captureObservation({ game, seed: 42, config: MATCH_CONFIG, opts: deterministic() });
+  const pass = bundle.audit_input.events.find((e) => e.type === 'pass');
+  // 米制：0.1×105 = 10.5；-0.03×68 ≈ -2.04（越界符号保留）。
+  assert.ok(Math.abs(pass.x2 - 10.5) < 0.01, `x2 应米制: ${pass.x2}`);
+  assert.ok(Array.isArray(pass.out_pos), 'out_pos must survive the derive layer');
+  assert.ok(Math.abs(pass.out_pos[0] - 10.5) < 0.01, `out_pos[0] 应米制: ${pass.out_pos[0]}`);
+  assert.ok(pass.out_pos[1] < 0, `out_pos[1] 应为负（越界符号保留）: ${pass.out_pos[1]}`);
+  // 出界分类不受影响（走 result 主路径）。
+  const { findings } = runAudit(bundle.audit_input);
+  const f = findings.find((x) => x.detector_id === 'unforced_out' && x.event_index === pass.index);
+  assert.ok(f, JSON.stringify(findings));
+  assert.equal(f.features.out_evidence, 'event.result');
+});
+
 test('a real out-of-play pass keeps its detail through the derive layer (D1 live guard)', () => {
   // 用 detail 型出界（不是几何型）：这正是 P21 D1 修的形状。若 derive 层丢掉 detail，
   // 这里会从 realism_warning 退化成 unknown——原始症状的活体版本。

@@ -316,7 +316,9 @@ const OUT_SIDES = ['goal_line', 'sideline'];
 // pass that stayed in). 注意 `out_pos` **不是**判据——它只是「球实际飞出多远」的几何证据字段。
 function outEvidenceOf(event, profile) {
   if (event.result === 'out') return 'event.result';
-  if (typeof event.out_side === 'string') return 'event.out_side';
+  // 与 outReasonOf 用同一枚举判据（不是「任意字符串」）——否则 out_side:'' / 非法值会让
+  // 证据源与原因不一致（evidence='event.out_side' 但 reason 落到兜底）。
+  if (OUT_SIDES.includes(event.out_side)) return 'event.out_side';
   if (OUT_DETAILS.includes(event.detail)) return 'event.detail';
   if (
     typeof event.x2 === 'number' &&

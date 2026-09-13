@@ -1359,6 +1359,23 @@ test('D4: new bundle (result=out) and old bundle (detail only) both classify as 
   assert.equal(pass_outcomes.unpressured.out_count + pass_outcomes.pressured.out_count, 2);
 });
 
+test('D4: out_side evidence uses the same enum as out_reason (empty/unknown string is not evidence)', () => {
+  // 证据源与原因必须用同一枚举判据，否则 out_side:'' 或 'touchline' 会让
+  // evidence='event.out_side' 而 reason 落到兜底 'no_pressure_out'（自相矛盾）。
+  for (const bad of ['', 'touchline', 'OUT_SIDELINE']) {
+    const { findings, pass_outcomes } = runAudit({
+      events: [
+        { index: 0, t: 1, type: 'pass', result: 'contested', out_side: bad, nearest_defender_distance: 12, pass_distance: 25 },
+      ],
+    });
+    assert.equal(
+      findings.filter((f) => f.detector_id === 'unforced_out').length, 0,
+      `out_side=${JSON.stringify(bad)} 不是合法出界边，不应构成出界证据`
+    );
+    assert.equal(pass_outcomes.unpressured.out_count, 0);
+  }
+});
+
 test('D4: a non-out pass carrying out_pos is NOT out-evidence (out_pos 不是出界判据)', () => {
   // out_pos 只是「球实际飞出多远」的几何证据字段。判据是 result/out_side/detail/几何，
   // 不含 out_pos —— 否则任何带该字段的 pass 都会被误判出界。

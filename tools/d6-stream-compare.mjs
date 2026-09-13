@@ -59,7 +59,10 @@ for (let seed = Number(s0); seed <= Number(s1); seed++) {
   for (let i = 0; i < n; i++) {
     totalEvents++;
     const ea = a[i], eb = b[i];
-    const isOut = eb.type === 'pass' && (OUT_DETAILS.has(eb.detail) || eb.result === 'out');
+    // 出界识别用 pre/post 两侧的并集（阶段 2/3 若从事件里移除 detail，只看 post 侧会漏判；
+    // 两侧任一命中即按「预期只该有 result/out_side/out_pos 变」的宽松规则处理）。
+    const isOut = eb.type === 'pass'
+      && (OUT_DETAILS.has(eb.detail) || eb.result === 'out' || OUT_DETAILS.has(ea.detail) || ea.result === 'out');
     if (isOut) {
       outEvents++;
       // 允许差异：result / out_side / out_pos
