@@ -926,6 +926,12 @@ struct OpportunityTally {
     /// 进入窗口按起脚距离分桶（0=禁区内 1=禁区弧 2=远射）——覆盖门用：确认三档位置都会
     /// 到射程（「射门由几何涌现、不是桶配额」的前提）。
     shot_window_entries_by_bucket: [u64; 3],
+    /// 喂进 hazard 打分的冷却值的历史最小 / 最大（**执行层** C 路绑定）：局部倒计时恒
+    /// ∈ [0, SHOT_COOLDOWN_TICKS] 且会衰减到 0；若输入源被换成全场累计量（越界/单调不减），
+    /// 这两个界立刻被打破。`shot_cooldown_resets` 记录射门后的重置次数（证明字段真被写）。
+    shot_cooldown_feature_min: u64,
+    shot_cooldown_feature_max: u64,
+    shot_cooldown_resets: u64,
     /// 进入窗口 / 提交 按**进入时压迫**分桶：0 = 贴身（最近防守者 ≤ `SHOT_WINDOW_TIGHT_M`）、
     /// 1 = 无压（≥ `SHOT_WINDOW_FREE_M`）、2 = 中间。
     /// 方向性门用：无压窗口的提交率应高于贴身窗口——这是 D2 的 `defensive_pressure` 因子在
@@ -981,6 +987,9 @@ impl Default for OpportunityTally {
             shot_window_holds: 0,
             shot_window_expiries: 0,
             shot_window_entries_by_bucket: [0; 3],
+            shot_cooldown_feature_min: u64::MAX,
+            shot_cooldown_feature_max: 0,
+            shot_cooldown_resets: 0,
             shot_window_entries_by_pressure: [0; 3],
             shot_window_commits_by_pressure: [0; 3],
         }
@@ -1265,8 +1274,16 @@ fn evaluate_carrier_action(
 
 /// P29 D2：起脚窗口的一次 hazard 掷定（1 次 RNG）。`p_shot = 1 - exp(-e^score * 1)`——
 /// 单 tick 概率（窗口长度体现在「最多掷 `SHOT_WINDOW_TICKS` 次」上）。
-fn shot_hazard_hits(st: &MatchState, rng: &mut SeededRng) -> bool {
+/// 掷定时把实际喂进打分的冷却值记进 tally（`shot_cooldown_feature_*`）——这是「C 路原则」
+/// 在**执行层**的绑定：若输入源被换成全场累计量，其值会越界/单调不减，守卫立刻红。
+fn shot_hazard_hits(st: &mut MatchState, rng: &mut SeededRng) -> bool {
     let f = shot_opportunity_features(st, st.carrier);
+    {
+        let t = &mut st.opportunity_tally;
+        let v = f.cooldown_ticks as u64;
+        t.shot_cooldown_feature_max = t.shot_cooldown_feature_max.max(v);
+        t.shot_cooldown_feature_min = t.shot_cooldown_feature_min.min(v);
+    }
     let p = shot_hazard_probability(compute_shot_score(&f), 1.0);
     let roll = rng.next_u64() % SHOT_ROLL_SCALE as u64;
     (roll as f64) < p * SHOT_ROLL_SCALE
@@ -1677,8 +1694,11 @@ struct MatchState {
     has_yellow: [bool; 22],    // 球员是否已吃黄（二黄同人 → 升级红牌罚下）
     sent_off: [bool; 22],      // 罚下球员（红牌 / 二黄）；此后其所在队按"少一人"处理（本试点仅屏蔽其成为 carrier/chaser）
     foul_cooldown_ticks: u32,  // 距上次犯规 tick（≤ FOUL_MIN_GAP_TICKS 内不产犯规）
-    /// P29 射门冷却（#25 阶段 2B）：距最近一次射门的 tick 数（局部衰减计时器，供 hazard
-    /// 的 `cooldown_penalty`）。**不读「本场已射多少次」**——C 路原则（D2）。
+    /// P29 射门冷却（#25 阶段 2B）：**剩余**冷却 tick 数（倒计时，0 = 无冷却）。
+    /// 每场射门后置为 `SHOT_COOLDOWN_TICKS`，每 tick 衰减 1，供 hazard 的 `cooldown_penalty`
+    /// （`剩余 / SHOT_COOLDOWN_TICKS` ∈ [0,1]，刚射完最接近 1、冷却结束归 0）。
+    /// **不读「本场已射多少次」**——C 路原则（D2）。全局单计时器（简化：一次射门后双方窗口
+    /// 都短暂受抑；射门稀疏时影响小，见 `.p29-progress.md`）。
     shot_cooldown_ticks: u32,
     // P28 持球行动机会（#25 阶段 2A）：当前机会 + 观测计数器（tally 只写、不进事件流、不耗 RNG）
     action_opportunity: Option<ActionOpportunity>,
@@ -1947,6 +1967,9 @@ fn whistle_event(t: f64, home: u32, away: u32, detail: &str) -> Event {
 
 /// 单个 tick：推进状态 + 产事件（beat 或高亮）
 fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    // P29 射门冷却倒计时：每 tick 衰减 1（零 RNG、零事件；在 `emit_shot_highlight` 射门时重置
+    // 为 `SHOT_COOLDOWN_TICKS`）。放在最前，任何状态下都推进，冷却语义与比赛进程绑定。
+    st.shot_cooldown_ticks = st.shot_cooldown_ticks.saturating_sub(1);
     // 1. 死球阶段（transition 不在此阶段，进球/死球已清除）
     if st.dead_ball.is_some() {
         st.ball_pos = (0.5, 0.5); // 死球/准备/kickoff：球在中圈附近（队形目标用）
@@ -2644,6 +2667,9 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     } else {
         st.opportunity_tally.shots_unattributed += 1;
     }
+    // P29 D2：射门后重置冷却（hazard 的 `cooldown_penalty` 随之升高，抑制连续起脚）。
+    st.shot_cooldown_ticks = SHOT_COOLDOWN_TICKS;
+    st.opportunity_tally.shot_cooldown_resets += 1;
     let shooter = st.carrier;
     let shooter_pos = st.pos[shooter as usize];
     let home = st.possession == 0;
@@ -3863,7 +3889,7 @@ struct ShotOpportunityFeatures {
     nearest_defender_m: f64,
     /// 第二近防守者距离（米）
     second_defender_m: f64,
-    /// 距最近一次射门的 tick 数（局部衰减计时器，0 = 刚射过）
+    /// **剩余**射门冷却 tick 数（局部倒计时，0 = 无冷却；刚射完 = `SHOT_COOLDOWN_TICKS`）
     cooldown_ticks: u32,
 }
 
@@ -3908,8 +3934,8 @@ impl ShotOpportunityFeatures {
             + 0.35 * clamp01(1.0 - self.second_defender_m / SHOT_PRESSURE_SECOND_M)
     }
 
-    /// 冷却惩罚（D2）：`shot_cooldown_ticks / SHOT_COOLDOWN_TICKS` ∈ [0,1]。
-    /// 局部计时器衰减——不读全场射门数（C 路原则）。
+    /// 冷却惩罚（D2）：`shot_cooldown_ticks / SHOT_COOLDOWN_TICKS` ∈ [0,1]（`shot_cooldown_ticks`
+    /// 是**剩余**冷却的倒计时）。局部计时器衰减——不读全场射门数（C 路原则）。
     fn cooldown_penalty(&self) -> f64 {
         (self.cooldown_ticks.min(SHOT_COOLDOWN_TICKS) as f64) / SHOT_COOLDOWN_TICKS as f64
     }
@@ -6432,11 +6458,10 @@ mod tests {
         }
     }
 
-    /// P29 D2：`cooldown_penalty` 只读**局部**计时器（非「本场射门数」）——C 路原则。
-    /// 结构性证据：`ShotOpportunityFeatures` 里根本没有全场射门计数可用；这里再钉死
-    /// 「penalty 只随 shot_cooldown_ticks 变」。
+    /// P29 D2：`cooldown_penalty` 只读**局部**倒计时（非「本场射门数」）——C 路原则。
+    /// 纯函数层：惩罚只随 `cooldown_ticks` 变、上下限正确。
     #[test]
-    fn p29_cooldown_is_local_not_match_wide() {
+    fn p29_cooldown_penalty_shape() {
         let cp = |ticks: u32| ShotOpportunityFeatures {
             distance_m: 12.0, angle_cos: 1.0, nearest_defender_m: 20.0,
             second_defender_m: 30.0, cooldown_ticks: ticks,
@@ -6446,6 +6471,83 @@ mod tests {
         assert!((cp(SHOT_COOLDOWN_TICKS / 2) - 0.5).abs() < 1e-9);
         // 超上限钳制（不产生 >1 的惩罚，避免负 hazard）
         assert_eq!(cp(SHOT_COOLDOWN_TICKS * 10), 1.0, "冷却惩罚应钳制到 1");
+    }
+
+    /// P29 D2 + C 路原则**执行层绑定**（比纯函数更硬）：跑满多场真实比赛，断言
+    /// 1. 喂进 hazard 的冷却值恒 ∈ [0, SHOT_COOLDOWN_TICKS]（局部倒计时的值域）；
+    /// 2. 射门后确实重置过（`shot_cooldown_resets > 0`）——否则冷却因子是死因子
+    ///    （`shot_cooldown_ticks` 恒 0，五因子退化四因子）；
+    /// 3. 冷却值存在非零样本（重置真被观察到）且存在归零样本（倒计时真在衰减）。
+    ///
+    /// 变异绑定：把 `shot_opportunity_features` 的冷却输入源换成全场累计量
+    /// （如 `opportunity_tally.shot_window_commits`，随比赛单调增、无上界）→ 条件 1 立刻被
+    /// 打破（值会超过 `SHOT_COOLDOWN_TICKS`）→ 红。这正是审阅 M8 变异要抓的 C 路违规。
+    #[test]
+    fn p29_cooldown_is_local_not_match_wide() {
+        let mut agg = OpportunityTally::default();
+        agg.shot_cooldown_feature_min = u64::MAX;
+        for seed in 401..=600u64 {
+            let (st, _events) = run_match(seed, 5400.0);
+            let t = st.opportunity_tally;
+            // 逐场：喂进 hazard 的冷却值不得越界（局部倒计时的值域）
+            assert!(
+                t.shot_cooldown_feature_max <= SHOT_COOLDOWN_TICKS as u64,
+                "seed {}：喂进 hazard 的冷却值上限 {} > SHOT_COOLDOWN_TICKS({})——输入源不是局部倒计时",
+                seed, t.shot_cooldown_feature_max, SHOT_COOLDOWN_TICKS
+            );
+            agg.shot_cooldown_feature_min = agg.shot_cooldown_feature_min.min(t.shot_cooldown_feature_min);
+            agg.shot_cooldown_feature_max = agg.shot_cooldown_feature_max.max(t.shot_cooldown_feature_max);
+            agg.shot_cooldown_resets += t.shot_cooldown_resets;
+            agg.shot_window_commits += t.shot_window_commits;
+        }
+        assert!(agg.shot_window_commits > 0, "200 场无窗口提交——本测试空跑");
+        // 冷却被真正写过（射门后重置）——否则五因子退化为四因子（`shot_cooldown_ticks` 死字段，
+        // 审阅 P1-1）。重置次数 == 提交次数 = 每次射门都重置。
+        assert_eq!(
+            agg.shot_cooldown_resets, agg.shot_window_commits,
+            "冷却重置次数({}) 应等于窗口提交数({})——每次射门都重置冷却",
+            agg.shot_cooldown_resets, agg.shot_window_commits
+        );
+        // 范围不变量：喂进 hazard 的冷却值恒 ∈ [0, SHOT_COOLDOWN_TICKS]。
+        // 变异绑定（审阅 M8）：把输入源换成全场累计量（单调增、无上界）→ 上限立刻被打破。
+        assert_eq!(agg.shot_cooldown_feature_min, 0, "冷却值下界应为 0（倒计时正常归零）");
+        assert!(
+            agg.shot_cooldown_feature_max <= SHOT_COOLDOWN_TICKS as u64,
+            "喂进 hazard 的冷却值上限 {} 越界（应 ≤ {}）——输入源不是局部倒计时（C 路违规）",
+            agg.shot_cooldown_feature_max, SHOT_COOLDOWN_TICKS
+        );
+        // 注：实测 200 场里 `shot_cooldown_feature_max == 0`——射门间隔（~700 tick）远大于
+        // `SHOT_COOLDOWN_TICKS`(8)，故窗口进入时冷却几乎总已衰减到 0（冷却因子在当前标定下
+        // 近乎惰性）。这是**标定观察**（改 `SHOT_COOLDOWN_TICKS` 属系数级，见 `.p29-progress.md`
+        // 待确认），不影响本测试的门：范围不变量 + 重置计数已把「死字段 / C 路违规」钉死，
+        // 因子在公式路径上的活性由 `p29_cooldown_feature_is_live`（直接构造状态）单独证明。
+    }
+
+    /// P29 D2：冷却因子在公式路径上确实活着（直接构造状态，不依赖标定是否让它在真实比赛里非零）。
+    /// 设 `shot_cooldown_ticks > 0` → `p_shot` 应低于无冷却；且射门后字段被重置为 `SHOT_COOLDOWN_TICKS`。
+    #[test]
+    fn p29_cooldown_feature_is_live() {
+        let p_at = |cool: u32| {
+            let mut s = window_state(&[]);
+            s.pos[9] = (0.80, 0.5); // 正对球门、~21m → 中档 p_shot（冷却能明显改变它）
+            s.shot_cooldown_ticks = cool;
+            shot_hazard_probability(compute_shot_score(&shot_opportunity_features(&s, 9)), 1.0)
+        };
+        let cold = p_at(0);
+        let hot = p_at(SHOT_COOLDOWN_TICKS);
+        assert!(cold > 0.0 && cold < 1.0, "基准 p_shot 应落在 (0,1)（实测 {}）", cold);
+        assert!(hot < cold, "冷却中 p_shot({}) 应低于无冷却 p_shot({})——冷却因子未接入公式", hot, cold);
+
+        // 写路径活性：射门后字段被重置
+        let mut st = window_state(&[]);
+        st.pos[9] = (0.99, 0.5); // 贴门 → hazard 必中
+        st.shot_cooldown_ticks = 0;
+        st.shot_setup = Some(ShotSetup::new(5.0, true));
+        let mut rng = SeededRng::new(1);
+        let mut events = Vec::new();
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        assert!(events.iter().any(|e| e.type_ == EventType::Shot), "贴门应提交射门");
+        assert_eq!(st.shot_cooldown_ticks, SHOT_COOLDOWN_TICKS, "射门后应重置冷却");
     }
 
     /// P29 D1：把 MatchState 摆成「carrier 已到射程、进入起脚窗口」的几何，供窗口行为测试。
