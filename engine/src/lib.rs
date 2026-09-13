@@ -2795,38 +2795,49 @@ fn advance_shot_setup(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
 
 /// P29 起脚窗口的一个决策 tick（D1/D2/D3）。
 /// 复用 2A 的统一模块：候选（hazard 射门）→ 防守竞争（抢断）→ 结算 → 执行。
+///
+/// 分支按**结算**分派（不是按候选），保证每种结算都被如实执行——包括 D2 的背向球门转死球
+/// （`DeadBall`）、抢断（`InterruptedByTackle`）、以及「等待 / 转」。任何未列出的结算走
+/// 「等待」并把窗口计时推进（保持 total、不幻觉事件）。
 fn shot_window_plan(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
     let plan = build_action_plan(st, rng, OpportunityTrigger::ShotWindow);
-    let committed = plan.carrier.action == Some(CarrierAction::Shoot);
-    if committed {
-        // 提交：本 tick 就地起脚（`emit_shot_highlight` 读 carrier 当前位置为起脚点）
-        st.shot_setup = None;
-        execute_action_resolution(st, rng, events, t, Some(plan));
-        return;
-    }
-    if plan.resolution == ActionResolution::InterruptedByTackle {
+    match plan.resolution {
+        // D1 提交：hazard 判定命中 → 本 tick 就地起脚（`emit_shot_highlight` 读当前位置为起脚点）
+        ActionResolution::CarrierAction(CarrierAction::Shoot) => {
+            st.shot_setup = None;
+            execute_action_resolution(st, rng, events, t, Some(plan));
+        }
         // D3：起脚窗口内被抢断 → 取消射门序列（内部状态 canceled），产 tackle（→ 松散球），
         // 不产 Shot。抢断**成败都取消射门**（高亮占用该 tick，起脚节奏丢失）；成败只决定
         // 球权去向（success → 松散球 / fail → 留在原持球者）。
-        st.shot_setup = None;
-        st.opportunity_tally.shot_window_tackles += 1;
-        execute_action_resolution(st, rng, events, t, Some(plan));
-        return;
+        ActionResolution::InterruptedByTackle => {
+            st.shot_setup = None;
+            st.opportunity_tally.shot_window_tackles += 1;
+            execute_action_resolution(st, rng, events, t, Some(plan));
+        }
+        // D2 背向球门 → 禁 Shoot、转死球重开（结构性不可达；见 `CarrierAction::AwardDeadBall`）。
+        // 按结算如实执行重开，**不**当作「等待」吞掉。
+        ActionResolution::DeadBall(_) => {
+            st.shot_setup = None;
+            execute_action_resolution(st, rng, events, t, Some(plan));
+        }
+        // 未提交、未被抢断：本 tick 持球等待，窗口计时推进
+        _ => {
+            let ticks = {
+                let s = st.shot_setup.as_mut().expect("窗口决策 tick 应有 shot_setup");
+                s.window_ticks += 1;
+                s.window_ticks
+            };
+            if ticks >= SHOT_WINDOW_TICKS {
+                // 「转」：窗口耗尽仍未提交 → 放弃射门，继续带球（观察/分球留待下一次机会）
+                st.shot_setup = None;
+                st.opportunity_tally.shot_window_expiries += 1;
+            } else {
+                st.opportunity_tally.shot_window_holds += 1;
+            }
+            emit_shot_window_beat(st, rng, events, t);
+        }
     }
-    // 未提交、未被抢断：本 tick 持球等待，窗口计时推进
-    let ticks = {
-        let s = st.shot_setup.as_mut().unwrap();
-        s.window_ticks += 1;
-        s.window_ticks
-    };
-    if ticks >= SHOT_WINDOW_TICKS {
-        // 「转」：窗口耗尽仍未提交 → 放弃射门，继续带球（观察/分球留待下一次机会）
-        st.shot_setup = None;
-        st.opportunity_tally.shot_window_expiries += 1;
-    } else {
-        st.opportunity_tally.shot_window_holds += 1;
-    }
-    emit_shot_window_beat(st, rng, events, t);
 }
 
 /// P9 射门推进（远段）：向前传球给进攻方向最靠前队友，完成后接射门/带球（shot_pending_after_pass 桥接）。
