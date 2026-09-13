@@ -16,7 +16,7 @@
 
 use fm_engine::{
     simulate, MatchConfig, TICK_SECONDS, CARRIER_SPEED_MS, PITCH_LENGTH_M, PITCH_WIDTH_M,
-    TACKLE_DISTANCE_THRESHOLD_METERS,
+    TACKLE_DISTANCE_THRESHOLD_METERS, MODEL_VERSION,
 };
 
 /// L1/L2/golden 统一比赛时长（90 分钟，default_() 同值）。
@@ -270,7 +270,7 @@ struct MatchStats {
 
 /// 跑一场 90 分钟比赛并聚合统计 + 收集 L2 违例。
 fn aggregate(seed: u64) -> MatchStats {
-    let cfg = MatchConfig { match_duration_seconds: DUR, demo_mode: false };
+    let cfg = MatchConfig { match_duration_seconds: DUR, demo_mode: false, model_version: MODEL_VERSION };
     let json = simulate(seed, cfg);
     let events = split_events(&json);
     let mut st = MatchStats {
@@ -944,10 +944,25 @@ fn l2_sent_off_kickoff_seeds() {
 }
 
 // ==== golden master：10 canary seed 防漂移 ====
+//
+// P27 D5：golden 版本分离。v1 = P27 出界协议迁移之前（`tests/golden/`），
+// v2 = 迁移之后（`tests/golden-v2/`）。旧基线保留不覆盖，可逐 seed 回归对比（D6：
+// 事件数量/时序/比分必须与 v1 完全一致，只有出界 pass 字段值变 → stream_hash 变）。
+//
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 2）落 v2；需要对比 v1 时读 v1 目录。
 
-fn golden_path(seed: u64) -> std::path::PathBuf {
+/// 模型版本 → golden 基线目录名。
+fn golden_dir(model_version: u32) -> &'static str {
+    match model_version {
+        1 => "tests/golden",
+        2 => "tests/golden-v2",
+        other => panic!("未知 model_version {}（无对应 golden 目录）", other),
+    }
+}
+
+fn golden_path(model_version: u32, seed: u64) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("tests/golden")
+        .join(golden_dir(model_version))
         .join(format!("seed-{}.json", seed))
 }
 
@@ -1025,68 +1040,107 @@ fn golden_from_str(s: &str) -> MatchStats {
     st
 }
 
+/// 逐字段断言 golden 与当前统计一致（stream_hash 除外——它随协议版本变）。
+/// 返回 stream_hash 是否一致，供调用方按版本决定是否强断言。
+fn assert_golden_fields_match(seed: u64, gold: &MatchStats, st: &MatchStats, label: &str) -> bool {
+    let fields = [
+        ("home_score", gold.home_score as usize, st.home_score as usize),
+        ("away_score", gold.away_score as usize, st.away_score as usize),
+        ("n_goal_home", gold.n_goal_home, st.n_goal_home),
+        ("n_goal_away", gold.n_goal_away, st.n_goal_away),
+        ("n_events", gold.n_events, st.n_events),
+        ("n_beats", gold.n_beats, st.n_beats),
+        ("n_shot", gold.n_shot, st.n_shot),
+        ("n_shot_goal", gold.n_shot_goal, st.n_shot_goal),
+        ("n_shot_saved", gold.n_shot_saved, st.n_shot_saved),
+        ("n_shot_off", gold.n_shot_off, st.n_shot_off),
+        ("n_box", gold.n_box, st.n_box),
+        ("n_arc", gold.n_arc, st.n_arc),
+        ("n_far", gold.n_far, st.n_far),
+        ("n_header", gold.n_header, st.n_header),
+        ("n_tackle", gold.n_tackle, st.n_tackle),
+        ("n_tackle_success", gold.n_tackle_success, st.n_tackle_success),
+        ("n_pass", gold.n_pass, st.n_pass),
+        ("n_pass_success", gold.n_pass_success, st.n_pass_success),
+        ("n_pass_intercepted", gold.n_pass_intercepted, st.n_pass_intercepted),
+        ("n_pass_lost", gold.n_pass_lost, st.n_pass_lost),
+        ("n_corner_kick", gold.n_corner_kick, st.n_corner_kick),
+        ("n_gk_pass", gold.n_gk_pass, st.n_gk_pass),
+        ("n_out_goal_line", gold.n_out_goal_line, st.n_out_goal_line),
+        ("n_out_sideline", gold.n_out_sideline, st.n_out_sideline),
+        ("n_foul", gold.n_foul, st.n_foul),
+        ("n_foul_yellow", gold.n_foul_yellow, st.n_foul_yellow),
+        ("n_foul_red", gold.n_foul_red, st.n_foul_red),
+        ("n_free_kick", gold.n_free_kick, st.n_free_kick),
+    ];
+    for (name, g, cur) in fields {
+        assert_eq!(
+            g, cur,
+            "seed {} [{}] {} 漂移: golden={} current={}（审阅后用 ACCEPT_GOLDEN=1 重基线）",
+            seed, label, name, g, cur
+        );
+    }
+    gold.stream_hash == st.stream_hash
+}
+
+/// 读 golden 基线；缺失时 panic。`model_version` 选目录。
+fn read_golden(model_version: u32, seed: u64) -> MatchStats {
+    let path = golden_path(model_version, seed);
+    let content = std::fs::read_to_string(&path).unwrap_or_else(|_| {
+        panic!(
+            "golden 缺失：{}（首次运行用 ACCEPT_GOLDEN=1 生成基线）",
+            path.display()
+        )
+    });
+    golden_from_str(&content)
+}
+
 #[test]
 fn gm_canary_seeds() {
     let accept = std::env::var("ACCEPT_GOLDEN").as_deref() == Ok("1");
     for seed in GOLDEN_SEEDS {
         let st = aggregate(seed);
-        let path = golden_path(seed);
+        let path = golden_path(MODEL_VERSION, seed);
         if accept {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(&path, golden_summary_json(&st)).unwrap();
             eprintln!("已重基线 seed {} → {}（提交前请人工审查 git diff，防洗白回归）", seed, path.display());
             continue;
         }
-        let content = std::fs::read_to_string(&path).unwrap_or_else(|_| {
-            panic!(
-                "golden 缺失：{}（首次运行用 ACCEPT_GOLDEN=1 生成基线）",
-                path.display()
-            )
-        });
-        let gold = golden_from_str(&content);
-        let fields = [
-            ("home_score", gold.home_score as usize, st.home_score as usize),
-            ("away_score", gold.away_score as usize, st.away_score as usize),
-            ("n_goal_home", gold.n_goal_home, st.n_goal_home),
-            ("n_goal_away", gold.n_goal_away, st.n_goal_away),
-            ("n_events", gold.n_events, st.n_events),
-            ("n_beats", gold.n_beats, st.n_beats),
-            ("n_shot", gold.n_shot, st.n_shot),
-            ("n_shot_goal", gold.n_shot_goal, st.n_shot_goal),
-            ("n_shot_saved", gold.n_shot_saved, st.n_shot_saved),
-            ("n_shot_off", gold.n_shot_off, st.n_shot_off),
-            ("n_box", gold.n_box, st.n_box),
-            ("n_arc", gold.n_arc, st.n_arc),
-            ("n_far", gold.n_far, st.n_far),
-            ("n_header", gold.n_header, st.n_header),
-            ("n_tackle", gold.n_tackle, st.n_tackle),
-            ("n_tackle_success", gold.n_tackle_success, st.n_tackle_success),
-            ("n_pass", gold.n_pass, st.n_pass),
-            ("n_pass_success", gold.n_pass_success, st.n_pass_success),
-            ("n_pass_intercepted", gold.n_pass_intercepted, st.n_pass_intercepted),
-            ("n_pass_lost", gold.n_pass_lost, st.n_pass_lost),
-            ("n_corner_kick", gold.n_corner_kick, st.n_corner_kick),
-            ("n_gk_pass", gold.n_gk_pass, st.n_gk_pass),
-            ("n_out_goal_line", gold.n_out_goal_line, st.n_out_goal_line),
-            ("n_out_sideline", gold.n_out_sideline, st.n_out_sideline),
-            ("n_foul", gold.n_foul, st.n_foul),
-            ("n_foul_yellow", gold.n_foul_yellow, st.n_foul_yellow),
-            ("n_foul_red", gold.n_foul_red, st.n_foul_red),
-            ("n_free_kick", gold.n_free_kick, st.n_free_kick),
-        ];
-        for (name, g, cur) in fields {
-            assert_eq!(
-                g, cur,
-                "seed {} {} 漂移: golden={} current={}（审阅后用 ACCEPT_GOLDEN=1 重基线）",
-                seed, name, g, cur
-            );
-        }
-        assert_eq!(
-            gold.stream_hash, st.stream_hash,
+        let gold = read_golden(MODEL_VERSION, seed);
+        let hash_ok = assert_golden_fields_match(seed, &gold, &st, "current");
+        assert!(
+            hash_ok,
             "seed {} 事件流哈希漂移（任何静默改动）",
             seed
         );
     }
+}
+
+/// P27 D6 硬验收：v1 基线（P27 之前）与当前 v2 引擎**逐 seed** 对比。
+/// 本 change 只改出界 pass 的 JSON 字段值，不改变 RNG 消费顺序 → 事件数量、类型分布、
+/// 比分必须与 v1 完全一致（`assert_golden_fields_match` 的 28 个字段），
+/// **只有** `stream_hash` 因出界字段值变而不同（若相同说明出界字段没真正改——本测试也会红）。
+#[test]
+fn gm_v1_regression_counts_unchanged() {
+    let mut seeds_with_out = 0;
+    for seed in GOLDEN_SEEDS {
+        let st = aggregate(seed);
+        let gold_v1 = read_golden(1, seed);
+        let hash_same = assert_golden_fields_match(seed, &gold_v1, &st, "v1");
+        assert!(
+            !hash_same,
+            "seed {} 的 v2 流哈希与 v1 相同——本 change 应至少改变出界 pass 的字段值",
+            seed
+        );
+        // v1/v2 出界计数（按 detail 分桶，与协议字段无关）必须一致：出界触发概率不变。
+        assert_eq!(gold_v1.n_out_goal_line, st.n_out_goal_line, "seed {} v1 出底线计数", seed);
+        assert_eq!(gold_v1.n_out_sideline, st.n_out_sideline, "seed {} v1 出边线计数", seed);
+        if st.n_out_goal_line + st.n_out_sideline > 0 {
+            seeds_with_out += 1;
+        }
+    }
+    assert!(seeds_with_out > 0, "10 个 canary seed 里应有 seed 产出出界 pass（否则哈希不变无法解释）");
 }
 
 

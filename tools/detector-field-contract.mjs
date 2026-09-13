@@ -57,6 +57,7 @@ export const DETECTOR_FIELD_CONTRACT = {
     reads: [
       ...EVENT_SKELETON,
       'result',
+      'out_side',
       'detail',
       'x2',
       'y2',
@@ -70,6 +71,7 @@ export const DETECTOR_FIELD_CONTRACT = {
       type: 'engine',
       index: 'viewer',
       result: 'engine',
+      out_side: 'engine',
       detail: 'engine',
       x2: 'derive',
       y2: 'derive',
@@ -78,7 +80,7 @@ export const DETECTOR_FIELD_CONTRACT = {
     },
     known_gaps: ['goal_kick_exclusion', 'clearance_out_intent'],
     notes:
-      '出界证据优先 detail（out_sideline/out_goal_line），兼容 result==="out" 与几何出界（D1）。',
+      '出界证据优先 result==="out"（P27 主路径），兼容 out_side、detail（out_sideline/out_goal_line，P21）与几何出界（D4）。',
   },
 
   ignored_interception_opportunity: {
@@ -156,18 +158,19 @@ export const DETECTOR_FIELD_CONTRACT = {
   // 注意 reads 必须精确反映实现：分桶只按 type / 排除位 / nearest_defender_distance / 出界
   // 结果，不读 t/index/pass_distance（那是 finding 与其它 detector 才需要的信息）。
   pass_outcomes: {
-    reads: ['type', 'result', 'detail', 'x2', 'y2', 'nearest_defender_distance'],
+    reads: ['type', 'result', 'out_side', 'detail', 'x2', 'y2', 'nearest_defender_distance'],
     legacy_reads: ['corner', 'throw_in', 'clearance'],
     producers: {
       type: 'engine',
       result: 'engine',
+      out_side: 'engine',
       detail: 'engine',
       x2: 'derive',
       y2: 'derive',
       nearest_defender_distance: 'derive',
     },
     known_gaps: ['goal_kick_exclusion'],
-    notes: '排除位与出界分类复用 unforced_out 的同一契约（D1/D2）。',
+    notes: '排除位与出界分类复用 unforced_out 的同一契约（D4/D2）。',
   },
 };
 
@@ -212,7 +215,7 @@ export const KNOWN_GAPS = {
     kind: 'semantic',
     detector_fields: { inactive_responsibility: 'dead_ball' },
     reason:
-      'derive 层的 dead_ball 快照位确有生产者（whistle 路径有效），但它的判定函数 isDeadBallEvent 里还有两条同类死分支：`pass && result === "out"`（当前引擎不产 result==="out"，见 #25；若 #25 之后引擎改产，该分支会复活）与 `kickoff && x2 === undefined`（真实 kickoff 带 x2）。加上取的是「最近一个事件」（通常是 beat），真实数据里出界/进球后并不会被标成死球。影响：死球期间的站桩可能被 inactive_responsibility 误报。修法要动 derive 层「最近非 beat 事件」的口径，属 P21 决定范围之外，故显式登记。',
+      'derive 层的 dead_ball 快照位确有生产者（whistle 路径有效），但它的判定函数 isDeadBallEvent 里的两条分支在真实数据上不可达：`pass && result === "out"`（P27 起引擎**已产** result="out"，但每条出界 pass 后紧跟同 t 的 beat，而判定取的是「最近一个事件」= latestEventAt → 永远取到 beat 而非该 pass，故分支不可达）与 `kickoff && x2 === undefined`（真实 kickoff 带 x2）。影响：出界/进球后并不会被标成死球，死球期间的站桩可能被 inactive_responsibility 误报。修法要动 derive 层「最近非 beat 事件」的口径，属 P21 决定范围之外，故显式登记。',
     issue: '#26',
   },
 };

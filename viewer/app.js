@@ -5,12 +5,12 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260912-3';
-import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260912-3';
-import { createGame } from './game.js?v=20260912-3';
-import { mockEventStream } from './mock-event-stream.js?v=20260912-3';
-import { resetMicroMotion } from './micro-motion.js?v=20260912-3';
-import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260912-3';
+import { config } from './config.js?v=20260913-1';
+import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260913-1';
+import { createGame } from './game.js?v=20260913-1';
+import { mockEventStream } from './mock-event-stream.js?v=20260913-1';
+import { resetMicroMotion } from './micro-motion.js?v=20260913-1';
+import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260913-1';
 import {
   parseAuditImport,
   formatFinding,
@@ -22,7 +22,7 @@ import {
   buildChangeDraft,
   openQuestionsFromReport,
   confirmQuestionsFromReport,
-} from './audit-report.js?v=20260912-3';
+} from './audit-report.js?v=20260913-1';
 import {
   OBSERVATION_STATUSES,
   isTerminalStatus,
@@ -39,10 +39,10 @@ import {
   defaultConfirmationSelection,
   toggleEventIndex,
   confirmationEventsToShow,
-} from './observation-list.js?v=20260912-3';
+} from './observation-list.js?v=20260913-1';
 // 别名 describeWindowEvent：app.js 另有一个同名的调试摘要函数（describeEvent(e,id)，
 // 供 #event-info 面板用），两者用途不同，避免遮蔽。
-import { describeEvent as describeWindowEvent, isCandidateEvent } from './event-labels.js?v=20260912-3';
+import { describeEvent as describeWindowEvent, isCandidateEvent } from './event-labels.js?v=20260913-1';
 import {
   normalizeProblem,
   normalizeProblems,
@@ -59,7 +59,7 @@ import {
   pollRerunTask,
   formatDecisionText,
   fixRefToRender,
-} from './problem-view.js?v=20260912-3';
+} from './problem-view.js?v=20260913-1';
 
 const canvas = document.getElementById('pitch');
 const ctx = canvas.getContext('2d');
@@ -106,7 +106,7 @@ const OBSERVATION_POLL_MS = 2000;
 const OBSERVATION_POLL_MAX_MS = 15 * 60 * 1000;
 // 观察 bundle 的 source_revision：本切片无法读 git，用与 cache-busting 同步的 viewer
 // 资源版本串。这是「源码/资源资产版本」，不是 git commit hash；与 index.html 的 ?v= 一致。
-const VIEWER_SOURCE_REVISION = 'viewer-js:20260912-2';
+const VIEWER_SOURCE_REVISION = 'viewer-js:20260913-1';
 let lastBundle = null;
 // 观察列表状态（每次采集/提交一条）；localStorage 持久化元数据 + task_id。
 const obsStorage = typeof localStorage !== 'undefined' ? localStorage : null;

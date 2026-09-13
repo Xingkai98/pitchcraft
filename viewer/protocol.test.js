@@ -3,7 +3,7 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseEvent, parseEventStream, playerTeam, isGoal, EVENT_TYPES } from './protocol.js';
+import { parseEvent, parseEventStream, playerTeam, isGoal, EVENT_TYPES, isValidOutPos } from './protocol.js';
 
 test('EVENT_TYPES 包含 12 类事件（v1 + v2 beat + foul）', () => {
   assert.deepEqual([...EVENT_TYPES].sort(), [
@@ -216,6 +216,52 @@ test('P6 批次1: 非 pass/shot 的 detail 不校验（whistle 等既有 detail�
 test('P7: pass detail=throw_in 合法（界外球掷球）', () => {
   const e = parseEvent({ t: 100, type: 'pass', from: 5, subject: 5, to: 1, x: 0.47, y: 0, x2: 0.3, y2: 0.25, speed: 12, h: 0, detail: 'throw_in' });
   assert.equal(e.detail, 'throw_in');
+});
+
+// ---- P27 出界 pass 显式字段（result=out + out_side/out_pos）----
+
+test('P27: 出界 pass（result=out + out_side + out_pos）合法解析', () => {
+  const base = { t: 100, type: 'pass', from: 9, subject: 9, x: 0.7, y: 0.36, x2: 0.71, y2: 0, speed: 16.6, result: 'out', detail: 'out_sideline' };
+  const side = parseEvent({ ...base, out_side: 'sideline', out_pos: [0.71, -0.013] });
+  assert.equal(side.result, 'out');
+  assert.equal(side.out_side, 'sideline');
+  assert.deepEqual(side.out_pos, [0.71, -0.013], 'out_pos 越界值必须原样保留');
+  const goal = parseEvent({ ...base, x2: 1, y2: 0.42, out_side: 'goal_line', out_pos: [1.035, 0.42], detail: 'out_goal_line' });
+  assert.equal(goal.out_side, 'goal_line');
+});
+
+test('P27: out_pos 可越界（<0 / >1）——不得走 [0,1] 范围校验', () => {
+  // 这是本字段存在的意义：真实越界坐标。若被 [0,1] 校验拦住，协议迁移即失败。
+  for (const pos of [[1.035, 0.42], [-0.013, 0.5], [0.7, 1.02], [0.5, -0.04]]) {
+    assert.doesNotThrow(() => parseEvent({
+      t: 100, type: 'pass', from: 9, subject: 9, x: 0.5, y: 0.5, x2: 0.5, y2: 0.5,
+      speed: 16, result: 'out', out_side: 'sideline', out_pos: pos,
+    }), `out_pos=${JSON.stringify(pos)} 应合法`);
+  }
+});
+
+test('P27: out_side 非法枚举抛错', () => {
+  const base = { t: 100, type: 'pass', from: 9, subject: 9, x: 0.5, y: 0.5, x2: 0.5, y2: 0.5, speed: 16, result: 'out' };
+  assert.throws(() => parseEvent({ ...base, out_side: 'touchline' }));
+  assert.throws(() => parseEvent({ ...base, out_side: 'out' }));
+});
+
+test('P27: out_pos 非有限数/非二元组抛错', () => {
+  const base = { t: 100, type: 'pass', from: 9, subject: 9, x: 0.5, y: 0.5, x2: 0.5, y2: 0.5, speed: 16, result: 'out', out_side: 'sideline' };
+  assert.throws(() => parseEvent({ ...base, out_pos: [NaN, 0.5] }), 'NaN 须拒绝');
+  assert.throws(() => parseEvent({ ...base, out_pos: [0.5, Infinity] }), 'Infinity 须拒绝');
+  assert.throws(() => parseEvent({ ...base, out_pos: [0.5] }), '单元素须拒绝');
+  assert.throws(() => parseEvent({ ...base, out_pos: '0.5,0.5' }), '字符串须拒绝');
+  assert.throws(() => parseEvent({ ...base, out_pos: [0.5, 'x'] }), '非数字元素须拒绝');
+});
+
+test('P27: isValidOutPos 纯函数语义', () => {
+  assert.equal(isValidOutPos([1.2, -0.1]), true);
+  assert.equal(isValidOutPos([0.5, 0.5]), true);
+  assert.equal(isValidOutPos([NaN, 0.5]), false);
+  assert.equal(isValidOutPos([0.5]), false);
+  assert.equal(isValidOutPos(null), false);
+  assert.equal(isValidOutPos('x'), false);
 });
 
 // ---- foul / 纪律牌（本轮试点）----

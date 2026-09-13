@@ -300,18 +300,26 @@ function isOutOfPitch(x2, y2, pitch) {
 // 出界 detail 值（引擎直出，P21 D1）。
 const OUT_DETAILS = ['out_sideline', 'out_goal_line'];
 
-// Out-of-play evidence for a pass, in priority order (P21 D1):
-//   1. `detail === 'out_sideline' | 'out_goal_line'` — the engine's REAL signal. Real out
-//      passes carry `result:"contested"` (no discrimination) + one of these details, and
-//      their landing coords are clamp01'd back onto the line, so geometry cannot see it.
-//   2. explicit `result === 'out'` — compatibility (old fixtures / a future explicit field).
-//   3. geometric evidence: landing strictly beyond the pitch rectangle — defensive branch;
+// 出界边枚举（引擎直出，P27 D2）：goal_line 底线 / sideline 边线。
+const OUT_SIDES = ['goal_line', 'sideline'];
+
+// Out-of-play evidence for a pass, in priority order (P27 D4 — 迁移自 P21 D1):
+//   1. `result === 'out'` — the engine's REAL signal 现在显式声明出界（P27 起
+//      emit_pass_out_play_slot / 普通传球出界 / 头球解围出界 都发 result="out"）。
+//   2. `out_side` 存在 — 新字段兜底（阶段 2/3 若先带 out_side 再迁 result 的中间态）。
+//   3. `detail === 'out_sideline' | 'out_goal_line'` — P21 兼容分支。旧 bundle（本 change
+//      之前的引擎输出 / 落盘旧 fixture）只带 result:"contested" + detail + 钳制坐标，
+//      几何看不出，必须靠这条分支仍判出界。
+//   4. geometric evidence: landing strictly beyond the pitch rectangle — defensive branch;
 //      usually unreachable after clamp01, but kept for non-clamped inputs.
 // A near-boundary-but-inside landing is NOT out-of-play evidence (it may just be a risky
-// pass that stayed in).
+// pass that stayed in). 注意 `out_pos` **不是**判据——它只是「球实际飞出多远」的几何证据字段。
 function outEvidenceOf(event, profile) {
-  if (OUT_DETAILS.includes(event.detail)) return 'event.detail';
   if (event.result === 'out') return 'event.result';
+  // 与 outReasonOf 用同一枚举判据（不是「任意字符串」）——否则 out_side:'' / 非法值会让
+  // 证据源与原因不一致（evidence='event.out_side' 但 reason 落到兜底）。
+  if (OUT_SIDES.includes(event.out_side)) return 'event.out_side';
+  if (OUT_DETAILS.includes(event.detail)) return 'event.detail';
   if (
     typeof event.x2 === 'number' &&
     typeof event.y2 === 'number' &&
@@ -322,11 +330,12 @@ function outEvidenceOf(event, profile) {
   return null;
 }
 
-// 出界原因（P21 D3）：不再读 `event.out_reason`（无人产），改由证据源推导。
-// 两个调用点都在 `outEvidence !== null` 之后，而本函数与 outEvidenceOf 用的是同一组
-// OUT_DETAILS / 几何判据，所以两支必命中其一——第三支只是防御性兜底（若将来有人单独
-// 改了一侧的判据，这里不会返回 undefined 而是给出一个可读值）。
+// 出界原因（P27 D4）：由证据源推导，优先用新字段 out_side（语义最明确），旧 bundle 回退 detail。
+// 两个调用点都在 `outEvidence !== null` 之后，而本函数与 outEvidenceOf 用的是同一组判据，
+// 所以两支必命中其一——最后两支只是防御性兜底（若将来有人单独改了一侧的判据，这里不会返回
+// undefined 而是给出一个可读值）。
 function outReasonOf(event, outEvidence) {
+  if (OUT_SIDES.includes(event.out_side)) return event.out_side;
   if (OUT_DETAILS.includes(event.detail)) return event.detail;
   if (outEvidence === 'landing_out_of_bounds') return 'out_of_bounds_landing';
   return 'no_pressure_out';

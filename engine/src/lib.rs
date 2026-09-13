@@ -122,6 +122,9 @@ pub struct Event {
     pub detail: Option<String>, // 附加说明
     pub card: Option<String>, // 纪律牌（foul 事件：无牌缺省 / "yellow" / "red"）
     pub h: Option<f64>,         // 球高度（归一化 0-1，P6 批次1；pass/shot 高亮带弧线高度，viewer 用球大小表示）
+    // P27（#25 阶段 1）出界 pass 显式字段（仅 result="out" 时出现）：
+    pub out_pos: Option<(f64, f64)>, // 真实越界坐标（可 <0 / >1；x2/y2 仍是场内投影点）
+    pub out_side: Option<String>,    // 出界边："goal_line"（底线）| "sideline"（边线）
     pub players: Option<Vec<(i32, f64, f64)>>, // lineup 事件的 22 球员站位 (id, x, y)
     // v2 beat 专用字段：beat 事件只输出 movers/main/ball，无顶层 subject/x/y。
     pub movers: Option<Vec<Mover>>, // beat: 并行跑位数组（增量，只含移动球员）
@@ -139,6 +142,7 @@ impl Default for Event {
             carrier_from_x: None, carrier_from_y: None, subject_end_x: None, subject_end_y: None,
             carrier_end_x: None, carrier_end_y: None, keeper_x: None, keeper_y: None,
             score: None, detail: None, card: None, h: None, players: None,
+            out_pos: None, out_side: None,
             movers: None, main: None, ball: None,
         }
     }
@@ -198,6 +202,10 @@ impl Event {
         if let Some(d) = &self.detail { parts.push(format!("\"detail\":\"{}\"", d)); }
         if let Some(c) = &self.card { parts.push(format!("\"card\":\"{}\"", c)); }
         if let Some(h) = self.h { parts.push(format!("\"h\":{:.2}", h)); }
+        // P27 出界字段：out_side（枚举串）+ out_pos（真实越界坐标，**不 clamp**——4 位小数，
+        // 可 <0 / >1；viewer 协议对 out_pos 只校验有限数、不做 [0,1] 范围校验）。
+        if let Some(side) = &self.out_side { parts.push(format!("\"out_side\":\"{}\"", side)); }
+        if let Some((opx, opy)) = self.out_pos { parts.push(format!("\"out_pos\":[{:.4},{:.4}]", opx, opy)); }
         if let Some(players) = &self.players {
             let inner: Vec<String> = players.iter().map(|(id, x, y)| {
                 let team = if *id <= 10 { "home" } else { "away" };
@@ -209,17 +217,28 @@ impl Event {
     }
 }
 
+/// 当前引擎/协议模型版本（P27 起 = 2）。
+/// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
+/// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
+/// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
+pub const MODEL_VERSION: u32 = 2;
+
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
+/// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起）。
+/// **当前只用于 golden 目录选择**（v1 `tests/golden/`、v2 `tests/golden-v2/`，旧基线保留不覆盖），
+/// **不切换引擎行为**——同一代码对两个版本都产出相同事件流，v1 基线是 P27 之前引擎的冻结产物。
+/// 将来若需按版本分支行为（阶段 2/3），在此字段上实现。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
     pub match_duration_seconds: f64,
     pub demo_mode: bool,
+    pub model_version: u32,
 }
 
 impl MatchConfig {
     pub fn default_() -> Self {
-        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false }
+        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION }
     }
 }
 
@@ -366,6 +385,7 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
         detail: None,
         card: None,
         h: None,
+        out_pos: None, out_side: None,
         players: Some(lineup.iter().map(|p| (p.id, p.x, p.y)).collect()),
         movers: None, main: None, ball: None,
     }
@@ -937,7 +957,10 @@ fn highlight_ball_end(h: &Highlight) -> (f64, f64) {
         HighlightOutcome::GoalKick { land, .. } => *land,
         HighlightOutcome::TackleSuccess { loose, .. } => *loose,
         HighlightOutcome::TackleFail { contact, .. } => *contact,
-        HighlightOutcome::PassOutOfPlay { out_pos, .. } => *out_pos,
+        // P27：out_pos 存真实越界值（可 <0 / >1），但回灌模拟的球位必须留在场内——
+        // 否则 formation_target 的 ball 项会让 22 人跑位目标越界，经 nearest_* 阈值级联改写全流
+        // （探针实测：改这一处即 5/10 seed 事件数漂移）。事件字段仍用原始 out_pos 输出。
+        HighlightOutcome::PassOutOfPlay { out_pos, .. } => (clamp01(out_pos.0), clamp01(out_pos.1)),
         HighlightOutcome::CornerAward { rebound_from, .. } => *rebound_from,
         HighlightOutcome::CornerKick { land, .. } => *land,
         HighlightOutcome::Clearance { land, .. } => *land,
@@ -1309,14 +1332,17 @@ fn emit_pass_out_play_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mu
     events.push(Event {
         t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
         x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some("contested".to_string()), speed: Some(speed),
+        result: Some("out".to_string()), speed: Some(speed),
+        out_pos: Some((raw_x, raw_y)), out_side: Some(out_side_of(detail).to_string()),
         detail: Some(detail.to_string()),
         ..Event::default()
     });
     st.highlight = Some(Highlight {
         t_end,
         participants: vec![(from, from_pos)],
-        outcome: HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (x2, y2), source },
+        // D3：out_pos 存真实越界坐标（不 clamp）；回灌模拟的两处消费点（highlight_ball_end /
+        // finalize_highlight）再 clamp01 回去——否则飞行期球位越界会经队形目标级联改写全流（见 design 偏离记录）。
+        outcome: HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (raw_x, raw_y), source },
     });
     let movers = compute_movers(st, rng, t, &[from]);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
@@ -1374,15 +1400,16 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
         events.push(Event {
             t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
             x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-            result: Some("contested".to_string()), speed: Some(speed), lead: Some(lead),
+            result: Some("out".to_string()), speed: Some(speed), lead: Some(lead),
             h: Some(pass_h(distance_meters(from_pos, (x2, y2)), rng)),
+            out_pos: Some((raw_x, raw_y)), out_side: Some(out_side_of(detail).to_string()),
             detail: Some(detail.to_string()),
             ..Event::default()
         });
         st.highlight = Some(Highlight {
             t_end,
             participants: vec![(from, from_pos)],
-            outcome: HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (x2, y2), source: PassOutSource::NormalPass },
+            outcome: HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (raw_x, raw_y), source: PassOutSource::NormalPass },
         });
         let movers = compute_movers(st, rng, t, &[from]);
         for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
@@ -1822,6 +1849,10 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
         }
         HighlightOutcome::PassOutOfPlay { detail, out_pos, source } => {
             // 出界重开（P6 批次1）：不设 carrier，按 detail+source 触发重开
+            // P27：out_pos 存真实越界值；重开锚（角旗/掷球点）与球位必须留在场内 → 在此 clamp
+            // （start_corner/start_throw_in 内部也会再钳一次，此处钳是为了 st.ball_pos 与
+            //  last_emitted 的确定性——探针实测不钳会破 D6 逐 seed 一致）。事件字段不受影响。
+            let out_pos = (clamp01(out_pos.0), clamp01(out_pos.1));
             st.ball_pos = out_pos;
             st.carrier = -1;
             match source {
@@ -2357,20 +2388,23 @@ fn emit_clearance(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     let outcome;
     let detail;
     let (x2, y2);
+    let mut out_pos: Option<(f64, f64)> = None;
     if out_goal_line {
         // 解围出底线：攻方进攻端底线（home 攻 x>1 / away 攻 x<0）→ 角球
         let out_x = if attack_home { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
         (x2, y2) = (clamp01(out_x), y);
         t_end = t + distance_meters(pos, (x2, y2)) / speed;
         detail = "out_goal_line";
-        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (x2, y2), source: PassOutSource::Clearance };
+        out_pos = Some((out_x, y));
+        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (out_x, y), source: PassOutSource::Clearance };
     } else if out_sideline {
         // 解围出边线：y 越界（防方半场边线）→ 界外球（攻方掷）
         let out_y = if y > 0.5 { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
         (x2, y2) = (clamp01(pos.0 + clear_dir * 0.15), clamp01(out_y));
         t_end = t + distance_meters(pos, (x2, y2)) / speed;
         detail = "out_sideline";
-        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (x2, y2), source: PassOutSource::Clearance };
+        out_pos = Some((pos.0 + clear_dir * 0.15, out_y));
+        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (pos.0 + clear_dir * 0.15, out_y), source: PassOutSource::Clearance };
     } else {
         // 正常解围：顶出禁区（落点往中场方向 0.18-0.32 归一化）→ 松散球重新争（普通）
         let dist = 0.18 + (rng.next_u64() % 14) as f64 / 100.0;
@@ -2383,10 +2417,17 @@ fn emit_clearance(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
         let dir = if len < 1e-9 { (clear_dir, 0.0) } else { (dx / len, dy / len) };
         outcome = HighlightOutcome::Clearance { land: (x2, y2), dir };
     }
+    // 解围出界（out_goal_line / out_sideline）：result="out" + out_side/out_pos；正常解围（clearance）
+    // 仍是 contested（落点是争抢点，非出界）。
+    let (result_str, out_side) = match out_pos {
+        Some(_) => ("out", Some(out_side_of(detail).to_string())),
+        None => ("contested", None),
+    };
     events.push(Event {
         t, type_: EventType::Pass, subject: def, from: Some(def), to: None,
         x: pos.0, y: pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some("contested".to_string()), speed: Some(speed), h: Some(0.0),
+        result: Some(result_str.to_string()), speed: Some(speed), h: Some(0.0),
+        out_pos, out_side,
         detail: Some(detail.to_string()),
         ..Event::default()
     });
@@ -2492,7 +2533,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
           lead: Option<f64>, rx: Option<f64>, ry: Option<f64>,
           score: Option<String>, detail: Option<String>,
           players: Option<Vec<(i32, f64, f64)>>) -> Event {
-        Event { t, type_, subject, x, y, from, to, interceptor: None, carrier: None, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, subject_end_x: None, subject_end_y: None, carrier_end_x: None, carrier_end_y: None, keeper_x: None, keeper_y: None, score, detail, card: None, h: None, players, movers: None, main: None, ball: None }
+        Event { t, type_, subject, x, y, from, to, interceptor: None, carrier: None, x2, y2, result, speed, touch_freq, lead, receiver_x: rx, receiver_y: ry, loose_x: None, loose_y: None, carrier_from_x: None, carrier_from_y: None, subject_end_x: None, subject_end_y: None, carrier_end_x: None, carrier_end_y: None, keeper_x: None, keeper_y: None, score, detail, card: None, h: None, out_pos: None, out_side: None, players, movers: None, main: None, ball: None }
     }
 
     // 初始站位（唯一一次 lineup）
@@ -2551,6 +2592,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         subject_end_x: None, subject_end_y: None,
         carrier_end_x: None, carrier_end_y: None,
         keeper_x: None, keeper_y: None,
+        out_pos: None, out_side: None,
         players: None,
         movers: None, main: None, ball: None,
     });
@@ -2575,6 +2617,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         receiver_x: None, receiver_y: None, loose_x: None, loose_y: None,
         carrier_from_x: None, carrier_from_y: None, subject_end_x: None, subject_end_y: None,
         carrier_end_x: None, carrier_end_y: None, keeper_x: None, keeper_y: None,
+        out_pos: None, out_side: None,
         players: None, movers: None, main: None, ball: None,
     });
     t += 1.0;
@@ -2848,6 +2891,12 @@ fn clamp01(v: f64) -> f64 {
     if v < 0.0 { 0.0 } else if v > 1.0 { 1.0 } else { v }
 }
 
+/// P27：出界 detail → 协议 `out_side` 枚举（"goal_line" 底线 / "sideline" 边线）。
+/// detail 唯一取值为 out_goal_line / out_sideline（既有引擎编码），故映射是全的。
+fn out_side_of(detail: &str) -> &'static str {
+    if detail == "out_goal_line" { "goal_line" } else { "sideline" }
+}
+
 // ---- 犯规/纪律牌：判定链（全部走 SeededRng，同 seed 同流）----
 
 /// 找离 target 最近的对方外场球员（排除门将与已罚下球员）。foul 用。返回 (id, pos, 距离米)。
@@ -3025,7 +3074,7 @@ mod tests {
 
     #[test]
     fn simulate_produces_minimal_match() {
-        let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
+        let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
         let s = simulate(7, cfg);
         let types: Vec<String> = json_events(&s).iter().map(|e| type_of(e)).collect();
         // v2：kickoff + beat 节拍流 + pass/shot 高亮 + whistle + lineup；无顶层 dribble
@@ -3040,8 +3089,8 @@ mod tests {
 
     #[test]
     fn simulate_config_duration_respected() {
-        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false };
-        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
+        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
         let s_short = simulate(7, cfg_short);
         let s_long = simulate(7, cfg_long);
         // 短比赛事件少
@@ -3091,7 +3140,7 @@ mod tests {
         // 多 seed 扫：tackle 是每事件点按距离阈值 + TACKLE_EAGERNESS 决策，不保证每个 seed 都有 tackle，
         // 故多 seed 扫描确保至少有一个带新字段。
         for seed in 1..30u64 {
-            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
+            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
             let s = simulate(seed, cfg);
             if has_tackle_with_new_fields(&s) {
                 return;
@@ -3152,7 +3201,7 @@ mod tests {
 
     #[test]
     fn demo_tackle_has_carrier_from_and_loose() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let tackle = events.iter().find(|e| e.contains("\"type\":\"tackle\"")).expect("demo 应有 tackle");
@@ -3169,7 +3218,7 @@ mod tests {
 
     #[test]
     fn demo_has_foul_and_free_kick() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let foul = events.iter().find(|e| e.contains("\"type\":\"foul\"")).expect("demo 应有 foul");
@@ -4041,6 +4090,115 @@ mod tests {
         json_num(e, "h")
     }
 
+    /// 取 `"out_pos":[x,y]` 的二元组（P27 出界真实坐标）。
+    fn out_pos_of(e: &str) -> Option<(f64, f64)> {
+        let idx = e.find("\"out_pos\":[")?;
+        let rest = &e[idx + "\"out_pos\":[".len()..];
+        let end = rest.find(']')?;
+        let inner = &rest[..end];
+        let mut it = inner.split(',');
+        let x: f64 = it.next()?.trim().parse().ok()?;
+        let y: f64 = it.next()?.trim().parse().ok()?;
+        Some((x, y))
+    }
+
+    /// P27 出界 pass 字段契约（三条出界路径共用断言）：
+    /// result="out"、out_side ∈ {goal_line,sideline} 且与 detail 一致、x2/y2 ∈[0,1]（场内投影）、
+    /// out_pos 存在且**真的越界**（至少一维 <0 或 >1）、out_pos 与 x2/y2 语义不同（投影≠真实点）。
+    fn assert_out_fields(e: &str, expect_detail: &str) {
+        assert_eq!(type_of(e), "pass", "出界事件应为 pass: {}", e);
+        assert_eq!(json_str(e, "result").as_deref(), Some("out"), "出界 pass result 应为 out: {}", e);
+        let expect_side = if expect_detail == "out_goal_line" { "goal_line" } else { "sideline" };
+        assert_eq!(json_str(e, "out_side").as_deref(), Some(expect_side), "out_side 应为 {}: {}", expect_side, e);
+        assert_eq!(json_str(e, "detail").as_deref(), Some(expect_detail), "detail 应保留: {}", e);
+        assert!(json_num(e, "to").is_none(), "出界 pass to 应为 None: {}", e);
+        let x2 = json_num(e, "x2").expect("出界 pass 应有 x2（场内投影）");
+        let y2 = json_num(e, "y2").expect("出界 pass 应有 y2（场内投影）");
+        assert!(x2 >= 0.0 && x2 <= 1.0 && y2 >= 0.0 && y2 <= 1.0, "x2/y2 应钳制 [0,1]（协议不破）: {}", e);
+        let (opx, opy) = out_pos_of(e).unwrap_or_else(|| panic!("出界 pass 应有 out_pos: {}", e));
+        assert!(
+            opx < 0.0 || opx > 1.0 || opy < 0.0 || opy > 1.0,
+            "out_pos 应为真实越界坐标（至少一维越界）: ({}, {}) in {}",
+            opx, opy, e
+        );
+        // 语义区分：投影点必然有一维等于边界（0/1），真实点不是投影点本身。
+        assert!(
+            (opx != x2) || (opy != y2),
+            "out_pos（真实越界点）不应等于 x2/y2（投影点）: {}", e
+        );
+    }
+
+    #[test]
+    fn p27_out_pass_fields_all_paths() {
+        // P27 D2/D1：三条出界路径（槽位出界 / 普通传球出界 / 头球解围出界）都发
+        // result="out" + out_side + 真实越界 out_pos，且 x2/y2 保持场内投影。
+        // 用 find_pass_detail 命中 detail=out_* 即覆盖三条路径的事件形状（detail 由各路径唯一确定）。
+        let cfg = MatchConfig::default_();
+        let mut seen = std::collections::HashSet::new();
+        for seed in 1..80u64 {
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                let detail = json_str(&e, "detail");
+                match detail.as_deref() {
+                    Some("out_sideline") => { assert_out_fields(&e, "out_sideline"); seen.insert("sideline"); }
+                    Some("out_goal_line") => { assert_out_fields(&e, "out_goal_line"); seen.insert("goal_line"); }
+                    _ => {}
+                }
+            }
+            if seen.len() == 2 { break; }
+        }
+        assert_eq!(seen.len(), 2, "应同时覆盖出边线与出底线两条出界边: {:?}", seen);
+    }
+
+    #[test]
+    fn p27_contested_preserved_for_restart_passes() {
+        // P27 D1：门球开大脚 / 角球发球 pass 的 result 仍是 "contested"（落点是争抢点，非出界），
+        // 且**不带** out_side/out_pos（那是出界字段）。这是本 change 最容易改错的地方。
+        let cfg = MatchConfig::default_();
+        let mut saw_goal_kick = false;
+        let mut saw_corner = false;
+        for seed in 1..80u64 {
+            let s = simulate(seed, cfg);
+            for e in json_events(&s) {
+                if type_of(e.as_str()) != "pass" { continue; }
+                let has_to = json_num(&e, "to").is_some();
+                let detail = json_str(&e, "detail");
+                let is_corner = detail.as_deref() == Some("corner");
+                let subj = json_num(&e, "subject").unwrap_or(-1.0) as i32;
+                let is_gk_pass = !has_to && (subj == 0 || subj == 21);
+                if is_corner {
+                    assert_eq!(json_str(&e, "result").as_deref(), Some("contested"), "角球发球应仍为 contested: {}", e);
+                    assert!(out_pos_of(&e).is_none(), "角球发球不应带 out_pos: {}", e);
+                    saw_corner = true;
+                }
+                if is_gk_pass {
+                    assert_eq!(json_str(&e, "result").as_deref(), Some("contested"), "门球开大脚应仍为 contested: {}", e);
+                    assert!(out_pos_of(&e).is_none(), "门球不应带 out_pos: {}", e);
+                    saw_goal_kick = true;
+                }
+            }
+            if saw_goal_kick && saw_corner { break; }
+        }
+        assert!(saw_goal_kick, "应扫到门球开大脚 pass");
+        assert!(saw_corner, "应扫到角球发球 pass");
+    }
+
+    #[test]
+    fn p27_clearance_normal_still_contested() {
+        // 正常头球解围（detail=clearance，非出界）仍是 contested、无出界字段；
+        // 只有解围**出界**（detail=out_*）才改 result=out。
+        let cfg = MatchConfig::default_();
+        for seed in 1..80u64 {
+            let s = simulate(seed, cfg);
+            if let Some(e) = find_pass_detail(&s, "clearance") {
+                assert_eq!(json_str(&e, "result").as_deref(), Some("contested"), "正常解围应为 contested: {}", e);
+                assert!(out_pos_of(&e).is_none(), "正常解围不应带 out_pos: {}", e);
+                return;
+            }
+        }
+        panic!("没有任何 seed 产出正常头球解围（detail=clearance）");
+    }
+
     #[test]
     fn p6_pass_out_sideline_throw_in() {
         // 传球出边线 → 界外球：detail=out_sideline、to=None、坐标钳制；后续掷球 pass（外场、h=0）
@@ -4481,7 +4639,7 @@ mod tests {
         // spec：5min 核心事件 ≥ 90min 的 60%（5min 物理容纳 ~20 槽、90min ~24 槽）。
         // 多 seed（1-20）防单 seed 侥幸。
         let mut count = |dur: f64, seed: u64| -> [usize; 5] {
-            let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false });
+            let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false, model_version: MODEL_VERSION });
             let evts = json_events(&s);
             let mut shot = 0;
             let mut corner = 0;

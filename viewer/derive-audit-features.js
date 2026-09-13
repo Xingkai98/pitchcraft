@@ -164,6 +164,9 @@ function possessionTransitionTimes(events, lineupMap) {
 }
 
 // 可观测死球标记：whistle、goal、out、无开球动作的 kickoff。
+// 注：`pass && result === 'out'` 与 `kickoff && x2 === undefined` 两支在真实数据上不可达——
+// 调用方取的是「最近一个事件」（latestEventAt），而每条出界 pass 后紧跟同 t 的 beat（P27 实测
+// 113/113），kickoff 也带 x2。分支保留为语义表达；死球标记实际靠 whistle + 球静止。
 function isDeadBallEvent(e) {
   if (!e) return false;
   if (e.type === 'whistle') return true;
@@ -212,6 +215,12 @@ function derivePassEvent(e, i, { pitch, lineupMap, anchors, passDefaultSpeed }) 
   out.x2 = round3(lx);
   out.y2 = round3(ly);
   out.pass_distance = round3(segLen);
+  // P27 出界真实坐标 out_pos 同步米制化（同 x2/y2 口径）——审计层坐标单位必须一致，
+  // 否则同一事件里 out_pos（归一化、可越界）与 x2/y2（米制）混用两套单位。它保留越界符号。
+  if (Array.isArray(e.out_pos) && e.out_pos.length === 2
+      && typeof e.out_pos[0] === 'number' && typeof e.out_pos[1] === 'number') {
+    out.out_pos = [round3(e.out_pos[0] * pitch.length), round3(e.out_pos[1] * pitch.width)];
+  }
 
   // 传球速度（m/s）：事件 speed 优先，否则用 viewer 默认，并标注来源。
   if (typeof e.speed === 'number' && e.speed > 0) {

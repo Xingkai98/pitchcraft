@@ -28,6 +28,12 @@ export function playerTeam(id) {
   throw new Error(`player id out of range 0-21: ${id}`);
 }
 
+// 校验引擎产出的 out_pos（[x, y]，可越界）。暴露成纯函数供测试与调用方复用。
+export function isValidOutPos(v) {
+  return Array.isArray(v) && v.length === 2
+    && v.every((c) => typeof c === 'number' && Number.isFinite(c));
+}
+
 // 校验 beat 事件（v2 节拍）：无顶层 subject/x/y；movers/main/ball 结构与互斥
 function validateBeat(e) {
   // movers：增量数组，id 唯一且在 0-21，坐标 [0,1]
@@ -120,6 +126,21 @@ function validateBaseEvent(e) {
     }
     if (e.type === 'foul' && !/^foul_[a-z]+$/.test(e.detail)) {
       throw new Error(`foul detail must match foul_<type>: ${JSON.stringify(e.detail)}`);
+    }
+  }
+  // P27（#25 阶段 1）出界 pass 显式字段（result="out" 时由引擎产出）：
+  //   out_side：枚举 "goal_line" | "sideline"（出界边）。
+  //   out_pos：真实越界坐标 [x, y]，**可越界**（<0 / >1）——这是本字段存在的意义，故 **不** 走
+  //           上面那圈 [0,1] 范围校验；只校验它是两个有限数（防 NaN/字符串/null 混入渲染）。
+  //           场内投影点仍是 x2/y2（那对走 [0,1] 校验，协议不变）。
+  if (e.out_side !== undefined && e.out_side !== null) {
+    if (e.out_side !== 'goal_line' && e.out_side !== 'sideline') {
+      throw new Error(`out_side must be goal_line/sideline: ${JSON.stringify(e.out_side)}`);
+    }
+  }
+  if (e.out_pos !== undefined && e.out_pos !== null) {
+    if (!isValidOutPos(e.out_pos)) {
+      throw new Error(`out_pos must be [x, y] finite numbers: ${JSON.stringify(e.out_pos)}`);
     }
   }
   // foul：可选 carrier（被犯规持球者）、card（yellow/red 枚举；缺省=无牌犯规）

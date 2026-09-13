@@ -2,8 +2,11 @@
 //
 // 真实形状的来源：不手写任何字段值——用真实引擎（viewer/engine.wasm）跑到真实比赛，
 // 走真实采集链路（protocol.parseEventStream → Game → observation.captureObservation），
-// 把真实 audit_input 抽出来落盘。这样 fixture 里的 `result:"contested"` + `detail:"out_*"`
-// + 钳制坐标就是生产链路真实产出的形状，而不是我们对形状的猜测。
+// 把真实 audit_input 抽出来落盘。这样 fixture 里的形状就是生产链路真实产出的，而不是猜测。
+//
+// 出界 pass 形状随引擎版本变化：P27 起是 `result:"out"` + `out_side` + `out_pos`（真实越界坐标）
+// + `detail:"out_*"` + 场内投影 x2/y2；P27 之前是 `result:"contested"` + `detail:"out_*"` + 钳制坐标。
+// 本文件描述的是**当前**引擎（P27+）的形状；旧形状（P21 兼容分支）由测试里的合成输入覆盖。
 //
 // 用法（仓库根）：
 //   1) 先有 viewer/engine.wasm：
@@ -175,7 +178,7 @@ async function main() {
       event_indexes_reference: 'events are verbatim from the real capture; player snapshots are the verbatim real snapshots of the players carrying observable flags',
       warnings: [
         'does not contain dead_ball/corner/throw_in/goal_kick/contested boolean keys: the engine never produces them (that is the bug this change fixes)',
-        'out passes carry result:"contested" + detail:"out_*" and CLAMPED landing coords (y2=0 / x2=105)',
+        'P27: out passes carry result:"out" + out_side + out_pos (real out-of-pitch coord, may be <0/>1); x2/y2 stay the clamped in-pitch projection (y2=0 / x2=105); detail:"out_*" is retained. (Pre-P27 shape was result:"contested" + detail only + clamped coords.)',
         'SNAPSHOT, not a live cross-check: the field VALUES are frozen at generation time. The contract tests assert field PRESENCE/producers, not values, so a change to derive-audit-features.js metric semantics will not turn these tests red — regenerate this file (node tools/fixtures/generate-real-audit-fixture.mjs) after touching the derive layer.',
       ],
     },

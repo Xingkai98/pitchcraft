@@ -24,6 +24,14 @@ test('P20 event-labels: 类型显眼 —— 传球 vs 射门不可混淆（案�
   assert.notEqual(describeEvent(pass, lineupOf(9)), describeEvent(shot, lineupOf(9)));
 });
 
+test('P27 event-labels: result=out 有 detail 时 detail 优先；无 detail 时兜底「传球出界」', () => {
+  const base = { index: 3, t: 40, type: 'pass', subject: 9, from: 9, result: 'out' };
+  // 引擎仍在出界时带 detail（P27 保留）→ 渲染成「传球出边线」
+  assert.equal(describeEvent({ ...base, detail: 'out_sideline' }, lineupOf(9)), '#3 · t=40s · 传球出边线 · 主队 #9');
+  // detail 缺失（阶段 2/3 若去掉 detail）时的兜底标签
+  assert.equal(describeEvent(base, lineupOf(9)), '#3 · t=40s · 传球出界 · 主队 #9');
+});
+
 test('P20 event-labels: detail 区分同类事件（角球/界外球/任意球都是 pass）', () => {
   const base = { index: 1, t: 27, type: 'pass', subject: 5, from: 5 };
   assert.equal(describeEvent({ ...base, detail: 'corner' }, lineupOf(5)), '#1 · t=27s · 角球 · 主队 #5');
