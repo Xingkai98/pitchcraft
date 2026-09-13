@@ -890,6 +890,18 @@ test('player_overlap ignores snapshots with a non-finite t (NaN/Infinity are not
     'non-finite t must not become an aligned sample'
   );
   assert.equal(stats.find((s) => s.detector_id === 'player_overlap').samples, 1);
+  // 纯非有限 t（两侧都只有 NaN/Infinity）：曾产出 match_time=null 的假 finding。
+  // 上面那组有真实 t=1 兜底，抓不住「把非有限 t 放进来」的变异——必须单独钉。
+  const onlyNonFinite = {
+    4: [{ t: NaN, x: 0, y: 0 }],
+    5: [{ t: NaN, x: 0.5, y: 0 }],
+  };
+  const ghost = runAudit({ players: onlyNonFinite });
+  assert.deepEqual(
+    ghost.findings.filter((f) => f.detector_id === 'player_overlap'),
+    [],
+    'a pair aligned only on non-finite t must not produce a finding'
+  );
 });
 
 test('player_overlap is registered in the audit stats with a pair count (P26)', () => {
