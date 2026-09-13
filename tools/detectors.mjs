@@ -542,9 +542,34 @@ function teamOfPlayerId(playerId) {
   return null;
 }
 
-// 有快照的同队球员花名册：{ home: [{playerId, byT}], away: [...] }，byT 是 t → 快照。
+// 原始快照 → 数值点 `{ t, x, y }`；样本不可用（非对象 / t 非有限 / 坐标非有限）返回 null。
+//
+// 为什么单独抽成函数（不只是为复用）：**这是本 detector 唯一读取原始快照字段的地方**。
+// 契约漂移守卫的源码扫描器只把「从已知 audit_input 容器（events/players/sorted/snaps/run）
+// 绑定的循环变量」当输入基变量，其余靠调用点传播；所以这里的形参必须叫 `snapshot` 且由
+// `for (const snapshot of snaps)` 这种容器循环调用，扫描器才看得见 t/x/y 的读取。若改成在
+// 配对循环里读 `a.byT.get(t).x`，变量来自 Map 查找、扫描器看不见——落在不可达分支里的
+// 未声明读取会同时逃过源码扫描与行为 Proxy（审阅实测：`if (false) { void sa.zz_x }` 全绿）。
+//
+// 只收**有限** t：NaN/Infinity 不是可对齐的采样时刻。放 NaN 进来会让该球员的 t 序列排序
+// 错乱，并与另一名球员的 NaN 键「对齐」出一条 match_time 为 null 的假 finding（自测发现）。
+// t 是采样时刻、不是位置，跳过它不等于「拿缺失位置当原点」。
+function snapshotPoint(snapshot) {
+  if (!snapshot) return null;
+  const { t, x, y } = snapshot;
+  if (typeof t !== 'number' || !Number.isFinite(t)) return null;
+  if (typeof x !== 'number' || !Number.isFinite(x)) return null;
+  if (typeof y !== 'number' || !Number.isFinite(y)) return null;
+  return { t, x, y };
+}
+
+// 有快照的同队球员花名册：{ home: [{playerId, byT}], away: [...] }，byT 是 t → **数值点**。
 // detector 与 runAudit 的样本量口径共用这一处枚举（避免两处各自算 pair 造成漂移）。
-// 没有任何快照的球员不进花名册——它不构成可评估的 pair 候选。
+// 没有任何可用采样点的球员不进花名册——它不构成可评估的 pair 候选。
+//
+// 存数值点而非原始快照：配对阶段只能通过 Map 查找拿到样本，那种变量无法被源码扫描器识别
+// 为输入基变量；只读**本函数造出来的副本键**（t/x/y），就不可能构成「读了 audit_input 里
+// 没有的字段」这类漂移——漂移风险全部收敛在上面那处容器循环里。
 function sameTeamRoster(players) {
   const roster = { home: [], away: [] };
   for (const [rawId, snaps] of Object.entries(players ?? {})) {
@@ -555,11 +580,8 @@ function sameTeamRoster(players) {
     if (!team) continue;
     const byT = new Map();
     for (const snapshot of snaps) {
-      // 只收**有限** t：NaN/Infinity 不是可对齐的采样时刻。放 NaN 进来会让该球员的 t
-      // 序列排序错乱，并与其它球员的 NaN 键「对齐」出一条 match_time 为 null 的假 finding
-      // （审阅前自测发现）。t 是采样时刻、不是位置，跳过它不等于拿缺失位置当原点。
-      if (typeof snapshot.t !== 'number' || !Number.isFinite(snapshot.t)) continue;
-      byT.set(snapshot.t, snapshot);
+      const point = snapshotPoint(snapshot);
+      if (point) byT.set(point.t, point);
     }
     if (byT.size > 0) roster[team].push({ playerId, byT });
   }
@@ -601,15 +623,11 @@ export function detectPlayerOverlap(players, profile) {
         let breachSamples = 0;
         let alignedSamples = 0;
         for (const t of [...a.byT.keys()].sort((x, y) => x - y)) {
+          // sa/sb 是 sameTeamRoster 造的数值点副本（见那里的注释）：这两处 .x/.y 不是
+          // audit_input 字段读取，字段读取已经全部收在 snapshotPoint 的容器循环里。
           const sa = a.byT.get(t);
           const sb = b.byT.get(t);
           if (!sb) continue;
-          if (
-            typeof sa.x !== 'number' || typeof sa.y !== 'number' ||
-            typeof sb.x !== 'number' || typeof sb.y !== 'number'
-          ) {
-            continue;
-          }
           alignedSamples += 1;
           const dist = Math.hypot(sa.x - sb.x, sa.y - sb.y);
           if (dist < minDistance) minDistance = dist;
