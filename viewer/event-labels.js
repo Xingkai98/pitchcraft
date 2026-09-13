@@ -59,6 +59,8 @@ const PASS_RESULT_LABELS = {
   lost: '传丢',
   contested: '争抢',
   success: '成功',
+  // P27：出界（有 detail 时 detail 优先渲染成「传球出边线/出底线」，此标签是 detail 缺失时的兜底）
+  out: '出界',
 };
 const SHOT_RESULT_LABELS = {
   goal: '得分',
