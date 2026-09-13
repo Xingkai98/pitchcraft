@@ -7,6 +7,7 @@ import {
   DEFAULT_AUDIT_PROFILE,
   runAudit as runAuditRaw,
   aggregateAudit,
+  snapshotPoint,
 } from './detectors.mjs';
 import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
@@ -765,6 +766,225 @@ test('a real contested out pass is not excluded by the contested result (D2)', (
   assert.equal(pass_outcomes.excluded.sample_count, 0);
 });
 
+// --- P26 player_overlap：同队间距（#35 detector 部分） -----------------------
+// 同队判定按 id 范围（0-10 home / 11-21 away，与 derive 层 teamOf 一致）；按 t 对齐；
+// 按球员对聚合；阈值来自 profile.player_overlap.min_distance（默认 2.0）。
+
+test('real windows report a player_overlap realism_warning where teammates crowd (P26)', () => {
+  // 真实 fixture 上只有 corner 窗口同队（home 4/5）贴到 <2m（实测 0.434m）；引擎未修，
+  // detector 必须把这件事暴露出来。#53 修引擎后这些 finding 应归零。
+  const w = realWindow('corner');
+  const { findings } = runAudit(w);
+  const overlap = findings.filter((f) => f.detector_id === 'player_overlap');
+  assert.equal(overlap.length, 1, JSON.stringify(findings));
+  assert.equal(overlap[0].severity, 'realism_warning');
+  assert.equal(overlap[0].entity_id, '4,5');
+  assert.ok(overlap[0].features.min_distance < DEFAULT_AUDIT_PROFILE.player_overlap.min_distance);
+});
+
+test('a window with comfortably spaced teammates reports no player_overlap (P26)', () => {
+  // 反面对照：throw_in 窗口的同队 pair 16/17 最小间距 30.257m ≫ 2m → 不产 finding。
+  // 缺了这条，「detector 对任何同队 pair 都报警」的假阳性写坏也全绿。
+  const w = realWindow('throw_in');
+  const { findings } = runAudit(w);
+  assert.deepEqual(findings.filter((f) => f.detector_id === 'player_overlap'), []);
+});
+
+test('player_overlap threshold is strict < (distance == min_distance is not a finding)', () => {
+  // 阈值方向守卫（镜像 P22 的阈值守卫）：恰等于 min_distance 不报，严格小于才报。
+  // 用 profile 覆写 min_distance 到与合成间距**精确相等**的整数值，避免浮点尾巴。
+  const players = {
+    4: [{ t: 10, x: 0, y: 0 }],
+    5: [{ t: 10, x: 2, y: 0 }],
+  };
+  const profile = {
+    ...DEFAULT_AUDIT_PROFILE,
+    player_overlap: { ...DEFAULT_AUDIT_PROFILE.player_overlap, min_distance: 2 },
+  };
+  assert.deepEqual(
+    runAudit({ players }, profile).findings.filter((f) => f.detector_id === 'player_overlap'),
+    [],
+    'distance exactly equal to min_distance must not be reported (< is strict)'
+  );
+  const closer = {
+    4: [{ t: 10, x: 0, y: 0 }],
+    5: [{ t: 10, x: 1.999, y: 0 }],
+  };
+  const reported = runAudit({ players: closer }, profile).findings.filter(
+    (f) => f.detector_id === 'player_overlap'
+  );
+  assert.equal(reported.length, 1, 'distance just below min_distance must be reported');
+  assert.equal(reported[0].thresholds.min_distance, 2);
+});
+
+test('player_overlap aggregates one finding per teammate pair, not per sample (P26 D2)', () => {
+  // 同一 pair 在多个采样点都 < 阈值 → 只报一条；match_time 取首次越界时刻，
+  // features.min_distance 取窗口内最小间距（不是首次越界的那个间距）。
+  const players = {
+    4: [
+      { t: 10, x: 0, y: 0 },
+      { t: 11, x: 1.5, y: 0 },
+      { t: 12, x: 3, y: 0 },
+      { t: 13, x: 0.8, y: 0 },
+    ],
+    5: [
+      { t: 10, x: 1.0, y: 0 },
+      { t: 11, x: 2.0, y: 0 },
+      // t=12 时两人相距 5m ≥ 阈值 → 不越界（这条让「最小间距跨整个窗口」与「首次越界」
+      // 区分开：若 features 取了首次越界的间距，min_distance 会假成 1.0）。
+      { t: 12, x: 8.0, y: 0 },
+      { t: 13, x: 1.5, y: 0 },
+    ],
+  };
+  const overlap = runAudit({ players }).findings.filter(
+    (f) => f.detector_id === 'player_overlap'
+  );
+  assert.equal(overlap.length, 1, 'one finding per pair, not one per sample');
+  assert.equal(overlap[0].match_time, 10, 'match_time is the first breaching sample');
+  assert.equal(overlap[0].features.min_distance, 0.5, 'min_distance spans the whole window');
+  assert.equal(overlap[0].features.first_breach_time, 10);
+  assert.equal(overlap[0].features.breach_samples, 3);
+  assert.equal(overlap[0].features.aligned_samples, 4);
+});
+
+test('player_overlap never pairs cross-team players (id range defines the team, D1)', () => {
+  // 间距 <2m 但跨队（home 4 / away 11）→ 不是重叠，是对抗中的贴身，不该报。
+  const players = {
+    4: [{ t: 10, x: 0, y: 0 }],
+    11: [{ t: 10, x: 0.5, y: 0 }],
+  };
+  assert.deepEqual(
+    runAudit({ players }).findings.filter((f) => f.detector_id === 'player_overlap'),
+    []
+  );
+});
+
+test('player_overlap skips snapshots whose teammates have no sample at that t (D6)', () => {
+  // 采样点不对齐（某球员某 t 无快照）→ 该 t 跳过，不拿缺失位置当原点。player 5 只在
+  // t=12 有快照，与 4 的 t=10 间距 0.2m——若把缺采样当 (0,0) 会造出一条假 finding。
+  const players = {
+    4: [
+      { t: 10, x: 0.2, y: 0 },
+      { t: 12, x: 40, y: 0 },
+    ],
+    5: [{ t: 12, x: 40.2, y: 0 }],
+  };
+  const overlap = runAudit({ players }).findings.filter(
+    (f) => f.detector_id === 'player_overlap'
+  );
+  assert.equal(overlap.length, 1, JSON.stringify(overlap));
+  assert.equal(overlap[0].match_time, 12, 'the unaligned t=10 must be skipped');
+});
+
+test('player_overlap ignores snapshots with a non-finite t (NaN/Infinity are not instants)', () => {
+  // t=NaN 曾经被收进采样点表：它排序错乱、还能与另一名球员的 NaN 键「对齐」，产出一条
+  // match_time 为 null（JSON 化后 NaN→null）的假 finding。位置缺失该跳过是对的，t 缺失
+  // 同理——t 不是位置，不算「拿缺失位置当原点」，但它同样不可对齐。
+  const players = {
+    4: [{ t: NaN, x: 0, y: 0 }, { t: 1, x: 0, y: 0 }],
+    5: [{ t: Infinity, x: 0.5, y: 0 }, { t: 1, x: 50, y: 0 }],
+  };
+  const { findings, stats } = runAudit({ players });
+  assert.deepEqual(
+    findings.filter((f) => f.detector_id === 'player_overlap'),
+    [],
+    'non-finite t must not become an aligned sample'
+  );
+  assert.equal(stats.find((s) => s.detector_id === 'player_overlap').samples, 1);
+  // 纯非有限 t（两侧都只有 NaN/Infinity）：曾产出 match_time=null 的假 finding。
+  // 上面那组有真实 t=1 兜底，抓不住「把非有限 t 放进来」的变异——必须单独钉。
+  const onlyNonFinite = {
+    4: [{ t: NaN, x: 0, y: 0 }],
+    5: [{ t: NaN, x: 0.5, y: 0 }],
+  };
+  const ghost = runAudit({ players: onlyNonFinite });
+  assert.deepEqual(
+    ghost.findings.filter((f) => f.detector_id === 'player_overlap'),
+    [],
+    'a pair aligned only on non-finite t must not produce a finding'
+  );
+});
+
+test('player_overlap rejects snapshots with non-finite coordinates (invalid sample)', () => {
+  // 与「非有限 t」同一修复的另一半（审阅 P2-2）：只有 t 那半边有测试时，删掉坐标有限性检查
+  // 全绿。后果是真实的——坐标 NaN 的球员会因「有可用采样点」进入花名册，把 statsFor 的
+  // 样本分母算进去（{4:两正常点, 5:一个 NaN 坐标点} 下 samples 由 0 变 1），进而影响
+  // aggregateAudit 的 anomaly_rate。这里把三个坐标变体各钉一条。
+  for (const [name, bad] of Object.entries({
+    'NaN x': { t: 1, x: NaN, y: 0 },
+    'Infinity y': { t: 1, x: 0, y: Infinity },
+    'null x': { t: 1, x: null, y: 0 },
+  })) {
+    const players = { 4: [{ t: 1, x: 0, y: 0 }, { t: 2, x: 0, y: 0 }], 5: [bad] };
+    const { findings, stats } = runAudit({ players });
+    assert.deepEqual(
+      findings.filter((f) => f.detector_id === 'player_overlap'),
+      [],
+      `${name}: an invalid sample must not fabricate a finding`
+    );
+    assert.equal(
+      stats.find((s) => s.detector_id === 'player_overlap').samples,
+      0,
+      `${name}: a player with only invalid samples must not enter the roster (sample denominator)`
+    );
+  }
+});
+
+test('player_overlap duplicate normalizing keys cannot self-pair (4 vs 04)', () => {
+  // NIT（审阅）：'4' 与 '04' 规范化后都是 playerId 4，若各入册一次会产出「自己和自己重叠」
+  // 的假 finding（entity_id "4,4"）。derive 层产不出这种键（只按数值 id 写），这里是防御性
+  // 去重；顺带断言「先出现的键胜出、且不会因为重复键丢掉球员」。
+  const dup = runAudit({
+    players: { 4: [{ t: 1, x: 0, y: 0 }], '04': [{ t: 1, x: 0, y: 0 }], 5: [{ t: 1, x: 0.5, y: 0 }] },
+  });
+  const ids = dup.findings.filter((f) => f.detector_id === 'player_overlap').map((f) => f.entity_id);
+  assert.deepEqual(ids, ['4,5'], `no self-pairing; got ${JSON.stringify(ids)}`);
+  // 重复键若「采样点全不可用」不得把后面同 id 的有效键挤掉（先记名后入册的坑）。
+  const shadow = runAudit({
+    players: { '4': [{ t: 3, x: NaN, y: 0 }], '04': [{ t: 1, x: 0, y: 0 }], 5: [{ t: 1, x: 0.5, y: 0 }] },
+  });
+  assert.equal(
+    shadow.findings.filter((f) => f.detector_id === 'player_overlap').length,
+    1,
+    'an all-invalid duplicate key must not shadow the valid one'
+  );
+});
+
+test('player_overlap sample copies expose exactly {t,x,y} (guard blind-spot pin)', () => {
+  // 契约守卫看不见「经 Map 取得的变量」上的字段读取（见 detector-field-contract.test.mjs 的
+  // 已知缺口 (c)）。缓解靠结构：配对阶段读的是 snapshotPoint 造的副本。这条把副本**形状**
+  // 钉死——谁往副本加字段（例如给 sample 补 speed）又在配对循环里读，这里立刻红，逼他去
+  // 契约登记，而不是走 (c) 的静默路径。
+  const point = snapshotPoint({ t: 1, x: 2, y: 3, is_gk: true, responsibility: 'ball_entered_zone' });
+  assert.deepEqual(Object.keys(point).sort(), ['t', 'x', 'y']);
+  for (const bad of [
+    { t: NaN, x: 0, y: 0 },
+    { t: 1, x: NaN, y: 0 },
+    { t: 1, x: 0, y: Infinity },
+    { t: 1, x: '0', y: 0 },
+    null,
+    undefined,
+  ]) {
+    assert.equal(snapshotPoint(bad), null, `invalid sample must be rejected: ${JSON.stringify(bad)}`);
+  }
+});
+
+test('player_overlap is registered in the audit stats with a pair count (P26)', () => {
+  // statsFor 集成：stats 行必须存在，否则新 detector 的失败会静默不计数。
+  const { stats } = runAudit({
+    players: {
+      4: [{ t: 10, x: 0, y: 0 }],
+      5: [{ t: 10, x: 0.4, y: 0 }],
+      6: [{ t: 10, x: 50, y: 0 }],
+    },
+  });
+  const stat = stats.find((s) => s.detector_id === 'player_overlap');
+  assert.ok(stat, 'player_overlap must appear in stats');
+  assert.equal(stat.samples, 3, 'three same-team pairs among 4/5/6');
+  assert.equal(stat.determinate, 1);
+  assert.equal(stat.unknown, 0);
+});
+
 // --- P21 D3：不再读无生产者的字段 --------------------------------------------
 
 test('unforced_out features no longer carry target_distance (D3)', () => {
@@ -848,7 +1068,7 @@ test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (
   // 标定状态必须**显式**声明（isUncalibrated 只认 calibrated:true；「没声明」= 未标定，
   // fail-closed）。默认 profile 里只有 ignored_interception 未标定，其余显式 true。
   // 配置块 = 与 detector 对应的对象块（非顶层标量/非 pitch/aggregation）。
-  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'ignored_interception', 'invariants']) {
+  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'ignored_interception', 'player_overlap', 'invariants']) {
     const block = DEFAULT_AUDIT_PROFILE[blockKey];
     assert.equal(
       typeof block.calibrated,
@@ -860,6 +1080,9 @@ test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (
   assert.equal(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, true);
   assert.equal(DEFAULT_AUDIT_PROFILE.inactive_responsibility.calibrated, true);
   assert.equal(DEFAULT_AUDIT_PROFILE.invariants.calibrated, true);
+  // P26：阈值 2.0m 是真实比赛常识，但告警率未用真实比赛标定（标定归 #36）→ 显式未标定。
+  assert.equal(DEFAULT_AUDIT_PROFILE.player_overlap.calibrated, false);
+  assert.equal(DEFAULT_AUDIT_PROFILE.player_overlap.min_distance, 2.0);
 });
 
 test('aggregateAudit does not escalate an uncalibrated detector, even above band (D4)', () => {
@@ -1226,6 +1449,7 @@ test('threshold direction: near-boundary is strict < (distance == margin is not 
 const GOLDEN_FINDINGS = [
   'clearance | ignored_interception_opportunity | realism_warning | ev=3412 | ent=12',
   'corner | ignored_interception_opportunity | realism_warning | ev=1687 | ent=7',
+  'corner | player_overlap | realism_warning | ev=null | ent=4,5',
   'free_kick | ignored_interception_opportunity | realism_warning | ev=474 | ent=15',
   'free_kick | inactive_responsibility | unknown | ev=null | ent=6',
   'out_goal_line | ignored_interception_opportunity | realism_warning | ev=2523 | ent=17',

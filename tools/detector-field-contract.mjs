@@ -106,6 +106,22 @@ export const DETECTOR_FIELD_CONTRACT = {
       '本轮未标定（D4）：finding 带 calibrated:false，聚合不升级 failure，标定归 #36。',
   },
 
+  player_overlap: {
+    // 只读球员快照的 t/x/y——team 不读（快照没有该字段），按 id 范围推（0-10 home /
+    // 11-21 away，与 viewer/derive-audit-features.js 的 teamOf 同口径）。
+    reads: ['t', 'x', 'y'],
+    legacy_reads: [],
+    producers: {
+      t: 'viewer',
+      x: 'derive',
+      y: 'derive',
+    },
+    known_gaps: [],
+    notes:
+      '同队判定按 id 范围推（快照无 team 字段，D1）。阈值/告警率均未用真实比赛标定（D4），' +
+      'finding 带 calibrated:false，告警率标定归 #36。',
+  },
+
   inactive_responsibility: {
     reads: [
       't',

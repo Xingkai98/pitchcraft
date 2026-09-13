@@ -20,6 +20,7 @@ import {
   detectUnforcedOut,
   detectInactiveResponsibility,
   detectIgnoredInterception,
+  detectPlayerOverlap,
   computePassOutcomes,
   DEFAULT_AUDIT_PROFILE,
 } from './detectors.mjs';
@@ -292,10 +293,22 @@ test('source-level: the discoverability guard catches a variable detector id (se
 //    调用），使「有哪些 detector」成为运行时可枚举的事实——小幅重构，超出本 change 范围，
 //    留给新增 detector 的 issue（#34/#35）一并处理。
 // ② 字段读侧：扫描器已覆盖 点读 / 可选链 / 解构 / 字符串下标 / 改名循环变量 / 回调形参 /
-//    **helper 形参（调用点传播到不动点）**。仍扫不到的两类：
+//    **helper 形参（调用点传播到不动点）**。仍扫不到的三类：
 //    (a) 把事件拷进非输入命名的局部量再读（`const x = event; x.zz`）；
-//    (b) 计算下标 `event[k]`（k 是变量，不是字面量）。
-//    两者都要先写一段「看起来无意义」的中转代码，属刻意规避而非自然写法。
+//    (b) 计算下标 `event[k]`（k 是变量，不是字面量）；
+//    (c) **经 Map/查找得到的变量**（`const sa = a.byT.get(t); sa.zz`）——`sa` 既不是容器
+//        循环绑定、也不在调用点传播的实参链上，扫描器不把它当基变量，看不见它上面的读取。
+//        **比 (a) 更容易撞上**：把快照按 t 索引再比较（player_overlap 的 D6 对齐）就是这种
+//        自然写法。且它与行为 Proxy 叠加成完整盲区——Proxy 只看得见**执行到**的读，不可达
+//        分支里的 `.zz` 两边都不报。**缓解是结构性的**：让「读原始快照字段」只发生在
+//        容器循环里（见 detectors.mjs 的 `snapshotPoint`：Map 里存的是它造的数值点副本，
+//        不是原始快照），配对阶段读到的就是自己的副本键，不再是 audit_input 字段。
+//        若日后新增 detector 又在 Map 上直接读原始快照，这条盲区会复活。
+//        **副本形状由 `snapshotPoint returns exactly {t,x,y}` 用例钉住**：谁给副本加字段，
+//        那条会红，逼他在契约里登记新字段（否则走 (c) 的静默路径）。
+//
+//    判据：(a)/(b) 要先写一段「看起来无意义」的中转代码，属刻意规避；(c) 是自然写法，
+//    所以本 change 用结构（副本 + 容器循环收口）而非扫描器增强来消解，扫描器本身未改。
 //
 // 判据：需要**刻意写死代码 / 无意义中转 / 变量下标**才能绕过的，登记为已知局限；
 // **自然写法**能触发的（改循环变量名、解构、可选链、helper 形参读事件）都必须被守卫
@@ -480,6 +493,7 @@ test('contract covers every detector and every entry is internally consistent', 
     'unforced_out',
     'inactive_responsibility',
     'ignored_interception_opportunity',
+    'player_overlap',
     'pass_outcomes',
   ]) {
     assert.ok(ids.includes(expected), `contract must cover ${expected}`);
@@ -731,6 +745,7 @@ const DETECTOR_ENTRY = {
     detectInactiveResponsibility(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
   ignored_interception_opportunity: (pi) =>
     detectIgnoredInterception(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
+  player_overlap: (pi) => detectPlayerOverlap(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
   pass_outcomes: (pi) => computePassOutcomes(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
 };
 
