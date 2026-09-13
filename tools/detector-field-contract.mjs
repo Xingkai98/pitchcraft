@@ -57,6 +57,7 @@ export const DETECTOR_FIELD_CONTRACT = {
     reads: [
       ...EVENT_SKELETON,
       'result',
+      'out_side',
       'detail',
       'x2',
       'y2',
@@ -70,6 +71,7 @@ export const DETECTOR_FIELD_CONTRACT = {
       type: 'engine',
       index: 'viewer',
       result: 'engine',
+      out_side: 'engine',
       detail: 'engine',
       x2: 'derive',
       y2: 'derive',
@@ -78,7 +80,7 @@ export const DETECTOR_FIELD_CONTRACT = {
     },
     known_gaps: ['goal_kick_exclusion', 'clearance_out_intent'],
     notes:
-      '出界证据优先 detail（out_sideline/out_goal_line），兼容 result==="out" 与几何出界（D1）。',
+      '出界证据优先 result==="out"（P27 主路径），兼容 out_side、detail（out_sideline/out_goal_line，P21）与几何出界（D4）。',
   },
 
   ignored_interception_opportunity: {
@@ -156,18 +158,19 @@ export const DETECTOR_FIELD_CONTRACT = {
   // 注意 reads 必须精确反映实现：分桶只按 type / 排除位 / nearest_defender_distance / 出界
   // 结果，不读 t/index/pass_distance（那是 finding 与其它 detector 才需要的信息）。
   pass_outcomes: {
-    reads: ['type', 'result', 'detail', 'x2', 'y2', 'nearest_defender_distance'],
+    reads: ['type', 'result', 'out_side', 'detail', 'x2', 'y2', 'nearest_defender_distance'],
     legacy_reads: ['corner', 'throw_in', 'clearance'],
     producers: {
       type: 'engine',
       result: 'engine',
+      out_side: 'engine',
       detail: 'engine',
       x2: 'derive',
       y2: 'derive',
       nearest_defender_distance: 'derive',
     },
     known_gaps: ['goal_kick_exclusion'],
-    notes: '排除位与出界分类复用 unforced_out 的同一契约（D1/D2）。',
+    notes: '排除位与出界分类复用 unforced_out 的同一契约（D4/D2）。',
   },
 };
 

@@ -710,17 +710,19 @@ test('aggregateAudit pass_outcomes is deterministic and preserves unknown_outcom
 // （tools/fixtures/real-audit-input.json），钉住「detector 对真实数据不再瞎」这件事。
 // 真实出界传球形状：result:"contested" + detail:"out_*" + 落点被 clamp01 钳回边界。
 
-test('real out-of-play pass yields an unforced_out realism_warning, not unknown', () => {
+test('real out-of-play pass yields an unforced_out realism_warning via result (P27 D4)', () => {
   const w = realWindow('out_sideline');
   const pass = w.events.find((e) => e.detail === 'out_sideline');
+  assert.equal(pass.result, 'out', 'P27: engine emits explicit result="out"');
+  assert.equal(pass.out_side, 'sideline');
   const { findings } = runAudit(w);
   const unforced = findings.filter((f) => f.detector_id === 'unforced_out');
   assert.equal(unforced.length, 1, JSON.stringify(findings));
   assert.equal(unforced[0].severity, 'realism_warning');
   assert.equal(unforced[0].event_index, pass.index);
-  assert.equal(unforced[0].features.out_evidence, 'event.detail');
-  assert.equal(unforced[0].features.out_reason, 'out_sideline');
-  // 出界原因由 detail 给，不靠几何；落点被钳在边线上 → 边界距离 0。
+  assert.equal(unforced[0].features.out_evidence, 'event.result');
+  assert.equal(unforced[0].features.out_reason, 'sideline');
+  // 出界原因由 result/out_side 给，不靠几何；落点投影被钳在边线上 → 边界距离 0。
   assert.equal(unforced[0].features.boundary_distance, 0);
   assert.equal(unforced[0].features.defender_distance, pass.nearest_defender_distance);
 });
@@ -728,12 +730,13 @@ test('real out-of-play pass yields an unforced_out realism_warning, not unknown'
 test('real goal-line out pass also yields an unforced_out realism_warning', () => {
   const w = realWindow('out_goal_line');
   const pass = w.events.find((e) => e.detail === 'out_goal_line');
+  assert.equal(pass.result, 'out');
   const { findings } = runAudit(w);
   const f = findings.find((x) => x.detector_id === 'unforced_out' && x.event_index === pass.index);
   assert.ok(f, JSON.stringify(findings));
   assert.equal(f.severity, 'realism_warning');
-  assert.equal(f.features.out_evidence, 'event.detail');
-  assert.equal(f.features.out_reason, 'out_goal_line');
+  assert.equal(f.features.out_evidence, 'event.result');
+  assert.equal(f.features.out_reason, 'goal_line');
 });
 
 test('real pass_outcomes counts a real out pass as out (out_count > 0)', () => {
@@ -758,12 +761,16 @@ test('real corner/throw_in/free_kick/clearance passes are all excluded (D2)', ()
   }
 });
 
-test('a real contested out pass is not excluded by the contested result (D2)', () => {
-  const w = realWindow('out_sideline');
-  const pass = w.events.find((e) => e.detail === 'out_sideline');
-  assert.equal(pass.result, 'contested');
-  const { pass_outcomes } = runAudit(w);
-  assert.equal(pass_outcomes.excluded.sample_count, 0);
+test('a real out pass is never excluded (its result/detail are not exclusion tokens) (D2)', () => {
+  // 出界 detail 是 out_*，不在 EXCLUSION_DETAILS；result 是 out，不是排除位。两条都不得排除。
+  for (const label of ['out_sideline', 'out_goal_line']) {
+    const w = realWindow(label);
+    const pass = w.events.find((e) => e.detail === label);
+    assert.equal(pass.result, 'out');
+    const { pass_outcomes } = runAudit(w);
+    assert.equal(pass_outcomes.excluded.sample_count, 0, `${label} must not be excluded`);
+    assert.equal(pass_outcomes.unpressured.out_count + pass_outcomes.pressured.out_count >= 1, true);
+  }
 });
 
 // --- P26 player_overlap：同队间距（#35 detector 部分） -----------------------
@@ -992,7 +999,8 @@ test('unforced_out features no longer carry target_distance (D3)', () => {
   const f = findings.find((x) => x.detector_id === 'unforced_out');
   assert.ok(f);
   assert.equal(Object.prototype.hasOwnProperty.call(f.features, 'target_distance'), false);
-  assert.equal(f.features.out_reason, 'out_sideline');
+  // P27：out_reason 改用新字段 out_side 的枚举值（旧 detail 形状是 out_sideline）。
+  assert.equal(f.features.out_reason, 'sideline');
 });
 
 test('a legacy synthetic target_distance never reaches features (D3)', () => {
@@ -1291,23 +1299,25 @@ test('runAudit rejects malformed events/players containers (fail-loud, not silen
   assert.deepEqual(ok.findings, []);
 });
 
-test('D1 priority: detail out-evidence wins over result==="out" (observable behaviour)', () => {
-  // design D1 把「优先认 detail」列为契约的一部分。用一条 result==='out' 且 detail 出界的
-  // 输入把优先级钉成可观测行为：out_evidence 必须是 'event.detail'，不是 'event.result'。
-  // （否则将来有人把 result 分支提到前面，新引擎数据上 out_evidence 标签会悄悄变形。）
+test('D4 priority: result==="out" out-evidence wins over detail (observable behaviour)', () => {
+  // P27 D4 把优先级倒过来：result='out' 是**主路径**（引擎显式声明出界），detail 降为
+  // P21 兼容分支（旧 bundle）。用一条两者都带、且彼此**冲突**的输入把优先级钉成可观测行为：
+  // out_evidence 必须是 'event.result'（若有人把 detail 分支提回前面，本用例红）。
   const { findings } = runAudit({
     events: [
       {
         index: 0, t: 1, type: 'pass',
-        result: 'out', detail: 'out_sideline',
+        result: 'out', detail: 'out_goal_line',
+        out_side: 'sideline',
         nearest_defender_distance: 12, pass_distance: 25,
       },
     ],
   });
   const f = findings.find((x) => x.detector_id === 'unforced_out');
   assert.equal(f.severity, 'realism_warning');
-  assert.equal(f.features.out_evidence, 'event.detail');
-  assert.equal(f.features.out_reason, 'out_sideline');
+  assert.equal(f.features.out_evidence, 'event.result');
+  // out_reason 取 out_side（新字段），不是冲突的 detail。
+  assert.equal(f.features.out_reason, 'sideline');
   // pass_outcomes 也走同一契约（分类为 out）。
   const { pass_outcomes } = runAudit({
     events: [
@@ -1315,6 +1325,50 @@ test('D1 priority: detail out-evidence wins over result==="out" (observable beha
     ],
   });
   assert.equal(pass_outcomes.unpressured.out_count, 1);
+});
+
+test('D4: out_side alone is out-evidence when result is not "out" (阶段 2/3 兜底)', () => {
+  // 阶段 2/3 可能出现 result 尚未迁移、先带 out_side 的中间态 → out_side 是第二优先级证据。
+  const { findings } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'contested', out_side: 'goal_line', nearest_defender_distance: 12, pass_distance: 25 },
+    ],
+  });
+  const f = findings.find((x) => x.detector_id === 'unforced_out');
+  assert.equal(f.severity, 'realism_warning');
+  assert.equal(f.features.out_evidence, 'event.out_side');
+  assert.equal(f.features.out_reason, 'goal_line');
+  const { pass_outcomes } = runAudit({
+    events: [{ index: 0, t: 1, type: 'pass', result: 'contested', out_side: 'goal_line', nearest_defender_distance: 12 }],
+  });
+  assert.equal(pass_outcomes.unpressured.out_count, 1);
+});
+
+test('D4: new bundle (result=out) and old bundle (detail only) both classify as out', () => {
+  // 新 bundle：result='out' + out_side + out_pos（真实越界坐标，非 [0,1]）。
+  // 旧 bundle：result='contested' + detail='out_sideline'（P21 形状，无 result/out_side）。
+  // 两者都必须判出界，且证据源分别落在主路径与兼容分支上。
+  const newBundle = { index: 0, t: 1, type: 'pass', result: 'out', out_side: 'sideline', out_pos: [0.71, -0.013], detail: 'out_sideline', nearest_defender_distance: 12, pass_distance: 25 };
+  const oldBundle = { index: 1, t: 2, type: 'pass', result: 'contested', detail: 'out_sideline', nearest_defender_distance: 12, pass_distance: 25 };
+  const { findings, pass_outcomes } = runAudit({ events: [newBundle, oldBundle] });
+  const ev = (i) => findings.find((x) => x.detector_id === 'unforced_out' && x.event_index === i);
+  assert.equal(ev(0).features.out_evidence, 'event.result');
+  assert.equal(ev(0).features.out_reason, 'sideline');
+  assert.equal(ev(1).features.out_evidence, 'event.detail');
+  assert.equal(ev(1).features.out_reason, 'out_sideline');
+  assert.equal(pass_outcomes.unpressured.out_count + pass_outcomes.pressured.out_count, 2);
+});
+
+test('D4: a non-out pass carrying out_pos is NOT out-evidence (out_pos 不是出界判据)', () => {
+  // out_pos 只是「球实际飞出多远」的几何证据字段。判据是 result/out_side/detail/几何，
+  // 不含 out_pos —— 否则任何带该字段的 pass 都会被误判出界。
+  const { findings, pass_outcomes } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'success', out_pos: [1.03, 0.42], nearest_defender_distance: 12, pass_distance: 25 },
+    ],
+  });
+  assert.equal(findings.filter((f) => f.detector_id === 'unforced_out').length, 0);
+  assert.equal(pass_outcomes.unpressured.out_count, 0);
 });
 
 // --- P22: detector 阈值算子方向守卫（issue #38） ------------------------------

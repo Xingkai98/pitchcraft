@@ -624,13 +624,20 @@ test('every contract read is actually produced by the real audit_input', () => {
 test('the real fixture actually carries the out/restart shapes this change fixes', () => {
   const events = allRealEvents();
   const byDetail = (d) => events.filter((e) => e.type === 'pass' && e.detail === d);
-  // 真实出界：result 无区分度（contested）+ detail 唯一证据 + 坐标被钳到边界。
+  // P27 后的真实出界形状：result 显式 "out" + out_side + out_pos（真实越界坐标，可越界）；
+  // x2/y2 仍是场内投影点（钳到边界线）——协议不破。
+  const sideForDetail = { out_sideline: 'sideline', out_goal_line: 'goal_line' };
   for (const detail of ['out_sideline', 'out_goal_line']) {
     const sample = byDetail(detail)[0];
     assert.ok(sample, `fixture must carry a real ${detail} pass`);
-    assert.equal(sample.result, 'contested', `${detail}: engine uses contested, not out`);
+    assert.equal(sample.result, 'out', `${detail}: engine now emits explicit result="out"`);
+    assert.equal(sample.out_side, sideForDetail[detail], `${detail}: out_side must match the detail`);
+    assert.ok(Array.isArray(sample.out_pos) && sample.out_pos.length === 2, `${detail}: out_pos must be [x,y]`);
+    const [opx, opy] = sample.out_pos;
+    const crosses = opx < 0 || opx > 1 || opy < 0 || opy > 1;
+    assert.ok(crosses, `${detail}: out_pos must be a real out-of-pitch coord, got [${opx},${opy}]`);
     const clamped = sample.x2 === 0 || sample.x2 === 105 || sample.y2 === 0 || sample.y2 === 68;
-    assert.ok(clamped, `${detail}: landing must be clamped onto a boundary, got x2=${sample.x2} y2=${sample.y2}`);
+    assert.ok(clamped, `${detail}: landing projection must stay on a boundary, got x2=${sample.x2} y2=${sample.y2}`);
   }
   // 四类排除位 detail 都在（证明排除位契约有真实数据可依）。
   for (const detail of ['corner', 'throw_in', 'free_kick', 'clearance']) {
@@ -890,19 +897,20 @@ test('AUDIT_INPUT_SCHEMA_VERSION is a non-empty string and matches the fixture',
 
 // --- 5. 契约驱动的行为回归（真实数据） ---------------------------------------
 
-test('real out-of-play pass is classified out, not unknown (D1)', () => {
+test('real out-of-play pass is classified out via the result main path (D4)', () => {
   const w = windowNamed('out_sideline');
   const { findings, pass_outcomes } = runAudit(w.audit_input);
   const pass = w.audit_input.events.find((e) => e.detail === 'out_sideline');
-  assert.equal(pass.result, 'contested', 'real out passes use result:"contested"');
-  assert.equal(pass.y2, 0, 'real out landing is clamped to the goal line');
+  assert.equal(pass.result, 'out', 'P27: real out passes now use result:"out"');
+  assert.equal(pass.out_side, 'sideline');
+  assert.equal(pass.y2, 0, 'landing projection is still clamped to the touch line');
   const unforced = findings.filter(
     (f) => f.detector_id === 'unforced_out' && f.event_index === pass.index
   );
   assert.equal(unforced.length, 1, JSON.stringify(findings));
   assert.notEqual(unforced[0].severity, 'unknown', 'must no longer be unknown');
-  assert.equal(unforced[0].features.out_evidence, 'event.detail');
-  assert.equal(unforced[0].features.out_reason, 'out_sideline');
+  assert.equal(unforced[0].features.out_evidence, 'event.result');
+  assert.equal(unforced[0].features.out_reason, 'sideline');
   assert.equal(pass_outcomes.unpressured.out_count + pass_outcomes.pressured.out_count, 1);
 });
 
@@ -910,14 +918,14 @@ test('real out-of-play pass on the goal line is also classified out (D1)', () =>
   const w = windowNamed('out_goal_line');
   const { findings } = runAudit(w.audit_input);
   const pass = w.audit_input.events.find((e) => e.detail === 'out_goal_line');
-  assert.equal(pass.x2, 105, 'real goal-line out landing is clamped to the touch line');
+  assert.equal(pass.x2, 105, 'landing projection is still clamped to the touch line');
   const unforced = findings.find(
     (f) => f.detector_id === 'unforced_out' && f.event_index === pass.index
   );
   assert.ok(unforced, 'out_goal_line must produce an unforced_out finding');
   assert.notEqual(unforced.severity, 'unknown');
-  assert.equal(unforced.features.out_evidence, 'event.detail');
-  assert.equal(unforced.features.out_reason, 'out_goal_line');
+  assert.equal(unforced.features.out_evidence, 'event.result');
+  assert.equal(unforced.features.out_reason, 'goal_line');
 });
 
 test('real dead-ball details are excluded from the ordinary-pass buckets (D2)', () => {
@@ -934,12 +942,22 @@ test('real dead-ball details are excluded from the ordinary-pass buckets (D2)', 
   }
 });
 
-test('a contested result alone never excludes a real out pass (D2)', () => {
-  const w = windowNamed('out_sideline');
-  const pass = w.audit_input.events.find((e) => e.detail === 'out_sideline');
+test('a contested result alone never excludes a pass (D2)', () => {
+  // `contested` 是「落点是争抢点」（门球/角球发球），**不是**排除位。P27 后出界 pass 改发
+  // result="out"，但门球/角球发球仍是 contested——这条钉住「contest 不是排除 token」。
+  const { pass_outcomes } = runAudit({
+    schema_version: AUDIT_INPUT_SCHEMA_VERSION,
+    players: {},
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'contested', x2: 0.5, y2: 0.5, nearest_defender_distance: 12, pass_distance: 25 },
+    ],
+  });
+  assert.equal(pass_outcomes.excluded.sample_count, 0, 'contested must not be an exclusion token');
+  // 真实角球发球（result=contested + detail=corner）仍按 detail 排除——排除的是 detail，不是 result。
+  const w = windowNamed('corner');
+  const pass = w.audit_input.events.find((e) => e.detail === 'corner');
   assert.equal(pass.result, 'contested');
-  const { pass_outcomes } = runAudit(w.audit_input);
-  assert.equal(pass_outcomes.excluded.sample_count, 0, 'the out pass must not be excluded');
+  assert.ok(runAudit(w.audit_input).pass_outcomes.excluded.sample_count >= 1);
 });
 
 test('real dead-ball snapshots carry the produced dead_ball flag', () => {
@@ -952,17 +970,20 @@ test('real dead-ball snapshots carry the produced dead_ball flag', () => {
   assert.equal(recordReadsAcrossFixture().has('dead_ball'), true);
 });
 
-test('a real out pass is not misclassified as excluded-by-contested (D2 regression)', () => {
-  // 出界球 result 也是 contested。若把 contested 当排除位，真出界会被静默丢掉——
-  // 这条测试钉住「contested 不是排除位」这个语义（P21 D2）。
+test('a real out pass is never excluded from the ordinary-pass buckets (D2 regression)', () => {
+  // 出界 detail 是 out_*，不在 EXCLUSION_DETAILS 里 → 出界 pass 必须进 ordinary 桶并按 out 分类。
+  // （P21 时代出界球 result 是 contested；P27 改 out。两条都不得被判成 excluded——排除读的是
+  //  detail 集合，与 result 取值无关。）
   for (const label of ['out_sideline', 'out_goal_line']) {
     const w = windowNamed(label);
     const { pass_outcomes, findings } = runAudit(w.audit_input);
     assert.equal(pass_outcomes.excluded.sample_count, 0, `${label} must not be excluded`);
     const pass = w.audit_input.events.find((e) => e.detail === label);
+    assert.equal(pass.result, 'out');
     const f = findings.find((x) => x.detector_id === 'unforced_out' && x.event_index === pass.index);
     assert.ok(f, `${label} must yield an unforced_out finding`);
     assert.doesNotMatch(f.reason ?? '', /excluded/, `${label} must not be excluded`);
+    assert.equal(f.features.out_evidence, 'event.result', `${label}: must classify via the result main path`);
   }
 });
 
