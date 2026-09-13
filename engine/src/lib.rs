@@ -217,17 +217,31 @@ impl Event {
     }
 }
 
+/// 当前引擎/协议模型版本（P27 起 = 2）。
+/// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
+/// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
+/// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
+pub const MODEL_VERSION: u32 = 2;
+
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
+/// P27：`model_version` 标记事件流协议/引擎行为版本（v1 = P27 之前，v2 = P27 出界协议迁移起）。
+/// golden 测试按版本目录读写（v1 `tests/golden/`、v2 `tests/golden-v2/`），旧基线保留不覆盖。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
     pub match_duration_seconds: f64,
     pub demo_mode: bool,
+    pub model_version: u32,
 }
 
 impl MatchConfig {
     pub fn default_() -> Self {
-        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false }
+        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION }
+    }
+
+    /// 90 分钟非 demo（测试/统计/golden 统一入口），显式指定模型版本。
+    pub fn match_90(demo_mode: bool, model_version: u32) -> Self {
+        MatchConfig { match_duration_seconds: 5400.0, demo_mode, model_version }
     }
 }
 
@@ -3063,7 +3077,7 @@ mod tests {
 
     #[test]
     fn simulate_produces_minimal_match() {
-        let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
+        let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
         let s = simulate(7, cfg);
         let types: Vec<String> = json_events(&s).iter().map(|e| type_of(e)).collect();
         // v2：kickoff + beat 节拍流 + pass/shot 高亮 + whistle + lineup；无顶层 dribble
@@ -3078,8 +3092,8 @@ mod tests {
 
     #[test]
     fn simulate_config_duration_respected() {
-        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false };
-        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
+        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
         let s_short = simulate(7, cfg_short);
         let s_long = simulate(7, cfg_long);
         // 短比赛事件少
@@ -3129,7 +3143,7 @@ mod tests {
         // 多 seed 扫：tackle 是每事件点按距离阈值 + TACKLE_EAGERNESS 决策，不保证每个 seed 都有 tackle，
         // 故多 seed 扫描确保至少有一个带新字段。
         for seed in 1..30u64 {
-            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false };
+            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
             let s = simulate(seed, cfg);
             if has_tackle_with_new_fields(&s) {
                 return;
@@ -3190,7 +3204,7 @@ mod tests {
 
     #[test]
     fn demo_tackle_has_carrier_from_and_loose() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let tackle = events.iter().find(|e| e.contains("\"type\":\"tackle\"")).expect("demo 应有 tackle");
@@ -3207,7 +3221,7 @@ mod tests {
 
     #[test]
     fn demo_has_foul_and_free_kick() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let foul = events.iter().find(|e| e.contains("\"type\":\"foul\"")).expect("demo 应有 foul");
@@ -4519,7 +4533,7 @@ mod tests {
         // spec：5min 核心事件 ≥ 90min 的 60%（5min 物理容纳 ~20 槽、90min ~24 槽）。
         // 多 seed（1-20）防单 seed 侥幸。
         let mut count = |dur: f64, seed: u64| -> [usize; 5] {
-            let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false });
+            let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false, model_version: MODEL_VERSION });
             let evts = json_events(&s);
             let mut shot = 0;
             let mut corner = 0;
