@@ -517,7 +517,14 @@ fn nearest_in_team(st: &MatchState, target: (f64, f64), team: u32) -> i32 {
         let d = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
         if d < best_d { best_d = d; best = id as i32; }
     }
-    best
+    if best >= 0 {
+        best
+    } else {
+        // 退化态：该队外场全部罚下（规则可达——每队最多 10 红，门将不产犯规）。门将恒不被
+        // 罚下 → 由其顶上，保持函数 total（不返回 -1，避免调用点 st.pos[-1] 越界 panic）。
+        // 与 nearest_defender/nearest_teammate/kickoff_pick 的 total 化一致（P23/P24）。
+        if team == 0 { 0 } else { 21 }
+    }
 }
 
 /// 找离 target 最近的球员（save-rebound 双方可争）。罚下球员不参与。
@@ -3859,6 +3866,14 @@ mod tests {
         assert_eq!(kickoff_pick(&st, 9, -1), 0);
         // away 侧不受影响
         assert_eq!(kickoff_pick(&st, 12, -1), 12);
+        // nearest_in_team（P24）：home 外场全罚下 → 回退门将 0（不返回 -1，避免 st.pos[-1] panic）
+        assert_eq!(nearest_in_team(&st, target, 0), 0, "home 外场全罚下时 nearest_in_team 应回退门将 0");
+        // 对照组：未全罚下 → 返回最近外场（非门将 0）
+        let mut st2 = MatchState::new(&lineup, 5400.0);
+        st2.pos[1] = (0.6, 0.5); // 把外场 id 1 放离 target 更近
+        st2.pos[0] = (0.05, 0.5);
+        let picked = nearest_in_team(&st2, target, 0);
+        assert!(picked >= 1 && picked <= 10, "未全罚下时应返回最近外场，got {}", picked);
     }
 
     // ---- P6 门球 + 进球回中圈测试 ----
