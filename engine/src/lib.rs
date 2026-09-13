@@ -908,8 +908,9 @@ struct OpportunityTally {
     exec_pass_out_corner: u64,
     exec_pass_out_throw_in: u64,
     exec_continue: u64,
-    /// 未被模块归因的射门（正常应为 0）。射门可由「射门推进 / 向前传球」在后续 tick 才落地，
-    /// 无法在执行点直接计数，故用 `module_shot_pending` 标记归因；本桶非 0 = 有射门绕过了模块。
+    /// 未被模块归因的射门（正常应为 0）。P29 起普通射门**只在起脚窗口 hazard 提交的同一 tick**
+    /// 落地（`CarrierExecution::Shoot` 执行点在 `emit_shot_highlight` 前即时置 `module_shot_pending`，
+    /// 后者随即消费），故标记不再跨 tick；本桶非 0 = 有射门绕过模块被直接发出。
     shots_unattributed: u64,
     // ---- P29 起脚窗口（#25 阶段 2B，D1）----
     /// 推进到射程、进入起脚窗口的次数
@@ -922,9 +923,9 @@ struct OpportunityTally {
     shot_window_holds: u64,
     /// 窗口耗尽仍未提交、转为继续带球（「转」）的次数
     shot_window_expiries: u64,
-    /// 进入窗口 / 提交 按起脚距离分桶（0=禁区内 1=禁区弧 2=远射）
+    /// 进入窗口按起脚距离分桶（0=禁区内 1=禁区弧 2=远射）——覆盖门用：确认三档位置都会
+    /// 到射程（「射门由几何涌现、不是桶配额」的前提）。
     shot_window_entries_by_bucket: [u64; 3],
-    shot_window_commits_by_bucket: [u64; 3],
     /// 进入窗口 / 提交 按**进入时压迫**分桶：0 = 贴身（最近防守者 ≤ `SHOT_WINDOW_TIGHT_M`）、
     /// 1 = 无压（≥ `SHOT_WINDOW_FREE_M`）、2 = 中间。
     /// 方向性门用：无压窗口的提交率应高于贴身窗口——这是 D2 的 `defensive_pressure` 因子在
@@ -980,7 +981,6 @@ impl Default for OpportunityTally {
             shot_window_holds: 0,
             shot_window_expiries: 0,
             shot_window_entries_by_bucket: [0; 3],
-            shot_window_commits_by_bucket: [0; 3],
             shot_window_entries_by_pressure: [0; 3],
             shot_window_commits_by_pressure: [0; 3],
         }
@@ -1244,8 +1244,6 @@ fn evaluate_carrier_action(
                     s.committed = true;
                 }
                 st.opportunity_tally.shot_window_commits += 1;
-                let bucket = shot_bucket_index(dist_to_goal_m(st, st.carrier));
-                st.opportunity_tally.shot_window_commits_by_bucket[bucket] += 1;
                 st.opportunity_tally.shot_window_commits_by_pressure[pressure_bucket] += 1;
                 CarrierPlan {
                     action: Some(CarrierAction::Shoot),
@@ -1685,7 +1683,8 @@ struct MatchState {
     // P28 持球行动机会（#25 阶段 2A）：当前机会 + 观测计数器（tally 只写、不进事件流、不耗 RNG）
     action_opportunity: Option<ActionOpportunity>,
     opportunity_tally: OpportunityTally,
-    /// 模块已发起一次射门序列（直射 / 带球推进 / 向前传球推进），射门落地时归因到 `exec_shoot`。
+    /// 起脚窗口 hazard 已提交射门、即将由 `emit_shot_highlight` 落地（同 tick 置位并消费），
+    /// 用于把该射门归因到 `exec_shoot`。未被消费 = 有射门绕过模块。
     module_shot_pending: bool,
 }
 
@@ -1709,8 +1708,6 @@ struct ShotSetup {
     /// 已提交射门（hazard 判定命中，D1）。**被 `evaluate_defensive_action` 读取**：提交后
     /// 防守侧不再产 Tackle（不可回溯），也不再消耗 RNG。
     committed: bool,
-    /// 推进相累计 tick 数（起脚距离分桶的方向性观测，见 `OpportunityTally`）
-    approach_ticks: u32,
     /// 进入窗口时的压迫桶（`shot_pressure_bucket`）——提交/未提交按**进入时**的压迫归桶，
     /// 供「无压窗口提交率 > 贴身窗口提交率」的方向性门使用。
     entry_pressure_bucket: usize,
@@ -1726,7 +1723,6 @@ impl ShotSetup {
             in_window,
             window_ticks: 0,
             committed: false,
-            approach_ticks: 0,
             entry_pressure_bucket: 0,
         }
     }
@@ -2637,8 +2633,9 @@ fn pass_h(meters: f64, rng: &mut SeededRng) -> f64 {
 }
 
 /// shot 高亮：result=goal/saved/off_target；saved 分扑住/扑出。
-/// P28 归因：普通射门只能由模块发起的射门序列产生（直射 / 带球推进 / 向前传球推进）——
-/// 落地时按 `module_shot_pending` 计入执行绑定；未归因 = 有射门绕过模块（守卫会红）。
+/// P29 归因：普通射门**唯一**由起脚窗口的 hazard 提交产生（`shot_window_plan` →
+/// `execute_action_resolution` 的 `CarrierExecution::Shoot`），执行点紧邻置 `module_shot_pending`
+/// 并在本函数消费 → 计入 `exec_shoot`；未归因 = 有射门绕过模块（守卫会红）。
 /// 头球射门走 `emit_header_shot`（角球 battle 派生），不经此处、不计入。
 fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
     if st.module_shot_pending {
@@ -2780,11 +2777,7 @@ fn advance_shot_setup(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     st.pos[carrier as usize] = (nx, p.1);
     st.ball_pos = (nx, p.1);
     st.last_emitted[carrier as usize] = (nx, p.1);
-    {
-        let s = st.shot_setup.as_mut().unwrap();
-        s.drive_ticks_left -= 1;
-        s.approach_ticks += 1;
-    }
+    st.shot_setup.as_mut().unwrap().drive_ticks_left -= 1;
     let movers = compute_movers(st, rng, t, &[carrier]);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     events.push(beat_event(t, Some(MainAction {
@@ -6509,23 +6502,46 @@ mod tests {
         assert_eq!(st.opportunity_tally.shot_window_entries, 1, "应记录一次窗口进入");
     }
 
-    /// P29 D1：hazard 命中 → `committed = true` → 产 Shot；且**提交后不可回溯**——
-    /// 即便防守者贴身，也不会被改写成 tackle（`evaluate_defensive_action` 见 committed 即返回 None）。
+    /// P29 D1：**提交后不可回溯**——`committed` 是唯一变量，控制对照：
+    /// 同一几何（防守者**贴身**，`dist ≤ 阈值` → 未提交时必产 Tackle）下，
+    /// - `committed = false` → 防守评估应产 Tackle（抢断分支可达）
+    /// - `committed = true`  → 防守评估必须返回 None 且**不消耗 RNG**（射门不可被改写）
+    /// 若二者结果相同，说明 committed 短路由未生效（测试变红）。
     #[test]
     fn p29_committed_is_irreversible() {
-        // 极端好机会（正对、近门、无压）→ hazard 饱和 → 必提交
-        let mut st = window_state(&[]);
-        st.pos[9] = (0.98, 0.5); // 距门 ~2m
-        st.shot_setup = Some(ShotSetup::new(5.0, true));
-        // 提交后：防守者评估必须直接 None（不可回溯），且不消耗 RNG
-        st.shot_setup.as_mut().unwrap().committed = true;
-        let mut rng = SeededRng::new(9);
-        let mut probe = SeededRng::new(9);
-        let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow,
-            &CarrierPlan { action: Some(CarrierAction::Shoot), dead_ball: None, situation: None,
-                exec: CarrierExecution::Shoot });
-        assert_eq!(d, DefensiveAction::None, "提交后防守动作应为 None（不可回溯）");
-        assert_eq!(rng.next_u64(), probe.next_u64(), "提交后防守评估不应消耗 RNG");
+        // 防守者 11 与 carrier 9 同点（0m，必在抢断阈值内）→ 未提交易被抢
+        let build = |committed: bool| {
+            let mut st = window_state(&[(11, 0.90, 0.5)]);
+            st.pos[9] = (0.90, 0.5); // carrier 与防守者同点（dist=0）
+            st.shot_setup = Some(ShotSetup::new(5.0, true));
+            st.shot_setup.as_mut().unwrap().committed = committed;
+            st
+        };
+        let carry_plan = CarrierPlan {
+            action: Some(CarrierAction::Shoot), dead_ball: None, situation: None,
+            exec: CarrierExecution::Shoot,
+        };
+
+        // 对照臂：未提交 → 贴身防守者必产 Tackle（证明这套几何下抢断确实可达）
+        {
+            let st = build(false);
+            let mut rng = SeededRng::new(9);
+            let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow, &carry_plan);
+            assert!(
+                matches!(d, DefensiveAction::Tackle { .. }),
+                "对照臂：未提交 + 贴身应产 Tackle（geometry 未触发抢断则本测试空跑），实得 {:?}", d
+            );
+        }
+
+        // 主臂：已提交 → 防守侧必须 None 且不消耗 RNG（不可回溯）
+        {
+            let st = build(true);
+            let mut rng = SeededRng::new(9);
+            let mut probe = SeededRng::new(9);
+            let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow, &carry_plan);
+            assert_eq!(d, DefensiveAction::None, "提交后防守动作应为 None（不可回溯）");
+            assert_eq!(rng.next_u64(), probe.next_u64(), "提交后防守评估不应消耗 RNG");
+        }
     }
 
     /// P29 D1：提交射门 → 立即产 Shot 事件，`shot_setup` 清空（序列终结）。
@@ -6617,6 +6633,10 @@ mod tests {
                 "{}桶 窗口进入样本不足（{}）——方向断言会空跑", name, agg.shot_window_entries_by_pressure[b]);
         }
         assert!(agg.shot_window_commits > 0, "窗口从未提交（hazard 塌缩到 0？）");
+        // 「等待」是窗口内的真实中间态（首 tick 未提交/未被抢 → 推进到下一决策 tick）。
+        // 断言其可达，避免它退化为只写不读的死计数器（P28 审阅同类问题）。
+        assert!(agg.shot_window_holds > 0,
+            "窗口从未出现「等待」中间态（窗口长度或 hazard 使中间 tick 不可达？）");
         let rate = |b: usize| {
             agg.shot_window_commits_by_pressure[b] as f64
                 / agg.shot_window_entries_by_pressure[b].max(1) as f64
