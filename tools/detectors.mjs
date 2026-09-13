@@ -555,7 +555,11 @@ function sameTeamRoster(players) {
     if (!team) continue;
     const byT = new Map();
     for (const snapshot of snaps) {
-      if (typeof snapshot.t === 'number') byT.set(snapshot.t, snapshot);
+      // 只收**有限** t：NaN/Infinity 不是可对齐的采样时刻。放 NaN 进来会让该球员的 t
+      // 序列排序错乱，并与其它球员的 NaN 键「对齐」出一条 match_time 为 null 的假 finding
+      // （审阅前自测发现）。t 是采样时刻、不是位置，跳过它不等于拿缺失位置当原点。
+      if (typeof snapshot.t !== 'number' || !Number.isFinite(snapshot.t)) continue;
+      byT.set(snapshot.t, snapshot);
     }
     if (byT.size > 0) roster[team].push({ playerId, byT });
   }

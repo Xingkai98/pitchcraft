@@ -875,6 +875,23 @@ test('player_overlap skips snapshots whose teammates have no sample at that t (D
   assert.equal(overlap[0].match_time, 12, 'the unaligned t=10 must be skipped');
 });
 
+test('player_overlap ignores snapshots with a non-finite t (NaN/Infinity are not instants)', () => {
+  // t=NaN 曾经被收进采样点表：它排序错乱、还能与另一名球员的 NaN 键「对齐」，产出一条
+  // match_time 为 null（JSON 化后 NaN→null）的假 finding。位置缺失该跳过是对的，t 缺失
+  // 同理——t 不是位置，不算「拿缺失位置当原点」，但它同样不可对齐。
+  const players = {
+    4: [{ t: NaN, x: 0, y: 0 }, { t: 1, x: 0, y: 0 }],
+    5: [{ t: Infinity, x: 0.5, y: 0 }, { t: 1, x: 50, y: 0 }],
+  };
+  const { findings, stats } = runAudit({ players });
+  assert.deepEqual(
+    findings.filter((f) => f.detector_id === 'player_overlap'),
+    [],
+    'non-finite t must not become an aligned sample'
+  );
+  assert.equal(stats.find((s) => s.detector_id === 'player_overlap').samples, 1);
+});
+
 test('player_overlap is registered in the audit stats with a pair count (P26)', () => {
   // statsFor 集成：stats 行必须存在，否则新 detector 的失败会静默不计数。
   const { stats } = runAudit({
