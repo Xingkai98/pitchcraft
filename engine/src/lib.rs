@@ -538,7 +538,14 @@ fn nearest_any(st: &MatchState, target: (f64, f64)) -> i32 {
         let d = (p.0 - target.0).powi(2) + (p.1 - target.1).powi(2);
         if d < best_d { best_d = d; best = id as i32; }
     }
-    best
+    if best >= 0 {
+        best
+    } else {
+        // 退化态：两队外场全部罚下（20 红，规则可达但极罕见）。nearest_any 无队别语义
+        // （对全部 22 人扫描），退化时任取一名恒未被罚下的门将（取 home 0 最简），保持
+        // total（不返回 -1，避免调用点 st.pos[-1] 越界）。
+        0
+    }
 }
 
 /// v2 比赛状态（固定 tick 推进 + 全员 pos）
@@ -1635,7 +1642,16 @@ fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events:
             best = id;
         }
     }
-    let to = best;
+    let to = if best >= 0 {
+        best
+    } else {
+        // 退化态：该队外场全部罚下（规则可达——每队最多 10 红，门将不产犯规）。门将恒不被
+        // 罚下 → 由其顶上，保持 total（不返回 -1，避免 st.pos[-1] 越界）。门将持球不会进入
+        // 本函数（上游 shot 槽「门将不射」守卫改普通传球），故回退门将恒 != from。
+        let gk = if home { 0 } else { 21 };
+        debug_assert!(gk != from, "向前传球退化态回退门将不应等于持球者本人");
+        gk
+    };
     let to_pos = st.pos[to as usize];
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
     let (x2, y2) = lead_point(from_pos, to_pos, lead);
@@ -3880,6 +3896,39 @@ mod tests {
         st2.pos[0] = (0.05, 0.5);
         let picked = nearest_in_team(&st2, target, 0);
         assert!(picked >= 1 && picked <= 10, "未全罚下时应返回最近外场，got {}", picked);
+
+        // nearest_any（P25/#46）：两队外场全罚下 → 回退 home 门将 0（不返回 -1）
+        let mut st4 = MatchState::new(&lineup, 5400.0);
+        for id in 1..=10 {
+            st4.sent_off[id] = true;
+        }
+        for id in 11..=20 {
+            st4.sent_off[id] = true;
+        }
+        assert_eq!(nearest_any(&st4, target), 0, "两队外场全罚下时 nearest_any 应回退 home 门将 0");
+        // 对照组：有合法外场 → 返回外场（非门将 0/21）
+        assert!(nearest_any(&st2, target) >= 1 && nearest_any(&st2, target) <= 20, "有合法外场时 nearest_any 不应回退门将");
+    }
+
+    #[test]
+    fn p25_forward_pass_degenerate_returns_keeper_not_panic() {
+        // P25/#45：该队外场全罚下且仅存球员持球需向前推进时，emit_forward_pass_highlight
+        // 内联选择器不得返回 -1（否则 st.pos[-1] 越界 panic），应回退该队门将。
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        // home 外场 1..=9 罚下，仅存 10 持球；把 10 放离球门足够远触发向前传球路径
+        for id in 1..=9 {
+            st.sent_off[id] = true;
+        }
+        st.possession = 0;
+        st.carrier = 10;
+        st.pos[10] = (0.1, 0.5); // 深处己方半场，dist_to_goal 大
+        let mut rng = SeededRng::new(7);
+        let mut events = Vec::new();
+        // 不应 panic；且产出的 pass to 应是门将 0
+        emit_forward_pass_highlight(&mut st, &mut rng, &mut events, 1.0);
+        let pass = events.iter().find(|e| e.type_ == EventType::Pass).expect("应产出一条向前传球");
+        assert_eq!(pass.to, Some(0), "退化态向前传球应回退门将 0，而非 -1 或罚下球员");
     }
 
     // ---- P6 门球 + 进球回中圈测试 ----
