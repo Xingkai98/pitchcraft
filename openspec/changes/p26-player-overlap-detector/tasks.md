@@ -20,7 +20,7 @@
 ## P4. 收尾
 
 - [x] P4.1 `verify.sh` 全绿 + `npx openspec validate --all --strict`
-- [ ] P4.2 独立 subagent 审阅闭环
+- [x] P4.2 独立 subagent 审阅闭环（两轮：F1 守卫盲区 + 3 条非阻断项，复核后无 P0/P1）
 
 ## 关联
 
