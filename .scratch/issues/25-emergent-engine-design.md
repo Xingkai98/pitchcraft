@@ -53,3 +53,45 @@
 ## Next
 
 grill 敲定上述开放问题 → 立 OpenSpec change（阶段 0/1 先做）。
+
+---
+
+## 更新（2026-09-13 晚，codex 顾问建议后）
+
+### 阶段 2 再拆 3 个小 change（codex：避免「事件因果重构」与「频率校准/节奏重写」混成大 change）
+
+| change | 内容 | 风险 |
+|---|---|---|
+| **2A `action-opportunity-core`** | 只建「持球行动机会」接口（ActionOpportunity / CarrierAction / DefensiveAction / ActionResolution）+ deadline 计算；槽位降级为 fallback trigger（不再选 Shot/Tackle/Pass，只触发一次统一行动评估） | 低（不动事件协议、不动统计） |
+| **2B `shot-opportunity-migration`** | 射门改 hazard 打分（exp(score) 转概率）+ ShotSetup 可被抢断/犯规打断 | 中 |
+| **2C `defensive-contact-migration`** | 抢断/犯规统一防守竞争（tackle/foul/contain/jockey 打分选一）+ 删 same_pair/far 补丁 → 显式 cooldown 状态 | 中 |
+
+阶段 3 再删 HIGHLIGHTS_PER_MATCH / roll_highlight_slot / slot_clock / slot_interval / emit_pass_out_play_slot + 引入 liveness guard + 按真实 300s 校准。
+
+核心原则：**先做深模块（谁在什么局部状态决定什么行动），阶段 3 才删旧调度器。**
+
+### 阶段 2A 立项前必须 grill 的 4 个问题（codex：不定稿不立项）
+
+1. **行动机会语义**：一个机会是「每持球段一次」还是「deadline 到期可重复开启」？行动提交点是什么？哪些动作可中断、哪些不可？
+2. **攻守竞争结算顺序**：先选持球者动作还是先选防守动作？防守动作失败后持球者动作是否继续？Tackle/Foul 是否共享一个接触窗口？
+3. **Shot 提交点**：shot_setup 推进到何时算不可中断？被抢断时产「shot_setup canceled → tackle → loose ball」而非「先 Shot 后 Tackle」？射门失败是否产生新持球机会？
+4. **cooldown 作用域**：defender 级 / pair 级 / carrier 级 / 全局 foul cooldown 怎么叠加？
+
+### 可推到 2B/2C 再定（不阻塞 2A）
+
+5. fallback deadline 契约（会不会变成隐性配额）
+6. 5 分钟统计目标（核心事件定义、是否接受低事件 seed 方差）
+
+### 每个问题的讨论起点（codex 给的初始形状）
+
+- **deadline 公式**：`clamp(BASE(7) - DANGER_URGENCY*danger - PRESSURE_URGENCY*pressure + ESCAPE_BONUS*escape_space, MIN(3), MAX(12))`；danger/goal_proximity、pressure/nearest+second_defender、escape_space/best_teammate+open_forward。
+- **行动竞争**：持球者 CarrierAction{Dribble, Pass{target}, Shoot}，防守者 DefensiveAction{Tackle, Foul, Contain, Jockey, None}；softmax 或「eligibility + 最高分」选一。
+- **射门 hazard**：`score = base + distance_quality + angle_quality + space_available - defensive_pressure - cooldown_penalty`；`hazard = exp(score)`；`p = 1 - exp(-hazard * window)`；距离用分段（复用 shot_bucket 分桶但不再强制射门）。
+- **防守竞争**：`score_tackle = base + closeness + approach - cooldown - bad_angle` 等，选一；cooldown defender 级 3-5s、pair 级 5-8s、全局 foul 保留 11s。
+- **shot_setup 中断**：`committed: false` 时可被 tackle/foul 打断、可因压力取消转 Pass；`committed: true` 后不可回溯取消 Shot。
+
+### 阶段 2A 的验收分层（codex）
+
+1. 纯决策测试：固定几何状态断言 Shot/Pass/Dribble 分数方向、pair 接触后不能立即重复 Tackle、cooldown 到期可重新候选。
+2. 中断测试：shot_setup 未提交可被 tackle/foul 打断、已提交不回溯、Tackle 成功进 loose ball、Foul 后进 free-kick、不同时产 Shot 和 Tackle。
+3. 统计测试：只做方向性断言（Shot ≠ Shot 槽数量、事件率随真实时间变），禁止读取「本场已有多少事件」。
