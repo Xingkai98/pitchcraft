@@ -304,6 +304,8 @@ test('source-level: the discoverability guard catches a variable detector id (se
 //        容器循环里（见 detectors.mjs 的 `snapshotPoint`：Map 里存的是它造的数值点副本，
 //        不是原始快照），配对阶段读到的就是自己的副本键，不再是 audit_input 字段。
 //        若日后新增 detector 又在 Map 上直接读原始快照，这条盲区会复活。
+//        **副本形状由 `snapshotPoint returns exactly {t,x,y}` 用例钉住**：谁给副本加字段，
+//        那条会红，逼他在契约里登记新字段（否则走 (c) 的静默路径）。
 //
 //    判据：(a)/(b) 要先写一段「看起来无意义」的中转代码，属刻意规避；(c) 是自然写法，
 //    所以本 change 用结构（副本 + 容器循环收口）而非扫描器增强来消解，扫描器本身未改。

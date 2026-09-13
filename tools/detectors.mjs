@@ -551,10 +551,15 @@ function teamOfPlayerId(playerId) {
 // 配对循环里读 `a.byT.get(t).x`，变量来自 Map 查找、扫描器看不见——落在不可达分支里的
 // 未声明读取会同时逃过源码扫描与行为 Proxy（审阅实测：`if (false) { void sa.zz_x }` 全绿）。
 //
-// 只收**有限** t：NaN/Infinity 不是可对齐的采样时刻。放 NaN 进来会让该球员的 t 序列排序
-// 错乱，并与另一名球员的 NaN 键「对齐」出一条 match_time 为 null 的假 finding（自测发现）。
+// 只收**有限**的 t/x/y：NaN/Infinity 不是可对齐的采样时刻、也不是可用位置。放 NaN t 进来会让
+// 该球员的 t 序列排序错乱，并与另一名球员的 NaN 键「对齐」出一条 match_time 为 null 的假
+// finding（自测发现）；坐标非有限则 distance 变 NaN，`NaN < threshold` 恒 false 所以不会直接
+// 造 finding，但该球员会因「有可用采样点」进入花名册、把 statsFor 的样本分母算进去——
+// 与 t 是同一类「无效样本不得计入」的问题，所以一并在这里挡掉。
 // t 是采样时刻、不是位置，跳过它不等于「拿缺失位置当原点」。
-function snapshotPoint(snapshot) {
+// 导出供测试钉住**返回形状**（副本只许有 t/x/y）：契约守卫看不见经 Map 取得的变量上的读取，
+// 若给副本加了字段又在配对循环里读，守卫会静默失明——这条测试把那个盲区补成「加字段即红」。
+export function snapshotPoint(snapshot) {
   if (!snapshot) return null;
   const { t, x, y } = snapshot;
   if (typeof t !== 'number' || !Number.isFinite(t)) return null;
@@ -572,18 +577,27 @@ function snapshotPoint(snapshot) {
 // 没有的字段」这类漂移——漂移风险全部收敛在上面那处容器循环里。
 function sameTeamRoster(players) {
   const roster = { home: [], away: [] };
+  const seen = new Set();
   for (const [rawId, snaps] of Object.entries(players ?? {})) {
     if (!Array.isArray(snaps) || snaps.length === 0) continue;
     // Object.entries 会把数字键字符串化；保留数值 id 以便按 id 范围判队并保证输出稳定。
     const playerId = /^\d+$/.test(rawId) ? Number(rawId) : rawId;
     const team = teamOfPlayerId(playerId);
     if (!team) continue;
+    // 规范化后同 id 的第二个键（`4` 与 `04`）会让同一名球员入册两次 → 自配对 finding
+    // （entity_id "4,4"）。derive 层只按数值 id 写键、产不出这种输入，这里只是防御性去重。
+    if (seen.has(playerId)) continue;
     const byT = new Map();
     for (const snapshot of snaps) {
       const point = snapshotPoint(snapshot);
       if (point) byT.set(point.t, point);
     }
-    if (byT.size > 0) roster[team].push({ playerId, byT });
+    if (byT.size > 0) {
+      // 只在**真的入册**后记名：否则一个「键在但采样点全不可用」的重复键会把后面那个
+      // 有有效快照的同 id 键挤掉，白丢一名球员。
+      seen.add(playerId);
+      roster[team].push({ playerId, byT });
+    }
   }
   roster.home.sort((x, y) => x.playerId - y.playerId);
   roster.away.sort((x, y) => x.playerId - y.playerId);

@@ -7,6 +7,7 @@ import {
   DEFAULT_AUDIT_PROFILE,
   runAudit as runAuditRaw,
   aggregateAudit,
+  snapshotPoint,
 } from './detectors.mjs';
 import { AUDIT_INPUT_SCHEMA_VERSION } from './detector-field-contract.mjs';
 
@@ -902,6 +903,70 @@ test('player_overlap ignores snapshots with a non-finite t (NaN/Infinity are not
     [],
     'a pair aligned only on non-finite t must not produce a finding'
   );
+});
+
+test('player_overlap rejects snapshots with non-finite coordinates (invalid sample)', () => {
+  // 与「非有限 t」同一修复的另一半（审阅 P2-2）：只有 t 那半边有测试时，删掉坐标有限性检查
+  // 全绿。后果是真实的——坐标 NaN 的球员会因「有可用采样点」进入花名册，把 statsFor 的
+  // 样本分母算进去（{4:两正常点, 5:一个 NaN 坐标点} 下 samples 由 0 变 1），进而影响
+  // aggregateAudit 的 anomaly_rate。这里把三个坐标变体各钉一条。
+  for (const [name, bad] of Object.entries({
+    'NaN x': { t: 1, x: NaN, y: 0 },
+    'Infinity y': { t: 1, x: 0, y: Infinity },
+    'null x': { t: 1, x: null, y: 0 },
+  })) {
+    const players = { 4: [{ t: 1, x: 0, y: 0 }, { t: 2, x: 0, y: 0 }], 5: [bad] };
+    const { findings, stats } = runAudit({ players });
+    assert.deepEqual(
+      findings.filter((f) => f.detector_id === 'player_overlap'),
+      [],
+      `${name}: an invalid sample must not fabricate a finding`
+    );
+    assert.equal(
+      stats.find((s) => s.detector_id === 'player_overlap').samples,
+      0,
+      `${name}: a player with only invalid samples must not enter the roster (sample denominator)`
+    );
+  }
+});
+
+test('player_overlap duplicate normalizing keys cannot self-pair (4 vs 04)', () => {
+  // NIT（审阅）：'4' 与 '04' 规范化后都是 playerId 4，若各入册一次会产出「自己和自己重叠」
+  // 的假 finding（entity_id "4,4"）。derive 层产不出这种键（只按数值 id 写），这里是防御性
+  // 去重；顺带断言「先出现的键胜出、且不会因为重复键丢掉球员」。
+  const dup = runAudit({
+    players: { 4: [{ t: 1, x: 0, y: 0 }], '04': [{ t: 1, x: 0, y: 0 }], 5: [{ t: 1, x: 0.5, y: 0 }] },
+  });
+  const ids = dup.findings.filter((f) => f.detector_id === 'player_overlap').map((f) => f.entity_id);
+  assert.deepEqual(ids, ['4,5'], `no self-pairing; got ${JSON.stringify(ids)}`);
+  // 重复键若「采样点全不可用」不得把后面同 id 的有效键挤掉（先记名后入册的坑）。
+  const shadow = runAudit({
+    players: { '4': [{ t: 3, x: NaN, y: 0 }], '04': [{ t: 1, x: 0, y: 0 }], 5: [{ t: 1, x: 0.5, y: 0 }] },
+  });
+  assert.equal(
+    shadow.findings.filter((f) => f.detector_id === 'player_overlap').length,
+    1,
+    'an all-invalid duplicate key must not shadow the valid one'
+  );
+});
+
+test('player_overlap sample copies expose exactly {t,x,y} (guard blind-spot pin)', () => {
+  // 契约守卫看不见「经 Map 取得的变量」上的字段读取（见 detector-field-contract.test.mjs 的
+  // 已知缺口 (c)）。缓解靠结构：配对阶段读的是 snapshotPoint 造的副本。这条把副本**形状**
+  // 钉死——谁往副本加字段（例如给 sample 补 speed）又在配对循环里读，这里立刻红，逼他去
+  // 契约登记，而不是走 (c) 的静默路径。
+  const point = snapshotPoint({ t: 1, x: 2, y: 3, is_gk: true, responsibility: 'ball_entered_zone' });
+  assert.deepEqual(Object.keys(point).sort(), ['t', 'x', 'y']);
+  for (const bad of [
+    { t: NaN, x: 0, y: 0 },
+    { t: 1, x: NaN, y: 0 },
+    { t: 1, x: 0, y: Infinity },
+    { t: 1, x: '0', y: 0 },
+    null,
+    undefined,
+  ]) {
+    assert.equal(snapshotPoint(bad), null, `invalid sample must be rejected: ${JSON.stringify(bad)}`);
+  }
 });
 
 test('player_overlap is registered in the audit stats with a pair count (P26)', () => {
