@@ -49,12 +49,27 @@ Rust 引擎 SHALL 是纯逻辑库，不假设有文件系统/命令行——数�
 
 ### Requirement: 犯规与纪律牌（foul / 任意球）
 
-引擎 SHALL 在开放持球段产生犯规：防守方有球员贴身（≤ 8m）持球者、犯规点距所攻球门 > 禁区线时，以固定概率产 `foul` 事件。犯规后球权保留给被犯规方，进入任意球重开（`pass detail=free_kick`）。纪律牌决策 SHALL 确定性（引擎 SeededRng）：犯规事件可选携带 `card`（`yellow`/`red`，缺省=无牌）；同人二黄升级红牌罚下；罚下球员不再成为持球者/追逐者/抢断者/逼抢者，也不得出现在任何事件的并行跑位数组（`movers`）中。当某队外场球员全部被罚下时，最近队友选择（`nearest_in_team`）SHALL 回退该队门将，不返回无效 id。
+引擎 SHALL 在开放持球段产生犯规：防守方有球员贴身（≤ 8m）持球者、犯规点距所攻球门 > 禁区线时，以固定概率产 `foul` 事件。犯规后球权保留给被犯规方，进入任意球重开（`pass detail=free_kick`）。纪律牌决策 SHALL 确定性（引擎 SeededRng）：犯规事件可选携带 `card`（`yellow`/`red`，缺省=无牌）；同人二黄升级红牌罚下；罚下球员不再成为持球者/追逐者/抢断者/逼抢者/传球目标/开球者/接球者，也不得出现在任何事件的并行跑位数组（`movers`）中。
 
-#### Scenario: 全队外场罚下时最近队友回退门将
-- **GIVEN** 某队外场球员（10 人）全部被罚下
-- **WHEN** 引擎调用 `nearest_in_team` 选择该队球员
-- **THEN** 返回该队门将（home 0 / away 21），而非无效 id（-1），不越界
+#### Scenario: 罚下球员不得参与跑位
+- **GIVEN** 某球员被罚下（`sent_off[id]` 已置位）
+- **WHEN** 引擎生成后续 beat 事件的并行跑位（`compute_movers`）
+- **THEN** 该球员不产 mover，不出现在 `movers[].id` 中
+
+#### Scenario: 罚下球员不得被选为抢断者/逼抢者
+- **GIVEN** 某球员被罚下
+- **WHEN** 引擎选择抢断者/拦截者（`nearest_defender`）或 transition 逼抢者（`pick_close_down_players`）
+- **THEN** 该球员不被选中
+
+#### Scenario: 罚下球员不得被选为传球目标或开球者/接球者
+- **GIVEN** 某球员被罚下
+- **WHEN** 引擎选择传球/发球目标（`nearest_teammate` / 向前传球目标）或进球后开球者/接球者（`kickoff_pick`）
+- **THEN** 该球员不被选中（否则会以 `to`/`carrier`/`subject` 身份重新进入比赛）
+
+#### Scenario: 某队外场全部罚下时选择器仍为全函数
+- **GIVEN** 某队 10 名外场全部被罚下（每队最多 10 张红牌；门将不产犯规故恒不被罚下）
+- **WHEN** 引擎调用抢断者/传球目标/开球者/最近队友选择器
+- **THEN** 选择器不 panic、不返回罚下球员，回退到恒未被罚下的门将（`nearest_in_team` 回退 home 0 / away 21，不返回无效 id -1）
 
 ### Requirement: 主场优势（主客进球不对称，L1）
 
@@ -193,6 +208,15 @@ tackle 事件 SHALL 携带：防守者起点 `x/y`、被铲者带球起点 `carr
 #### Scenario: 事件时间范围
 - **WHEN** 引擎产出一场时长 dur 的比赛
 - **THEN** 全部事件 t SHALL ∈ [-0.001, dur+0.001]
+
+#### Scenario: 罚下球员零参与
+- **WHEN** 从事件流中 `foul[card=red]` 重建罚下集合并扫描其后所有事件
+- **THEN** 罚下球员不得出现在任何事件的 `subject` / `movers[].id` / `carrier` / `interceptor` / `to` 中，违例计为零
+
+#### Scenario: L2 门覆盖红牌派生路径
+- **GIVEN** 罚下球员参与的违例只在少数 seed 出现（红牌约 1/6 场）
+- **WHEN** 用窄 seed 窗口（如 15）运行 L2
+- **THEN** 门可能在实际被违反时仍全绿（假绿）；故 seed 覆盖 SHALL ≥ 300（实测最早出现该路径的 seed 为 260），且开球者与接球者 SHALL 不同一人（自传退化）
 
 ### Requirement: 确定性 golden master 防漂移
 
