@@ -6475,9 +6475,11 @@ mod tests {
 
     /// P29 D2 + C 路原则**执行层绑定**（比纯函数更硬）：跑满多场真实比赛，断言
     /// 1. 喂进 hazard 的冷却值恒 ∈ [0, SHOT_COOLDOWN_TICKS]（局部倒计时的值域）；
-    /// 2. 射门后确实重置过（`shot_cooldown_resets > 0`）——否则冷却因子是死因子
-    ///    （`shot_cooldown_ticks` 恒 0，五因子退化四因子）；
-    /// 3. 冷却值存在非零样本（重置真被观察到）且存在归零样本（倒计时真在衰减）。
+    /// 2. 每次射门都重置冷却（`shot_cooldown_resets == shot_window_commits`）——否则
+    ///    `shot_cooldown_ticks` 是死字段、五因子退化四因子。
+    /// 因子在公式路径上的**活性**由 `p29_cooldown_feature_is_live` 单独证明（直接构造状态）——
+    /// 本测试不做「非零样本」断言：当前标定下射门间隔（~700 tick）远大于冷却窗口（8 tick），
+    /// 真实比赛中喂进 hazard 的冷却值恒 0（见 `.p29-progress.md` 待确认②）。
     ///
     /// 变异绑定：把 `shot_opportunity_features` 的冷却输入源换成全场累计量
     /// （如 `opportunity_tally.shot_window_commits`，随比赛单调增、无上界）→ 条件 1 立刻被
@@ -6717,12 +6719,18 @@ mod tests {
             // 覆盖口径诚实性（防空转守卫的窗口版）：每个窗口恰以一个终局结束——提交 /
             // 被抢断 / 转。等待是中间态，不构成终局。该等式把「窗口决策 tick 总数」与
             // 「窗口数」绑死：若有窗口 tick 产事件却未记账（绕回旧路径），此式立刻不等。
-            // 终场时可能残留一个未终结的窗口（比赛结束时窗口刚开），故允许至多 1 的差。
+            //
+            // 终场残留：仅当比赛结束时**确有未终结的窗口**（`shot_setup` 存活且 `in_window`）才
+            // 允许差 1——推进相的 `shot_setup` 尚未进窗口、不计 entries，故不算残留。
+            // 把容差绑到这个可观测条件（而非无条件 ±1）：否则「每场恰好丢 1 个终局」的 bug
+            // 会一直落在容差里不被发现（审阅 P2-3）。
             let ends = t.shot_window_commits + t.shot_window_tackles + t.shot_window_expiries;
-            assert!(
-                ends == t.shot_window_entries || ends + 1 == t.shot_window_entries,
-                "seed {}：窗口终局数({}) 应等于进入数({})（至多差 1 = 终场残留窗口）——有窗口丢失或重复终局",
-                seed, ends, t.shot_window_entries
+            let dangling = st.shot_setup.as_ref().map_or(false, |s| s.in_window) as u64;
+            assert_eq!(
+                ends,
+                t.shot_window_entries - dangling,
+                "seed {}：窗口终局数({}) 应等于进入数({}) 减去终场残留({})——有窗口丢失或重复终局",
+                seed, ends, t.shot_window_entries, dangling
             );
             for b in 0..3 {
                 agg.shot_window_entries_by_pressure[b] += t.shot_window_entries_by_pressure[b];
