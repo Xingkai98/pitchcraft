@@ -49,23 +49,12 @@ Rust 引擎 SHALL 是纯逻辑库，不假设有文件系统/命令行——数�
 
 ### Requirement: 犯规与纪律牌（foul / 任意球）
 
-引擎 SHALL 在开放持球段产生犯规：防守方有球员贴身（≤ 8m）持球者、犯规点距所攻球门 > 禁区线时，以固定概率产 `foul` 事件。犯规后球权保留给被犯规方，进入任意球重开（`pass detail=free_kick`）。纪律牌决策 SHALL 确定性（引擎 SeededRng）：犯规事件可选携带 `card`（`yellow`/`red`，缺省=无牌）；同人二黄升级红牌罚下；罚下球员不再成为持球者/追逐者。
+引擎 SHALL 在开放持球段产生犯规：防守方有球员贴身（≤ 8m）持球者、犯规点距所攻球门 > 禁区线时，以固定概率产 `foul` 事件。犯规后球权保留给被犯规方，进入任意球重开（`pass detail=free_kick`）。纪律牌决策 SHALL 确定性（引擎 SeededRng）：犯规事件可选携带 `card`（`yellow`/`red`，缺省=无牌）；同人二黄升级红牌罚下；罚下球员不再成为持球者/追逐者/抢断者/逼抢者，也不得出现在任何事件的并行跑位数组（`movers`）中。当某队外场球员全部被罚下时，最近队友选择（`nearest_in_team`）SHALL 回退该队门将，不返回无效 id。
 
-#### Scenario: 犯规事件
-- **GIVEN** 防守球员贴身持球者（≤ 8m）且犯规点不在禁区内
-- **THEN** 引擎以固定概率产 `foul` 事件：`subject`=犯规者、`x/y`=犯规点、`carrier`=被犯规持球者、`detail`=`foul_<type>`（tackle/hold/push/trip/handball）
-
-#### Scenario: 纪律牌
-- **WHEN** 引擎产出一条犯规
-- **THEN** 以固定概率出示黄/红牌：`card=yellow` / `card=red`（无牌犯规不带 card 字段）；同人第二张黄牌升级为红牌（`card=red`）并罚下
-
-#### Scenario: 犯规后任意球
-- **GIVEN** 引擎产出一条 foul 事件
-- **THEN** 被犯规方保留球权，从犯规点发任意球（`pass detail=free_kick`，发球者走位到犯规点短传），随后恢复开放比赛
-
-#### Scenario: 犯规频率带（L1）
-- **GIVEN** 引擎以 ≥200 个 seed × 90 分钟模拟
-- **THEN** 每场犯规（foul 事件）SHALL ∈ [16, 30]、黄牌（foul[card=yellow]）SHALL ∈ [2.0, 5.0]、红牌（foul[card=red]）SHALL ≤ 0.8（真实带：犯规 ~21 / 黄 ~3.8 / 红 0.12 双方每场，Kopacak）
+#### Scenario: 全队外场罚下时最近队友回退门将
+- **GIVEN** 某队外场球员（10 人）全部被罚下
+- **WHEN** 引擎调用 `nearest_in_team` 选择该队球员
+- **THEN** 返回该队门将（home 0 / away 21），而非无效 id（-1），不越界
 
 ### Requirement: 主场优势（主客进球不对称，L1）
 
