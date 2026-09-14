@@ -320,7 +320,8 @@ pub const FOUL_TYPE_TRIP_P: u64 = 13;
 // 打分基线刻意让 contain/jockey 成为「默认动作」（大多数机会点没有接触条件），tackle/foul
 // 只有几何足够极端时才胜出。尺度依据 —— 开放比赛 tick 的最近防守者距离分布（20 seed 90min 实测，
 // 见 `.p30-progress.md`）：<1m 0.8% / 1-2m 2.0% / 2-4m 9.5% / 4-6m 19.0% / 6-8m 25.4% /
-// 8-12m 40.1% / >12m 3.2%。即「贴身」是常态、「脚下」是少数——故抢断的接触尺度取 2m。
+// 8-12m 40.1% / >12m 3.2%。即「贴身」是常态、「脚下」是少数——故抢断的接触尺度收到 2.5m
+// （窄），犯规用 8m（宽），两者错开距离窗口。
 
 /// defender 级抢断冷却（tick，3-5s 档）：同一防守者抢断/犯规后此窗口内 `score_tackle` 被压（D1）。
 const TACKLE_COOLDOWN_TICKS: u32 = 4;
@@ -328,11 +329,12 @@ const TACKLE_COOLDOWN_TICKS: u32 = 4;
 /// `score_tackle` 被压（D1）。取代旧的 `last_tackle_pair`（单 pair、无 age、只用于
 /// 「连续同对强制失败」的事后补丁）。
 const CONTACT_PAIR_COOLDOWN_TICKS: u32 = 6;
-/// 接触尺度（米）：`closeness = clamp01(1 - d / SCALE)`，tackle 与 foul 共用（D2 两条公式
-/// 都有 closeness 项）。取 4m——真实抢断/犯规都发生在「一两步之内」，4m 尺度让 closeness
-/// 只在近身量级非零，而在 4m 外两个动作都自然退出竞争（由 contain/jockey 接管）。
+/// **抢断**的接触尺度（米）：`tackle_closeness = clamp01(1 - d / SCALE)`。取 2.5m——抢断是
+/// 「脚下」动作，只在极近处成立。校准依据：每场 90min 约 715 次防守评估，抢断目标 ~5-7/场
+/// → 命中率需 ~1%，故抢断只能在评估中占比很小的「≤2.5m」带里胜出（见 `.p30-progress.md`）。
+/// 犯规用更宽尺度（`foul_closeness` 用 `FOUL_PRESS_DIST_M`=8m，与犯规资格阈值同尺度）。
 const DEF_CONTACT_SCALE_M: f64 = 2.50;
-/// 逼抢尺度（米）：与犯规贴身阈值同尺度——跟防也是「近身」概念（8m）。
+/// 跟防的距离衰减尺度（米）：`distance_fit` 在 `DEF_JOCKEY_IDEAL_M` 之外按此尺度线性衰减。
 const DEF_PRESS_SCALE_M: f64 = FOUL_PRESS_DIST_M;
 /// 纵深领先的归一化尺度（米）：防守者领先持球者此距离 → `approach` 满、`bad_angle` 归 0。
 const DEF_APPROACH_SCALE_M: f64 = 6.0;
@@ -341,6 +343,7 @@ const DEF_CONTAIN_ZERO_M: f64 = 4.0;
 /// 封堵的峰值距离（米）：`pressure_without_contact` 在此处最高（向远处衰减到抢断阈值）。
 const DEF_CONTAIN_PEAK_M: f64 = 9.0;
 /// 跟防理想距离（米）：太近是接触（该去抢）、太远是脱防（够不着），此距离附近 `distance_fit` 最高。
+/// 与 `DEF_CONTAIN_ZERO_M`(4m) 重合，使 jockey（~1-6m）与 contain（~6-12m）在距离上错开。
 const DEF_JOCKEY_IDEAL_M: f64 = 4.0;
 /// 跟防下界的「已贴身」距离（米）：≤ 此值视为「不是跟防距离」→ `distance_fit = 0`。
 const DEF_JOCKEY_IDLE_MIN_M: f64 = 1.0;
@@ -348,10 +351,11 @@ const DEF_JOCKEY_IDLE_MIN_M: f64 = 1.0;
 // cooldown − bad_angle`；`foul = base + danger + closeness − yellow − foul_cd`；
 // `contain = base + pressure_without_contact`；`jockey = base + distance_fit`）。
 //
-// 标定（20 seed 90min 实测开放比赛几何，见 `.p30-progress.md`「打分标定」）：抢断/犯规各只有
-// 在**各自的距离窗口**内才压过 contain/jockey，两窗口由 closeness 增益差 + 抢断的 bad_angle
-// 惩罚错开——抢断只在「贴身且正面」（≲1.8m，球门侧）胜出；犯规在「近身但已失去抢断位置」
-// （~1.8–3.5m，或身后）胜出。这不是系数巧合，而是「被过掉的防守者只能拉人」的落点。
+// 标定（40 seed 90min 实测，见 `.p30-progress.md`「打分标定」）：抢断/犯规各只有在**各自的
+// 距离窗口 + 角度条件**下才压过 contain/jockey，两窗口由 closeness 尺度/增益差 + 抢断独有的
+// bad_angle 惩罚错开——抢断在「贴身（≲2.5m）且正面（approach）」胜出；犯规在「近身（≲8m）
+// 但已失去抢断位置（身后 / 稍远）」胜出。这不是系数巧合，而是「被过掉的防守者只能拉人」的落点。
+// 实测 90min：tackle ~5.8/场、foul ~22.7/场（均在 L1 带内）。
 const BASE_DEF_CONTAIN: f64 = 0.15;
 const CONTAIN_PRESS_GAIN: f64 = 0.55;
 const BASE_DEF_JOCKEY: f64 = 0.05;
