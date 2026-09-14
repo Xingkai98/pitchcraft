@@ -714,8 +714,11 @@ function classifyPassOutcome(event, profile) {
 //
 // 分层判据（各自独立，一条 pass 可同时落入多层）：
 //   - high_ball / low_ball：`h > 0` 与否。引擎 `pass_h`：>20m 才 h>0（`engine/src/lib.rs`）。
+//     **h 缺失 → unknown_h**（不并入 low_ball：真实引擎每条 pass 都带 h，缺失只出现在旧
+//     bundle/合成输入；把「不知道」算成低球会让 high_ball 率系统性偏低——恰是「复现 85%
+//     高球」用途最敏感的方向。与 unknown_pressure 同一「不伪造」原则，审阅 P3-7）。
 //   - long_pass：`pass_distance > LONG_PASS_M`（22m，与引擎常量同值）。`pass_distance` 缺失
-//     的样本不计入长传/短传任一层（无法判定，不猜）。
+//     的样本不进 long_pass/short_pass 任一层（无法判定，不猜）。
 //   - restart_type / open_play：`detail ∈ EXCLUSION_DETAILS`（corner/throw_in/free_kick/
 //     clearance）为重开/解围；其余为开放比赛。注意这与 `excluded` 计数**同源**（同一排除契约）。
 const LONG_PASS_M = 22.0;
@@ -736,8 +739,11 @@ function tallyStratum(stratum, outcome) {
 }
 
 // 重开/解围类型（detail 值）→ 分层键；未知 detail 归入 open_play。
-// 与 EXCLUSION_DETAILS 同源（同一排除契约），但**分明细**保留类型便于对照表。
-const RESTART_DETAILS = ['corner', 'throw_in', 'free_kick', 'clearance'];
+// **直接引用 EXCLUSION_DETAILS**（不是拷贝字面量）：两者语义就是同一排除契约，引用同一数组
+// 才能避免将来改一处忘另一处而漂移（审阅 P3-6）。design D3 字面列了 `goal_kick`，但引擎
+// 从不产 `detail:"goal_kick"`（门球开大脚是 `result:"contested"` 且无 detail，见引擎
+// `emit_gk_pass`）——沿 EXCLUSION_DETAILS 是正确取舍，已在 design 偏离处记录。
+const RESTART_DETAILS = EXCLUSION_DETAILS;
 
 export function computePassOutcomes(events, profile) {
   const buckets = {
@@ -748,6 +754,7 @@ export function computePassOutcomes(events, profile) {
   const strata = {
     high_ball: emptyStratum(),
     low_ball: emptyStratum(),
+    unknown_h: emptyStratum(),
     long_pass: emptyStratum(),
     short_pass: emptyStratum(),
     restart_type: emptyStratum(),
@@ -760,9 +767,12 @@ export function computePassOutcomes(events, profile) {
     // 分层（软参考）在**排除判定之前**累计：重开/解围也要进 restart_type 层（否则「重开
     // 类型分层」在排除后为空）。高球/长传层则与排除无关（任何 pass 都可分层）。
     const outcome = classifyPassOutcome(event, profile);
-    // 高球：h 是引擎直出的球高度（>20m 才 >0）。h 缺失按低球计（引擎普通传球总带 h；
-    // 缺失只在旧 bundle/合成输入，归 low_ball 是保守选择——不把「不知道」混进 high_ball）。
-    tallyStratum(typeof event.h === 'number' && event.h > 0 ? strata.high_ball : strata.low_ball, outcome);
+    // 高球：h 是引擎直出的球高度（>20m 才 >0）。h 缺失 → unknown_h（不伪造，见上方注释）。
+    let hStratum;
+    if (typeof event.h !== 'number') hStratum = strata.unknown_h;
+    else if (event.h > 0) hStratum = strata.high_ball;
+    else hStratum = strata.low_ball;
+    tallyStratum(hStratum, outcome);
     if (typeof event.pass_distance === 'number') {
       tallyStratum(event.pass_distance > LONG_PASS_M ? strata.long_pass : strata.short_pass, outcome);
     }
@@ -932,7 +942,7 @@ function mergePassOutcomes(list) {
   out.total_ordinary_passes = totalOrdinary;
   // P32（#36）D3：软分层合并——**只加不减**，不改上面四个既有键。分层键固定（顺序稳定），
   // 缺失层按零计（旧 audit 报告无 strata → 零，不崩）。不参与 band/告警。
-  const STRATA_KEYS = ['high_ball', 'low_ball', 'long_pass', 'short_pass', 'restart_type', 'open_play'];
+  const STRATA_KEYS = ['high_ball', 'low_ball', 'unknown_h', 'long_pass', 'short_pass', 'restart_type', 'open_play'];
   out.strata = {};
   for (const key of STRATA_KEYS) {
     let sample_count = 0, out_count = 0, success_count = 0, intercepted_count = 0, lost_count = 0, unknown_outcome_count = 0;

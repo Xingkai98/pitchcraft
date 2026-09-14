@@ -59,9 +59,9 @@ intercept_very_long_actual: u64,
 `#[test] fn p32_interception_self_consistency()`（跑 20 seed × 5400s，或 200 seed 若需样本量——按实测拦截样本定，贴防桶需 N 足够）：
 
 1. **接线守卫**：`intercept_roll_samples > 0`、`intercept_roll_actual > 0`、各桶 samples > 0（换回旧路径 / 记账被删 → 归零 → 红）。
-2. **逐桶自洽**：每个距离桶 actual 落在 expected 的 95% 置信区间内（Poisson-binomial 用正态近似：`expected ± 1.96·sqrt(expected·(1−p̄))`，或更稳的 Wilson/精确区间，实施时定公式并注释）。样本不足桶记 `insufficient_sample` 而非失败，但主要桶（≤6m）必须达到最小样本。
-3. **长传加成接线**：`>22m` 桶 expected 相对「无加成」基线更高，且 actual 与 expected 自洽——守护 `LONG_PASS_INTERCEPT_BONUS` 不被误删。
-4. **cap 边界**：极端贴近场景 `interception_p` 达到 60 时 expected 记 60（不是 60.0 浮点漂移）——用单元级构造（直接调判定纯函数或断言 `ceil` 语义）钉死。
+2. **逐桶自洽**：每个距离桶 actual 落在 expected 的 95% 置信区间内。**CI 口径（实施定稿）**：方差用 Poisson-binomial 的上界 `E·(1−p̄)`（精确方差 `Σpᵢ(1−pᵢ)` 由 Cauchy–Schwarz ≤ 此值，仅当 pᵢ 全相等取等；偏宽 ⇒ 方向保守，只漏杀不误杀）。样本不足桶记 `insufficient_sample`（实现用 `assert_interception_self_consistent` 的 `Err` 返回值承载并 eprintln 落盘，非静默跳过）而非失败，但主要桶（≤6m）必须达到最小样本 N≥200。
+3. **长传加成接线**：**同距离桶内**长传层平均宽度严格高于非长传层——用「均值 == 确定整数」逐常量杀死（非长传 8 / 长传 15 / 超长 23），防只分「长传/非长传」时 `LONG_PASS` 被 `VERY_LONG` 遮蔽而不红（变异实测暴露）。超长档样本稀少（实测 200 seed 仅 108 条），用宽度**下界** `17·n` 守护。
+4. **cap 边界**：`interception_p = 60.0` 时 expected 记 60（不是 60.0 浮点漂移）——用纯函数测试直接钉 `ceil` 语义。**注**：`cap` 是防御性上限，真实开放比赛传球的档位上界是 22.5（贴防 7.5 + 长传 7 + 超长 8），生产上够不到 cap（测试同时钉死 22.5 这一真实上界）。
 
 ### golden 不变的理由
 
@@ -88,11 +88,11 @@ intercept_very_long_actual: u64,
 
 `computePassOutcomes`（`tools/detectors.mjs:764`）在现有 pressure×outcome 分桶外，增加**软分层**（用于复现/否定「高球标记率 85%」，不进 `aggregateAudit` 的 band 升级）：
 
-- 高球分层：`h > 0`（引擎 `pass_h`：>20m 才 h>0，`engine/src/lib.rs:2923`）vs `h == 0`
-- 长传分层：`pass_distance > LONG_PASS_M`（22m）
-- 重开类型分层：`detail ∈ {corner, throw_in, free_kick, goal_kick, clearance}`（复用 `exclusionTokensOf` 的排除契约）
+- 高球分层：`h > 0` vs `h == 0` vs **`h` 缺失 → `unknown_h`**（引擎 `pass_h`：>20m 才 h>0，`engine/src/lib.rs`）。实现把缺失单列一层而非并入低球——「不知道」算成低球会让 high_ball 率系统性偏低，恰是本分层用途最敏感的方向（与 `unknown_pressure` 同一「不伪造」原则）。
+- 长传分层：`pass_distance > LONG_PASS_M`（22m）；`pass_distance` 缺失的样本不进任一层。
+- 重开类型分层：`detail ∈ EXCLUSION_DETAILS`（corner/throw_in/free_kick/clearance，**直接引用该数组**防漂移）。**偏离记录**：本 design 原文列了 `goal_kick`，但引擎从不产 `detail:"goal_kick"`（门球开大脚是 `result:"contested"` 且无 detail），故实现沿 `EXCLUSION_DETAILS`——与 `pass_outcomes.known_gaps: ['goal_kick_exclusion']` 的既有登记一致。
 
-输出形状：现有 `{unpressured, pressured, unknown_pressure, excluded}` 保持兼容（`mergePassOutcomes` 只 sum 已知键），新增 `strata: { high_ball: {...}, long_pass: {...}, restart_type: {...} }`，各层只记 sample/out/success/intercepted 计数。**不改** `mergePassOutcomes` 的现有键、不改 band 逻辑、不产生 finding。
+输出形状：现有 `{unpressured, pressured, unknown_pressure, excluded}` 保持兼容（`mergePassOutcomes` 只 sum 已知键），新增 `strata: { high_ball, low_ball, unknown_h, long_pass, short_pass, restart_type, open_play }`，各层只记 sample/out/success/intercepted/lost/unknown_outcome 计数。**不改** `mergePassOutcomes` 的现有键、不改 band 逻辑、不产生 finding。`classifyPassOutcome` 新增识别 `intercepted`/`lost`——只影响 strata 分层（既有四桶的 `unknown_outcome_count` 口径不变，因为桶循环的 `else` 分支照旧兜住这两类）。
 
 ## D4：主 spec 同步
 

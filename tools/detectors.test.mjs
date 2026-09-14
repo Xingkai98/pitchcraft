@@ -724,14 +724,16 @@ test('pass_outcomes strata classify high_ball / long_pass / restart_type (P32 D3
 });
 
 test('pass_outcomes strata: missing h/pass_distance are not fabricated (P32 D3)', () => {
-  // h 缺失 → 归 low_ball（保守：不把「不知道」混进 high_ball）；pass_distance 缺失 →
-  // **不计入** long_pass/short_pass 任一层（无法判定，不猜）。
+  // h 缺失 → unknown_h（**不**并入 low_ball：把「不知道」算成低球会让 high_ball 率系统性
+  // 偏低，恰是「复现 85% 高球」最敏感的方向）；pass_distance 缺失 → **不计入**
+  // long_pass/short_pass 任一层（无法判定，不猜）。
   const { pass_outcomes } = runAudit({
     events: [{ index: 0, t: 1, type: 'pass', result: 'success', nearest_defender_distance: 12 }],
   });
   const s = pass_outcomes.strata;
   assert.equal(s.high_ball.sample_count, 0);
-  assert.equal(s.low_ball.sample_count, 1);
+  assert.equal(s.low_ball.sample_count, 0);
+  assert.equal(s.unknown_h.sample_count, 1);
   assert.equal(s.long_pass.sample_count, 0);
   assert.equal(s.short_pass.sample_count, 0);
   assert.equal(s.open_play.sample_count, 1);

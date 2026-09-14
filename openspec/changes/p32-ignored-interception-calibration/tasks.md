@@ -50,9 +50,18 @@
 
 ## P4. 主 spec 同步 + 收尾
 
-- [ ] P4.1 diagnosis-runner「未标定 detector 告警降级」scenario GIVEN 改 player_overlap
-- [ ] P4.2 `cargo test` + viewer/tools node tests + `npx openspec validate --all --strict` + `./verify.sh` 全绿
-- [ ] P4.3 独立零记忆 subagent 审阅闭环（发现问题→修复→再审至无遗留）
+- [x] P4.1 主 spec 同步：diagnosis-runner「未标定 detector 告警降级」scenario GIVEN 改 player_overlap
+      — 同 commit 一并修：delta `specs/match-engine/spec.md` 的「逐桶自洽」「长传加成」「cap」scenario
+      措辞与实现对齐（insufficient_sample 承载物、逐常量杀死、cap 是防御性上限）。主 spec
+      `openspec/specs/diagnosis-runner/spec.md` 的 MODIFIED requirement header 与 delta 逐字一致、
+      scenario 全量复制（archive 盲区专项复查通过）。
+- [x] P4.2 `cargo test` + viewer/tools node tests + `npx openspec validate --all --strict` + `./verify.sh` 全绿
+      — 实测：`cargo test --lib p32_` 2/2（含 golden 走 `--test realism` 4/4）、`viewer` 303/303、
+      `tools` 404/404、`openspec validate --all --strict` 17 passed 0 failed、`./verify.sh` 五步全绿
+      （含 WASM e2e 5817 事件 + realism release 套件 8/8）。
+- [x] P4.3 独立零记忆 subagent 审阅闭环（发现问题→修复→再审至无遗留）
+      — R1 无 P1、12 条声明全验真、2 P2 + 7 P3；全部修复后 R2 复审确认无遗留。记录见
+      `reviews/review.md`。
 
 ## 关联
 
