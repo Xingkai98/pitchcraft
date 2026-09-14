@@ -4732,8 +4732,8 @@ mod tests {
 
     #[test]
     fn tackle_events_carry_loose_and_carrier_from() {
-        // 多 seed 扫：tackle 是每事件点按距离阈值 + TACKLE_EAGERNESS 决策，不保证每个 seed 都有 tackle，
-        // 故多 seed 扫描确保至少有一个带新字段。
+        // 多 seed 扫：tackle 由防守动作竞争在几何满足时涌现（P30 起），不保证每个 seed 都有
+        // tackle，故多 seed 扫描确保至少有一个带新字段。
         for seed in 1..30u64 {
             let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
             let s = simulate(seed, cfg);
