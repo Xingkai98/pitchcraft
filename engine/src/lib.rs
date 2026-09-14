@@ -7146,6 +7146,88 @@ mod tests {
             score_tackle(&f_hot), score_tackle(&f_cold));
     }
 
+    /// P30 D1（cooldown **写—读闭环**，直接绑定执行路径）：不经 tally 间接证明，而是
+    /// **真执行**一次抢断 / 一次犯规，断言三个 cooldown 字段被写、再经 `defensive_features`
+    /// → `score_tackle` 读到惩罚、并随 tick 衰减恢复。覆盖「删掉写入点仍能过测试」的空洞
+    /// （审阅第二轮 P2）。
+    #[test]
+    fn p30_cooldown_write_read_closed_loop() {
+        // ---------- 抢断写路径 ----------
+        let mut st = window_state(&[(11, 0.60, 0.5)]);
+        st.carrier = 9;
+        st.pos[9] = (0.62, 0.5);
+        st.pos[11] = (0.60, 0.5);
+        let vp = st.pos[9];
+        // 前置：无冷却 → 无惩罚
+        let s_before = score_tackle(&defensive_features(&st, 11, vp));
+        let mut rng = SeededRng::new(5);
+        let mut events = Vec::new();
+        emit_tackle_highlight_impl(&mut st, &mut rng, &mut events, 1.0, 11);
+        // 写：defender 级 + pair 级都被置位
+        assert_eq!(st.tackle_cooldown[11], TACKLE_COOLDOWN_TICKS, "抢断后 defender 冷却应被置满");
+        assert_eq!(st.last_contact_pair, Some((11, 9)), "抢断后应记接触对");
+        assert_eq!(st.contact_age_ticks, 0, "接触当刻年龄应为 0");
+        // 读：score 被压低（defender 冷却 + pair 冷却）
+        let s_after = score_tackle(&defensive_features(&st, 11, vp));
+        assert!(s_after < s_before, "抢断后 score_tackle 应被压低（{} < {}）", s_after, s_before);
+        // 到期恢复：**只推进冷却字段的衰减**（不跑整场 tick——那会移动球员/换持球者，
+        // 破坏几何与状态不变量）。`tick()` 顶部的衰减逻辑等价于此处的 `saturating_sub`，
+        // 已在 `p30_foul_cooldown_decays_every_tick` 里对真实 tick 路径单独钉死。
+        let decay = |st: &mut MatchState| {
+            for c in st.tackle_cooldown.iter_mut() { *c = c.saturating_sub(1); }
+            if st.last_contact_pair.is_some() { st.contact_age_ticks = st.contact_age_ticks.saturating_add(1); }
+        };
+        // 接触后的几何（emit 已把两人对账到结算终点）——取作「冷却归零后」的对照基准。
+        // 注意不能用接触**前**的 `s_before`：emit 改变了位置，几何不同。对照应解耦几何：
+        // 同一（接触后）几何下，冷却项为 0 的 score 即是「到期恢复」的目标值。
+        // `emit_tackle_highlight_impl` 会把 carrier 置 -1（success）或保留（fail）→ 钉回 9
+        // （defensive_features 经 opportunity_geometry 读 st.carrier，须为合法 id）。
+        st.carrier = 9;
+        st.pos[9] = (0.62, 0.5);
+        st.pos[11] = (0.60, 0.5);
+        let f_now = defensive_features(&st, 11, st.pos[9]);
+        let f_no_cd = DefensiveFeatures { tackle_cd_ratio: 0.0, pair_cd_ratio: 0.0, ..f_now };
+        let target = score_tackle(&f_no_cd);
+        while st.tackle_cooldown[11] > 0 || pair_cooldown_ratio(&st, 11) > 0.0 {
+            decay(&mut st);
+        }
+        let f_expired = defensive_features(&st, 11, vp);
+        assert_eq!(f_expired.tackle_cd_ratio, 0.0, "defender 冷却应到期归零");
+        assert_eq!(f_expired.pair_cd_ratio, 0.0, "pair 冷却应到期归零");
+        assert!((score_tackle(&f_expired) - target).abs() < 1e-9,
+            "两层冷却都到期后 score 应恢复到「无冷却同几何」（{} vs {}）", score_tackle(&f_expired), target);
+
+        // ---------- 犯规写路径 ----------
+        let mut st2 = window_state(&[(11, 0.60, 0.5)]);
+        st2.carrier = 9;
+        st2.pos[9] = (0.62, 0.5);
+        st2.pos[11] = (0.60, 0.5);
+        st2.foul_cooldown_ticks = 0;
+        let mut rng2 = SeededRng::new(5);
+        let mut events2 = Vec::new();
+        emit_foul_and_free_kick(&mut st2, &mut rng2, &mut events2, 1.0, 9, (0.62, 0.5), 11);
+        assert_eq!(st2.foul_cooldown_ticks, FOUL_MIN_GAP_TICKS, "犯规后全局冷却应被置满");
+        assert_eq!(st2.tackle_cooldown[11], TACKLE_COOLDOWN_TICKS, "犯规者也应进 defender 冷却（共用数组）");
+        assert_eq!(st2.last_contact_pair, Some((11, 9)), "犯规后应记接触对");
+        // `emit_foul_and_free_kick` 把 carrier 置 -1（死球）→ 读 feature 前钉回 9
+        st2.carrier = 9;
+        st2.pos[9] = (0.62, 0.5);
+        st2.pos[11] = (0.60, 0.5);
+        // 读：犯规资格被全局冷却挡住（score_foul = NEG_INFINITY）
+        assert_eq!(score_foul(&defensive_features(&st2, 11, (0.62, 0.5))), f64::NEG_INFINITY,
+            "犯规后全局冷却未过 → 犯规应无资格");
+        // 到期恢复：只推进 foul 冷却衰减 → 恢复资格（同理由，不跑整场 tick）
+        let _ = (rng2, events2);
+        while st2.foul_cooldown_ticks > 0 {
+            st2.foul_cooldown_ticks -= 1;
+        }
+        st2.carrier = 9;
+        st2.pos[9] = (0.62, 0.5);
+        st2.pos[11] = (0.60, 0.5);
+        assert!(score_foul(&defensive_features(&st2, 11, st2.pos[9])).is_finite(),
+            "全局犯规冷却到期后应恢复犯规资格");
+    }
+
     /// P30 D1（全局 foul 冷却**每 tick 无条件衰减**，实 tick 绑定）：犯规冷却在
     /// `tick()` 顶部推进，而非只在开放比赛分支——犯规后下一 tick 通常进入任意球
     /// `restart_prep`（提前 return），若只在该分支递减则冷却永不推进。
@@ -7299,35 +7381,54 @@ mod tests {
     /// 并且冷却**会到期**（不是恒置位不衰减）。
     #[test]
     fn p30_three_layer_cooldown_live() {
-        let mut saw_def_cd = 0u64;
-        let mut saw_pair_cd = 0u64;
-        let mut saw_foul_cd = 0u64;
-        let mut max_contact_age = 0u64;
-        let mut pair_expired = 0u64;
+        // 三层 cooldown 的**行为**测试：跑真实比赛，逐 tick 采样三个字段，断言每层都被**写过**
+        // （出现过非零值）、`defender` 级按球员记录、pair 年龄会增长、三层都**到期归零**。
+        // 直接读字段（不再从 tally 间接推断）——覆盖审阅第二轮 P2 指出的覆盖缺口。
+        let mut saw_def_cd: [bool; 22] = [false; 22];
+        let mut saw_pair = false;
+        let mut saw_foul = false;
+        let mut saw_age_growth = false;
+        let mut def_cd_expired = false;
+        let mut pair_cd_expired = false;
+        let mut foul_cd_expired = false;
         for seed in 1..=40u64 {
-            let (st, _e) = run_match(seed, 5400.0);
-            let t = st.opportunity_tally;
-            if t.exec_tackle > 0 || t.exec_foul > 0 {
-               // 有接触 → 三层冷却至少被写过
-                saw_pair_cd += 1;
-            }
-            if t.exec_tackle > 0 { saw_def_cd += 1; }
-            if t.exec_foul > 0 { saw_foul_cd += 1; }
-            // offender 级：跑一场后 trace 里至少出现一次某球员冷却 > 0——用 tally 间接证明
-            // （逐 tick 观测太贵；这里用「接触发生 ⇒ defender 冷却曾被写」的等价关系）
-            max_contact_age = max_contact_age.max(st.contact_age_ticks as u64);
-            if st.last_contact_pair.is_some()
-                && st.contact_age_ticks >= CONTACT_PAIR_COOLDOWN_TICKS
-            {
-                pair_expired += 1;
+            let lineup = default_lineup();
+            let mut rng = SeededRng::new(seed);
+            let mut events = Vec::new();
+            let mut st = MatchState::new(&lineup, 5400.0);
+            st.hold_max = slot_hold_max(5400.0);
+            let mut t = TICK_SECONDS;
+            let mut prev_age = st.contact_age_ticks;
+            while t < 5400.0 {
+                tick(&mut st, &mut rng, &mut events, t);
+                // defender 级：**逐球员**记录是否曾被置位
+                for (id, &c) in st.tackle_cooldown.iter().enumerate() {
+                    if c > 0 { saw_def_cd[id] = true; }
+                }
+                if st.last_contact_pair.is_some() {
+                    saw_pair = true;
+                    if st.contact_age_ticks > prev_age { saw_age_growth = true; }
+                    if st.contact_age_ticks >= CONTACT_PAIR_COOLDOWN_TICKS { pair_cd_expired = true; }
+                }
+                if st.foul_cooldown_ticks > 0 { saw_foul = true; }
+                // 到期归零：冷却曾 >0、现在 ==0（且不是被新接触重置）→ 观察到一次「到期」
+                if st.tackle_cooldown.iter().all(|&c| c == 0) && saw_def_cd.iter().any(|&b| b) {
+                    def_cd_expired = true;
+                }
+                if st.foul_cooldown_ticks == 0 && saw_foul { foul_cd_expired = true; }
+                prev_age = st.contact_age_ticks;
+                t += TICK_SECONDS;
             }
         }
-        assert!(saw_pair_cd > 0, "40 场里从未发生接触（pair 冷却层未生效？）");
-        assert!(saw_def_cd > 0, "40 场里从未抢断（defender 冷却层未生效？）");
-        assert!(saw_foul_cd > 0, "40 场里从未犯规（全局 foul 冷却层未生效？）");
-        // pair 冷却会**到期**：至少有一场在终场时它的年龄已 ≥ 冷却窗
-        assert!(pair_expired > 0, "contact_age_ticks 从未超过冷却窗（pair 冷却恒不衰减？）");
-        assert!(max_contact_age > 0, "contact_age_ticks 从未增长（pair 衰减未接线）");
+        assert!(saw_def_cd.iter().any(|&b| b), "40 场里从未有任何球员进入 defender 级冷却");
+        let n_def = saw_def_cd.iter().filter(|&&b| b).count();
+        assert!(n_def >= 2, "defender 级冷却应记录到多个球员（实得 {}）", n_def);
+        assert!(saw_pair, "40 场里从未记录接触对（pair 冷却层未生效？）");
+        assert!(saw_foul, "40 场里从未进入全局犯规冷却（全局 foul 冷却层未生效？）");
+        assert!(saw_age_growth, "contact_age_ticks 从未增长（pair 衰减未接线）");
+        assert!(pair_cd_expired, "pair 冷却从未到期（恒不衰减？）");
+        assert!(def_cd_expired, "defender 冷却从未到期归零");
+        assert!(foul_cd_expired, "全局犯规冷却从未到期归零");
     }
 
     /// P30 D1（纯函数级，三层各自独立）：冷却**只**改变打分，不禁止事件——到期即恢复（对照 `p30_tackle_cooldowns_lower_score`）。
