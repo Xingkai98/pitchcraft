@@ -8342,6 +8342,33 @@ mod tests {
                 forbidden
             );
         }
+        // **覆盖补强（审阅指出）**：上面的区段扫描只能覆盖**纯函数定义**，覆盖不到「接入点
+        // 是否偷偷直接产事件」。逐个抽取护栏的**状态写入 + 四个消费点**的函数体（按函数边界
+        // 截取），断言它们内部无 `events.push` / `emit_*`——保证「护栏只改状态、事件由既有
+        // 生产者产」在**接线层**也被机器守着，而不是只活在纯函数区段的局部扫描里。
+        // 注：`carrier_move` 返回 `MainAction`（写 `st.pos`/产 main 由调用方 `beat_event`），
+        // 其函数体不含 `events.push`，故可纳入。
+        for fname in [
+            "fn liveness_profile(",
+            "fn forward_intent_pp(",
+            "fn note_meaningful_action(",
+            "fn resolution_is_meaningful(",
+            "fn action_deadline_for(",
+            "fn carrier_move(",
+        ] {
+            let i = prod.find(fname).unwrap_or_else(|| panic!("找不到 {}（接入点改名？）", fname));
+            let body = &prod[i..];
+            // 函数体到下一个顶层 `fn ` 或文件末尾
+            let next = body[1..].find("\nfn ").map(|k| k + 1).unwrap_or(body.len());
+            let body = &body[..next];
+            for forbidden in ["events.push", "emit_"] {
+                assert!(
+                    !body.contains(forbidden),
+                    "`{}` 函数体内出现 `{}`——护栏接入点应只改状态/返回动作，不得直接产事件（D3）",
+                    fname, forbidden
+                );
+            }
+        }
     }
 
     /// P3：三处接入的方向——deadline 缩短 / 传球风险抬高 / 前插倾向抬高。
