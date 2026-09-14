@@ -30,9 +30,10 @@ const lineup = [
 
 const lineups = lineup.map(([id, x, y]) => ({ id, team: id <= 10 ? 'home' : 'away', x, y }));
 
-// 有球动作，分别对应三个 detector 的可观测证据：
+// 有球动作，对应各 detector / derive 层的可观测证据：
 //   t=10  无压力传球出界（home 9 在左侧边线传丢，away 防守者全部远在右侧）
-//   t=30  可拦截传球（home 9 横传，away 16 在走廊旁 3.4m 且不移动）
+//   t=30  横传（home 9 → 落点），用于 **derive 层** corridor_distance /
+//         defender_moved_toward_corridor 的生产断言（P32 起 detector 已删，几何事实保留）
 //   t=50  责任区站桩（away 15 在球路径上静止 4.5s+，球在 12m 内移动）
 //   t=60  几何出界（result=success，落点 x2=1.01 略越右边界 → 米制 106.05 > 105）
 const events = [
@@ -40,7 +41,7 @@ const events = [
   { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
   // unforced_out：落点离左边界 ~0.53m，result=out，最近防守者 ~52m。
   { t: 10, type: 'pass', subject: 9, from: 9, to: 5, x: 0.05, y: 0.5, x2: 0.005, y2: 0.5, speed: 8, result: 'out' },
-  // ignored_interception：走廊 y=0.5，away 16 (0.72,0.45) 距走廊 ~3.99m，球 5.25s 到达。
+  // derive 层 corridor 生产：走廊 y=0.5，away 16 (0.72,0.45) 距走廊 ~3.99m。
   { t: 30, type: 'pass', subject: 9, from: 9, to: 5, x: 0.3, y: 0.5, x2: 0.7, y2: 0.5, speed: 8, result: 'success' },
   // inactive_responsibility：球从 (0.45,0.75) 慢速传向 (0.58,0.75)，away 15 在 (0.52,0.75) 静止。
   { t: 50, type: 'pass', subject: 9, from: 9, to: 5, x: 0.45, y: 0.75, x2: 0.58, y2: 0.75, speed: 3, result: 'success' },
@@ -83,18 +84,10 @@ test('viewer capture → audit_input → runAudit: unforced_out produces a reali
   assert.ok(f.features.boundary_distance < 3.0);
 });
 
-test('viewer capture → audit_input → runAudit: ignored_interception_opportunity produces a realism_warning', () => {
-  const bundle = captureAt(30);
-  const { valid, errors } = validateObservationBundle(bundle);
-  assert.equal(valid, true, JSON.stringify(errors));
-  const { findings } = runAudit(bundle.audit_input);
-  const f = find(findings, 'ignored_interception_opportunity', 'realism_warning');
-  assert.ok(f, `expected an ignored_interception_opportunity realism_warning; got ${JSON.stringify(findings)}`);
-  assert.equal(typeof f.features.corridor_distance, 'number');
-  assert.ok(f.features.corridor_distance > 0);
-  assert.ok(f.features.defender_arrival_time < f.features.ball_arrival_time);
-  assert.equal(f.features.actual_displacement, 'none');
-});
+// P32（#36）：`ignored_interception_opportunity` detector 已彻底删除，其「走廊可达 → 告警」
+// 的 viewer 端到端用例一并删除。**保留**下面依赖同一 t=30 事件的 derive 层断言
+// （`derived pass features are honest…`）——它测的是 corridor_distance /
+// defender_moved_toward_corridor 的**生产**仍在（未来防守反应研究用），与 detector 消费无关。
 
 test('viewer capture → audit_input → runAudit: inactive_responsibility produces a realism_warning', () => {
   const bundle = captureAt(51);
@@ -157,7 +150,8 @@ test('evidence genuinely unavailable still preserves unknown (no fabrication)', 
     game, seed: 42, config: MATCH_CONFIG, opts: deterministic(),
   });
   const { findings } = runAudit(bundle.audit_input);
-  for (const detectorId of ['unforced_out', 'inactive_responsibility', 'ignored_interception_opportunity']) {
+  // P32：ignored_interception_opportunity 已删，不再在此列表中（它不产 finding 了）。
+  for (const detectorId of ['unforced_out', 'inactive_responsibility']) {
     const real = findings.find((f) => f.detector_id === detectorId && f.severity !== 'unknown');
     assert.equal(real, undefined, `detector ${detectorId} must not fabricate a finding`);
     const unknown = findings.find((f) => f.detector_id === detectorId && f.severity === 'unknown');

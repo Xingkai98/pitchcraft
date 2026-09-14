@@ -19,7 +19,6 @@ import {
   detectInvariants,
   detectUnforcedOut,
   detectInactiveResponsibility,
-  detectIgnoredInterception,
   detectPlayerOverlap,
   computePassOutcomes,
   DEFAULT_AUDIT_PROFILE,
@@ -187,7 +186,7 @@ const NON_INPUT_PROPERTIES = {
 const NON_INPUT_INTERNAL_KEYS = new Set(['detector_id', 'severity', 'reason', 'features', 'thresholds']);
 
 // 三种读取形态都要扫——只扫点读会漏掉解构与字符串下标（审阅实测：解构/方括号 + 分支不被
-// 任何 guard 输入触发 = 全绿逃逸）。而 `const { corridor_distance } = event` 正是
+// 任何 guard 输入触发 = 全绿逃逸）。而 `const { pass_distance } = event` 正是
 // detectors.mjs 现在就在用的写法，不是假想。
 //   ① 点读      base.prop
 //   ② 解构      const { a, b } = base   /   ({ a } = base)
@@ -411,11 +410,13 @@ test('source-level: the scanner covers destructuring and bracket reads (F1 proof
     ).has('chained_field'),
     'scanner must propagate transitively (h → g) to a fixpoint'
   );
-  // 真实源码里解构读取（corridor_distance/pass_distance/pass_speed）必须被抓到——
-  // 这些是 declared 字段，所以行为守卫也覆盖；这里确认扫描器同样看得见。
+  // 真实源码里的解构读取必须被抓到——这些是 declared 字段，所以行为守卫也覆盖；这里确认
+  // 扫描器同样看得见。P32 起 ignored_interception 的首行解构已随 detector 删除；现存的
+  // 真实解构读取在 `classifyPassOutcome` 里读 result / x2 / y2（outEvidenceOf →
+  // `typeof event.x2 === 'number'` 等）。用**现存**的解构/点读确认扫描器活着。
   const real = sourceFieldReads(DETECTORS_SOURCE);
-  for (const f of ['corridor_distance', 'pass_distance', 'pass_speed']) {
-    assert.ok(real.has(f), `scanner must see the real destructured read "${f}"`);
+  for (const f of ['pass_distance', 'nearest_defender_distance', 'result']) {
+    assert.ok(real.has(f), `scanner must see the real read "${f}"`);
   }
 });
 
@@ -492,7 +493,6 @@ test('contract covers every detector and every entry is internally consistent', 
     'baseline_invariant',
     'unforced_out',
     'inactive_responsibility',
-    'ignored_interception_opportunity',
     'player_overlap',
     'pass_outcomes',
   ]) {
@@ -750,8 +750,6 @@ const DETECTOR_ENTRY = {
   unforced_out: (pi) => detectUnforcedOut(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
   inactive_responsibility: (pi) =>
     detectInactiveResponsibility(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
-  ignored_interception_opportunity: (pi) =>
-    detectIgnoredInterception(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
   player_overlap: (pi) => detectPlayerOverlap(pi.players ?? {}, DEFAULT_AUDIT_PROFILE),
   pass_outcomes: (pi) => computePassOutcomes(pi.events ?? [], DEFAULT_AUDIT_PROFILE),
 };
@@ -872,11 +870,11 @@ test('the drift guard actually catches an undeclared read (self-check)', () => {
     'the guard must surface a read field that the contract fails to declare'
   );
   // 逐 detector 归属守卫的自检：跨 detector 的字段必须被逐 detector 判定拒绝。
-  // 例：`corridor_distance` 只登记在 ignored_interception_opportunity 名下，
-  // 逐 detector 的允许集里 unforced_out 不该有它。
-  const unforcedAllowed = allowedReadKeys(DETECTOR_FIELD_CONTRACT.unforced_out);
-  assert.equal(unforcedAllowed.has('corridor_distance'), false);
-  assert.equal(unforcedAllowed.has('detail'), true);
+  // 例：`nearest_defender_distance` 只在 unforced_out / pass_outcomes 名下，
+  // 逐 detector 的允许集里 inactive_responsibility 不该有它。
+  const inactiveAllowed = allowedReadKeys(DETECTOR_FIELD_CONTRACT.inactive_responsibility);
+  assert.equal(inactiveAllowed.has('nearest_defender_distance'), false);
+  assert.equal(inactiveAllowed.has('dead_ball'), true);
 });
 
 // --- 4. schema_version 版本保护 (D6) ----------------------------------------

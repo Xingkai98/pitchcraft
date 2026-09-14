@@ -1,10 +1,16 @@
 // Deterministic audit detectors.
 //
-// P10 vertical slice: unforced_out, inactive_responsibility,
-// ignored_interception_opportunity, plus baseline invariants and multi-seed
-// aggregation. Pure functions over fixture events/player snapshots. No WASM, no
-// network, no Claude/API calls. When evidence cannot prove a conclusion, a
-// detector emits an `unknown` finding with a reason instead of guessing.
+// P10 vertical slice: unforced_out, inactive_responsibility, plus baseline
+// invariants and multi-seed aggregation. Pure functions over fixture
+// events/player snapshots. No WASM, no network, no Claude/API calls. When
+// evidence cannot prove a conclusion, a detector emits an `unknown` finding
+// with a reason instead of guessing.
+//
+// P32（#36）：`ignored_interception_opportunity` 已**彻底删除**——它的「防守者能跑到走廊
+// 就该拦」是确定性语义，与 post-#25 的概率拦截引擎（贴防 7.5% / 中距 4.5% / 远距 2.0%、
+// 长传加成、cap）错位，实测 45% 假阳性。拦截概率的自洽硬门已移入**引擎侧**（判定点记账
+// + `engine/src/lib.rs` 的 `mod tests` 原生断言），audit 层只保留 `pass_outcomes` 的
+// 轻量分层作 L3 软参考。详见 openspec/changes/p32-ignored-interception-calibration/。
 
 import { AUDIT_INPUT_SCHEMA_VERSION } from '../viewer/derive-audit-features.js';
 
@@ -29,23 +35,14 @@ export const DEFAULT_AUDIT_PROFILE = {
     stationary_epsilon: 0.5,
     calibrated: true,
   },
-  ignored_interception: {
-    // Defender's sprint speed (m/s) used to derive arrival time.
-    defender_speed: 6.0,
-    // Extra seconds a defender must arrive early to count as an opportunity.
-    arrival_margin: 0.5,
-    // P21 D4：本 detector 的告警率尚未用真实比赛标定（标定归 #36）。未标定 → 聚合层
-    // 不因超出参考 band 升级为 realism_failure，也不把它当可信线索；仅降级静音。
-    calibrated: false,
-  },
   player_overlap: {
     // 同队两球员的最小站位间距（米）。真人比赛同队间距通常 ≥2m（issue #35）；引擎当前
     // repulsion（REPULSION_MIN_DIST=1.36m + 盲区）会把同队球员贴到 0.1m 级，引擎侧间距
     // 约束归 #53。detector 只按严格 `<` 判定（恰等于阈值不算重叠）。
     min_distance: 2.0,
     // P21 D4 的显式标定声明：只知道阈值（真实比赛常识），不知道**告警率**的真实区间，
-    // 所以与 ignored_interception 同样标未标定——聚合层不因超 band 升级 realism_failure，
-    // 保持 D3 的 realism_warning 语义。告警率标定归 #36。
+    // 故标未标定——聚合层不因超 band 升级 realism_failure，保持 D3 的 realism_warning
+    // 语义。告警率标定归 #36。
     calibrated: false,
   },
   // Baseline invariant checks: things that must hold regardless of realism.
@@ -71,7 +68,6 @@ export const DEFAULT_AUDIT_PROFILE = {
       },
       unforced_out: { min: 0, max: null, source: 'p10-mvp', note: 'no calibrated band; warnings are candidates' },
       inactive_responsibility: { min: 0, max: null, source: 'p10-mvp', note: 'no calibrated band; warnings are candidates' },
-      ignored_interception_opportunity: { min: 0, max: null, source: 'p10-mvp', note: 'no calibrated band; warnings are candidates' },
       player_overlap: {
         min: 0,
         max: null,
@@ -89,15 +85,14 @@ const RESPONSIBILITY_TRIGGERS = [
   'defensive_line_moved',
 ];
 
-// detector_id → profile 里对应配置块的键。两者并不总是同名（历史原因：detector 叫
-// `ignored_interception_opportunity`，配置块叫 `ignored_interception`），所以显式映射，
-// 别靠字符串拼。D4 的 calibrated 标记就靠它把 finding/detector 摘要挂回配置。
+// detector_id → profile 里对应配置块的键。二者目前同名，但保留显式映射（历史原因：删掉的
+// `ignored_interception_opportunity` 曾映射到 `ignored_interception` 块）。D4 的 calibrated
+// 标记就靠它把 finding/detector 摘要挂回配置。
 // 新 detector 必须同时补这里和 tools/detector-field-contract.mjs（契约测试会红）。
 const DETECTOR_PROFILE_KEY = {
   baseline_invariant: 'invariants',
   unforced_out: 'unforced_out',
   inactive_responsibility: 'inactive_responsibility',
-  ignored_interception_opportunity: 'ignored_interception',
   player_overlap: 'player_overlap',
 };
 
@@ -687,70 +682,22 @@ export function detectPlayerOverlap(players, profile) {
   return findings;
 }
 
-// --- ignored_interception_opportunity ---------------------------------------
-
-export function detectIgnoredInterception(events, profile) {
-  const findings = [];
-  const cfg = profile.ignored_interception;
-  for (const event of events) {
-    if (event.type !== 'pass') continue;
-    const base = {
-      detector_id: 'ignored_interception_opportunity',
-      event_index: event.index,
-      match_time: event.t ?? null,
-      entity_id: event.defender_id ?? null,
-    };
-    const { corridor_distance, pass_distance, pass_speed } = event;
-    if (
-      typeof corridor_distance !== 'number' ||
-      typeof pass_distance !== 'number' ||
-      typeof pass_speed !== 'number'
-    ) {
-      findings.push({
-        ...base,
-        id: `ignored_interception_opportunity:${event.index}`,
-        severity: 'unknown',
-        reason: 'cannot prove interception corridor (corridor_distance/pass_distance/pass_speed missing)',
-        features: {},
-        thresholds: {},
-      });
-      continue;
-    }
-    const ballArrival = pass_distance / pass_speed;
-    const defenderArrival = corridor_distance / cfg.defender_speed;
-    if (
-      defenderArrival + cfg.arrival_margin < ballArrival &&
-      event.defender_moved_toward_corridor !== true
-    ) {
-      findings.push({
-        ...base,
-        id: `ignored_interception_opportunity:${event.index}`,
-        severity: 'realism_warning',
-        features: {
-          corridor_distance,
-          ball_arrival_time: round3(ballArrival),
-          defender_arrival_time: round3(defenderArrival),
-          actual_displacement: event.defender_moved_toward_corridor ? 'toward_corridor' : 'none',
-        },
-        thresholds: {
-          defender_speed: cfg.defender_speed,
-          arrival_margin: cfg.arrival_margin,
-        },
-      });
-    }
-  }
-  return findings;
-}
-
 // --- pass outcome / pressure buckets -----------------------------------------
 
 // Classify a single pass's outcome from observable evidence, reusing the same
 // out-evidence contract as unforced_out (P21 D1) so the two never drift: detail
 // out_* (the engine's real signal) / explicit result==='out' / geometric out are
-// all `out`; success/complete is a success; anything else/missing is unknown.
+// all `out`; success/complete is a success; **intercepted/lost 是 P32 起新增识别的
+// 引擎直出结果**（此前落到 unknown_outcome——拦截/传失是真实结果，不是「未知」）。
+// 其余/缺失仍归 unknown_outcome（不猜）。
+//
+// 注：`intercepted` 事件的 x2/y2 是**拦截者实际位置**、不是意图落点（见 grill 复核）。
+// 本函数只用 result 字符串判结果，不碰坐标——不需要意图落点重建。
 function classifyPassOutcome(event, profile) {
   if (outEvidenceOf(event, profile) !== null) return 'out';
   if (event.result === 'success' || event.result === 'complete') return 'success';
+  if (event.result === 'intercepted') return 'intercepted';
+  if (event.result === 'lost') return 'lost';
   return 'unknown_outcome';
 }
 
@@ -761,16 +708,79 @@ function classifyPassOutcome(event, profile) {
 // Missing pressure evidence lands in `unknown_pressure` — never fabricated.
 // 导出供契约漂移守卫逐条目断言：pass_outcomes 不是 detector，但和 unforced_out 共享
 // 出界/排除位契约，守卫要把它当独立条目归属读键（否则它的 legacy_reads 会成为盲区）。
+// P32（#36）D3：软分层。在 pressure×outcome 分桶之外，按**高球 / 长传 / 重开类型**再分层，
+// 用于复现或否定 issue body 的「高球标记率 85%」经验症状——**不参与告警升级**（不是 detector，
+// 不产 finding、不进 band）。每层只记 sample/out/success/intercepted/unknown_outcome 计数。
+//
+// 分层判据（各自独立，一条 pass 可同时落入多层）：
+//   - high_ball / low_ball：`h > 0` 与否。引擎 `pass_h`：>20m 才 h>0（`engine/src/lib.rs`）。
+//     **h 缺失 → unknown_h**（不并入 low_ball：真实引擎每条 pass 都带 h，缺失只出现在旧
+//     bundle/合成输入；把「不知道」算成低球会让 high_ball 率系统性偏低——恰是「复现 85%
+//     高球」用途最敏感的方向。与 unknown_pressure 同一「不伪造」原则，审阅 P3-7）。
+//   - long_pass：`pass_distance > LONG_PASS_M`（22m，与引擎常量同值）。`pass_distance` 缺失
+//     的样本不进 long_pass/short_pass 任一层（无法判定，不猜）。
+//   - restart_type / open_play：`detail ∈ EXCLUSION_DETAILS`（corner/throw_in/free_kick/
+//     clearance）为重开/解围；其余为开放比赛。注意这与 `excluded` 计数**同源**（同一排除契约）。
+const LONG_PASS_M = 22.0;
+
+// 单层计数器（与 pressure bucket 同形 + intercepted 计数——P32 新增：入网/拦截的区分是
+// 「预期 vs 实际拦截率」的基础，但此处只作软参考）。
+const emptyStratum = () => ({
+  sample_count: 0, out_count: 0, success_count: 0, intercepted_count: 0, lost_count: 0, unknown_outcome_count: 0,
+});
+
+function tallyStratum(stratum, outcome) {
+  stratum.sample_count += 1;
+  if (outcome === 'out') stratum.out_count += 1;
+  else if (outcome === 'success') stratum.success_count += 1;
+  else if (outcome === 'intercepted') stratum.intercepted_count += 1;
+  else if (outcome === 'lost') stratum.lost_count += 1;
+  else stratum.unknown_outcome_count += 1;
+}
+
+// 重开/解围类型（detail 值）→ 分层键；未知 detail 归入 open_play。
+// **直接引用 EXCLUSION_DETAILS**（不是拷贝字面量）：两者语义就是同一排除契约，引用同一数组
+// 才能避免将来改一处忘另一处而漂移（审阅 P3-6）。design D3 字面列了 `goal_kick`，但引擎
+// 从不产 `detail:"goal_kick"`（门球开大脚是 `result:"contested"` 且无 detail，见引擎
+// `emit_gk_pass`）——沿 EXCLUSION_DETAILS 是正确取舍，已在 design 偏离处记录。
+const RESTART_DETAILS = EXCLUSION_DETAILS;
+
 export function computePassOutcomes(events, profile) {
   const buckets = {
     unpressured: { sample_count: 0, out_count: 0, success_count: 0, unknown_outcome_count: 0 },
     pressured: { sample_count: 0, out_count: 0, success_count: 0, unknown_outcome_count: 0 },
     unknown_pressure: { sample_count: 0, out_count: 0, success_count: 0, unknown_outcome_count: 0 },
   };
+  const strata = {
+    high_ball: emptyStratum(),
+    low_ball: emptyStratum(),
+    unknown_h: emptyStratum(),
+    long_pass: emptyStratum(),
+    short_pass: emptyStratum(),
+    restart_type: emptyStratum(),
+    open_play: emptyStratum(),
+  };
   let excluded = 0;
   const threshold = profile.unforced_out.pressure_distance;
   for (const event of events ?? []) {
     if (event.type !== 'pass') continue;
+    // 分层（软参考）在**排除判定之前**累计：重开/解围也要进 restart_type 层（否则「重开
+    // 类型分层」在排除后为空）。高球/长传层则与排除无关（任何 pass 都可分层）。
+    const outcome = classifyPassOutcome(event, profile);
+    // 高球：h 是引擎直出的球高度（>20m 才 >0）。h 缺失 → unknown_h（不伪造，见上方注释）。
+    let hStratum;
+    if (typeof event.h !== 'number') hStratum = strata.unknown_h;
+    else if (event.h > 0) hStratum = strata.high_ball;
+    else hStratum = strata.low_ball;
+    tallyStratum(hStratum, outcome);
+    if (typeof event.pass_distance === 'number') {
+      tallyStratum(event.pass_distance > LONG_PASS_M ? strata.long_pass : strata.short_pass, outcome);
+    }
+    tallyStratum(
+      RESTART_DETAILS.includes(event.detail) ? strata.restart_type : strata.open_play,
+      outcome
+    );
+
     if (exclusionTokensOf(event).length > 0) {
       excluded += 1;
       continue;
@@ -781,13 +791,18 @@ export function computePassOutcomes(events, profile) {
     } else {
       bucket = 'unknown_pressure';
     }
-    const outcome = classifyPassOutcome(event, profile);
     buckets[bucket].sample_count += 1;
     if (outcome === 'out') buckets[bucket].out_count += 1;
     else if (outcome === 'success') buckets[bucket].success_count += 1;
     else buckets[bucket].unknown_outcome_count += 1;
   }
-  return { unpressured: buckets.unpressured, pressured: buckets.pressured, unknown_pressure: buckets.unknown_pressure, excluded: { sample_count: excluded } };
+  return {
+    unpressured: buckets.unpressured,
+    pressured: buckets.pressured,
+    unknown_pressure: buckets.unknown_pressure,
+    excluded: { sample_count: excluded },
+    strata,
+  };
 }
 
 // --- stats + aggregation ----------------------------------------------------
@@ -852,14 +867,12 @@ export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
   const invariantFindings = detectInvariants(events, players, profile);
   const unforcedFindings = detectUnforcedOut(events, profile);
   const inactiveFindings = detectInactiveResponsibility(players, profile);
-  const interceptionFindings = detectIgnoredInterception(events, profile);
   const overlapFindings = detectPlayerOverlap(players, profile);
 
   const findings = [
     ...invariantFindings,
     ...unforcedFindings,
     ...inactiveFindings,
-    ...interceptionFindings,
     ...overlapFindings,
   ].map((f) => ({ ...f, profile_id: profile.id, profile_version: profile.version }));
 
@@ -880,11 +893,6 @@ export function runAudit(input, profile = DEFAULT_AUDIT_PROFILE) {
       'inactive_responsibility',
       Object.values(players).filter((v) => Array.isArray(v)).length,
       inactiveFindings
-    ),
-    statsFor(
-      'ignored_interception_opportunity',
-      events.filter((e) => e.type === 'pass').length,
-      interceptionFindings
     ),
     // 样本口径 = 同队球员对（C(n,2)），与 detectPlayerOverlap 内部枚举候选 pair 的方式
     // 共用 sameTeamRoster，避免两处各自算 n 造成 stats 与 finding 口径漂移。
@@ -932,6 +940,35 @@ function mergePassOutcomes(list) {
     totalOrdinary += sample_count;
   }
   out.total_ordinary_passes = totalOrdinary;
+  // P32（#36）D3：软分层合并——**只加不减**，不改上面四个既有键。分层键固定（顺序稳定），
+  // 缺失层按零计（旧 audit 报告无 strata → 零，不崩）。不参与 band/告警。
+  const STRATA_KEYS = ['high_ball', 'low_ball', 'unknown_h', 'long_pass', 'short_pass', 'restart_type', 'open_play'];
+  out.strata = {};
+  for (const key of STRATA_KEYS) {
+    let sample_count = 0, out_count = 0, success_count = 0, intercepted_count = 0, lost_count = 0, unknown_outcome_count = 0;
+    for (const audit of list) {
+      // 变量名不用单字母 `s`：契约漂移守卫的源码扫描器把 `s` 当作输入基变量（fallback 名），
+      // 会把 `s.sample_count` 误判成「读了未声明的 audit_input 字段」。用 `stratumPart`
+      // 避开该启发式，无需给白名单开口子。
+      const stratumPart = audit?.pass_outcomes?.strata?.[key];
+      if (!stratumPart) continue;
+      sample_count += stratumPart.sample_count ?? 0;
+      out_count += stratumPart.out_count ?? 0;
+      success_count += stratumPart.success_count ?? 0;
+      intercepted_count += stratumPart.intercepted_count ?? 0;
+      lost_count += stratumPart.lost_count ?? 0;
+      unknown_outcome_count += stratumPart.unknown_outcome_count ?? 0;
+    }
+    out.strata[key] = {
+      sample_count,
+      out_count,
+      success_count,
+      intercepted_count,
+      lost_count,
+      unknown_outcome_count,
+      // 高球标记率（issue body 的「85%」症状对照）等比率由消费方按样本自算；此处只给计数。
+    };
+  }
   return out;
 }
 
@@ -1036,7 +1073,7 @@ export function aggregateAudit(
       band_state: bandState,
       aggregate_severity: aggregateSeverity,
       // P21 D4：'uncalibrated' = 该 detector 的告警率尚无真实比赛标定，报告层不应把它
-      // 当可信线索（ignored_interception）。'calibrated' = 常规。
+      // 当可信线索（如未标定的 player_overlap）。'calibrated' = 常规。
       calibration: calibrated ? 'calibrated' : 'uncalibrated',
     });
   }
