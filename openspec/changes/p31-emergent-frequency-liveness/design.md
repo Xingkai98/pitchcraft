@@ -42,8 +42,13 @@
   与 `out_side_for_intended(home, intended, rng) -> OutSide`：**出界触发** = 该通道命中。
 - 出界落点 = 意图落点沿该轴推过边界（overshoot 由 RNG 给定），`out_pos` 记真实越界值、
   `x2/y2` 记场内投影（viewer 渲染用）。
-- 重开映射（按 `out_side` + 最后触球方，纯函数 `out_restart_for`）：`NormalPass + goal_line → GoalKick`、
-  `NormalPass + sideline → ThrowIn`、`Clearance + goal_line → Corner`、`Clearance + sideline → ThrowIn`。
+- 重开映射（纯函数 `out_restart_for(source, side, own_goal_line)`）：
+  - `NormalPass + goal_line + **己方**底线 → Corner`（回传/解围越过自家底线 → 角球）
+  - `NormalPass + goal_line + **对方**底线 → GoalKick`（进攻传球越过对方底线 → 门球）
+  - 任意 `source + sideline → ThrowIn`
+  - `Clearance + goal_line → Corner`（解围只能越过自家底线）
+  **实施期修正**：初版把 `NormalPass + goal_line` 一律判门球，遗漏了「越过自家底线」这一半
+  （己方底线出界在真实规则里是角球）。新增 `own_goal_line` 分量修复。
 - 删 `PassOutSource::CornerDirect`（角球不再由槽位制造）。
 - 只允许开放比赛普通传球走出界通道（发球重开/角球/界外球/任意球/门球/头球 battle **不**走）。
 
@@ -78,16 +83,24 @@
 
 ### D6: 抢断频率接受涌现新值 + 带重标定（用户二次拍板）
 
-删槽位后抢断由 5.6/场降至 ~2.6/场——原槽位 `FallbackSituation::Tackle`（22%×24 ≈ 5.3/场）是
-**虚高的强制评估腿**；贴身接触在自然机会点上稀疏是涌现的真实结果。**不给防守竞争补新的强制来源**，
-而是接受新频率并重标定 `shot/tackle` 带（记录实测依据）。同一原则适用于删源后其余频带
-（如角球——原 12% 槽位来源被删，重标定并记录依据）。
+**实施期的措辞更正（2026-09-14，审阅发现）**：本节最初按拍板时点的**中间态**测量写为
+「抢断降至 ~2.6/场」，但那是「仅删槽位、尚未接入 liveness 出球档与犯规基线重标定」的中间值。
+**最终引擎实测抢断 9.40/场（200 seed×90min），比 P30 基线的 5.60 上升 68%**，不是下降。
+原因（变异实验定位，非推测）：主因是 **D3 的第四处接入**（无压久持 → 出球档）——
+把该档关闭（只此一处改动）后抢断回落到 **4.47/场**（接近基线 5.6），说明它贡献了增量中的 ~4.9/场。
+机制：该档让 carrier 在无压停滞时也**承诺传球动作**（pass 候选 219 → 404/场），
+「carrier 承诺 → 防守竞争评估并可能判为抢断」这条通路的触发次数随之近乎翻倍。
+次要因素：犯规基线 0.05 → -0.10（犯规 36 → 23/场）使部分机会点由犯规改选抢断。
+两处都是本 change 的**有意设计**（用户拍板采纳），非参数意外。
+结论不变：**不给防守竞争补新的强制来源**，接受涌现新值并重标定 `shot/tackle` 带
+（实测 7.85/9.40 = 0.835，带 [1.0,1.8] → [0.5,1.5]）。同一原则适用于删源后其余频带
+（如角球——原 12% 槽位来源被删，实测 3.71 → 2.00，带 [2,9] → [1.0,7.0]）。
 
 ## 验收
 
 - 删槽位后，`roll_fallback_situation`/`FallbackSituation`/`slot_clock`/`slot_interval` 全不存在。
-- 出界由 `pass_risk` 调制通道涌现（角球来自 Clearance+goal_line，门球来自 NormalPass+goal_line，
-  界外球来自 sideline），`out_pos` 为真实越界值、`x2/y2` 为场内投影。
+- 出界由 `pass_risk` 调制通道涌现（角球来自 NormalPass+己方底线 / Clearance+底线，
+  门球来自 NormalPass+对方底线，界外球来自 sideline），`out_pos` 为真实越界值、`x2/y2` 为场内投影。
 - liveness guard 三档递进 + 第四处接入（无压久持 → 出球）：停滞有界、不直接造事件。
 - 5 分钟 cohort 方向性护栏通过；90 分钟带重新校准。
 - golden v5 重基线，v1-v4 保留且回归绿。

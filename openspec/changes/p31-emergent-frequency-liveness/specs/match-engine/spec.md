@@ -6,7 +6,7 @@
 
 引擎 SHALL 以「持球行动机会」驱动开放比赛的行动评估：持球段内每次 `deadline_ticks` 到期 SHALL 开启一次行动机会，由持球者候选动作与防守者候选动作按结算优先级决定行动。deadline SHALL 由几何量公式计算（危险度 / 压迫 / 出球空间，钳制到 [3,12] tick），并 SHALL 受 liveness guard 的 `deadline_pressure` 缩短。引擎 SHALL 无任何事件类型配额或固定评估节拍——事件频率完全由状态涌现。
 
-出界 SHALL 由**受 `pass_risk` 调制的出界通道**涌现，而非槽位硬造：开放比赛普通传球按 `open_play_out_probability(pass_risk)` 判定是否出界（`pass_risk` 含传球距离 / 压迫 / liveness 加成），命中后按 `out_side_for_intended` 定方向、落点沿该轴推过边界，并按 `out_side` + 最后触球方判重开（`out_restart_for`：NormalPass+goal_line→门球、NormalPass+sideline→界外球、Clearance+goal_line→角球、Clearance+sideline→界外球）。纯函数 `sample_pass_landing`（落点 = 意图 + 确定性误差）SHALL 保留并参与落点采样。发球重开（角球/界外球/任意球/门球/头球 battle）SHALL NOT 走出界通道。
+出界 SHALL 由**受 `pass_risk` 调制的出界通道**涌现，而非槽位硬造：开放比赛普通传球按 `open_play_out_probability(pass_risk)` 判定是否出界（`pass_risk` 含传球距离 / 压迫 / liveness 加成），命中后按 `out_side_for_intended` 定方向、落点沿该轴推过边界，并按 `out_side` + 越过的是哪条底线 + 最后触球方判重开（`out_restart_for`：NormalPass+对方底线→门球、NormalPass+己方底线→角球、任一 sideline→界外球、Clearance+底线→角球）。纯函数 `sample_pass_landing`（落点 = 意图 + 确定性误差）SHALL 保留并参与落点采样。发球重开（角球/界外球/任意球/门球/头球 battle）SHALL NOT 走出界通道。
 
 防守侧 SHALL 由统一防守动作竞争选择。liveness guard SHALL 为三层递进（停滞 8/12/16s 逐档调前插倾向/传球风险/deadline），**且 SHALL 在停滞达二档且持球者无压时使持球决策选择「出球」候选**；guard 本身 SHALL NOT 直接生成事件——事件仍由既有传球/射门生产者产出。
 
@@ -17,7 +17,7 @@
 #### Scenario: 出界由 pass_risk 调制通道涌现
 - **GIVEN** 一条开放比赛普通传球
 - **WHEN** 引擎判定出界
-- **THEN** 由 `open_play_out_probability(pass_risk)` 通道决定是否出界、`out_side_for_intended` 定方向，且按 `out_side` + 最后触球方判重开（NormalPass+goal_line→门球、Clearance+goal_line→角球、任意 sideline→界外球）；`out_pos` 记真实越界值、`x2/y2` 记场内投影；发球重开不走出界通道
+- **THEN** 由 `open_play_out_probability(pass_risk)` 通道决定是否出界、`out_side_for_intended` 定方向与「己方/对方底线」，且按 `out_side` + `own_goal_line` + 最后触球方判重开（NormalPass+对方底线→门球、NormalPass+己方底线→角球、任意 sideline→界外球、Clearance+底线→角球）；`out_pos` 记真实越界值、`x2/y2` 记场内投影；发球重开不走出界通道
 
 #### Scenario: 落点误差纯函数保留
 - **GIVEN** 一次传球落点采样

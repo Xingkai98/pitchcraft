@@ -7861,14 +7861,22 @@ mod tests {
         assert!(agg.res_carrier_pass > 0, "持球普通（传球）结算未覆盖");
         assert!(agg.res_interrupted_tackle > 0, "抢断中断结算从未发生");
         assert!(agg.res_interrupted_foul > 0, "犯规中断结算从未发生");
-        // P31：带球档 carrier **不承诺持球动作**（返回 None）后，无事件防守（contain/jockey）
-        // 的结算才可达。两者的距离带不同（contain 中距 ~7-12m / jockey 贴身 ~3.5-6m），
-        // 真实机会点的距离分布决定孰多孰少——故只要求至少一类可达，且压力状态被真实置位
-        // （下面 `pressure_state_sets > 0` 断言把「可达」与「真承重」绑在一起）。
+        // P31：无事件防守结算的**可达性口径**——两个动作的距离带与 carrier 决策的交互：
+        //   - contain（中距带 4-12m 峰 9m）：与 carrier「带球档未承诺」的区间（dist > 8m）**相交**，
+        //     故结算可达（实测 20 场 ~3276 次）。这是 D5 压力状态的承重路径。
+        //   - jockey（贴身带 3-6.5m）：其胜出区间**完全落在** carrier「被逼抢 → 出球」的区间
+        //     （dist ≤ `OPEN_PLAY_PASS_PRESSURE_M`=8m）内 → carrier 已承诺传球，按 D3 结算优先级
+        //     压过无事件防守。故 `DefensiveJockey` 结算在当前 carrier 决策下**结构性不可达**。
+        //     这是两个各自自洽的设计（防守打分距离带 × carrier 接触威胁阈值）交互后的**推论**，
+        //     不是遗漏；断言其恰为 0，一旦将来可达（改了阈值/距离带）立即红，促使人**有意**更新。
         assert!(
-            agg.res_containment > 0 || agg.res_jockey > 0,
-            "无事件防守结算不可达（contain={} jockey={}）",
-            agg.res_containment, agg.res_jockey
+            agg.res_containment > 0,
+            "contain 结算不可达（{}）——D5 压力状态机制失效",
+            agg.res_containment
+        );
+        assert_eq!(
+            agg.res_jockey, 0,
+            "jockey 结算本应结构性不可达（见注释）；变为可达说明 carrier 逼抢阈值或防守距离带已改，             请复核 D5 口径并有意更新本断言"
         );
         // 5. 执行绑定：计数 > 0（换回旧路径 → 归零 → 红）
         assert!(agg.exec_shoot > 0, "射门执行绑定从未生效（模块可能被绕过）");
@@ -8542,4 +8550,5 @@ mod tests {
 
 
 }
+
 
