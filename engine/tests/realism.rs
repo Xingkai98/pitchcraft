@@ -1014,10 +1014,10 @@ fn l2_cross_event_invariants() {
 ///
 /// P31 再更新：删槽位 + 涌现频率（出界走 pass_risk 调制通道 + liveness 四处接入）再次改写
 /// RNG 消费序列，原钉死 seed 又失效。按当前引擎重新扫描（1..=3000）取「红牌 + 进球」的
-/// seed：23 / 44 / 52 / 61。
+/// seed：23 / 48 / 52 / 120。（审阅修复接入点③时序 bug 后又改一次流，重扫。）
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [23u64, 44, 52, 61] {
+    for seed in [23u64, 48, 52, 120] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1273,4 +1273,92 @@ fn gm_legacy_baselines_preserved_and_differs() {
         }
     }
     assert!(seeds_with_out > 0, "10 个 canary seed 里应有 seed 产出出界 pass（否则假设不成立）");
+}
+
+
+// ==== P31 D4：5 分钟统计方向性护栏 ====
+
+/// P31 D4：**5 分钟统计方向性护栏**（取代原「5min ≥ 90min 的 53%」槽位式断言）。
+///
+/// **必须放在 realism target**：verify.sh 第 5 步是 `cargo test --test realism --release --
+/// --ignored`——只跑 realism 集成 target。放在 lib 里（即使带 `#[ignore]`）在 CI 里**永不执行**
+/// （审阅指出：D4 把一条常跑的守卫换成了永不跑的）。
+///
+/// 原断言的前提是「槽位机制让 5min 与 90min 产出同数量级核心事件」——删槽位后事件频率由
+/// 真实物理时间上的状态涌现决定，5min 与 90min 的**数量比例**不再有任何机制保证（这正是
+/// `HIGHLIGHTS_PER_MATCH` 那一层的语义，已删）。故改为**方向性 + 体量下界**：
+/// 5 分钟（300s）比赛在 1000 场聚合下必须**有内容**（累计射门 > 0、重开 > 0、进球 ≥ 0、
+/// 犯规在宽带内），但**不断言**与 90min 的固定比例。
+#[test]
+#[ignore] // 1000 场 × 300s：与 L1 同级的统计门，`--release -- --ignored` 显式跑
+fn p31_frequency_5min_directional() {
+    /// 5 分钟 cohort 的 seed 数（D4：≥1000 场聚合，低均值计数才有统计意义）。
+    const L1_5MIN_SEEDS: u64 = 1000;
+    let count = |seed: u64| -> [u64; 5] {
+        let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION };
+        let s = simulate(seed, cfg);
+        let mut shot = 0;
+        let mut restart = 0; // 角球 + 界外球 + 门球（重开的三种来源）
+        let mut foul = 0;
+        let mut goal = 0;
+        for e in split_events(&s) {
+            match event_type(&e).as_str() {
+                "shot" => {
+                    shot += 1;
+                    if field_str(&e, "result").as_deref() == Some("goal") { goal += 1; }
+                }
+                "foul" => foul += 1,
+                "pass" => match field_str(&e, "detail").as_deref() {
+                    Some("corner") | Some("throw_in") | Some("free_kick") => restart += 1,
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+        [shot, restart, foul, goal, 0]
+    };
+    let mut agg = [0u64; 5];
+    for seed in 1..=L1_5MIN_SEEDS {
+        let c = count(seed);
+        for i in 0..5 { agg[i] += c[i]; }
+    }
+    let per = |i: usize| agg[i] as f64 / L1_5MIN_SEEDS as f64;
+    println!(
+        "[P31 5min cohort n={}] 射门/场={:.2} 重开/场={:.2} 犯规/场={:.2} 进球/场={:.2}",
+        L1_5MIN_SEEDS, per(0), per(1), per(2), per(3)
+    );
+    // 方向性护栏（全部为「机制在短比赛里没死」的下界，非频率目标）：
+    assert!(agg[0] > 0, "1000 场 5min 比赛累计零射门——射门机制在短比赛里死亡");
+    assert!(agg[1] > 0, "1000 场 5min 比赛累计零重开（角球+界外球+门球）——出界/重开机制死亡");
+    assert!(per(1) >= 0.5, "5min 重开/场 {:.2} < 0.5（出界涌现过弱）", per(1));
+    // 进球方向：5min 进球应是**可达但不保证**的低均值计数（真实 ~0.15/场量级）。
+    // 断言上界防「进球爆炸」；下界不断言（0 进球场次完全正常，spec 明确进球 ≥ 0）。
+    assert!(
+        per(3) <= 2.0,
+        "5min 进球/场 {:.2} > 2（进球爆炸——5min 不可能有这么多球）",
+        per(3)
+    );
+    // 犯规宽带：5min 犯规应是 90min（~23/场）的 1/18 量级——给宽带上界防「哨声爆炸」，
+    // 下界只要求机制存活（>0）。真实 5min 约 1-3 次犯规。
+    assert!(agg[2] > 0, "1000 场 5min 比赛累计零犯规——犯规机制在短比赛里死亡");
+    assert!(per(2) <= 8.0, "5min 犯规/场 {:.2} > 8（哨声爆炸）", per(2));
+    // **真实方向性**（不是「上界够宽就恒真」）：5min 射门率必须**显著低于** 90min 射门率。
+    // 用同引擎的 90min 实测率（同 seed 窗口，20 场已稳）做对照——比硬编码上界强：
+    // 硬编码 `per(0) < 8.0` 对 90min 实测 7.85 也成立，等于什么都没断言（审阅指出的假绿）。
+    let n90 = 20u64;
+    let mut shots_90 = 0u64;
+    for seed in 1..=n90 {
+        let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION });
+        for e in split_events(&s) {
+            if event_type(&e) == "shot" {
+                shots_90 += 1;
+            }
+        }
+    }
+    let per90 = shots_90 as f64 / n90 as f64;
+    assert!(
+        per(0) < per90 * 0.5,
+        "5min 射门/场 {:.2} 应显著低于 90min 的 {:.2}（真实物理时间语义：短比赛内容更少）",
+        per(0), per90
+    );
 }

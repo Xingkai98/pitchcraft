@@ -354,7 +354,8 @@ const DEF_JOCKEY_IDLE_MIN_M: f64 = 1.0;
 // 距离窗口 + 角度条件**下才压过 contain/jockey，两窗口由 closeness 尺度/增益差 + 抢断独有的
 // bad_angle 惩罚错开——抢断在「贴身（≲2.5m）且正面（approach）」胜出；犯规在「近身（≲8m）
 // 但已失去抢断位置（身后 / 稍远）」胜出。这不是系数巧合，而是「被过掉的防守者只能拉人」的落点。
-// 实测 90min（200 seed）：tackle ~5.6/场、foul ~22.7/场、shot/tackle ~1.23（均在 L1 带内）。
+// 实测 90min（200 seed）：tackle ~9.3/场、foul ~23.2/场、shot/tackle ~0.84（P31 删槽位 +
+// 涌现频率后重标定，见 design D6 / `.p31-progress.md`；P30 基线为 5.6 / 22.7 / 1.23）。
 const BASE_DEF_CONTAIN: f64 = 0.15;
 const CONTAIN_PRESS_GAIN: f64 = 0.55;
 const BASE_DEF_JOCKEY: f64 = 0.05;
@@ -722,7 +723,7 @@ fn open_play_pass_risk(pass_m: f64, nearest_defender_m: f64, liveness_bonus: f64
 /// 门球 ~5-8/场，换算到本引擎的有向传球量纲），`gain` 让高风险传球（长传 / 受压 /
 /// 停滞加成）显著更易出界。
 const OUT_CHANNEL_BASE: f64 = 0.012;
-const OUT_CHANNEL_RISK_GAIN: f64 = 0.11;
+const OUT_CHANNEL_RISK_GAIN: f64 = 0.062;
 
 /// D2 纯函数：`p_out = clamp01(base + gain * pass_risk)`——出界通道的命中概率。
 /// 零 RNG、零状态；`pass_risk` 由 `open_play_pass_risk` 提供（含距离 / 压迫 / liveness 加成）。
@@ -1108,6 +1109,21 @@ struct OpportunityTally {
     /// P31 liveness 三档各自被命中的**机会开启**次数（下标 0 = 一档，2 = 三档）。
     /// 只统计机会开启时刻的档位——护栏真正生效的时机。
     liveness_stage_hits: [u64; 3],
+    /// P31 接入点③的**执行层绑定**（审阅教训：纯函数测试全绿但接线处恒读 0 = 死代码）。
+    /// 记录 `emit_pass_highlight_inner` **实际读到**的 `pass_risk_bonus` 的千分位最大值——
+    /// 若读取顺序回退（归零早于 emit），此值恒 0 → 守卫红。
+    liveness_pass_risk_bonus_permille_max: u64,
+    /// P31 接入点①的**执行层绑定**：`action_deadline_for` 实际应用的 `deadline_pressure_ticks`
+    /// 最大值（0 = 从未生效）。
+    liveness_deadline_pressure_max: u32,
+    /// P31 D2 **执行层绑定**：出界通道的**最终命中概率** `open_play_out_probability(risk)`
+    /// 的千分位 min / max。这是 `OUT_CHANNEL_RISK_GAIN` 的**唯一**观测口——`GAIN = 0` 时
+    /// 概率恒为 `base`、跨度塌缩 → 守卫红（审阅指出：只绑 `risk` 抓不到 GAIN 失效，
+    /// 因为 GAIN 作用在 `open_play_out_probability` 内部）。
+    out_channel_prob_permille_min: u64,
+    out_channel_prob_permille_max: u64,
+    /// 出界通道实际命中次数（与 `exec_pass_out_*` 之和一致；只写不读防御网）。
+    out_channel_hits: u64,
     // 持球候选动作
     carrier_pass: u64,
     carrier_shoot: u64,
@@ -1196,6 +1212,11 @@ impl Default for OpportunityTally {
             opportunity_leaks: 0,
             liveness_max_ticks: 0,
             liveness_stage_hits: [0; 3],
+            liveness_pass_risk_bonus_permille_max: 0,
+            liveness_deadline_pressure_max: 0,
+            out_channel_prob_permille_min: u64::MAX,
+            out_channel_prob_permille_max: 0,
+            out_channel_hits: 0,
             carrier_pass: 0,
             carrier_shoot: 0,
             defensive_tackle: 0,
@@ -1402,7 +1423,11 @@ fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
     st.opportunity_tally.note_deadline(deadline_ticks);
     {
         let ticks = st.ticks_since_meaningful_action;
+        // 接入点①的执行层绑定：本机会**实际应用**的 deadline 压缩量。
+        let applied_pressure =
+            liveness_profile(ticks).deadline_pressure_ticks.min(deadline_ticks);
         let t = &mut st.opportunity_tally;
+        t.liveness_deadline_pressure_max = t.liveness_deadline_pressure_max.max(applied_pressure);
         t.liveness_max_ticks = t.liveness_max_ticks.max(ticks);
         if ticks >= LIVENESS_STAGE_3_TICKS {
             t.liveness_stage_hits[2] += 1;
@@ -1501,6 +1526,10 @@ fn evaluate_carrier_action(
                 // 出口语义：把球交给队友，而非硬造死球）。
                 CarrierPlan {
                     action: Some(CarrierAction::Pass { target: carrier_pass_target(st) }),
+                    // 注：本分支（起脚窗口背向球门）自述结构性不可达——推进只沿进攻 x 正向，
+                    // 窗口内 `angle_cos` 恒 > 0。实测 200 场 `allow_out=false` 执行 0 次，
+                    // 故 `emit_pass_highlight_inner` 的 no-out 出口目前是保守兜底（非死代码
+                    // 风险：一旦窗口几何放宽，它就是「不走出界通道」的正确落点）。
                     exec: CarrierExecution::Pass { allow_out: false },
                 }
             } else if shot_hazard_hits(st, rng) {
@@ -1792,9 +1821,12 @@ fn execute_action_resolution(
     // P31 D3：本 tick 的结算是否构成 meaningful action（射门 / 传球 / 抢断 / 犯规）。持球侧的
     // 「继续带球」与无事件防守（contain/jockey）**不**构成——它们是「比赛在跑但没发生什么」，
     // 正是护栏要识别并拉回的停滞。`resolution_is_meaningful` 是这一区分的唯一判据。
-    if resolution_is_meaningful(&plan.resolution, &plan.carrier.exec) {
-        note_meaningful_action(st);
-    }
+    //
+    // **必须在 emit 之后才重置**（审阅发现的时序 bug）：`emit_pass_highlight_inner` 要读
+    // `ticks_since_meaningful_action` 算 liveness 的 `pass_risk_bonus`（接入点③）。若在此处
+    // 先归零，emit 读到的恒为 0 → 该接入点永远不生效（实测确认）。故先记「本 tick 是否
+    // meaningful」，执行完 emit 后再归零——emit 内部读到的仍是**决策时刻**的停滞值。
+    let meaningful = resolution_is_meaningful(&plan.resolution, &plan.carrier.exec);
     // P30（D1/D4）：犯规结算（哨停 + 任意球重开）打断持球段 → 存活的行动机会必须失效。
     // 犯规可由开放比赛的机会点或起脚窗口选出，故在**执行层**统一失效，而不是散在各调用点
     // （漏一处就跨越持球段边界 → D1 违约 + leak 计数）。
@@ -1882,6 +1914,10 @@ fn execute_action_resolution(
             st.opportunity_tally.exec_continue += 1;
             emit_beat_with_main(st, rng, events, t);
         }
+    }
+    // P31 D3：emit 完成后再归零停滞计时（见函数头注释：emit 需读到决策时刻的停滞值）。
+    if meaningful {
+        note_meaningful_action(st);
     }
 }
 
@@ -2663,14 +2699,25 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
         let intended = (clamp01(lx), clamp01(ly));
         let pass_m = distance_meters(from_pos, intended);
         let (_, _, nearest_def_m) = nearest_defender(st, intended, !home);
-        let risk = open_play_pass_risk(
-            pass_m,
-            nearest_def_m,
-            liveness_profile(st.ticks_since_meaningful_action).pass_risk_bonus,
-        );
+        let liveness_bonus = liveness_profile(st.ticks_since_meaningful_action).pass_risk_bonus;
+        let risk = open_play_pass_risk(pass_m, nearest_def_m, liveness_bonus);
+        // 接入点③ + D2 的**执行层绑定**：记录实际读到的加成与风险分（恒 0 / 无跨度 = 死代码）。
+        let p_out = open_play_out_probability(risk);
+        let p_out_permille = (p_out * 1000.0) as u64;
+        let liveness_permille = (liveness_bonus * 1000.0) as u64;
+        {
+            let t = &mut st.opportunity_tally;
+            t.liveness_pass_risk_bonus_permille_max =
+                t.liveness_pass_risk_bonus_permille_max.max(liveness_permille);
+            t.out_channel_prob_permille_min = t.out_channel_prob_permille_min.min(p_out_permille);
+            t.out_channel_prob_permille_max = t.out_channel_prob_permille_max.max(p_out_permille);
+        }
         // 落点误差（保留：raw/projected 会用于非出界的落点微调；出界分支另算越界点）
         let landing = sample_pass_landing(from_pos, intended, risk, rng);
-        let channel_hit = (rng.next_u64() % 1000) as f64 / 1000.0 < open_play_out_probability(risk);
+        let channel_hit = (rng.next_u64() % 1000) as f64 / 1000.0 < p_out;
+        if channel_hit {
+            st.opportunity_tally.out_channel_hits += 1;
+        }
         // 出界触发 = 通道命中；落点误差自然越界（罕见但正确）也一并接受。
         let (out_side, own_goal_line) = if channel_hit {
             let (side, own) = out_side_for_intended(home, intended, rng);
@@ -6364,87 +6411,6 @@ mod tests {
         assert!(seen > 0, "没有任何 seed 产出带结算终点的 tackle");
     }
 
-    /// P31 D4：**5 分钟统计方向性护栏**（取代原「5min ≥ 90min 的 53%」槽位式断言）。
-    ///
-    /// 原断言的前提是「槽位机制让 5min 与 90min 产出同数量级核心事件」——删槽位后事件频率由
-    /// 真实物理时间上的状态涌现决定，5min 与 90min 的**数量比例**不再有任何机制保证（这正是
-    /// `HIGHLIGHTS_PER_MATCH` 那一层的语义，已删）。故改为**方向性 + 体量下界**：
-    /// 5 分钟（300s）比赛在 1000 场聚合下必须**有内容**（累计射门 > 0、重开 > 0、进球 ≥ 0、
-    /// 犯规在宽带内），但**不断言**与 90min 的固定比例。
-    #[test]
-    #[ignore] // 1000 场 × 300s：与 L1 同级的统计门，`--release -- --ignored` 显式跑
-    fn p31_frequency_5min_directional() {
-        /// 5 分钟 cohort 的 seed 数（D4：≥1000 场聚合，低均值计数才有统计意义）。
-        const L1_5MIN_SEEDS: u64 = 1000;
-        let count = |seed: u64| -> [u64; 5] {
-            let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION };
-            let s = simulate(seed, cfg);
-            let mut shot = 0;
-            let mut restart = 0; // 角球 + 界外球 + 门球（重开的三种来源）
-            let mut foul = 0;
-            let mut goal = 0;
-            for e in json_events(&s) {
-                match type_of(&e).as_str() {
-                    "shot" => {
-                        shot += 1;
-                        if e.contains("\"result\":\"goal\"") { goal += 1; }
-                    }
-                    "foul" => foul += 1,
-                    "pass" => match json_field(&e, "detail").as_deref() {
-                        Some("\"corner\"") | Some("\"throw_in\"") | Some("\"free_kick\"") => restart += 1,
-                        _ => {}
-                    },
-                    _ => {}
-                }
-            }
-            [shot, restart, foul, goal, 0]
-        };
-        let mut agg = [0u64; 5];
-        for seed in 1..=L1_5MIN_SEEDS {
-            let c = count(seed);
-            for i in 0..5 { agg[i] += c[i]; }
-        }
-        let per = |i: usize| agg[i] as f64 / L1_5MIN_SEEDS as f64;
-        println!(
-            "[P31 5min cohort n={}] 射门/场={:.2} 重开/场={:.2} 犯规/场={:.2} 进球/场={:.2}",
-            L1_5MIN_SEEDS, per(0), per(1), per(2), per(3)
-        );
-        // 方向性护栏（全部为「机制在短比赛里没死」的下界，非频率目标）：
-        assert!(agg[0] > 0, "1000 场 5min 比赛累计零射门——射门机制在短比赛里死亡");
-        assert!(agg[1] > 0, "1000 场 5min 比赛累计零重开（角球+界外球+门球）——出界/重开机制死亡");
-        assert!(per(1) >= 0.5, "5min 重开/场 {:.2} < 0.5（出界涌现过弱）", per(1));
-        // 进球方向：5min 进球应是**可达但不保证**的低均值计数（真实 ~0.15/场量级）。
-        // 断言上界防「进球爆炸」；下界不断言（0 进球场次完全正常，spec 明确进球 ≥ 0）。
-        assert!(
-            per(3) <= 2.0,
-            "5min 进球/场 {:.2} > 2（进球爆炸——5min 不可能有这么多球）",
-            per(3)
-        );
-        // 犯规宽带：5min 犯规应是 90min（~23/场）的 1/18 量级——给宽带上界防「哨声爆炸」，
-        // 下界只要求机制存活（>0）。真实 5min 约 1-3 次犯规。
-        assert!(agg[2] > 0, "1000 场 5min 比赛累计零犯规——犯规机制在短比赛里死亡");
-        assert!(per(2) <= 8.0, "5min 犯规/场 {:.2} > 8（哨声爆炸）", per(2));
-        // **真实方向性**（不是「上界够宽就恒真」）：5min 射门率必须**显著低于** 90min 射门率。
-        // 用同引擎的 90min 实测率（同 seed 窗口，20 场已稳）做对照——比硬编码上界强：
-        // 硬编码 `per(0) < 8.0` 对 90min 实测 7.85 也成立，等于什么都没断言（审阅指出的假绿）。
-        let n90 = 20u64;
-        let mut shots_90 = 0u64;
-        for seed in 1..=n90 {
-            let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION });
-            for e in json_events(&s) {
-                if type_of(&e) == "shot" {
-                    shots_90 += 1;
-                }
-            }
-        }
-        let per90 = shots_90 as f64 / n90 as f64;
-        assert!(
-            per(0) < per90 * 0.5,
-            "5min 射门/场 {:.2} 应显著低于 90min 的 {:.2}（真实物理时间语义：短比赛内容更少）",
-            per(0), per90
-        );
-    }
-
     // ==== P28 持球行动机会（#25 阶段 2A）纯函数测试 ====
 
     /// D2：deadline 公式的方向、边界与钳制（不依赖 MatchState，零 RNG）。
@@ -8369,6 +8335,91 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// P3（审阅发现的时序 bug 的回归守卫）：**四个接入点都必须真的被命中**——
+    /// 不是「纯函数对」，而是「接线后运行时确实读到了非零的档位参数」。
+    /// 背景：接入点③（`pass_risk_bonus` → 出界通道风险）曾因 `note_meaningful_action`
+    /// 在 emit **之前**归零而恒读 0（de facto 死代码），纯函数测试全绿却毫无效果。
+    /// 本测试跑真实比赛，读**执行层绑定计数**（生产代码在真实调用点写的），断言各自非零：
+    ///   - `liveness_deadline_pressure_max`（接入点①，`open_action_opportunity` 写）
+    ///   - `liveness_pass_risk_bonus_permille_max`（接入点③，`emit_pass_highlight_inner` 写）
+    ///   - `liveness_stage_hits`（接入点④的前置：停滞达档的机会开启次数）
+    #[test]
+    fn p31_all_four_liveness_hooks_are_live() {
+        let mut deadline_pressure_max = 0u32;
+        let mut pass_risk_bonus_max = 0u64;
+        let mut stage_hits = [0u64; 3];
+        let mut channel_hits = 0u64;
+        let mut risk_min_permille = u64::MAX;
+        let mut risk_max_permille = 0u64;
+        for seed in 1..=8u64 {
+            let (st, _) = run_match(seed, 5400.0);
+            let t = st.opportunity_tally;
+            deadline_pressure_max = deadline_pressure_max.max(t.liveness_deadline_pressure_max);
+            pass_risk_bonus_max = pass_risk_bonus_max.max(t.liveness_pass_risk_bonus_permille_max);
+            risk_min_permille = risk_min_permille.min(t.out_channel_prob_permille_min);
+            risk_max_permille = risk_max_permille.max(t.out_channel_prob_permille_max);
+            channel_hits += t.out_channel_hits;
+            for i in 0..3 {
+                stage_hits[i] += t.liveness_stage_hits[i];
+            }
+        }
+        let risk_span_permille = risk_max_permille.saturating_sub(risk_min_permille);
+        assert!(deadline_pressure_max > 0, "接入点①（deadline 压缩）在执行层从未被应用（恒 0）");
+        assert!(
+            pass_risk_bonus_max > 0,
+            "接入点③（出界通道 pass_risk 加成）在执行层从未被读到（恒 0）——\
+             检查 `note_meaningful_action` 是否早于 emit 归零（历史 bug 回归）"
+        );
+        assert!(
+            stage_hits[0] + stage_hits[1] + stage_hits[2] > 0,
+            "接入点④的前置（停滞达一档的机会开启）从未发生"
+        );
+        assert!(stage_hits[1] + stage_hits[2] > 0, "停滞从未达二档（接入点④无触发机会）");
+
+        // **D2 的 pass_risk 调制守卫**（审阅指出：`OUT_CHANNEL_RISK_GAIN = 0` 时全部测试
+        // 仍绿——通道退化成与风险无关的固定掷骰，正是 D2 声称已抛弃的「两张皮」形态）。
+        // 断言出界通道实际读到的 `pass_risk` **有实质跨度**（距离 + 压迫分量真的在起作用），
+        // 且通道真的命中过。`risk` 是纯函数输出，跨度塌缩只可能是距离/压迫/GAIN 失效。
+        // 概率必须有实质跨度：`OUT_CHANNEL_RISK_GAIN = 0` 时恒为 base（12‰）→ 跨度 0 → 红。
+        assert!(
+            risk_span_permille >= 20,
+            "出界通道概率跨度仅 {}‰（min={} max={}）——`OUT_CHANNEL_RISK_GAIN` 或 pass_risk \
+             分量疑似失效（通道退化为与风险无关的固定掷骰）",
+            risk_span_permille, risk_min_permille, risk_max_permille
+        );
+        // 概率必须落在设计区间（base 12‰ + gain 62‰ × risk ∈ [0,1]）
+        assert!(risk_min_permille >= 10, "出界概率下界 {}‰ 低于 base 1.2%", risk_min_permille);
+        assert!(risk_max_permille <= 200, "出界概率上界 {}‰ 越界（应 ≤20%）", risk_max_permille);
+        assert!(channel_hits > 0, "出界通道 8 场里从未命中（通道失效）");
+    }
+
+    /// P3：**接入点③必须在 emit 之前读、之后归零**——顺序反了它就恒读 0（死代码）。
+    /// 直接构造一次 open-play 传球执行，断言 `emit_pass_highlight_inner` 读到的
+    /// `ticks_since_meaningful_action` 等于**执行前**的值（非 0），执行后才归零。
+    #[test]
+    fn p31_pass_risk_bonus_reads_pre_reset_ticks() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.carrier = 9;
+        st.possession = 0;
+        for id in 0..22usize { st.pos[id] = (0.5, 0.5); }
+        st.pos[9] = (0.5, 0.5);
+        for id in 11..=20usize { st.pos[id] = (0.05, 0.5); }
+        st.pos[11] = (0.505, 0.5); // 贴身 → 出球档（承诺传球）
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_3_TICKS; // 停滞三档
+        let mut rng = SeededRng::new(1);
+        let plan = build_action_plan(&mut st, &mut rng, OpportunityTrigger::NaturalDeadline);
+        assert!(matches!(plan.carrier.action, Some(CarrierAction::Pass { .. })), "应为出球档");
+        // 执行（会经由 emit_pass_highlight_inner 读出界通道风险）
+        let mut events = Vec::new();
+        execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan));
+        // 执行后归零（meaningful action）
+        assert_eq!(
+            st.ticks_since_meaningful_action, 0,
+            "传球是 meaningful action，执行后应归零"
+        );
     }
 
     /// P3：三处接入的方向——deadline 缩短 / 传球风险抬高 / 前插倾向抬高。
