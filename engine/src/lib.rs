@@ -8103,17 +8103,19 @@ mod tests {
         assert!(s3 > g3, "贴边线应多数出边线（得 goal={} sideline={}）", g3, s3);
     }
 
-    /// P2：出界由**落点误差**涌现，而非独立 out_roll——跑真实比赛断言：
+    /// P2：出界由 **`pass_risk` 调制通道**涌现——跑真实比赛断言：
     /// 1. 每条 `result="out"` 的开放比赛传球都带 `lead`（唯一生产者 = `emit_pass_highlight_inner`
-    ///    的落点误差分支）且 `out_pos` 与 raw 越界一致；
+    ///    的出界通道分支）且 `out_pos` 为真实越界值、`x2/y2` 为场内投影；
     /// 2. 出界确实发生（可达）；
-    /// 3. 发球重开（角球/界外球/任意球/门球）**从不**出界（它们的落点不经过误差采样）。
+    /// 3. 发球重开（角球/界外球/任意球/门球）**从不**出界（它们的落点不经过出界通道）。
     #[test]
     fn p31_out_of_play_emerges_from_landing_error() {
         let mut out_goal_line = 0;
         let mut out_sideline = 0;
         let mut restart_out = 0;
-        let mut header_out = 0;
+        // 头球解围出界（`PassOutSource::Clearance`，lead=None）：另一条合法出界路径，
+        // 不是开放比赛传球的出界通道产物——单独计数以便下面断言两者都**不**被误算。
+        let mut clearance_out = 0;
         for seed in 1..=20u64 {
             let (_, events) = run_match(seed, 5400.0);
             for e in &events {
@@ -8129,8 +8131,9 @@ mod tests {
                     if is_restart || is_goal_kick {
                         restart_out += 1;
                     } else if e.lead.is_none() {
-                        // Clearance 出界是 battle 派生（防方头球解围出底线 → 角球），不是发球重开
-                        header_out += 1;
+                        // Clearance 出界是 battle 派生（防方头球解围出底线 → 角球），
+                        // 不走出界通道（唯一调用点守卫已钉死 `sample_pass_landing`）。
+                        clearance_out += 1;
                     } else {
                         match detail {
                             Some("out_goal_line") => out_goal_line += 1,
@@ -8161,9 +8164,10 @@ mod tests {
         );
         assert_eq!(
             restart_out, 0,
-            "发球重开（角球/界外球/任意球/门球）走出了界——D2 要求重开不走出界误差"
+            "发球重开（角球/界外球/任意球/门球）走出了界——D2 要求重开不走出界通道"
         );
-        let _ = header_out;
+        // Clearance 出界（头球解围）是独立合法路径，不与通道产物混淆：两者计数互斥。
+        let _ = clearance_out;
     }
 
     /// P2：普通传球的落点误差**按概率**出界，不是「必出界」——出界率必须落在合理量级
