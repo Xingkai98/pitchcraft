@@ -2036,8 +2036,33 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     // 终场前若高亮未 finalize（射门/传球飞行跨过 dur）：在 dur 时刻强制交接，比分按结局确认。
     // 循环到无悬空高亮：P9 forward-pass → 射门 的链式高亮（PassCaught 接 shot）可能续产新高亮，
     // 若不继续 finalize 会吞比分（shot result=goal 未计入 whistle）。
+    //
+    // **P30 修复（既有 bug，非 2C 引入）**：本循环可能**链式** finalize（如射门 off_target →
+    // 门球 → 门球高亮的松散球），每次 finalize 都在同一 `t = dur` 产一拍 beat → 相邻 beat 同
+    // 时间戳（dt=0），违反 L2「相邻 beat 间隙 ∈ {1,2}s」不变量。该缺陷在 P29 引擎同样存在
+    // （实测 seed 544 于 t=5400 触发），只是各版本的 RNG 流把触发 seed 落在不同位置；2C 的 RNG
+    // 重排把触发 seed 移进了 L2 窗口（1..=300）才暴露。比赛已结束（紧接 whistle），排空期的
+    // **重复时间戳** beat 不表达任何进程 → 每个时间戳只保留第一拍。
+    let drain_start = events.len();
     while st.highlight.is_some() {
         finalize_highlight(&mut st, &mut rng, &mut events, dur);
+    }
+    {
+        let mut seen_t: Vec<f64> = Vec::new();
+        let tail: Vec<Event> = events
+            .drain(drain_start..)
+            .filter(|e| {
+                if e.type_ != EventType::Beat {
+                    return true;
+                }
+                if seen_t.iter().any(|x| (x - e.t).abs() < 1e-9) {
+                    return false;
+                }
+                seen_t.push(e.t);
+                true
+            })
+            .collect();
+        events.extend(tail);
     }
 
     events.push(whistle_event(dur, st.home_score, st.away_score, "half_time"));
