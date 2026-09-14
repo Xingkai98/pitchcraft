@@ -2,8 +2,9 @@
 //!
 //! 分层验证中"真实性"层的自动化守护（研究报告 research/2026-08-23-match-realism-testability）：
 //! - L1 规格一致性：引擎硬编码概率多 seed 聚合按带断言
-//!   （普通射门 15/35/50、头球 chi-square、tackle 稀释模型、槽位相对 mix、角球派生带、
-//!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）
+//!   （普通射门分桶 15/35/50、头球 chi-square、抢断成功率、射门/抢断体量带、角球派生带、
+//!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）。
+//!   **P31（D6）**：删槽位后角球与 shot/tackle 比按涌现实测重标定（原值含槽位配额虚高）。
 //!   ——`#[ignore]`，verify.sh 第 5 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
 //! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、
 //!   速度上界、门将贴门线、事件 t 范围、罚下球员零参与）——默认 `cargo test` 就跑
@@ -749,12 +750,15 @@ fn l1_tackle_dilution_and_slot_mix() {
     let shots_regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
     assert!(shots_regular >= 800, "普通射门总数不足：{}", shots_regular);
     let ratio = shots_regular as f64 / tackles as f64;
-    // spec「射门槽频率」带 [1.0,1.8] 保留（P30 实测 1.12）。**语义已变**：不再是槽位配额比
-    // （35%/22%≈1.59），而是「两类涌现事件量级相当」的经验体量带——射门由 hazard 涌现（2B）、
-    // 抢断由防守接触竞争涌现（2C），比值与槽位脱钩。
+    // **P31 D6 重标定**：带从 [1.0,1.8] 改为 [0.5,1.5]。
+    // 依据：删槽位后抢断由 5.6/场 变为 9.4/场（原 5.6 含槽位 `FallbackSituation::Tackle` 的
+    // 22% 强制评估腿；改由自然机会点的防守接触竞争涌现后，贴身接触更密集），射门 7.85/场
+    // → 200 场实测 ratio = 0.835（旧引擎 1.12）。**方向是对的**：真实比赛射门 ~13/场、
+    // 抢断 ~25/场 → ratio ~0.52；旧 [1.0,1.8] 是槽位配额（35%/22%≈1.59）的产物，偏虚高。
+    // 本带只守「某一类塌缩/爆炸」的数量级，不是配额断言（D6：不给防守竞争补强制来源）。
     assert!(
-        (1.0..=1.8).contains(&ratio),
-        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]",
+        (0.5..=1.5).contains(&ratio),
+        "shot/tackle 比值 {:.3} ∉ [0.5,1.5]（P31 D6 重标定：实测 0.835，真实比赛 ~0.52）",
         ratio
     );
 
@@ -762,12 +766,14 @@ fn l1_tackle_dilution_and_slot_mix() {
     // 断言场均（spec：场均 ∈ [2,9]）；单场硬上界兜数量级漂移（0 角球场次正常，spec 不逐场断言）。
     let corners: usize = stats.iter().map(|s| s.n_corner_kick).sum();
     let per_match = corners as f64 / SEEDS_L1 as f64;
-    assert!((2.0..=9.0).contains(&per_match), "场均角球 {:.2} ∉ [2,9]", per_match);
+    // **P31 D6 重标定**：带从 [2,9] 改为 [1.0,7.0]。依据：原 12% 角球槽来源已删（槽位硬造），
+    // 角球改由「`pass_risk` 调制出界通道」涌现（己方底线出界 → 角球 + 解围出底线 + 射门扑出越线）。
+    // 200 场实测 2.00/场（旧引擎 3.71——槽位虚高）。带仍守「角球塌缩到 0 / 爆炸」，非配额断言。
+    assert!((1.0..=7.0).contains(&per_match), "场均角球 {:.2} ∉ [1.0,7.0]（P31 D6 重标定）", per_match);
     let max_single = stats.iter().map(|s| s.n_corner_kick).max().unwrap_or(0);
-    // 单场硬上界兜数量级漂移（非 spec 逐场断言）。P30 重标定：该窗（seed 401..600）实测
-    // 最大值 14（P29 引擎同窗 10、2000 seed 窗 13）——均值不变（3.72→3.77），只是 RNG 流重排
-    // 后本窗的尾部样本换了位置，故上界放宽到 18（仍守住「不爆炸」的数量级）。
-    assert!(max_single <= 18, "单场角球 {} 超硬上界 18（数量级漂移）", max_single);
+    // 单场硬上界兜数量级漂移（非 spec 逐场断言）。P31 重标定：实测均值降至 2.00，
+    // 单场上界同步收紧到 8（旧 18 是槽位时代 3.71 均值下的界）。
+    assert!(max_single <= 8, "单场角球 {} 超硬上界 8（数量级漂移）", max_single);
 }
 
 /// L1：传球成功率（P13 fix，失败传球机制）。口径 = 现有统计口径（成功传球 / 全部 pass 事件，
@@ -888,6 +894,9 @@ fn l3_shot_ratios() {
     let saved: usize = stats.iter().map(|s| s.n_shot_saved + s.n_header_saved).sum();
     let box_goals: usize = stats.iter().map(|s| s.n_box_goal + s.n_header_goal).sum();
     assert!(shots >= 1000, "射门样本不足：{}", shots);
+    println!("[L3] shots={} regular={} header={} goals={} saved={} box_goals={} 禁区占比={:.3} sot={:.3} conv={:.3}",
+        shots, regular, header, goals, saved, box_goals, box_goals as f64 / goals.max(1) as f64,
+        (goals + saved) as f64 / shots as f64, goals as f64 / shots as f64);
     let sot_r = (goals + saved) as f64 / shots as f64;
     let conv_r = goals as f64 / shots as f64;
     let inside_r = box_goals as f64 / goals as f64;
@@ -987,12 +996,15 @@ fn l2_cross_event_invariants() {
 /// 「红牌 + 进球」的 seed 钉死。引擎确定性 → 永不 flaky；先断言确有红牌，防止将来引擎改动
 /// 让这些 seed 再次变成空跑。
 ///
-/// P30 再更新：2C 改变 RNG 消费序列（犯规并入竞争 + 打分零 RNG 替代积极性掷骰），原钉死
-/// seed（2/5/18/52）再次失效。按当前引擎重新扫描（1..=2000）取「红牌 + 进球」的
-/// seed：26 / 41 / 57 / 59。（审阅后修 pair/foul 冷却 + 终场排空去重又改一次流，重扫。）
+/// P30 更新：2C 改变 RNG 消费序列（犯规并入竞争 + 打分零 RNG 替代积极性掷骰），原钉死
+/// seed 失效 → 重扫取 26 / 41 / 57 / 59。
+///
+/// P31 再更新：删槽位 + 涌现频率（出界走 pass_risk 调制通道 + liveness 四处接入）再次改写
+/// RNG 消费序列，原钉死 seed 又失效。按当前引擎重新扫描（1..=3000）取「红牌 + 进球」的
+/// seed：23 / 44 / 52 / 61。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [26u64, 41, 57, 59] {
+    for seed in [23u64, 44, 52, 61] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1018,7 +1030,11 @@ fn l2_sent_off_kickoff_seeds() {
 // cooldown，删 `same_pair`/`far` → 事件流再变，v4 与 v1/v2/v3 逐 seed 都不同。v1/v2/v3
 // 保留不覆盖，作历史对照。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 4）落 v4；需要对比旧版本时读旧目录。
+// P31 D5：v5 = 删槽位 + 涌现频率起（`tests/golden-v5/`）。槽位层删除 + 出界改走 pass_risk
+// 调制通道 + liveness guard 四处接入 → 事件流再变，v5 与 v1/v2/v3/v4 逐 seed 都不同。
+// v1/v2/v3/v4 保留不覆盖，作历史对照。
+//
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 5）落 v5；需要对比旧版本时读旧目录。
 
 /// 模型版本 → golden 基线目录名。
 fn golden_dir(model_version: u32) -> &'static str {
@@ -1027,6 +1043,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         2 => "tests/golden-v2",
         3 => "tests/golden-v3",
         4 => "tests/golden-v4",
+        5 => "tests/golden-v5",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1188,7 +1205,7 @@ fn gm_canary_seeds() {
     }
 }
 
-/// P29 D4 硬验收：旧 golden 基线（v1 / v2）**保留不覆盖**，且当前引擎与它们**确实不同**。
+/// P29 D4 / P31 D5 硬验收：旧 golden 基线（v1..v4）**保留不覆盖**，且当前引擎与它们**确实不同**。
 ///
 /// 2B 改变可观测行为（射门由 hazard 涌现 + 起脚窗口可被抢断），因此：
 /// - v1/v2 目录必须仍然存在且自洽（可读、字段非负）——不得被重基线覆盖（D4「v1/v2 保留」）；
@@ -1203,10 +1220,11 @@ fn gm_legacy_baselines_preserved_and_differs() {
         let gold_v1 = read_golden(1, seed);
         let gold_v2 = read_golden(2, seed);
         let gold_v3 = read_golden(3, seed);
-        // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）——P30 D6「v1/v2/v3 保留不覆盖」。
+        let gold_v4 = read_golden(4, seed);
+        // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）——P31 D5「v1..v4 保留不覆盖」。
         assert!(
-            gold_v1.n_events > 0 && gold_v2.n_events > 0 && gold_v3.n_events > 0,
-            "seed {} 旧基线读取异常（v1/v2/v3 应都存在且非空）",
+            gold_v1.n_events > 0 && gold_v2.n_events > 0 && gold_v3.n_events > 0 && gold_v4.n_events > 0,
+            "seed {} 旧基线读取异常（v1..v4 应都存在且非空）",
             seed
         );
         // 2. P27 历史对：v1 与 v2 计数一致、只有出界字段值不同（旧对自洽，非本 change 引入）
@@ -1218,19 +1236,23 @@ fn gm_legacy_baselines_preserved_and_differs() {
         );
         assert_eq!(gold_v1.n_out_goal_line, gold_v2.n_out_goal_line, "seed {} v1/v2 出底线计数", seed);
         assert_eq!(gold_v1.n_out_sideline, gold_v2.n_out_sideline, "seed {} v1/v2 出边线计数", seed);
-        // 3. 当前（v4）必须与三个旧基线都不同——P30 真的改了行为（否则本 change 名不副实）。
-        //    2B（v3）与 P27（v1/v2）之间也**必然不同**（v3 是第一个改变可观测行为的版本）。
-        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3)] {
+        // 3. 当前（v5）必须与四个旧基线都不同——P31 真的改了行为（否则本 change 名不副实）。
+        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3), ("v4", &gold_v4)] {
             assert!(
                 g.stream_hash != st.stream_hash,
-                "seed {}：当前流哈希与 {} 相同——P30 应改变可观测行为（防守接触竞争未生效？）",
+                "seed {}：当前流哈希与 {} 相同——P31 应改变可观测行为（删槽位/涌现频率未生效？）",
                 seed, lv
             );
         }
-        // 4. v2 与 v3 也应不同（v3 是首个行为改变版本）——两历史基线各自自洽
+        // 4. 相邻历史基线也应两两不同（v3 是首个行为改变版本；v4 是防守接触竞争）
         assert!(
             gold_v2.stream_hash != gold_v3.stream_hash,
             "seed {}：v3 与 v2 流哈希相同——P29 行为改变未落到基线",
+            seed
+        );
+        assert!(
+            gold_v3.stream_hash != gold_v4.stream_hash,
+            "seed {}：v4 与 v3 流哈希相同——P30 行为改变未落到基线",
             seed
         );
         if gold_v1.n_out_goal_line + gold_v1.n_out_sideline > 0 {

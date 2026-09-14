@@ -4,12 +4,17 @@
 
 #25 收官。4 决策已 grill 定稿（全选 codex 推荐 A）。删槽位后，频率完全由状态涌现 + 非事件型 liveness guard 防塌缩。
 
+**D2/D3 于实施期修订（2026-09-14，用户二次拍板）**：原 D2（纯落点误差产出界）与原 D3（三层护栏只调参）
+在真实引擎上实测**结构上不成立**（证据见 `.p31-progress.md`「待用户拍板」节）：
+意图落点从不进入距边界 5m 内（n=44635 实测 p05 已是 14.7m/20.3m），纯误差够不着边界；
+三层护栏只让 carrier 更快地重复「继续带球」，停滞上限实测 3600s。两处均按用户拍板改路（见下）。
+
 ## Goals / Non-Goals
 
 **Goals:**
 - 删槽位层，比赛完全由自然 deadline 驱动。
-- 出界由传球落点误差涌现（角球/界外球/门球有自然来源）。
-- liveness guard 三层递进，只改行为状态不直接造事件。
+- 出界有自然来源（角球/界外球/门球），且来源由 `pass_risk` 调制（非槽位硬造）。
+- liveness guard 三层递进，只改行为状态（含 carrier 决策），不直接造事件。
 - 5 分钟统计方向性护栏 + 90 分钟带重新校准。
 
 **Non-Goals:**
@@ -20,22 +25,44 @@
 
 ### D1: 删槽位层（用户拍板）
 
-删 `HIGHLIGHTS_PER_MATCH` / `SLOT_HOLD_MIN_TICKS` / `SLOT_AVG_EVENT_TICKS` / `slot_hold_max` / `slot_clock` / `slot_interval` / `roll_fallback_situation` / `FallbackSituation` / `OpportunityTrigger::FallbackDeadline` / `OpportunityReason::SlotFallback` / `emit_pass_out_play_slot`。tick 开放比赛分支改为：自然 deadline 到期 → 评估持球/防守 → 结算；否则产 beat。
+删 `HIGHLIGHTS_PER_MATCH` / `SLOT_HOLD_MIN_TICKS` / `SLOT_AVG_EVENT_TICKS` / `slot_hold_max` / `slot_clock` / `slot_interval` / `roll_fallback_situation` / `FallbackSituation` / `OpportunityTrigger::FallbackDeadline` / `OpportunityReason::SlotFallback` / `emit_pass_out_play_slot` / `PASS_BREAK_TICKS`。tick 开放比赛分支改为：自然 deadline 到期 → 评估持球/防守 → 结算；否则产 beat。
 
-### D2: 出界涌现 = 落点误差（用户拍板，阶段 3 必要闭环）
+### D2: 出界 = `pass_risk` 调制出界通道（用户二次拍板，采纳 grill Q2 选项 B）
 
-- 新增纯函数 `sample_pass_landing(from, intended, pass_risk, rng) -> PassLanding`：`raw = intended + deterministic_seeded_error`（`error_sigma = base_error + risk_gain * pass_risk`），`projected = clamp01(raw)`。
-- `raw` 越 x 边界 → goal_line；越 y 边界 → sideline；场内 → 普通传球。
-- 重开映射（按最后触球方）：`NormalPass + goal_line → GoalKick`、`NormalPass + sideline → ThrowIn`、`Clearance + goal_line → Corner`、`Clearance + sideline → ThrowIn`。
+**修订理由（实测）**：纯落点误差产不出出界——`lead_point` 在最远 0.9 处插值于传球者与
+**最近队友**之间，而队友按 `formation_target` 站位，意图落点被结构性地锁在场中央：
+200 场 44635 条有向传球实测距底线 p05=14.7m / 距边线 p05=20.3m，**无一落在 5m 内**。
+把 σ 放大到够得着边界会让每次传球都出界（比赛退化为「传球即出界」）。故出界的**触发**
+改由 `pass_risk` 调制的通道承担（grill Q2 当时被 codex 以「两张皮」否决，实测证明它是正确解）。
+
+- 纯函数 `sample_pass_landing(from, intended, pass_risk, rng) -> PassLanding` **保留**（`raw` 带确定性
+  误差、`projected = clamp01(raw)`、误差越界即 `out_side`）——它仍负责**落点位置**，并在误差足够大时
+  自然越界（该分支保留为正确但罕见）。
+- 新增纯函数 `open_play_out_probability(pass_risk) -> f64`（`base + gain * pass_risk`，钳到 [0,1]）
+  与 `out_side_for_intended(home, intended, rng) -> OutSide`：**出界触发** = 该通道命中。
+- 出界落点 = 意图落点沿该轴推过边界（overshoot 由 RNG 给定），`out_pos` 记真实越界值、
+  `x2/y2` 记场内投影（viewer 渲染用）。
+- 重开映射（按 `out_side` + 最后触球方，纯函数 `out_restart_for`）：`NormalPass + goal_line → GoalKick`、
+  `NormalPass + sideline → ThrowIn`、`Clearance + goal_line → Corner`、`Clearance + sideline → ThrowIn`。
 - 删 `PassOutSource::CornerDirect`（角球不再由槽位制造）。
-- 只允许开放比赛普通传球走出界误差（发球重开/角球/界外球/任意球/门球/头球 battle 不走出界）。
+- 只允许开放比赛普通传球走出界通道（发球重开/角球/界外球/任意球/门球/头球 battle **不**走）。
 
-### D3: liveness guard 三层递进（用户拍板）
+### D3: liveness guard 三层递进（用户二次拍板：补「无压久持 → 出球」决策档）
+
+**修订理由（实测）**：原设计的三处接入（deadline 缩短 / 前插倾向 / 传球风险）都只让 carrier
+**更快地重复同一个「继续带球」决定**，在「无人逼抢 + 射门推进 hazard 未命中」这一态下没有任何
+一条能产出事件——实测 `ticks_since_meaningful_action` 全场上限达 **3600s**。故补一档**决策**：
 
 - `MatchState` 增 `ticks_since_meaningful_action: u32`。
 - 三档常量：`LIVENESS_STAGE_1_TICKS=8` / `STAGE_2=12` / `STAGE_3=16`。
 - `liveness_profile(ticks) -> LivenessProfile { forward_intent_bonus, pass_risk_bonus, deadline_pressure_ticks }`。
-- 接入三处：`action_deadline_for`（`deadline = base - deadline_pressure_ticks`）、carrier 前插倾向、`emit_pass_highlight_inner`（`pass_risk` 并含 `pass_risk_bonus`）。
+- **接入四处**（前三处调参、第四处改决策）：
+  1. `action_deadline_for`（`deadline = base - deadline_pressure_ticks`）；
+  2. `carrier_move` 前插倾向；
+  3. `open_play_pass_risk`（含 `pass_risk_bonus`，并驱动 D2 的出界通道）；
+  4. **`evaluate_open_play_carrier_action`：停滞达 `LIVENESS_STAGE_2_TICKS` 且无压 → 强制选择
+     「出球」候选（普通传球）**。guard 本身仍**不 emit 任何事件**；它只改 `ticks_since_meaningful_action`
+     这一状态，carrier 决策**因该状态变化而选择出球**——事件仍由既有 `emit_pass_highlight_inner` 产。
 - meaningful action = 射门/成功传球/拦截/抢断/犯规/球权变化/出界重开/松散球拾取；普通 beat、contain/jockey、单纯跑位**不重置**。
 
 ### D4: 5 分钟统计方向性（用户拍板）
@@ -49,11 +76,19 @@
 - 新目录 `golden-v5`，v1/v2/v3/v4 保留。
 - 频率断言全改方向性。
 
+### D6: 抢断频率接受涌现新值 + 带重标定（用户二次拍板）
+
+删槽位后抢断由 5.6/场降至 ~2.6/场——原槽位 `FallbackSituation::Tackle`（22%×24 ≈ 5.3/场）是
+**虚高的强制评估腿**；贴身接触在自然机会点上稀疏是涌现的真实结果。**不给防守竞争补新的强制来源**，
+而是接受新频率并重标定 `shot/tackle` 带（记录实测依据）。同一原则适用于删源后其余频带
+（如角球——原 12% 槽位来源被删，重标定并记录依据）。
+
 ## 验收
 
 - 删槽位后，`roll_fallback_situation`/`FallbackSituation`/`slot_clock`/`slot_interval` 全不存在。
-- 出界由落点误差涌现（角球来自 Clearance+goal_line，门球来自 NormalPass+goal_line，界外球来自 sideline）。
-- liveness guard 三层递进：停滞 8/12/16s 逐档加强，不直接造事件。
+- 出界由 `pass_risk` 调制通道涌现（角球来自 Clearance+goal_line，门球来自 NormalPass+goal_line，
+  界外球来自 sideline），`out_pos` 为真实越界值、`x2/y2` 为场内投影。
+- liveness guard 三档递进 + 第四处接入（无压久持 → 出球）：停滞有界、不直接造事件。
 - 5 分钟 cohort 方向性护栏通过；90 分钟带重新校准。
 - golden v5 重基线，v1-v4 保留且回归绿。
 - `./verify.sh` 全绿 + `openspec validate` 通过。
