@@ -951,9 +951,13 @@ fn l2_cross_event_invariants() {
 /// 这些 seed 不再含红牌（守卫会空跑），故按当前引擎重新扫描（1..=2000，523 张红牌）取
 /// 「红牌 + 进球」的 seed 钉死。引擎确定性 → 永不 flaky；先断言确有红牌，防止将来引擎改动
 /// 让这些 seed 再次变成空跑。
+///
+/// P30 再更新：2C 改变 RNG 消费序列（犯规并入竞争 + 打分零 RNG 替代积极性掷骰），原钉死
+/// seed（2/5/18/52）再次失效。按当前引擎重新扫描（1..=2000，318 个红牌 seed）取
+/// 「红牌 + 进球」的 seed：5 / 27 / 48 / 54。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [2u64, 5, 18, 52] {
+    for seed in [5u64, 27, 48, 54] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
