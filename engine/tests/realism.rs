@@ -2,8 +2,9 @@
 //!
 //! 分层验证中"真实性"层的自动化守护（研究报告 research/2026-08-23-match-realism-testability）：
 //! - L1 规格一致性：引擎硬编码概率多 seed 聚合按带断言
-//!   （普通射门 15/35/50、头球 chi-square、tackle 稀释模型、槽位相对 mix、角球派生带、
-//!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）
+//!   （普通射门分桶 15/35/50、头球 chi-square、抢断成功率、射门/抢断体量带、角球派生带、
+//!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）。
+//!   **P31（D6）**：删槽位后角球与 shot/tackle 比按涌现实测重标定（原值含槽位配额虚高）。
 //!   ——`#[ignore]`，verify.sh 第 5 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
 //! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、
 //!   速度上界、门将贴门线、事件 t 范围、罚下球员零参与）——默认 `cargo test` 就跑
@@ -749,12 +750,15 @@ fn l1_tackle_dilution_and_slot_mix() {
     let shots_regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
     assert!(shots_regular >= 800, "普通射门总数不足：{}", shots_regular);
     let ratio = shots_regular as f64 / tackles as f64;
-    // spec「射门槽频率」带 [1.0,1.8] 保留（P30 实测 1.12）。**语义已变**：不再是槽位配额比
-    // （35%/22%≈1.59），而是「两类涌现事件量级相当」的经验体量带——射门由 hazard 涌现（2B）、
-    // 抢断由防守接触竞争涌现（2C），比值与槽位脱钩。
+    // **P31 D6 重标定**：带从 [1.0,1.8] 改为 [0.5,1.5]。
+    // 依据：删槽位后抢断由 5.6/场 变为 9.3/场（原 5.6 含槽位 `FallbackSituation::Tackle` 的
+    // 22% 强制评估腿；改由自然机会点的防守接触竞争涌现后，贴身接触更密集），射门 7.95/场
+    // → 200 场实测 ratio = 0.855（旧引擎 1.12）。**方向是对的**：真实比赛射门 ~13/场、
+    // 抢断 ~25/场 → ratio ~0.52；旧 [1.0,1.8] 是槽位配额（35%/22%≈1.59）的产物，偏虚高。
+    // 本带只守「某一类塌缩/爆炸」的数量级，不是配额断言（D6：不给防守竞争补强制来源）。
     assert!(
-        (1.0..=1.8).contains(&ratio),
-        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]",
+        (0.5..=1.5).contains(&ratio),
+        "shot/tackle 比值 {:.3} ∉ [0.5,1.5]（P31 D6 重标定：实测 0.855，真实比赛 ~0.52）",
         ratio
     );
 
@@ -762,12 +766,27 @@ fn l1_tackle_dilution_and_slot_mix() {
     // 断言场均（spec：场均 ∈ [2,9]）；单场硬上界兜数量级漂移（0 角球场次正常，spec 不逐场断言）。
     let corners: usize = stats.iter().map(|s| s.n_corner_kick).sum();
     let per_match = corners as f64 / SEEDS_L1 as f64;
-    assert!((2.0..=9.0).contains(&per_match), "场均角球 {:.2} ∉ [2,9]", per_match);
+    // **P31 D6 重标定**：带从 [2,9] 改为 [1.0,7.0]。依据：原 12% 角球槽来源已删（槽位硬造），
+    // 角球改由「`pass_risk` 调制出界通道」涌现（己方底线出界 → 角球 + 解围出底线 + 射门扑出越线）。
+    // 200 场实测 2.00/场（旧引擎 3.71——槽位虚高）。带仍守「角球塌缩到 0 / 爆炸」，非配额断言。
+    assert!((1.0..=7.0).contains(&per_match), "场均角球 {:.2} ∉ [1.0,7.0]（P31 D6 重标定）", per_match);
     let max_single = stats.iter().map(|s| s.n_corner_kick).max().unwrap_or(0);
-    // 单场硬上界兜数量级漂移（非 spec 逐场断言）。P30 重标定：该窗（seed 401..600）实测
-    // 最大值 14（P29 引擎同窗 10、2000 seed 窗 13）——均值不变（3.72→3.77），只是 RNG 流重排
-    // 后本窗的尾部样本换了位置，故上界放宽到 18（仍守住「不爆炸」的数量级）。
-    assert!(max_single <= 18, "单场角球 {} 超硬上界 18（数量级漂移）", max_single);
+    // 单场硬上界兜数量级漂移（非 spec 逐场断言）。P31 重标定：实测均值降至 2.00，
+    // 单场上界同步收紧到 8（旧 18 是槽位时代 3.71 均值下的界）。
+    assert!(max_single <= 8, "单场角球 {} 超硬上界 8（数量级漂移）", max_single);
+
+    // **P31 D2 承重守卫**：界外球是「pass_risk 调制出界通道」的**直接产物**（边线侧出界
+    // → 界外球），删槽位后其唯一来源。实测 200 场 9.54/场；把 `open_play_out_probability`
+    // 置 0（通道失效）→ 0.06/场（仅剩解围出边线，两个数量级落差）——本带是该机制的机器守卫。
+    // 角球带（上面）不足以守住通道：角球另有「解围出底线 / 射门扑出越线」两条来源，
+    // 通道失效时仍余 1.33/场，落在 [1.0,7.0] 内（故角球带只守「不塌缩到 0」的粗粒度护栏）。
+    let throw_ins: usize = stats.iter().map(|s| s.n_out_sideline).sum();
+    let ti_per = throw_ins as f64 / SEEDS_L1 as f64;
+    assert!(
+        (3.0..=20.0).contains(&ti_per),
+        "场均界外球 {:.2} ∉ [3,20]（P31 实测 8.74）——pass_risk 出界通道疑似失效",
+        ti_per
+    );
 }
 
 /// L1：传球成功率（P13 fix，失败传球机制）。口径 = 现有统计口径（成功传球 / 全部 pass 事件，
@@ -888,6 +907,9 @@ fn l3_shot_ratios() {
     let saved: usize = stats.iter().map(|s| s.n_shot_saved + s.n_header_saved).sum();
     let box_goals: usize = stats.iter().map(|s| s.n_box_goal + s.n_header_goal).sum();
     assert!(shots >= 1000, "射门样本不足：{}", shots);
+    println!("[L3] shots={} regular={} header={} goals={} saved={} box_goals={} 禁区占比={:.3} sot={:.3} conv={:.3}",
+        shots, regular, header, goals, saved, box_goals, box_goals as f64 / goals.max(1) as f64,
+        (goals + saved) as f64 / shots as f64, goals as f64 / shots as f64);
     let sot_r = (goals + saved) as f64 / shots as f64;
     let conv_r = goals as f64 / shots as f64;
     let inside_r = box_goals as f64 / goals as f64;
@@ -987,12 +1009,15 @@ fn l2_cross_event_invariants() {
 /// 「红牌 + 进球」的 seed 钉死。引擎确定性 → 永不 flaky；先断言确有红牌，防止将来引擎改动
 /// 让这些 seed 再次变成空跑。
 ///
-/// P30 再更新：2C 改变 RNG 消费序列（犯规并入竞争 + 打分零 RNG 替代积极性掷骰），原钉死
-/// seed（2/5/18/52）再次失效。按当前引擎重新扫描（1..=2000）取「红牌 + 进球」的
-/// seed：26 / 41 / 57 / 59。（审阅后修 pair/foul 冷却 + 终场排空去重又改一次流，重扫。）
+/// P30 更新：2C 改变 RNG 消费序列（犯规并入竞争 + 打分零 RNG 替代积极性掷骰），原钉死
+/// seed 失效 → 重扫取 26 / 41 / 57 / 59。
+///
+/// P31 再更新：删槽位 + 涌现频率（出界走 pass_risk 调制通道 + liveness 四处接入）再次改写
+/// RNG 消费序列，原钉死 seed 又失效。按当前引擎重新扫描（1..=3000）取「红牌 + 进球」的
+/// seed：23 / 48 / 52 / 120。（审阅修复接入点③时序 bug 后又改一次流，重扫。）
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [26u64, 41, 57, 59] {
+    for seed in [23u64, 48, 52, 120] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1018,7 +1043,11 @@ fn l2_sent_off_kickoff_seeds() {
 // cooldown，删 `same_pair`/`far` → 事件流再变，v4 与 v1/v2/v3 逐 seed 都不同。v1/v2/v3
 // 保留不覆盖，作历史对照。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 4）落 v4；需要对比旧版本时读旧目录。
+// P31 D5：v5 = 删槽位 + 涌现频率起（`tests/golden-v5/`）。槽位层删除 + 出界改走 pass_risk
+// 调制通道 + liveness guard 四处接入 → 事件流再变，v5 与 v1/v2/v3/v4 逐 seed 都不同。
+// v1/v2/v3/v4 保留不覆盖，作历史对照。
+//
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 5）落 v5；需要对比旧版本时读旧目录。
 
 /// 模型版本 → golden 基线目录名。
 fn golden_dir(model_version: u32) -> &'static str {
@@ -1027,6 +1056,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         2 => "tests/golden-v2",
         3 => "tests/golden-v3",
         4 => "tests/golden-v4",
+        5 => "tests/golden-v5",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1188,7 +1218,7 @@ fn gm_canary_seeds() {
     }
 }
 
-/// P29 D4 硬验收：旧 golden 基线（v1 / v2）**保留不覆盖**，且当前引擎与它们**确实不同**。
+/// P29 D4 / P31 D5 硬验收：旧 golden 基线（v1..v4）**保留不覆盖**，且当前引擎与它们**确实不同**。
 ///
 /// 2B 改变可观测行为（射门由 hazard 涌现 + 起脚窗口可被抢断），因此：
 /// - v1/v2 目录必须仍然存在且自洽（可读、字段非负）——不得被重基线覆盖（D4「v1/v2 保留」）；
@@ -1203,10 +1233,11 @@ fn gm_legacy_baselines_preserved_and_differs() {
         let gold_v1 = read_golden(1, seed);
         let gold_v2 = read_golden(2, seed);
         let gold_v3 = read_golden(3, seed);
-        // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）——P30 D6「v1/v2/v3 保留不覆盖」。
+        let gold_v4 = read_golden(4, seed);
+        // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）——P31 D5「v1..v4 保留不覆盖」。
         assert!(
-            gold_v1.n_events > 0 && gold_v2.n_events > 0 && gold_v3.n_events > 0,
-            "seed {} 旧基线读取异常（v1/v2/v3 应都存在且非空）",
+            gold_v1.n_events > 0 && gold_v2.n_events > 0 && gold_v3.n_events > 0 && gold_v4.n_events > 0,
+            "seed {} 旧基线读取异常（v1..v4 应都存在且非空）",
             seed
         );
         // 2. P27 历史对：v1 与 v2 计数一致、只有出界字段值不同（旧对自洽，非本 change 引入）
@@ -1218,19 +1249,23 @@ fn gm_legacy_baselines_preserved_and_differs() {
         );
         assert_eq!(gold_v1.n_out_goal_line, gold_v2.n_out_goal_line, "seed {} v1/v2 出底线计数", seed);
         assert_eq!(gold_v1.n_out_sideline, gold_v2.n_out_sideline, "seed {} v1/v2 出边线计数", seed);
-        // 3. 当前（v4）必须与三个旧基线都不同——P30 真的改了行为（否则本 change 名不副实）。
-        //    2B（v3）与 P27（v1/v2）之间也**必然不同**（v3 是第一个改变可观测行为的版本）。
-        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3)] {
+        // 3. 当前（v5）必须与四个旧基线都不同——P31 真的改了行为（否则本 change 名不副实）。
+        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3), ("v4", &gold_v4)] {
             assert!(
                 g.stream_hash != st.stream_hash,
-                "seed {}：当前流哈希与 {} 相同——P30 应改变可观测行为（防守接触竞争未生效？）",
+                "seed {}：当前流哈希与 {} 相同——P31 应改变可观测行为（删槽位/涌现频率未生效？）",
                 seed, lv
             );
         }
-        // 4. v2 与 v3 也应不同（v3 是首个行为改变版本）——两历史基线各自自洽
+        // 4. 相邻历史基线也应两两不同（v3 是首个行为改变版本；v4 是防守接触竞争）
         assert!(
             gold_v2.stream_hash != gold_v3.stream_hash,
             "seed {}：v3 与 v2 流哈希相同——P29 行为改变未落到基线",
+            seed
+        );
+        assert!(
+            gold_v3.stream_hash != gold_v4.stream_hash,
+            "seed {}：v4 与 v3 流哈希相同——P30 行为改变未落到基线",
             seed
         );
         if gold_v1.n_out_goal_line + gold_v1.n_out_sideline > 0 {
@@ -1238,4 +1273,113 @@ fn gm_legacy_baselines_preserved_and_differs() {
         }
     }
     assert!(seeds_with_out > 0, "10 个 canary seed 里应有 seed 产出出界 pass（否则假设不成立）");
+}
+
+
+// ==== P31 D4：5 分钟统计方向性护栏 ====
+
+/// P31 D4：**5 分钟统计方向性护栏**（取代原「5min ≥ 90min 的 53%」槽位式断言）。
+///
+/// **必须放在 realism target**：verify.sh 第 5 步是 `cargo test --test realism --release --
+/// --ignored`——只跑 realism 集成 target。放在 lib 里（即使带 `#[ignore]`）在 CI 里**永不执行**
+/// （审阅指出：D4 把一条常跑的守卫换成了永不跑的）。
+///
+/// 原断言的前提是「槽位机制让 5min 与 90min 产出同数量级核心事件」——删槽位后事件频率由
+/// 真实物理时间上的状态涌现决定，5min 与 90min 的**数量比例**不再有任何机制保证（这正是
+/// `HIGHLIGHTS_PER_MATCH` 那一层的语义，已删）。故改为**方向性 + 体量下界**：
+/// 5 分钟（300s）比赛在 1000 场聚合下必须**有内容**（累计射门 > 0、重开 > 0、进球 ≥ 0、
+/// 犯规在宽带内），但**不断言**与 90min 的固定比例。
+#[test]
+#[ignore] // 1000 场 × 300s：与 L1 同级的统计门，`--release -- --ignored` 显式跑
+fn p31_frequency_5min_directional() {
+    /// 5 分钟 cohort 的 seed 数（D4：≥1000 场聚合，低均值计数才有统计意义）。
+    const L1_5MIN_SEEDS: u64 = 1000;
+    let count = |seed: u64| -> [u64; 5] {
+        let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION };
+        let s = simulate(seed, cfg);
+        let mut shot = 0;
+        let mut restart = 0; // **出界重开**：角球 + 界外球 + 门球（spec scenario 口径）
+        let mut out_of_play = 0; // 出界通道的直接产物：角球 + 界外球（门球另有 off_target 来源）
+        let mut foul = 0;
+        let mut goal = 0;
+        for e in split_events(&s) {
+            match event_type(&e).as_str() {
+                "shot" => {
+                    shot += 1;
+                    if field_str(&e, "result").as_deref() == Some("goal") { goal += 1; }
+                }
+                "foul" => foul += 1,
+                "pass" => match field_str(&e, "detail").as_deref() {
+                    // 角球 / 界外球：出界通道的直接产物
+                    Some("corner") | Some("throw_in") => {
+                        restart += 1;
+                        out_of_play += 1;
+                    }
+                    // 门球：无 to + 门将 subject + 无 lead（`start_goal_kick` 的唯一形态）
+                    _ => {
+                        if field_str(&e, "to").is_none()
+                            && field_str(&e, "lead").is_none()
+                            && matches!(field_str(&e, "subject").as_deref(), Some("0") | Some("21"))
+                        {
+                            restart += 1;
+                        }
+                    }
+                },
+                _ => {}
+            }
+        }
+        [shot, restart, foul, goal, out_of_play]
+    };
+    let mut agg = [0u64; 5]; // 0 shot 1 restart 2 foul 3 goal 4 out_of_play(角球+界外球)
+    for seed in 1..=L1_5MIN_SEEDS {
+        let c = count(seed);
+        for i in 0..5 { agg[i] += c[i]; }
+    }
+    let per = |i: usize| agg[i] as f64 / L1_5MIN_SEEDS as f64;
+    println!(
+        "[P31 5min cohort n={}] 射门/场={:.2} 出界重开/场={:.2}（其中角球+界外球 {:.2}）犯规/场={:.2} 进球/场={:.2}",
+        L1_5MIN_SEEDS, per(0), per(1), per(4), per(2), per(3)
+    );
+    // 方向性护栏（全部为「机制在短比赛里没死」的下界，非频率目标）：
+    assert!(agg[0] > 0, "1000 场 5min 比赛累计零射门——射门机制在短比赛里死亡");
+    assert!(agg[1] > 0, "1000 场 5min 比赛累计零出界重开（角球+界外球+门球）——出界/重开机制死亡");
+    assert!(per(1) >= 0.5, "5min 出界重开/场 {:.2} < 0.5（出界涌现过弱）", per(1));
+    // **出界通道专项守卫**（审阅指出：上面的 restart 口径含门球，而门球另有 `off_target`
+    // 来源——通道全死时门球仍在，restart 断言照过）。这里只数**通道的直接产物**
+    // （角球 + 界外球），通道死掉时它塌到 ~0.14/场 → 红。
+    assert!(
+        per(4) >= 0.15,
+        "5min 角球+界外球/场 {:.3} < 0.15——出界通道在短比赛里过弱或死亡（门球掩盖不住）",
+        per(4)
+    );
+    // 进球方向：5min 进球应是**可达但不保证**的低均值计数（真实 ~0.15/场量级）。
+    // 断言上界防「进球爆炸」；下界不断言（0 进球场次完全正常，spec 明确进球 ≥ 0）。
+    assert!(
+        per(3) <= 2.0,
+        "5min 进球/场 {:.2} > 2（进球爆炸——5min 不可能有这么多球）",
+        per(3)
+    );
+    // 犯规宽带：5min 犯规应是 90min（~23/场）的 1/18 量级——给宽带上界防「哨声爆炸」，
+    // 下界只要求机制存活（>0）。真实 5min 约 1-3 次犯规。
+    assert!(agg[2] > 0, "1000 场 5min 比赛累计零犯规——犯规机制在短比赛里死亡");
+    assert!(per(2) <= 8.0, "5min 犯规/场 {:.2} > 8（哨声爆炸）", per(2));
+    // **真实方向性**（不是「上界够宽就恒真」）：5min 射门率必须**显著低于** 90min 射门率。
+    // 用同引擎的 90min 实测率（同 seed 窗口，20 场已稳）做对照——比硬编码上界强：
+    // 硬编码 `per(0) < 8.0` 对 90min 实测 7.85 也成立，等于什么都没断言（审阅指出的假绿）。
+    let n90 = 20u64;
+    let mut shots_90 = 0u64;
+    for seed in 1..=n90 {
+        let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION });
+        for e in split_events(&s) {
+            if event_type(&e) == "shot" {
+                shots_90 += 1;
+            }
+        }
+    }
+    let per90 = shots_90 as f64 / n90 as f64;
+    assert!(
+        per(0) < per90 * 0.5,
+        "5min 射门/场 {:.2} 应显著低于 90min 的 {:.2}（真实物理时间语义：短比赛内容更少）",
+        per(0), per90
+    );
 }

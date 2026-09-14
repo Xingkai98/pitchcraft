@@ -225,16 +225,15 @@ impl Event {
 /// v4：P30 防守接触竞争迁移（抢断/犯规统一打分选一 + 三层 cooldown，删 `same_pair`/`far`）——
 ///     防守侧与射门侧对称涌现，事件流再次改变（golden 重基线）。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 4;
+pub const MODEL_VERSION: u32 = 5;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
 /// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起，
-/// v3 = P29 射门机会迁移起）。
+/// v3 = P29 射门机会迁移起，v4 = P30 防守接触竞争起，v5 = P31 删槽位 + 涌现频率起）。
 /// **当前只用于 golden 目录选择**（v1 `tests/golden/`、v2 `tests/golden-v2/`、
-/// v3 `tests/golden-v3/`，旧基线保留不覆盖），**不切换引擎行为**——同一代码对所有版本都产出
-/// 相同事件流，旧基线是相应时点引擎的冻结产物。将来若需按版本分支行为（阶段 3），在此字段上
-/// 实现。
+/// v3 `tests/golden-v3/`、v4 `tests/golden-v4/`、v5 `tests/golden-v5/`，旧基线保留不覆盖），
+/// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
     pub match_duration_seconds: f64,
@@ -355,7 +354,8 @@ const DEF_JOCKEY_IDLE_MIN_M: f64 = 1.0;
 // 距离窗口 + 角度条件**下才压过 contain/jockey，两窗口由 closeness 尺度/增益差 + 抢断独有的
 // bad_angle 惩罚错开——抢断在「贴身（≲2.5m）且正面（approach）」胜出；犯规在「近身（≲8m）
 // 但已失去抢断位置（身后 / 稍远）」胜出。这不是系数巧合，而是「被过掉的防守者只能拉人」的落点。
-// 实测 90min（200 seed）：tackle ~5.6/场、foul ~22.7/场、shot/tackle ~1.23（均在 L1 带内）。
+// 实测 90min（200 seed）：tackle ~9.3/场、foul ~23.2/场、shot/tackle ~0.84（P31 删槽位 +
+// 涌现频率后重标定，见 design D6 / `.p31-progress.md`；P30 基线为 5.6 / 22.7 / 1.23）。
 const BASE_DEF_CONTAIN: f64 = 0.15;
 const CONTAIN_PRESS_GAIN: f64 = 0.55;
 const BASE_DEF_JOCKEY: f64 = 0.05;
@@ -375,7 +375,7 @@ const TACKLE_CD_PENALTY: f64 = 0.60;
 /// pair 级冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]）。
 const TACKLE_PAIR_CD_PENALTY: f64 = 0.60;
 /// 犯规打分基线（log 尺度）：犯规是「危险的防守选择」——基线高于抢断，唯有近身缠斗时才胜出。
-const BASE_DEF_FOUL: f64 = 0.05;
+const BASE_DEF_FOUL: f64 = -0.10;
 const FOUL_DANGER_GAIN: f64 = 0.40;
 /// 犯规的 closeness 增益：**小于** `TACKLE_CLOSENESS_GAIN`（见上）。
 const FOUL_CLOSENESS_GAIN: f64 = 0.55;
@@ -495,14 +495,6 @@ pub const GK_SPEED_MS: f64 = 3.0;
 /// 持球 hold 门控下限/上限（tick）
 pub const HOLD_MIN_TICKS: u32 = 8;
 pub const HOLD_MAX_TICKS: u32 = 15;
-/// P7：每场核心精彩事件数（槽位机制）——不随时长漂移，5 分钟与 90 分钟比赛产出相同数量级。
-/// 24 = 5 分钟（300s）能容纳的槽位（每槽 hold 8 + 事件+级联 ~5s ≈ 13s × 24 ≈ 300s）——
-/// 实测 5min ~20 槽、90min ~24 槽（ratio ~1.2，同一数量级）。
-pub const HIGHLIGHTS_PER_MATCH: u32 = 24;
-/// P7：槽位 hold 下限（tick）——即使比赛很短，两高亮间至少留这么多 tick 过渡
-pub const SLOT_HOLD_MIN_TICKS: u32 = 3;
-/// P7：高亮事件平均时长（tick，含 corner 准备期/发球/battle 等）——hold 间距减去它，保证 5 分钟能塞下全部槽
-pub const SLOT_AVG_EVENT_TICKS: f64 = 4.0;
 
 // ---- P9 射门质量（按起脚位置分桶 + 推进后射门）----
 /// 带球推进上限（tick）：carrier 向球门推进的步数上限（5 tick × 5m = 25m 覆盖，保证能推进到禁区）
@@ -546,6 +538,14 @@ const SHOT_ROLL_SCALE: f64 = 1000.0;
 const SHOT_WINDOW_TIGHT_M: f64 = 4.0;
 /// 起脚窗口压迫分桶：最近防守者 ≥ 此值 → 「无压」桶
 const SHOT_WINDOW_FREE_M: f64 = 8.0;
+
+// ---- P31 开放比赛持球决策（#25 阶段 3，D1）----
+/// 出球档阈值（米）：最近防守者 ≤ 此距离即视为「被贴身逼抢」→ 出球（球权流动由状态涌现，
+/// 不由时钟配额）。取 `FOUL_PRESS_DIST_M`(8m) 同尺度——与防守侧「贴身缠斗」同口径。
+const OPEN_PLAY_PASS_PRESSURE_M: f64 = 8.0;
+/// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
+/// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
+const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.3;
 
 /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
 fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
@@ -615,44 +615,236 @@ fn move_toward(from: (f64, f64), to: (f64, f64), step: f64) -> (f64, f64) {
     (from.0 + dx / len * step, from.1 + dy / len * step)
 }
 
-/// P7：槽位 hold 上限（tick）= 槽位间距（比赛时长 / 高亮总数）减事件平均时长，下限 3 tick。
-/// 槽位驱动：每个高亮后 hold 到槽位间距再产下一个高亮，保证精彩事件固定产出（不随时长漂移）。
-fn slot_hold_max(match_duration: f64) -> u32 {
-    let slot = (match_duration / HIGHLIGHTS_PER_MATCH as f64 - SLOT_AVG_EVENT_TICKS).floor() as u32;
-    slot.max(SLOT_HOLD_MIN_TICKS)
+// ==== P31 liveness guard（#25 阶段 3，D3）====
+//
+// 删槽位后比赛完全由自然 deadline 驱动，需要一条**非事件型**护栏防止「持球段长期无
+// meaningful action」的停滞（例：carrier 原地反复小幅带球）。护栏读 `MatchState` 的
+// `ticks_since_meaningful_action`，产出**三档递进**的行为参数；**只改行为状态、不直接造事件**
+// ——三个落点全部经既有决策路径生效：
+//   ① `deadline_pressure_ticks` → `action_deadline_for` 缩短 deadline（更快再评估）；
+//   ② `forward_intent_bonus`    → `carrier_move` 提高前插（向球门推进）概率；
+//   ③ `pass_risk_bonus`         → `open_play_pass_risk` 提高传球落点风险（长传/受压时更易失准）。
+//
+// 「meaningful action」= 射门 / 传球（含发球重开） / 拦截 / 抢断 / 犯规 / 球权变化 /
+// 出界重开 / 松散球拾取。普通带球 beat、contain/jockey、单纯跑位**不重置**（见
+// `note_meaningful_action` 的调用点清单）。
+//
+// 停滞到三档时 carrier 仍不产事件（如门将持球、后场被围）由决策层处理（门将恒出球 +
+// 三档下前插概率已压到「几乎必推进」），不在此处造事件。
+
+/// 停滞档位阈值（tick = 秒）：一档开始介入 / 二档 / 三档。
+pub const LIVENESS_STAGE_1_TICKS: u32 = 8;
+pub const LIVENESS_STAGE_2_TICKS: u32 = 12;
+pub const LIVENESS_STAGE_3_TICKS: u32 = 16;
+/// 各档的前插倾向加成（`carrier_move` 的前插掷定阈值，百分点；基线「原地控球」70 减去它）。
+const LIVENESS_STAGE_FORWARD_PP: [f64; 3] = [12.0, 28.0, 55.0];
+/// 各档的传球风险加成（并入 `open_play_pass_risk`，无量纲）
+const LIVENESS_STAGE_PASS_RISK: [f64; 3] = [0.10, 0.25, 0.45];
+/// 各档的 deadline 压缩（tick）
+const LIVENESS_STAGE_DEADLINE: [u32; 3] = [1, 2, 3];
+
+/// liveness guard 的三档递进行为参数（纯数据；零 RNG、零状态）。
+#[derive(Clone, Copy, PartialEq, Debug, Default)]
+struct LivenessProfile {
+    /// 前插倾向加成（百分点）
+    forward_intent_bonus: f64,
+    /// 传球风险加成（并入 `open_play_pass_risk`）
+    pass_risk_bonus: f64,
+    /// deadline 压缩（tick）
+    deadline_pressure_ticks: u32,
 }
 
-/// P7 观感：普通传球过渡间隔（tick）——carrier 持球超过此值产一次普通传球（球权流动），
-/// 避免 90 分钟比赛 carrier 在球门旁停 200+ tick（观感：前锋来回小幅运动很久）。
-pub const PASS_BREAK_TICKS: u32 = 12;
-
-/// P28：fallback 触发时抽到的**情境**（旧 `HighlightSlot` 槽位类型的降级形态）。
-///
-/// 语义变了，抽签值没变：旧槽位抽到的是「本槽必产哪个事件」，新模型抽到的是「持球者面对哪种
-/// 局面」——由 `evaluate_carrier_action` / `evaluate_defensive_action` 依情境产候选行动再结算。
-/// 2A 内抽签比例仍是旧配额（D5 行为等价要求逐字节一致）；2B/2C 起由真实 hazard / 接触竞争取代。
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum FallbackSituation {
-    Shot,    // 射门局面
-    Corner,  // 死球 → 角球重开
-    ThrowIn, // 死球 → 界外球重开
-    Tackle,  // 被贴身逼抢局面
-    Pass,    // 普通出球局面（可能出界派生额外界外球/门球）
-}
-
-/// fallback 情境分配（P9）：Shot 35% / Corner 12% / ThrowIn 18% / Tackle 22% / Pass 13%
-fn roll_fallback_situation(rng: &mut SeededRng) -> FallbackSituation {
-    let roll = rng.next_u64() % 100;
-    if roll < 35 {
-        FallbackSituation::Shot
-    } else if roll < 47 {
-        FallbackSituation::Corner
-    } else if roll < 65 {
-        FallbackSituation::ThrowIn
-    } else if roll < 87 {
-        FallbackSituation::Tackle
+/// 停滞 tick 数 → 三档递进的行为参数。纯函数、零 RNG、零状态、逐档阶跃、全域单调不减。
+fn liveness_profile(ticks: u32) -> LivenessProfile {
+    let stage = if ticks >= LIVENESS_STAGE_3_TICKS {
+        3
+    } else if ticks >= LIVENESS_STAGE_2_TICKS {
+        2
+    } else if ticks >= LIVENESS_STAGE_1_TICKS {
+        1
     } else {
-        FallbackSituation::Pass
+        0
+    };
+    if stage == 0 {
+        return LivenessProfile::default();
+    }
+    LivenessProfile {
+        forward_intent_bonus: LIVENESS_STAGE_FORWARD_PP[stage - 1],
+        pass_risk_bonus: LIVENESS_STAGE_PASS_RISK[stage - 1],
+        deadline_pressure_ticks: LIVENESS_STAGE_DEADLINE[stage - 1],
+    }
+}
+
+/// 前插倾向加成 → 百分点整数（`carrier_move` 的掷定口径，便于纯函数断言）。
+fn forward_intent_pp(profile: &LivenessProfile) -> u64 {
+    profile.forward_intent_bonus.round() as u64
+}
+
+// ==== P31 出界涌现 = 传球落点误差（#25 阶段 3，D2）====
+//
+// 槽位时代「出界」由独立的槽位出界函数硬造（角球槽 12% / 界外球槽 18%）。删槽位后
+// 出界必须由**落点误差**涌现：开放比赛普通传球的落点加确定性误差，raw 越界 → 按 `out_side`
+// + 最后触球方判重开（`out_restart_for`）。发球重开（角球 / 界外球 / 任意球 / 门球 / 头球
+// battle）**不经过**误差采样——它们的落点是固定的战术目标，不是失准的结果。
+
+/// 落点误差基线（米，按 30m 参考传球折算）
+const LANDING_ERROR_BASE_M: f64 = 1.5;
+/// 风险增益（米 / 单位 `pass_risk` ∈ [0,1]）
+const LANDING_ERROR_RISK_GAIN_M: f64 = 6.0;
+/// 误差长度缩放参考（米）：`error_sigma ∝ 传球距离 / 此值`
+const LANDING_ERROR_REF_LEN_M: f64 = 30.0;
+/// 误差掷定粒度（两轴各两次 roll）
+const LANDING_ERROR_SCALE: u64 = 10_000;
+
+/// 传球风险（落点误差的输入）：距离越远 / 受压越近 / 停滞越久（liveness）→ 越高。
+const PASS_RISK_BASE: f64 = 0.05;
+const PASS_RISK_LENGTH_GAIN: f64 = 0.45;
+const PASS_RISK_PRESSURE_GAIN: f64 = 0.35;
+/// 风险长度归一的短传 / 长传尺度（米）
+const PASS_RISK_SHORT_M: f64 = 10.0;
+const PASS_RISK_LONG_M: f64 = 45.0;
+/// 风险压迫归一尺度（米）：最近的防守者在此距离内开始显著抬高传球风险
+const PASS_RISK_PRESSURE_M: f64 = 12.0;
+
+/// 传球风险的纯函数（零 RNG、零状态）：`clamp01(base + 长度项 + 压迫项 + liveness 加成)`。
+fn open_play_pass_risk(pass_m: f64, nearest_defender_m: f64, liveness_bonus: f64) -> f64 {
+    let length_risk = clamp01((pass_m - PASS_RISK_SHORT_M) / (PASS_RISK_LONG_M - PASS_RISK_SHORT_M));
+    let pressure_risk = clamp01(1.0 - nearest_defender_m / PASS_RISK_PRESSURE_M);
+    clamp01(
+        PASS_RISK_BASE
+            + PASS_RISK_LENGTH_GAIN * length_risk
+            + PASS_RISK_PRESSURE_GAIN * pressure_risk
+            + liveness_bonus,
+    )
+}
+
+/// 出界触发概率（D2 修订：由 `pass_risk` 调制的**出界通道**，而非纯落点误差）。
+/// **离线校准参数**：`base` 对齐真实比赛的传球出界率（真实联赛界外球 ~20-25/场、
+/// 门球 ~5-8/场，换算到本引擎的有向传球量纲），`gain` 让高风险传球（长传 / 受压 /
+/// 停滞加成）显著更易出界。
+///
+/// `gain` 标定史（每次改动都记，防「悄悄调数」）：
+/// - `0.11`：首版（接入点③**未生效**时的标定——当时 `pass_risk` 的 liveness 分量恒 0）。
+/// - `0.062`（当前）：修复接入点③时序 bug 后，`pass_risk` 才真正带上 liveness 加成
+///   （阶段 3 高达 +0.45）→ 同一 `gain` 下出界偏多（界外球 9.5 → 13.6/场，超 [3,20] 上界余量）。
+///   下调 `gain` 使 200 场实测回到带内（界外球 8.74/场、角球 1.98/场、门球 11.37/场）。
+///   这是**通道生效后的重标定**，不是为迁就其他参数。
+const OUT_CHANNEL_BASE: f64 = 0.012;
+const OUT_CHANNEL_RISK_GAIN: f64 = 0.062;
+
+/// D2 纯函数：`p_out = clamp01(base + gain * pass_risk)`——出界通道的命中概率。
+/// 零 RNG、零状态；`pass_risk` 由 `open_play_pass_risk` 提供（含距离 / 压迫 / liveness 加成）。
+fn open_play_out_probability(pass_risk: f64) -> f64 {
+    clamp01(OUT_CHANNEL_BASE + OUT_CHANNEL_RISK_GAIN * clamp01(pass_risk))
+}
+
+/// D2 纯函数：出界方向 + **越过的是哪一条底线**。
+///
+/// 语义：`home` 攻 x=1。落点越靠近**任一条**底线（纵向极端）× 越靠中路 → 越可能是出底线；
+/// 越靠边路（|y-0.5| 大）→ 越可能是出边线。出底线时用落点所在的半场判「己方 / 对方底线」
+/// ——**这决定重开类型**：己方底线出界 = 角球（对方发），对方底线出界 = 门球（对方开）。
+/// 纯函数 + 一次 RNG，零状态。
+fn out_side_for_intended(home: bool, intended: (f64, f64), rng: &mut SeededRng) -> (OutSide, bool) {
+    // 纵向推进度 ∈ [0,1]：落点在进攻方向上的前场程度（0 = 己方门线，1 = 对方门线）
+    let forward = if home { intended.0 } else { 1.0 - intended.0 };
+    // 纵向极端度 ∈ [0,1]：离中线的距离（两条底线都算「极端」）
+    let deep = clamp01((forward - 0.5).abs() * 2.0);
+    // 边路度 ∈ [0,1]：离中路的距离
+    let wide = clamp01((intended.1 - 0.5).abs() / 0.5);
+    // 底线倾向：贴任一条底线 + 偏中路（下底/回传/直塞出底线）；边路倾向：贴边（边线出界）
+    let goal_line_pull = deep * (1.0 - wide);
+    let sideline_pull = wide;
+    let roll = (rng.next_u64() % 1000) as f64 / 1000.0;
+    let total = goal_line_pull + sideline_pull;
+    let goal_line_share = if total < 1e-9 { 0.35 } else { goal_line_pull / total };
+    if roll < goal_line_share {
+        // 己方底线出界（forward < 0.5）→ 角球；对方底线出界 → 门球
+        (OutSide::GoalLine, forward < 0.5)
+    } else {
+        (OutSide::Sideline, false)
+    }
+}
+
+/// 出界方向（P27 协议 `out_side` 的引擎内形态）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OutSide {
+    /// 越过底线（x 越界）
+    GoalLine,
+    /// 越过边线（y 越界）
+    Sideline,
+}
+
+/// 一次传球的落点采样结果：`raw` = 带误差的真实落点（可越界，不钳制）；
+/// `projected` = 钳回 [0,1]² 的落点（viewer 渲染 / 模拟回灌用）；`out_side` = 越界方向。
+#[derive(Clone, Copy, PartialEq, Debug)]
+struct PassLanding {
+    raw: (f64, f64),
+    projected: (f64, f64),
+    out_side: Option<OutSide>,
+}
+
+/// P31 D2 纯函数：`raw = intended + deterministic_seeded_error`，
+/// `error_sigma = (base_error + risk_gain * pass_risk) * 传球距离 / 参考距离`。
+/// 误差两轴独立、各为三角分布（两个均匀数之差）——峰值在 0（多数传球大致准）、有界（截断）、
+/// 全确定性（只消费 `SeededRng`）。`projected = clamp01(raw)`，raw 越 x 边界 → goal_line、
+/// 越 y 边界 → sideline（同时越界时按「谁越得更远」定，保持确定性与单一方向语义）。
+fn sample_pass_landing(
+    from: (f64, f64),
+    intended: (f64, f64),
+    pass_risk: f64,
+    rng: &mut SeededRng,
+) -> PassLanding {
+    let length_m = distance_meters(from, intended);
+    let sigma_m = (LANDING_ERROR_BASE_M + LANDING_ERROR_RISK_GAIN_M * clamp01(pass_risk))
+        * (length_m / LANDING_ERROR_REF_LEN_M);
+    // 两轴各承担总 σ 的 1/√2；三角分布（两个 U(0,1) 之差）的标准差 = 1/√6，取值域 ±1。
+    // `k` 以**米**表示；落点用归一化坐标，故按轴各自的真实场地尺度换算（x / 长度、y / 宽度）
+    // ——这是「米 → 归一化」的唯一换算点，漏了会让误差大一两个数量级（出界率爆表）。
+    let k_m = sigma_m * 3.0f64.sqrt();
+    let u = |rng: &mut SeededRng| (rng.next_u64() % LANDING_ERROR_SCALE) as f64 / LANDING_ERROR_SCALE as f64;
+    let ex = (u(rng) - u(rng)) * k_m / PITCH_LENGTH_M;
+    let ey = (u(rng) - u(rng)) * k_m / PITCH_WIDTH_M;
+    let raw = (intended.0 + ex, intended.1 + ey);
+    let projected = (clamp01(raw.0), clamp01(raw.1));
+    // 越界判定：raw 超出 [0,1] 的轴。同时越界 → 取越界量更大的那一轴（确定性、单一方向）。
+    let out_x = raw.0 < 0.0 || raw.0 > 1.0;
+    let out_y = raw.1 < 0.0 || raw.1 > 1.0;
+    let out_side = match (out_x, out_y) {
+        (true, false) => Some(OutSide::GoalLine),
+        (false, true) => Some(OutSide::Sideline),
+        (true, true) => {
+            // 两轴同时越界：按**真实米**的越界量取大者（归一化轴上 0.01 在 x/y 上并不等价）。
+            let ox = if raw.0 < 0.0 { -raw.0 } else { raw.0 - 1.0 };
+            let oy = if raw.1 < 0.0 { -raw.1 } else { raw.1 - 1.0 };
+            Some(if ox * PITCH_LENGTH_M >= oy * PITCH_WIDTH_M { OutSide::GoalLine } else { OutSide::Sideline })
+        }
+        (false, false) => None,
+    };
+    PassLanding { raw, projected, out_side }
+}
+
+/// P31 D2：出界重开映射（按 `out_side` + 最后触球方）。纯函数、零 RNG。
+/// - 普通传球（攻方最后触球）越过对方底线 → **门球**（守方开）
+/// - 普通传球越过边线 → **界外球**（对方掷）
+/// - 防方解围越过自家底线 → **角球**（攻方发）
+/// - 防方解围越过边线 → **界外球**（攻方掷）
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum OutRestart {
+    GoalKick,
+    ThrowIn,
+    Corner,
+}
+
+fn out_restart_for(source: PassOutSource, side: OutSide, own_goal_line: bool) -> OutRestart {
+    match (source, side) {
+        // 己方底线出界 = 角球（对方发）；对方底线出界 = 门球（对方开）
+        (PassOutSource::NormalPass, OutSide::GoalLine) => {
+            if own_goal_line { OutRestart::Corner } else { OutRestart::GoalKick }
+        }
+        (PassOutSource::NormalPass, OutSide::Sideline) => OutRestart::ThrowIn,
+        // 防方头球解围只可能越过**自家**底线 → 角球
+        (PassOutSource::Clearance, OutSide::GoalLine) => OutRestart::Corner,
+        (PassOutSource::Clearance, OutSide::Sideline) => OutRestart::ThrowIn,
     }
 }
 
@@ -733,15 +925,11 @@ const PRESSURE_SECOND_M: f64 = 35.0;
 /// 向前空间归一化尺度（米）：身前（进攻方向）无防守者的推进纵深
 const FORWARD_SPACE_M: f64 = 30.0;
 
-/// 行动机会触发来源（D4：槽位时钟降级为 fallback，只触发评估、不选事件类型）
+/// 行动机会触发来源（P31：槽位触发源已删，开放比赛只剩自然 deadline 一条腿）
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum OpportunityTrigger {
-    /// 自然 deadline 到期（D1/D2：几何量算出的持球决策周期）
+    /// 自然 deadline 到期（D1/D2：几何量算出的持球决策周期）——**开放比赛唯一触发源**
     NaturalDeadline,
-    /// 槽位时钟兜底（旧槽位机制降级而来）
-    FallbackDeadline,
-    /// 持球超时过渡传球（PASS_BREAK：carrier 持球过久，球权需要流动）
-    HoldTimeout,
     /// P29 起脚窗口（D1）：`shot_setup` 推进到射程后，每 tick 由 hazard 打分决定射/转/被抢断。
     /// 只走统一评估（`build_action_plan`），**不开启 `ActionOpportunity`**——窗口是独立于
     /// 机会 deadline 的状态机（推进期间机会恒已失效）。
@@ -753,8 +941,6 @@ impl OpportunityTrigger {
     fn reason(self) -> OpportunityReason {
         match self {
             OpportunityTrigger::NaturalDeadline => OpportunityReason::DeadlineElapsed,
-            OpportunityTrigger::FallbackDeadline => OpportunityReason::SlotFallback,
-            OpportunityTrigger::HoldTimeout => OpportunityReason::HoldTimeout,
             // 起脚窗口不开启 ActionOpportunity（见枚举注释）；该 reason 只用于保持 total，
             // 不会出现在任何存活机会上（`advance_action_opportunity` 的 assert 守着这点）。
             OpportunityTrigger::ShotWindow => OpportunityReason::ShotWindow,
@@ -766,8 +952,6 @@ impl OpportunityTrigger {
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum OpportunityReason {
     DeadlineElapsed,
-    SlotFallback,
-    HoldTimeout,
     /// P29：起脚窗口触发（不开启 ActionOpportunity，见 `OpportunityTrigger::ShotWindow`）
     ShotWindow,
     PossessionChanged,
@@ -790,14 +974,8 @@ struct ActionOpportunity {
 /// `target = None` = 无指定接球人的球（出界重开 / 向前推进的长球）；`Some(id)` = 有明确接球人。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum CarrierAction {
-    Dribble,
     Pass { target: Option<i32> },
     Shoot,
-    /// P29（D1/D2）：起脚窗口内背向球门（`angle_cos <= 0`）→ 禁止 Shoot 候选，转入死球
-    /// （界外球/角球重开）。**结构性不可达**：窗口进门前守卫要求面向球门，且推进只沿进攻 x
-    /// 正向移动（y 不变、|y-0.5| 不增）→ 窗口内 `angle_cos` 恒 > 0。保留变体是为了让
-    /// D2「背向禁止 Shoot」在候选层有落点，而不是只活在纯函数里。
-    AwardDeadBall(DeadBallKind),
 }
 
 /// 防守者候选动作（D3 第 2/5 级）。
@@ -819,20 +997,13 @@ enum DefensiveAction {
     None,
 }
 
-/// 出界重开类型（D3 第 1 级「死球 / 重开」）
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum DeadBallKind {
-    Corner,
-    ThrowIn,
-}
-
-/// 结算结果（D3 优先级：死球/重开 > 防守中断 > 持球终结 > 持球普通 > 无事件防守 > beat）
+/// 结算结果（D3 优先级：防守中断 > 持球终结 > 持球普通 > 无事件防守 > beat）。
+/// P31：槽位时代的「持球侧直接产死球」（`DeadBall`）已删——出界由 pass_risk 调制通道涌现（D2），
+/// 重开在 `finalize_highlight` 的出界分支里按 `out_restart_for` 落地。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum ActionResolution {
     /// 持球侧行动生效
     CarrierAction(CarrierAction),
-    /// 球出界 → 死球重开（角球 / 界外球）
-    DeadBall(DeadBallKind),
     /// 防守中断：抢断（成功与否由执行层掷定）
     InterruptedByTackle,
     /// 防守中断：犯规
@@ -845,21 +1016,19 @@ enum ActionResolution {
     NoAction,
 }
 
-/// 2A 执行绑定（持球侧）：把候选行动落回既有 emit。2B/2C 起由真实 hazard / 接触竞争替换。
+/// 2A 执行绑定（持球侧）：把候选行动落回既有 emit。
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum CarrierExecution {
     /// 继续带球（普通 beat，无高亮事件）
     ContinueDribble,
     /// 射门（`emit_shot_highlight`）
     Shoot,
-    /// 传球（`emit_pass_highlight_inner`；allow_out=false 即 P7 过渡传球不出界语义）
+    /// 传球（`emit_pass_highlight_inner`；allow_out 控制落点是否经 D2 误差采样）
     Pass { allow_out: bool },
-    /// 射门情境远段向前推进传球（`emit_forward_pass_highlight`）
+    /// 远段向前推进传球（`emit_forward_pass_highlight`）
     ForwardPass,
-    /// 射门情境带球推进到射程再射（`shot_setup` + `advance_shot_setup`）
+    /// 带球推进到射程（`shot_setup` + `advance_shot_setup`）
     DriveThenShoot { target_dist: f64 },
-    /// 出界重开（`emit_pass_out_play_slot`）
-    PassOut { kind: DeadBallKind },
     /// P29 起脚窗口：已到射程，直接进入起脚窗口（等待 hazard 判定射/转/被抢断）
     EnterShotWindow { target_dist: f64 },
 }
@@ -877,12 +1046,8 @@ enum DefensiveExecution {
 /// 持球侧行动计划（D3 第 1 步：carrier 先产计划）
 #[derive(Clone, Copy, Debug)]
 struct CarrierPlan {
-    /// 候选动作；`None` = 本 tick 不承诺任何行动（2A 自然 deadline 的中性语义）
+    /// 候选动作；`None` = 本 tick 不承诺任何行动（起脚窗口未提交时的「等待」语义）
     action: Option<CarrierAction>,
-    /// 计划落成出界重开时的重开类型
-    dead_ball: Option<DeadBallKind>,
-    /// fallback 抽到的情境（仅 FallbackDeadline 触发时 Some）
-    situation: Option<FallbackSituation>,
     exec: CarrierExecution,
 }
 
@@ -904,8 +1069,6 @@ impl ActionPlan {
     fn assert_resolution_consistent(&self) {
         assert!(
             match self.resolution {
-                ActionResolution::DeadBall(kind) =>
-                    self.carrier.dead_ball == Some(kind),
                 ActionResolution::InterruptedByTackle =>
                     matches!(self.defensive, DefensiveAction::Tackle),
                 ActionResolution::InterruptedByFoul =>
@@ -931,10 +1094,8 @@ impl ActionPlan {
 /// 「执行绑定」计数与事件流中对应事件数绑死——若绕过本模块直接走旧路径，计数为 0 而事件仍在 → 守卫红。
 #[derive(Debug, Clone, Copy)]
 struct OpportunityTally {
-    // 触发（按开启次数计）
+    // 触发（按开启次数计）。P31：只剩自然 deadline 一条腿（槽位 / 持球超时触发源已删）。
     natural_deadline: u64,
-    fallback_deadline: u64,
-    hold_timeout: u64,
     // deadline 实测范围（校验 [MIN, MAX] 不变量）
     deadline_min: u32,
     deadline_max: u32,
@@ -949,8 +1110,33 @@ struct OpportunityTally {
     /// 死球 / 重开 / 球权改变时仍有存活机会的次数——正常恒 0。
     /// 非 0 说明机会跨越了持球段边界（D1 被违反），或有人移除了高亮起点的失效。
     opportunity_leaks: u64,
+    /// P31 liveness guard 观测：全场 `ticks_since_meaningful_action` 的实测最大值
+    /// （护栏可达性 / 有界性的证据；只写、不耗 RNG、不进事件流）。
+    liveness_max_ticks: u32,
+    /// P31 liveness 三档各自被命中的**机会开启**次数（下标 0 = 一档，2 = 三档）。
+    /// 只统计机会开启时刻的档位——护栏真正生效的时机。
+    liveness_stage_hits: [u64; 3],
+    /// P31 接入点③的**执行层绑定**（审阅教训：纯函数测试全绿但接线处恒读 0 = 死代码）。
+    /// 记录 `emit_pass_highlight_inner` **实际读到**的 `pass_risk_bonus` 的千分位最大值——
+    /// 若读取顺序回退（归零早于 emit），此值恒 0 → 守卫红。
+    liveness_pass_risk_bonus_permille_max: u64,
+    /// P31 接入点①的**执行层绑定**：`action_deadline_for` 实际应用的 `deadline_pressure_ticks`
+    /// 最大值（0 = 从未生效）。
+    liveness_deadline_pressure_max: u32,
+    /// P31 接入点②的**执行层绑定**：`carrier_move` 实际应用的前插加成（百分点）最大值
+    /// （0 = 从未生效）。spec 点名的三个参数里，前插倾向是最后补上接线层守卫的一个。
+    liveness_forward_intent_pp_max: u64,
+    /// P31 D2 **执行层绑定**：出界通道的**最终命中概率** `open_play_out_probability(risk)`
+    /// 的千分位 min / max。这是 `OUT_CHANNEL_RISK_GAIN` 的**唯一**观测口——`GAIN = 0` 时
+    /// 概率恒为 `base`、跨度塌缩 → 守卫红（审阅指出：只绑 `risk` 抓不到 GAIN 失效，
+    /// 因为 GAIN 作用在 `open_play_out_probability` 内部）。
+    out_channel_prob_permille_min: u64,
+    out_channel_prob_permille_max: u64,
+    /// 出界通道实际命中次数（被 `p31_all_four_liveness_hooks_are_live` 读作通道存活证据；
+    /// 与 `exec_pass_out_*` 之和**经验上**一致——落点误差自然越界分支实测 200 场 0 次——
+    /// 但该等式**没有**断言，不要当作保证）。
+    out_channel_hits: u64,
     // 持球候选动作
-    carrier_dribble: u64,
     carrier_pass: u64,
     carrier_shoot: u64,
     // 防守候选动作
@@ -965,8 +1151,6 @@ struct OpportunityTally {
     // 结算
     res_carrier_shoot: u64,
     res_carrier_pass: u64,
-    res_carrier_dribble: u64,
-    res_dead_ball: u64,
     res_interrupted_tackle: u64,
     res_interrupted_foul: u64,
     res_containment: u64,
@@ -986,6 +1170,9 @@ struct OpportunityTally {
     exec_drive_then_shoot: u64,
     /// P29 起脚窗口：推进到射程、进入窗口的执行次数
     exec_enter_shot_window: u64,
+    /// P31：开放比赛传球的**落点误差致出界**计数（按 `out_side` 分角球侧 / 边线侧）。
+    /// 唯一生产者 = `emit_pass_highlight_inner` 的落点误差分支（与事件流中 `result=out` 且
+    /// 带 `lead` 的 pass 一一对应）。
     exec_pass_out_corner: u64,
     exec_pass_out_throw_in: u64,
     exec_continue: u64,
@@ -1028,8 +1215,6 @@ impl Default for OpportunityTally {
     fn default() -> Self {
         OpportunityTally {
             natural_deadline: 0,
-            fallback_deadline: 0,
-            hold_timeout: 0,
             deadline_min: u32::MAX,
             deadline_max: 0,
             natural_deadline_due: 0,
@@ -1037,7 +1222,14 @@ impl Default for OpportunityTally {
             invalidated_foul: 0,
             invalidated_play_broken: 0,
             opportunity_leaks: 0,
-            carrier_dribble: 0,
+            liveness_max_ticks: 0,
+            liveness_stage_hits: [0; 3],
+            liveness_pass_risk_bonus_permille_max: 0,
+            liveness_deadline_pressure_max: 0,
+            liveness_forward_intent_pp_max: 0,
+            out_channel_prob_permille_min: u64::MAX,
+            out_channel_prob_permille_max: 0,
+            out_channel_hits: 0,
             carrier_pass: 0,
             carrier_shoot: 0,
             defensive_tackle: 0,
@@ -1048,8 +1240,6 @@ impl Default for OpportunityTally {
             plans_executed: 0,
             res_carrier_shoot: 0,
             res_carrier_pass: 0,
-            res_carrier_dribble: 0,
-            res_dead_ball: 0,
             res_interrupted_tackle: 0,
             res_interrupted_foul: 0,
             res_containment: 0,
@@ -1095,10 +1285,7 @@ impl OpportunityTally {
             OpportunityReason::Foul => self.invalidated_foul += 1,
             OpportunityReason::PlayBroken => self.invalidated_play_broken += 1,
             // 开启类原因不走失效路径
-            OpportunityReason::DeadlineElapsed
-            | OpportunityReason::SlotFallback
-            | OpportunityReason::HoldTimeout
-            | OpportunityReason::ShotWindow => {}
+            OpportunityReason::DeadlineElapsed | OpportunityReason::ShotWindow => {}
             // 球权改变 / 死球 / 重开走防御网路径，见 invalidate_action_opportunity 调用点
             OpportunityReason::PossessionChanged
             | OpportunityReason::DeadBall
@@ -1218,18 +1405,27 @@ fn opportunity_geometry(st: &MatchState, carrier: i32) -> (f64, f64, f64) {
     (clamp01(danger), clamp01(pressure), clamp01(escape_space))
 }
 
-/// 本次机会的 deadline（tick）：D2 公式 + 门将放宽。零 RNG。
+/// 本次机会的 deadline（tick）：D2 公式 + 门将放宽 − liveness 压缩，钳制到 [MIN, MAX]。零 RNG。
+///
+/// P31 D3：`deadline_pressure_ticks` 来自 `liveness_profile`（停滞越久压缩越多），是本护栏的
+/// 接入点①。门将放宽先加、liveness 压缩后减，再统一钳到上下界——保证 [MIN, MAX] 不变量恒成立。
 fn action_deadline_for(st: &MatchState, carrier: i32) -> u32 {
     let (danger, pressure, escape_space) = opportunity_geometry(st, carrier);
     let base = compute_action_deadline(danger, pressure, escape_space);
-    if carrier == 0 || carrier == 21 {
-        (base + GK_DEADLINE_BONUS_TICKS).min(MAX_ACTION_DEADLINE_TICKS)
+    let with_gk = if carrier == 0 || carrier == 21 {
+        base + GK_DEADLINE_BONUS_TICKS
     } else {
         base
-    }
+    };
+    let pressure_ticks = liveness_profile(st.ticks_since_meaningful_action).deadline_pressure_ticks;
+    with_gk.saturating_sub(pressure_ticks).clamp(
+        MIN_ACTION_DEADLINE_TICKS,
+        MAX_ACTION_DEADLINE_TICKS,
+    )
 }
 
 /// 开启 / 重置一次行动机会（D1/D2，零 RNG）：deadline 由几何量公式算出。
+/// 同时采样 liveness 档位（护栏可达性的观测口径，只写、不耗 RNG）。
 fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
     let carrier = st.carrier;
     if carrier < 0 || carrier > 21 {
@@ -1238,12 +1434,26 @@ fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
     }
     let deadline_ticks = action_deadline_for(st, carrier);
     st.opportunity_tally.note_deadline(deadline_ticks);
+    {
+        let ticks = st.ticks_since_meaningful_action;
+        // 接入点①的执行层绑定：本机会**实际应用**的 deadline 压缩量。
+        let applied_pressure =
+            liveness_profile(ticks).deadline_pressure_ticks.min(deadline_ticks);
+        let t = &mut st.opportunity_tally;
+        t.liveness_deadline_pressure_max = t.liveness_deadline_pressure_max.max(applied_pressure);
+        t.liveness_max_ticks = t.liveness_max_ticks.max(ticks);
+        if ticks >= LIVENESS_STAGE_3_TICKS {
+            t.liveness_stage_hits[2] += 1;
+        } else if ticks >= LIVENESS_STAGE_2_TICKS {
+            t.liveness_stage_hits[1] += 1;
+        } else if ticks >= LIVENESS_STAGE_1_TICKS {
+            t.liveness_stage_hits[0] += 1;
+        }
+    }
     match trigger {
         OpportunityTrigger::NaturalDeadline => st.opportunity_tally.natural_deadline += 1,
-        OpportunityTrigger::FallbackDeadline => st.opportunity_tally.fallback_deadline += 1,
-        OpportunityTrigger::HoldTimeout => st.opportunity_tally.hold_timeout += 1,
         // 起脚窗口不开启 `ActionOpportunity`（D1）：它由 `shot_setup` 状态机驱动，
-        // 独立于机会 deadline；窗口 taily 见 `advance_shot_setup` 的窗口相。
+        // 独立于机会 deadline；窗口 tally 见 `advance_shot_setup` 的窗口相。
         OpportunityTrigger::ShotWindow => {}
     }
     st.action_opportunity = Some(ActionOpportunity {
@@ -1252,6 +1462,36 @@ fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
         deadline_ticks,
         reason: trigger.reason(),
     });
+}
+
+/// P31 D3：标记一次 meaningful action——停滞计时归零。
+/// 调用点（唯一来源，见各处注释）：射门 / 传球（含发球重开、拦截、传失） / 抢断 / 犯规 /
+/// 球权变化 / 出界重开 / 松散球拾取。普通带球 beat、contain/jockey **不调用**。
+fn note_meaningful_action(st: &mut MatchState) {
+    st.ticks_since_meaningful_action = 0;
+}
+
+/// P31 D3：一次行动结算是否构成 meaningful action（护栏计时的唯一判据）。
+/// 射门 / 传球 / 抢断 / 犯规 = 是；继续带球 / 无事件防守（contain / jockey）/ 无行动 = 否。
+/// **纯函数、零 RNG、零状态**——护栏的「什么算有意义」定义只有这一处。
+fn resolution_is_meaningful(resolution: &ActionResolution, exec: &CarrierExecution) -> bool {
+    match resolution {
+        // 防守中断（抢断 / 犯规）本 tick 产事件
+        ActionResolution::InterruptedByTackle | ActionResolution::InterruptedByFoul => true,
+        // 传球（普通 / 向前推进）本 tick 产 pass 事件
+        ActionResolution::CarrierAction(CarrierAction::Pass { .. }) => true,
+        // 射门：**只有真起脚**（`CarrierExecution::Shoot`，本 tick 产 Shot 事件）才算；
+        // 「进起脚窗口 / 带球推进」本 tick 只产一拍带球 beat（射门若真发生，会在窗口提交的
+        // 那一 tick 归零）。与 D3 的定义一致：meaningful = 本 tick 产出了事件。
+        ActionResolution::CarrierAction(CarrierAction::Shoot) => {
+            matches!(exec, CarrierExecution::Shoot)
+        }
+        // 继续带球（未承诺行动）/ 无事件防守 / 无行动：比赛在跑但没发生什么——正是护栏要
+        // 识别的停滞
+        ActionResolution::DefensiveContainment
+        | ActionResolution::DefensiveJockey
+        | ActionResolution::NoAction => false,
+    }
 }
 
 /// 机会失效（D1：球权改变 / 死球 / 犯规 / 重开 / 持球段被打断）
@@ -1281,45 +1521,29 @@ fn carrier_pass_target(st: &MatchState) -> Option<i32> {
 }
 
 /// D3 第 1 步：carrier 产行动计划。
-/// - `FallbackDeadline`：抽情境（1 次 RNG，与旧槽位同序）→ 映射候选行动；射门情境的
-///   `sample_shot_target` 与三态分流原样保留（RNG 序：情境 → 目标 → …）。
-/// - `NaturalDeadline`：2A 决策中性——不承诺任何行动、零 RNG、零事件；2B 射门 hazard 在此接管。
-/// - `HoldTimeout`：持球过久 → 过渡传球（不出界，P7 语义）。
+/// - `NaturalDeadline`（P31：开放比赛唯一触发源）：**真实几何决策**——按「被逼抢 → 出球 /
+///   有射门机会 → 启动推进 / 否则带球」三档产候选（见 `evaluate_open_play_carrier_action`）。
+/// - `ShotWindow`：起脚窗口的持球候选由 hazard 五因子掷定——**唯一到达 Shoot 的路径**。
 fn evaluate_carrier_action(
     st: &mut MatchState,
     rng: &mut SeededRng,
     trigger: OpportunityTrigger,
 ) -> CarrierPlan {
     match trigger {
-        OpportunityTrigger::NaturalDeadline => CarrierPlan {
-            action: None,
-            dead_ball: None,
-            situation: None,
-            exec: CarrierExecution::ContinueDribble,
-        },
-        OpportunityTrigger::HoldTimeout => CarrierPlan {
-            action: Some(CarrierAction::Pass {
-                target: carrier_pass_target(st),
-            }),
-            dead_ball: None,
-            situation: None,
-            exec: CarrierExecution::Pass { allow_out: false },
-        },
-        OpportunityTrigger::FallbackDeadline => evaluate_fallback_carrier_action(st, rng),
-        // P29 D1/D2：起脚窗口的持球候选由 hazard 五因子掷定——**唯一到达 Shoot 的路径**。
-        // - 背向球门（angle_cos <= 0）→ 禁止 Shoot，转死球重开（不消耗 RNG）
-        // - 否则掷定：命中 → 提交射门（`committed = true`）；未命中 → 本 tick 不承诺行动
+        OpportunityTrigger::NaturalDeadline => evaluate_open_play_carrier_action(st, rng),
         OpportunityTrigger::ShotWindow => {
             let facing = shot_opportunity_features(st, st.carrier).facing_goal();
             if !facing {
                 // 结构性不可达（推进只沿进攻 x 正向、窗口进门前守卫面向球门），保留为
-                // D2「背向禁止 Shoot」在候选层的落点。
-                let kind = DeadBallKind::ThrowIn;
+                // D2「背向禁止 Shoot」在候选层的落点：禁 Shoot → 转普通传球（不出界误差的
+                // 出口语义：把球交给队友，而非硬造死球）。
                 CarrierPlan {
-                    action: Some(CarrierAction::AwardDeadBall(kind)),
-                    dead_ball: Some(kind),
-                    situation: None,
-                    exec: CarrierExecution::PassOut { kind },
+                    action: Some(CarrierAction::Pass { target: carrier_pass_target(st) }),
+                    // 注：本分支（起脚窗口背向球门）自述结构性不可达——推进只沿进攻 x 正向，
+                    // 窗口内 `angle_cos` 恒 > 0。实测 200 场 `allow_out=false` 执行 0 次，
+                    // 故 `emit_pass_highlight_inner` 的 no-out 出口目前是保守兜底（非死代码
+                    // 风险：一旦窗口几何放宽，它就是「不走出界通道」的正确落点）。
+                    exec: CarrierExecution::Pass { allow_out: false },
                 }
             } else if shot_hazard_hits(st, rng) {
                 // 提交点（D1）：置 `committed` → 防守侧不再产 Tackle（不可回溯）。
@@ -1335,15 +1559,11 @@ fn evaluate_carrier_action(
                 st.opportunity_tally.shot_window_commits_by_pressure[pressure_bucket] += 1;
                 CarrierPlan {
                     action: Some(CarrierAction::Shoot),
-                    dead_ball: None,
-                    situation: None,
                     exec: CarrierExecution::Shoot,
                 }
             } else {
                 CarrierPlan {
                     action: None,
-                    dead_ball: None,
-                    situation: None,
                     exec: CarrierExecution::ContinueDribble,
                 }
             }
@@ -1368,75 +1588,75 @@ fn shot_hazard_hits(st: &mut MatchState, rng: &mut SeededRng) -> bool {
     (roll as f64) < p * SHOT_ROLL_SCALE
 }
 
-/// fallback 情境 → 候选行动。RNG 消费与旧 `roll_highlight` 逐字节一致（等价性要求，D5）。
-fn evaluate_fallback_carrier_action(st: &MatchState, rng: &mut SeededRng) -> CarrierPlan {
-    let situation = roll_fallback_situation(rng);
+/// P31 D1/D2：开放比赛的行动机会评估（自然 deadline 唯一触发源）——**无任何事件类型配额**，
+/// 三档全部由**当前几何状态**决定：
+///
+/// 1. **出球档**：最近防守者贴身（≤ `OPEN_PLAY_PASS_PRESSURE_M`）或门将持球 → 普通传球
+///    （`allow_out=true`：落点经 D2 误差采样，可能涌现出界）。「球权流动」由**被逼抢**这一
+///    状态涌现，不由固定时钟配额。
+/// 2. **射门推进档**：未受压且「射门推进 hazard」命中 → 采样起脚距离并分流（远段长传推进 /
+///    已在射程 → 进起脚窗口 / 否则带球推进）。**推进 hazard 不是射门 hazard**：后者仍在
+///    `shot_window_plan` 里决定射不射（射门的唯一生产者不变）。
+/// 3. **带球档**：其余 → 继续带球（前插倾向受 liveness guard 调制，见 `carrier_move`）。
+fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -> CarrierPlan {
     let carrier = st.carrier;
-    let gk_holding = carrier == 0 || carrier == 21;
-    let simple_pass = |allow_out: bool| CarrierPlan {
-        action: Some(CarrierAction::Pass {
-            target: carrier_pass_target(st),
-        }),
-        dead_ball: None,
-        situation: Some(situation),
-        exec: CarrierExecution::Pass { allow_out },
-    };
-    match situation {
-        // 门将不射（同旧 Shot 情境守卫）→ 改普通传球；不额外消耗 RNG
-        FallbackSituation::Shot if gk_holding => simple_pass(true),
-        FallbackSituation::Shot => {
-            // 所有射门情境都采样目标射门距离（RNG）；carrier 已在目标距离内 → 直接进起脚窗口，
-            // 否则推进（远段向前传球 / 带球推进）。三态分流语义与旧 Shot 槽一致，仅把
-            // 「到射程即射」改为「到射程进窗口（hazard 决定）」（P29 D1）。
-            let target = sample_shot_target(rng);
-            let dist = dist_to_goal_m(st, carrier);
-            let (action, exec) = if dist <= target {
-                (
-                    CarrierAction::Shoot,
-                    CarrierExecution::EnterShotWindow { target_dist: target },
-                )
-            } else if dist > SHOT_PASS_ADVANCE_M {
-                (
-                    CarrierAction::Pass { target: None },
-                    CarrierExecution::ForwardPass,
-                )
-            } else {
-                (
-                    CarrierAction::Shoot,
-                    CarrierExecution::DriveThenShoot { target_dist: target },
-                )
-            };
-            CarrierPlan {
-                action: Some(action),
-                dead_ball: None,
-                situation: Some(situation),
-                exec,
-            }
-        }
-        FallbackSituation::Corner | FallbackSituation::ThrowIn => {
-            let kind = if situation == FallbackSituation::Corner {
-                DeadBallKind::Corner
-            } else {
-                DeadBallKind::ThrowIn
-            };
-            CarrierPlan {
-                action: Some(CarrierAction::Pass { target: None }),
-                dead_ball: Some(kind),
-                situation: Some(situation),
-                exec: CarrierExecution::PassOut { kind },
-            }
-        }
-        // 门将不被抢断（同 Shot 情境守卫）→ 改普通传球
-        FallbackSituation::Tackle if gk_holding => simple_pass(true),
-        // 持球者本意仍是继续带球；是否被中断由防守侧竞争决定（D3）
-        FallbackSituation::Tackle => CarrierPlan {
-            action: Some(CarrierAction::Dribble),
-            dead_ball: None,
-            situation: Some(situation),
-            exec: CarrierExecution::ContinueDribble,
-        },
-        FallbackSituation::Pass => simple_pass(true),
+    if carrier < 0 || carrier > 21 {
+        return CarrierPlan { action: None, exec: CarrierExecution::ContinueDribble };
     }
+    let c = st.pos[carrier as usize];
+    let (_, _, nearest_defender_m) = nearest_defender(st, c, st.possession != 0);
+    let gk_holding = carrier == 0 || carrier == 21;
+    // ① 出球档：被贴身逼抢（或门将持球——门将不推进、不射，直接出球），
+    //    或 **liveness 二档起且无压**（D3 接入点④，用户二次拍板）：停滞达
+    //    `LIVENESS_STAGE_2_TICKS` 仍未发生 meaningful action 且无人逼抢 → 持球决策改选出球，
+    //    让停滞段自行通过**既有传球生产者**恢复流动。guard 本身不 emit——它只改
+    //    `ticks_since_meaningful_action` 这一状态，本函数因该状态变化而选出球候选。
+    let stalled_unpressed = st.ticks_since_meaningful_action >= LIVENESS_STAGE_2_TICKS;
+    if gk_holding || nearest_defender_m <= OPEN_PLAY_PASS_PRESSURE_M || stalled_unpressed {
+        return CarrierPlan {
+            action: Some(CarrierAction::Pass { target: carrier_pass_target(st) }),
+            exec: CarrierExecution::Pass { allow_out: true },
+        };
+    }
+    // ② 射门推进档：射门推进 hazard 命中 → 复用 2B 的目标距离采样与三态分流
+    if open_play_shot_engage_hits(st, rng) {
+        let target = sample_shot_target(rng);
+        let dist = dist_to_goal_m(st, carrier);
+        let (action, exec) = if dist <= target {
+            (
+                CarrierAction::Shoot,
+                CarrierExecution::EnterShotWindow { target_dist: target },
+            )
+        } else if dist > SHOT_PASS_ADVANCE_M {
+            (CarrierAction::Pass { target: None }, CarrierExecution::ForwardPass)
+        } else {
+            (
+                CarrierAction::Shoot,
+                CarrierExecution::DriveThenShoot { target_dist: target },
+            )
+        };
+        return CarrierPlan { action: Some(action), exec };
+    }
+    // ③ 带球档：继续带球——**不承诺任何行动**（D1「带球档无事件」）。刻意返回 `None` 而非
+    // `Some(Dribble)`：承诺持球动作会按 D3 优先级压过「无事件防守」，使 contain/jockey 的
+    // **结算**永久不可达 → P30（D5）「contain/jockey 只调压力状态」这条路径死掉（压力状态是
+    // 射门 hazard `defensive_pressure` 因子的输入，死掉即该因子残废）。继续带球本身由
+    // `carrier_move` 每 tick 表达，无需作为「候选动作」承诺。
+    CarrierPlan {
+        action: None,
+        exec: CarrierExecution::ContinueDribble,
+    }
+}
+
+/// P31 D1：开放比赛的「射门推进」掷定（1 次 RNG）。复用 2B 的 `compute_shot_score` 五因子，
+/// 整体平移 `OPEN_PLAY_SHOT_ENGAGE_SHIFT` 到「机会点上要不要启动一次推进」的尺度。
+/// **这不是射门 hazard**：命中只表示「值得推进到射程」，射门与否仍由起脚窗口的 hazard 决定。
+fn open_play_shot_engage_hits(st: &MatchState, rng: &mut SeededRng) -> bool {
+    let f = shot_opportunity_features(st, st.carrier);
+    let score = compute_shot_score(&f) + OPEN_PLAY_SHOT_ENGAGE_SHIFT;
+    let p = shot_hazard_probability(score, 1.0);
+    let roll = rng.next_u64() % SHOT_ROLL_SCALE as u64;
+    (roll as f64) < p * SHOT_ROLL_SCALE
 }
 
 /// D3 第 2 步：防守者产防守行动计划（P30 = 统一打分选一，D2/D4）。
@@ -1453,7 +1673,6 @@ fn evaluate_defensive_action(
     st: &MatchState,
     rng: &mut SeededRng,
     trigger: OpportunityTrigger,
-    carrier: &CarrierPlan,
 ) -> (DefensiveAction, DefensiveExecution) {
     let _ = rng; // 打分选一零 RNG（保留参数以维持调用契约与将来扩展）
     // 起脚窗口：hazard 已提交射门 → 防守侧不可回溯（D1），零 RNG 直接 None。
@@ -1462,20 +1681,13 @@ fn evaluate_defensive_action(
     {
         return (DefensiveAction::None, DefensiveExecution::None);
     }
-    // 只有这三类机会点会评估防守（持球超时是普通过渡传球，防守方不上抢）。
+    // 开放比赛的两个机会点（自然 deadline / 起脚窗口）都评估防守。P31：槽位与持球超时
+    // 触发源已删，此处不再有「只触发不竞争」的第三类。
     let evaluates = matches!(
         trigger,
-        OpportunityTrigger::NaturalDeadline
-            | OpportunityTrigger::ShotWindow
-            | OpportunityTrigger::FallbackDeadline
+        OpportunityTrigger::NaturalDeadline | OpportunityTrigger::ShotWindow
     );
     if !evaluates {
-        return (DefensiveAction::None, DefensiveExecution::None);
-    }
-    // fallback 且情境不是「被逼抢」→ 无接触语义（同 2A：只有 Tackle 情境才评估）。
-    if trigger == OpportunityTrigger::FallbackDeadline
-        && carrier.situation != Some(FallbackSituation::Tackle)
-    {
         return (DefensiveAction::None, DefensiveExecution::None);
     }
     let victim = st.carrier;
@@ -1503,10 +1715,10 @@ fn evaluate_defensive_action(
 /// 死球/重开 > 防守中断(tackle/foul) > 持球终结(shoot) > 持球普通(pass/dribble)
 /// > 无事件防守(contain/jockey) > beat(NoAction)。
 /// 第 5 级只在持球侧**不承诺行动**时可达（carrier 承诺的传球/带球压过无事件防守）。
+///
+/// P31：槽位时代遗留的「持球侧直接产死球」（`dead_ball` / `AwardDeadBall`）已删——出界改由
+/// pass_risk 调制通道涌现（D2），`resolve` 不再有死球入口。
 fn resolve_action_opportunity(carrier: &CarrierPlan, defensive: DefensiveAction) -> ActionResolution {
-    if let Some(kind) = carrier.dead_ball {
-        return ActionResolution::DeadBall(kind);
-    }
     match defensive {
         DefensiveAction::Tackle => return ActionResolution::InterruptedByTackle,
         DefensiveAction::Foul => return ActionResolution::InterruptedByFoul,
@@ -1515,9 +1727,6 @@ fn resolve_action_opportunity(carrier: &CarrierPlan, defensive: DefensiveAction)
     match carrier.action {
         Some(CarrierAction::Shoot) => ActionResolution::CarrierAction(CarrierAction::Shoot),
         Some(a @ CarrierAction::Pass { .. }) => ActionResolution::CarrierAction(a),
-        Some(CarrierAction::Dribble) => ActionResolution::CarrierAction(CarrierAction::Dribble),
-        // 背向球门（D2 禁止 Shoot）→ 死球重开；第 1 级（`carrier.dead_ball` 已在函数头处理）。
-        Some(CarrierAction::AwardDeadBall(kind)) => ActionResolution::DeadBall(kind),
         None => match defensive {
             DefensiveAction::Contain => ActionResolution::DefensiveContainment,
             DefensiveAction::Jockey => ActionResolution::DefensiveJockey,
@@ -1533,17 +1742,15 @@ fn build_action_plan(
     trigger: OpportunityTrigger,
 ) -> ActionPlan {
     let carrier = evaluate_carrier_action(st, rng, trigger);
-    let (defensive, defensive_exec) = evaluate_defensive_action(st, rng, trigger, &carrier);
+    let (defensive, defensive_exec) = evaluate_defensive_action(st, rng, trigger);
     let resolution = resolve_action_opportunity(&carrier, defensive);
 
     {
         let t = &mut st.opportunity_tally;
         match carrier.action {
-            Some(CarrierAction::Dribble) => t.carrier_dribble += 1,
             Some(CarrierAction::Pass { .. }) => t.carrier_pass += 1,
             Some(CarrierAction::Shoot) => t.carrier_shoot += 1,
             // 背向球门转死球：不算持球候选动作（无事件对手），只记死球结算
-            Some(CarrierAction::AwardDeadBall(_)) => {}
             None => {}
         }
         match defensive {
@@ -1588,8 +1795,6 @@ fn advance_action_opportunity(st: &mut MatchState, rng: &mut SeededRng) -> Optio
             matches!(
                 opp.reason,
                 OpportunityReason::DeadlineElapsed
-                    | OpportunityReason::SlotFallback
-                    | OpportunityReason::HoldTimeout
             ),
             "存活机会的 reason 应为开启类：{:?}",
             opp.reason
@@ -1609,13 +1814,6 @@ fn advance_action_opportunity(st: &mut MatchState, rng: &mut SeededRng) -> Optio
     Some(plan)
 }
 
-fn note_pass_out(t: &mut OpportunityTally, kind: DeadBallKind) {
-    match kind {
-        DeadBallKind::Corner => t.exec_pass_out_corner += 1,
-        DeadBallKind::ThrowIn => t.exec_pass_out_throw_in += 1,
-    }
-}
-
 /// 统一执行层：把结算落回既有 emit（2A 执行绑定）。`plan=None` = 本 tick 无行动机会（普通带球）。
 fn execute_action_resolution(
     st: &mut MatchState,
@@ -1633,9 +1831,18 @@ fn execute_action_resolution(
     };
     plan.assert_resolution_consistent();
     st.opportunity_tally.plans_executed += 1;
+    // P31 D3：本 tick 的结算是否构成 meaningful action（射门 / 传球 / 抢断 / 犯规）。持球侧的
+    // 「继续带球」与无事件防守（contain/jockey）**不**构成——它们是「比赛在跑但没发生什么」，
+    // 正是护栏要识别并拉回的停滞。`resolution_is_meaningful` 是这一区分的唯一判据。
+    //
+    // **必须在 emit 之后才重置**（审阅发现的时序 bug）：`emit_pass_highlight_inner` 要读
+    // `ticks_since_meaningful_action` 算 liveness 的 `pass_risk_bonus`（接入点③）。若在此处
+    // 先归零，emit 读到的恒为 0 → 该接入点永远不生效（实测确认）。故先记「本 tick 是否
+    // meaningful」，执行完 emit 后再归零——emit 内部读到的仍是**决策时刻**的停滞值。
+    let meaningful = resolution_is_meaningful(&plan.resolution, &plan.carrier.exec);
     // P30（D1/D4）：犯规结算（哨停 + 任意球重开）打断持球段 → 存活的行动机会必须失效。
-    // 犯规现在可由三个触发源中任意一个选出（自然 deadline / fallback / 起脚窗口），故在
-    // **执行层**统一失效，而不是散在各调用点（漏一处就跨越持球段边界 → D1 违约 + leak 计数）。
+    // 犯规可由开放比赛的机会点或起脚窗口选出，故在**执行层**统一失效，而不是散在各调用点
+    // （漏一处就跨越持球段边界 → D1 违约 + leak 计数）。
     if matches!(plan.resolution, ActionResolution::InterruptedByFoul) {
         invalidate_action_opportunity(st, OpportunityReason::Foul);
     }
@@ -1644,11 +1851,6 @@ fn execute_action_resolution(
         match plan.resolution {
             ActionResolution::CarrierAction(CarrierAction::Shoot) => t.res_carrier_shoot += 1,
             ActionResolution::CarrierAction(CarrierAction::Pass { .. }) => t.res_carrier_pass += 1,
-            ActionResolution::CarrierAction(CarrierAction::Dribble) => t.res_carrier_dribble += 1,
-            // 背向球门（D2）转死球重开——结算层与 `resolve_action_opportunity` 同构，
-            // 计死球桶（不谎报为持球动作结算）。
-            ActionResolution::CarrierAction(CarrierAction::AwardDeadBall(_)) => t.res_dead_ball += 1,
-            ActionResolution::DeadBall(_) => t.res_dead_ball += 1,
             ActionResolution::InterruptedByTackle => t.res_interrupted_tackle += 1,
             ActionResolution::InterruptedByFoul => t.res_interrupted_foul += 1,
             ActionResolution::DefensiveContainment => t.res_containment += 1,
@@ -1657,15 +1859,6 @@ fn execute_action_resolution(
         }
     }
     match plan.resolution {
-        ActionResolution::DeadBall(kind) => {
-            debug_assert_eq!(
-                plan.carrier.exec,
-                CarrierExecution::PassOut { kind },
-                "死球结算须与持球侧执行绑定一致"
-            );
-            note_pass_out(&mut st.opportunity_tally, kind);
-            emit_pass_out_play_slot(st, rng, events, t, kind);
-        }
         ActionResolution::InterruptedByTackle => match plan.defensive_exec {
             DefensiveExecution::Tackle { defender } => {
                 st.opportunity_tally.exec_tackle += 1;
@@ -1717,11 +1910,6 @@ fn execute_action_resolution(
                 st.shot_setup = Some(ShotSetup::new(target_dist, false));
                 advance_shot_setup(st, rng, events, t);
             }
-            // 理论上不可达（PassOut 必与 dead_ball 同构 → DeadBall 结算优先）；保持 total 不 panic
-            CarrierExecution::PassOut { kind } => {
-                note_pass_out(&mut st.opportunity_tally, kind);
-                emit_pass_out_play_slot(st, rng, events, t, kind);
-            }
             CarrierExecution::ContinueDribble => {
                 st.opportunity_tally.exec_continue += 1;
                 emit_beat_with_main(st, rng, events, t);
@@ -1740,6 +1928,10 @@ fn execute_action_resolution(
             emit_beat_with_main(st, rng, events, t);
         }
     }
+    // P31 D3：emit 完成后再归零停滞计时（见函数头注释：emit 需读到决策时刻的停滞值）。
+    if meaningful {
+        note_meaningful_action(st);
+    }
 }
 
 /// v2 比赛状态（固定 tick 推进 + 全员 pos）
@@ -1750,11 +1942,6 @@ struct MatchState {
     possession: u32, // 0=home, 1=away
     carrier: i32,
     carrier_from: (f64, f64),
-    hold_ticks: u32,
-    hold_max: u32,
-    slot_clock: u32,     // P7 观感：距上次槽位高亮的 tick（普通传球过渡不重置，保证槽位固定触发）
-    slot_interval: u32,  // 槽位间隔（= 比赛时长 / 高亮总数）
-    match_duration: f64, // P7：比赛时长（槽位机制算 hold 间距）
     last_emitted: [(f64, f64); 22],
     highlight: Option<Highlight>,
     loose: Option<LooseBall>,
@@ -1801,6 +1988,10 @@ struct MatchState {
     /// 起脚窗口 hazard 已提交射门、即将由 `emit_shot_highlight` 落地（同 tick 置位并消费），
     /// 用于把该射门归因到 `exec_shoot`。未被消费 = 有射门绕过模块。
     module_shot_pending: bool,
+    /// P31 D3 liveness guard：距上一次 **meaningful action** 的 tick 数（秒）。
+    /// meaningful action 见 `note_meaningful_action`；普通带球 beat / contain / jockey 不重置。
+    /// 只被 `liveness_profile` 读（三档递进的唯一输入），**不直接产事件**。
+    ticks_since_meaningful_action: u32,
 }
 
 /// 两犯规之间的最短间隔（tick）。犯规后哨停/任意球重开在槽位模型中表现为后续事件重排，
@@ -1874,7 +2065,7 @@ enum TransitionSource {
 }
 
 impl MatchState {
-    fn new(lineup: &[LineupPlayer], match_duration: f64) -> Self {
+    fn new(lineup: &[LineupPlayer]) -> Self {
         let mut pos = [(0.0, 0.0); 22];
         let mut lp = [(0.0, 0.0); 22];
         for p in lineup {
@@ -1895,11 +2086,6 @@ impl MatchState {
             possession: 0,
             carrier: 10,
             carrier_from: (0.55, 0.5),
-            hold_ticks: 0,
-            hold_max: 0,
-            slot_clock: 0,
-            slot_interval: slot_hold_max(match_duration),
-            match_duration,
             last_emitted: pos,
             highlight: None,
             loose: None,
@@ -1923,6 +2109,7 @@ impl MatchState {
             action_opportunity: None,
             opportunity_tally: OpportunityTally::default(),
             module_shot_pending: false,
+            ticks_since_meaningful_action: 0,
         }
     }
 }
@@ -1948,18 +2135,24 @@ enum HighlightOutcome {
     TackleSuccess { def: i32, loose: (f64, f64), contact: (f64, f64) },
     TackleFail { victim: i32, contact: (f64, f64) },
     // P6 批次1：出界重开
-    PassOutOfPlay { detail: String, out_pos: (f64, f64), source: PassOutSource },
+    PassOutOfPlay {
+        detail: String,
+        out_pos: (f64, f64),
+        source: PassOutSource,
+        /// 出的是**己方**底线（→ 角球）还是对方底线（→ 门球）；边线出界恒 false
+        own_goal_line: bool,
+    },
     CornerAward { rebound_from: (f64, f64) },   // 射门扑出越线 → 角球（仅引擎内部确定角旗侧）
     CornerKick { land: (f64, f64), dir: (f64, f64) }, // 角球发球飞行（落点禁区松散球 battle）
     Clearance { land: (f64, f64), dir: (f64, f64) },  // 防方头球解围（落点禁区外普通松散球）
 }
 
-/// 出界 pass 的来源（决定重开类型）：普通传球 / 防方解围 / 槽位直接角球（P7）
+/// 出界 pass 的来源（决定重开类型，见 `out_restart_for`）：开放比赛普通传球（落点误差涌现）/
+/// 防方头球解围（角球 battle 派生）。P31：槽位时代的「直造角球」来源已删。
 #[derive(Clone, Copy, PartialEq)]
 enum PassOutSource {
     NormalPass,
     Clearance,
-    CornerDirect, // P7 槽位角球：直接产"出底线"事件 → 角球（攻方发）
 }
 
 /// 松散球（D11）；battle 标记角球争抢（攻方 chaser、防方 chaser，loose 启动时固定）
@@ -2022,11 +2215,10 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
         ..Event::default()
     });
 
-    let mut st = MatchState::new(&lineup, dur);
+    let mut st = MatchState::new(&lineup);
     st.pos[9] = (0.5, 0.5);
     st.pos[10] = (0.55, 0.5);
     st.carrier_from = (0.55, 0.5);
-    st.hold_max = slot_hold_max(st.match_duration);
 
     let mut t = TICK_SECONDS;
     while t < dur {
@@ -2090,6 +2282,11 @@ fn whistle_event(t: f64, home: u32, away: u32, detail: &str) -> Event {
 
 /// 单个 tick：推进状态 + 产事件（beat 或高亮）
 fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    // P31 D3 liveness：「距上次 meaningful action 的 tick 数」——本行在 tick 最顶无条件 +1，
+    // 任何 meaningful action（见 `note_meaningful_action` 的调用点）把计时归零。因此：
+    // 产 meaningful 事件的 tick 结束于 0，其余 tick 结束于「上一 tick + 1」。
+    // 时钟按**真实时间**推进（高亮飞行 / 重开准备 / 死球都计入），语义是「多久没发生事了」。
+    st.ticks_since_meaningful_action = st.ticks_since_meaningful_action.saturating_add(1);
     // P29 射门冷却倒计时：每 tick 衰减 1（零 RNG、零事件；在 `emit_shot_highlight` 射门时重置
     // 为 `SHOT_COOLDOWN_TICKS`）。放在最前，任何状态下都推进，冷却语义与比赛进程绑定。
     st.shot_cooldown_ticks = st.shot_cooldown_ticks.saturating_sub(1);
@@ -2158,35 +2355,17 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
         advance_loose(st, rng, events, t);
         return;
     }
-    // 4. 开放比赛：行动机会驱动高亮 + 持球过渡（transition 期间暂停，只产 main + movers）
+    // 4. 开放比赛：**自然 deadline 是唯一节拍源**（P31 D1：槽位时钟 / 持球超时触发源已删）。
+    //    每个 tick 推进一次机会生命周期：未开则开、到期则评估（carrier 几何决策 + 防守竞争）
+    //    并结算执行；未到期则产普通带球 beat。transition 期间只产 main + movers（不评估）。
     if st.transition.is_some() {
         assert_opportunity_not_leaked(st, OpportunityReason::PlayBroken); // D1 防御网：攻防转换窗口
         emit_beat_with_main(st, rng, events, t);
     } else {
-        st.hold_ticks += 1;
-        st.slot_clock += 1;
-        if st.slot_clock >= st.slot_interval {
-            // P28 D4：槽位时钟降级为 fallback 触发——不再 `roll_highlight_slot` 选事件类型，
-            // 改为开一次行动机会 → 统一评估 → 结算 → 执行。
-            st.slot_clock = 0;
-            open_action_opportunity(st, OpportunityTrigger::FallbackDeadline);
-            let plan = build_action_plan(st, rng, OpportunityTrigger::FallbackDeadline);
-            execute_action_resolution(st, rng, events, t, Some(plan));
-        } else if st.hold_ticks >= PASS_BREAK_TICKS {
-            // P7 观感：carrier 持球超过 PASS_BREAK（12s）产普通传球过渡（球权流动），
-            // 避免 90 分钟比赛 carrier 在球门旁停 200+ tick（前锋来回小幅运动很久）。
-            // 普通传球不出界（指标稳定），不重置槽位时钟（finalize 后 hold_ticks 归零，槽位仍按间隔触发）。
-            // P28：同样走「机会 → 评估 → 结算 → 执行」——触发源是持球超时（触发契约有覆盖）。
-            open_action_opportunity(st, OpportunityTrigger::HoldTimeout);
-            let plan = build_action_plan(st, rng, OpportunityTrigger::HoldTimeout);
-            execute_action_resolution(st, rng, events, t, Some(plan));
-        } else {
-            // 普通 tick：自然 deadline 生命周期（D1）+ 统一执行层。
-            // P30：犯规不再独立判定——它并入自然 deadline 的防守动作打分（`maybe_open_foul` 已删），
-            // 与抢断同窗口竞争（D4）。自然 deadline 结算可能是抢断/犯规/封堵/跟防（D2/D5）。
-            let plan = advance_action_opportunity(st, rng);
-            execute_action_resolution(st, rng, events, t, plan);
-        }
+        // P30：犯规不再独立判定——它并入自然 deadline 的防守动作打分（`maybe_open_foul` 已删），
+        // 与抢断同窗口竞争（D4）。自然 deadline 结算可能是抢断/犯规/封堵/跟防（D2/D5）。
+        let plan = advance_action_opportunity(st, rng);
+        execute_action_resolution(st, rng, events, t, plan);
     }
 }
 
@@ -2229,8 +2408,16 @@ fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
     let is_gk = st.carrier == 0 || st.carrier == 21; // 门将持球恒零位移控球（不推进离门）
     // transition 期间新进攻方持球者前插（高速推进，经 main 表达）
     let in_transition = st.transition.as_ref().map_or(false, |tr| tr.attacking == st.possession);
+    // P31 D3 接入点②：liveness 前插倾向——停滞越久，「原地小幅控球」的掷定阈值越低
+    // （`forward_intent_bonus` 百分点），carrier 越倾向于向球门推进。这是护栏在**普通带球
+    // 节拍**上的唯一落点：它只改 carrier 的移动目标，不产任何事件（推进仍可能被抢断/出界）。
+    let forward_pp = forward_intent_pp(&liveness_profile(st.ticks_since_meaningful_action));
+    // 接入点②的执行层绑定：记录**实际应用**的前插加成（恒 0 = 死代码）。
+    st.opportunity_tally.liveness_forward_intent_pp_max =
+        st.opportunity_tally.liveness_forward_intent_pp_max.max(forward_pp);
+    let hold_pp = 70u64.saturating_sub(forward_pp);
     let roll = rng.next_u64() % 100;
-    let (x2, y2) = if is_gk || (!in_transition && roll < 70) {
+    let (x2, y2) = if is_gk || (!in_transition && roll < hold_pp) {
         let ox = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
         let oy = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
         (clamp01(p.0 + ox), clamp01(p.1 + oy))
@@ -2505,53 +2692,12 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     movers
 }
 
-/// P7 死球出界：直接产"出界 pass"高亮（球飞向边界，viewer 演绎飞行），复用现有重开流程——
-/// 避免直接设球在固定点造成瞬移。Corner → 进攻端底线出界（source=CornerDirect → 角球）；
-/// ThrowIn → 边线出界（source=NormalPass → 对方掷）。
-fn emit_pass_out_play_slot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, kind: DeadBallKind) {
-    let from = st.carrier;
-    let from_pos = st.pos[from as usize];
-    let (raw_x, raw_y, detail, source) = match kind {
-        DeadBallKind::Corner => {
-            let home = st.possession == 0;
-            let x = if home { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
-            let y = 0.2 + (rng.next_u64() % 60) as f64 / 100.0;
-            (x, y, "out_goal_line", PassOutSource::CornerDirect)
-        }
-        DeadBallKind::ThrowIn => {
-            let y = if rng.next_u64() % 2 == 0 { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 } else { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 };
-            (from_pos.0, y, "out_sideline", PassOutSource::NormalPass)
-        }
-    };
-    let (x2, y2) = (clamp01(raw_x), clamp01(raw_y));
-    let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-    let flight = distance_meters(from_pos, (x2, y2)) / speed;
-    let t_end = t + flight;
-    events.push(Event {
-        t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
-        x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some("out".to_string()), speed: Some(speed),
-        out_pos: Some((raw_x, raw_y)), out_side: Some(out_side_of(detail).to_string()),
-        detail: Some(detail.to_string()),
-        ..Event::default()
-    });
-    st.highlight = Some(Highlight {
-        t_end,
-        participants: vec![(from, from_pos)],
-        // D3：out_pos 存真实越界坐标（不 clamp）；回灌模拟的两处消费点（highlight_ball_end /
-        // finalize_highlight）再 clamp01 回去——否则飞行期球位越界会经队形目标级联改写全流（见 design 偏离记录）。
-        outcome: HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (raw_x, raw_y), source },
-    });
-    let movers = compute_movers(st, rng, t, &[from]);
-    for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
-    events.push(beat_event(t, None, None, movers));
-}
-
 /// pass 高亮：起点整数 tick，覆盖 [t, t_end)，参与者 = 传球者(静止) + 接球者(落点)。
-/// `allow_out=false`（P7 过渡传球，carrier 持球超 PASS_BREAK 让画面流动）时落点恒在界内——
-/// 避免 90 分钟过渡传球导致界外球数量级漂移（5min/90min 指标稳定）。
-/// P6 批次1：allow_out 时低概率（3-5%）落点出界 → PassOutOfPlay（to=None + detail +
-/// source=NormalPass）；普通传球带 h（长传>20m h>0 / 短传≤20m h=0）。
+///
+/// P31 D2：**出界由落点误差涌现**——`allow_out=true` 时落点经 `sample_pass_landing` 加确定性
+/// 误差（σ 随 `pass_risk` 与传球距离增长），`raw` 越界 → 出界 pass。误差未致越界 → 照常走
+/// 拦截/传失/成功三分支。发球重开（角球/界外球/任意球/门球/头球 battle）**不走此函数**，
+/// 故 D2「重开不走出界误差」由「唯一调用点」结构性保证（见 `p31_landing_error_only_in_open_play_passes`）。
 fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, allow_out: bool) {
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
@@ -2561,51 +2707,95 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
     let ry = st.pos[to as usize].1;
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
     let (lx, ly) = lead_point(from_pos, to_pos, lead);
-    // 出界判定（P7，仅普通槽位传球 allow_out；过渡传球 no_out 恒不出界）：
-    // out_roll 命中（8-10%）→ 出界。出底线仅当传球朝对方半场且 35% 侧；否则出边线（界外球）。
-    // 出底线与出边线的细分 roll 保持原 P7 RNG 顺序（out_roll → 边/底线 roll）。
-    let out_roll = rng.next_u64() % 100;
-    let out_detail: Option<&str> = if allow_out && out_roll < (8 + rng.next_u64() % 3) {
-        let toward_opp_half = if home { lx > 0.5 } else { lx < 0.5 };
-        if toward_opp_half && rng.next_u64() % 100 >= 65 {
-            Some("out_goal_line")
-        } else {
-            Some("out_sideline")
+    // P31 D2（修订版）：出界走**受 `pass_risk` 调制的出界通道**——纯落点误差在真实引擎上
+    // 够不着边界（实测意图落点距边界 p05 已是 14.7m/20.3m，见 `.p31-progress.md`），故落点
+    // 误差 (`sample_pass_landing`) 只负责**落点位置**，出界的**触发**由 `open_play_out_probability`
+    // 决定；命中后由 `out_side_for_intended` 定方向、落点沿该轴推过边界。
+    // `allow_out=false` 的出口（起脚窗口背向球门的转出球）不走通道——它是「稳妥的转移」。
+    if allow_out {
+        let intended = (clamp01(lx), clamp01(ly));
+        let pass_m = distance_meters(from_pos, intended);
+        let (_, _, nearest_def_m) = nearest_defender(st, intended, !home);
+        let liveness_bonus = liveness_profile(st.ticks_since_meaningful_action).pass_risk_bonus;
+        let risk = open_play_pass_risk(pass_m, nearest_def_m, liveness_bonus);
+        // 接入点③ + D2 的**执行层绑定**：记录实际读到的加成与风险分（恒 0 / 无跨度 = 死代码）。
+        let p_out = open_play_out_probability(risk);
+        let p_out_permille = (p_out * 1000.0) as u64;
+        let liveness_permille = (liveness_bonus * 1000.0) as u64;
+        {
+            let t = &mut st.opportunity_tally;
+            t.liveness_pass_risk_bonus_permille_max =
+                t.liveness_pass_risk_bonus_permille_max.max(liveness_permille);
+            t.out_channel_prob_permille_min = t.out_channel_prob_permille_min.min(p_out_permille);
+            t.out_channel_prob_permille_max = t.out_channel_prob_permille_max.max(p_out_permille);
         }
-    } else {
-        None
-    };
-    if let Some(detail) = out_detail {
-        // 出界落点：出底线 x 越界（home 出对方底线 x>1 / away 出 x<0）；出边线 y 越界（界外 0.01-0.05）
-        let (raw_x, raw_y) = if detail == "out_goal_line" {
-            let x = if home { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
-            (x, ly)
+        // 落点误差（保留：raw/projected 会用于非出界的落点微调；出界分支另算越界点）
+        let landing = sample_pass_landing(from_pos, intended, risk, rng);
+        let channel_hit = (rng.next_u64() % 1000) as f64 / 1000.0 < p_out;
+        if channel_hit {
+            st.opportunity_tally.out_channel_hits += 1;
+        }
+        // 出界触发 = 通道命中；落点误差自然越界（罕见但正确）也一并接受。
+        let (out_side, own_goal_line) = if channel_hit {
+            let (side, own) = out_side_for_intended(home, intended, rng);
+            (Some(side), own)
         } else {
-            let y = if ly > 0.5 { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
-            (lx, y)
+            // 落点误差自然越界（罕见）：用落点所在半场判己方/对方底线
+            // raw.x < 0.5 是左半场；home 攻右 → 左半场 = 己方底线
+            let own = (landing.raw.0 < 0.5) == home;
+            (landing.out_side, own)
         };
-        let (x2, y2) = (clamp01(raw_x), clamp01(raw_y));
-        let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-        let flight = distance_meters(from_pos, (x2, y2)) / speed;
-        let t_end = t + flight;
-        events.push(Event {
-            t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
-            x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-            result: Some("out".to_string()), speed: Some(speed), lead: Some(lead),
-            h: Some(pass_h(distance_meters(from_pos, (x2, y2)), rng)),
-            out_pos: Some((raw_x, raw_y)), out_side: Some(out_side_of(detail).to_string()),
-            detail: Some(detail.to_string()),
-            ..Event::default()
-        });
-        st.highlight = Some(Highlight {
-            t_end,
-            participants: vec![(from, from_pos)],
-            outcome: HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (raw_x, raw_y), source: PassOutSource::NormalPass },
-        });
-        let movers = compute_movers(st, rng, t, &[from]);
-        for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
-        events.push(beat_event(t, None, None, movers));
-        return;
+        if let Some(side) = out_side {
+            // 越界点：沿该轴把落点推过边界（通道命中时落点本在场内，需显式越界）。
+            let overshoot = 0.01 + (rng.next_u64() % 40) as f64 / 1000.0;
+            let (raw_x, raw_y) = match side {
+                OutSide::GoalLine => {
+                    let x = if intended.0 > 0.5 { 1.0 + overshoot } else { -overshoot };
+                    (x, landing.projected.1)
+                }
+                OutSide::Sideline => {
+                    let y = if intended.1 > 0.5 { 1.0 + overshoot } else { -overshoot };
+                    (landing.projected.0, y)
+                }
+            };
+            let (x2, y2) = (clamp01(raw_x), clamp01(raw_y));
+            let detail = match side {
+                OutSide::GoalLine => "out_goal_line",
+                OutSide::Sideline => "out_sideline",
+            };
+            // P31：执行绑定计数（与事件流一一对应）——按 `out_side` 分桶。
+            match side {
+                OutSide::GoalLine => st.opportunity_tally.exec_pass_out_corner += 1,
+                OutSide::Sideline => st.opportunity_tally.exec_pass_out_throw_in += 1,
+            }
+            let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
+            let flight = distance_meters(from_pos, (x2, y2)) / speed;
+            let t_end = t + flight;
+            events.push(Event {
+                t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
+                x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
+                result: Some("out".to_string()), speed: Some(speed), lead: Some(lead),
+                h: Some(pass_h(distance_meters(from_pos, (x2, y2)), rng)),
+                // out_pos 存真实越界坐标（不 clamp）；x2/y2 是 viewer 渲染用的场内投影。
+                out_pos: Some((raw_x, raw_y)), out_side: Some(out_side_of(detail).to_string()),
+                detail: Some(detail.to_string()),
+                ..Event::default()
+            });
+            st.highlight = Some(Highlight {
+                t_end,
+                participants: vec![(from, from_pos)],
+                outcome: HighlightOutcome::PassOutOfPlay {
+                    detail: detail.to_string(),
+                    out_pos: (raw_x, raw_y),
+                    source: PassOutSource::NormalPass,
+                    own_goal_line,
+                },
+            });
+            let movers = compute_movers(st, rng, t, &[from]);
+            for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+            events.push(beat_event(t, None, None, movers));
+            return;
+        }
     }
     // P13 fix（失败传球）：出界未命中 → 失败判定（拦截 / 传失/失准）→ 成功。普通传球（槽位 + 过渡）
     // 统一判定——量纲上过渡传球占绝对多数（PASS_BREAK ~400/场），失败必须作用于全体有向传球才能把
@@ -2924,12 +3114,6 @@ fn shot_window_plan(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
             st.opportunity_tally.shot_window_fouls += 1;
             execute_action_resolution(st, rng, events, t, Some(plan));
         }
-        // D2 背向球门 → 禁 Shoot、转死球重开（结构性不可达；见 `CarrierAction::AwardDeadBall`）。
-        // 按结算如实执行重开，**不**当作「等待」吞掉。
-        ActionResolution::DeadBall(_) => {
-            st.shot_setup = None;
-            execute_action_resolution(st, rng, events, t, Some(plan));
-        }
         // 未提交、未被抢断：本 tick 持球等待，窗口计时推进
         _ => {
             let ticks = {
@@ -3069,6 +3253,9 @@ fn emit_tackle_highlight_impl(
 
 /// 高亮结束 → 球权交接（D12）：pos[] 对账到高亮结束位置，按结局设置后继
 fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+    // P31 D3：每个高亮的结算都是一次 meaningful action（传球交接 / 拦截 / 传失 / 射门 /
+    // 抢断 / 出界重开 / 角球 / 门球）——统一在此归零停滞计时。
+    note_meaningful_action(st);
     let h = st.highlight.take().unwrap();
     // 对账参与者 pos + last_emitted 到高亮结束位置（回归 movers 不回弹）
     for (id, end_pos) in &h.participants {
@@ -3080,8 +3267,6 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.ball_pos = catch_pos;
             st.carrier = receiver;
             st.carrier_from = catch_pos;
-            st.hold_ticks = 0;
-            st.hold_max = slot_hold_max(st.match_duration);
             if st.shot_pending_after_pass {
                 // P9：射门槽的向前传球完成 → 接射门（到目标距离直接射，否则进入带球推进）
                 st.shot_pending_after_pass = false;
@@ -3131,8 +3316,6 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.carrier_from = save_pos;
             // save-caught 触发 transition（球权易主）：save 高亮终点 tick 后的首个整数 tick 边界武装
             st.transition = Some(Transition { ticks_left: TRANSITION_TICKS, attacking: st.possession, source: TransitionSource::SaveCaught });
-            st.hold_ticks = 0;
-            st.hold_max = slot_hold_max(st.match_duration);
             emit_beat_with_main(st, rng, events, t);
         }
         HighlightOutcome::ShotSavedRebound { gk, rebound_from, dir } => {
@@ -3147,38 +3330,25 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             // 门球（goal kick）：possession 切对方，对方门将开大脚
             start_goal_kick(st, rng, events, t);
         }
-        HighlightOutcome::PassOutOfPlay { detail, out_pos, source } => {
-            // 出界重开（P6 批次1）：不设 carrier，按 detail+source 触发重开
-            // P27：out_pos 存真实越界值；重开锚（角旗/掷球点）与球位必须留在场内 → 在此 clamp
+        HighlightOutcome::PassOutOfPlay { detail, out_pos, source, own_goal_line } => {
+            // 出界重开（P31 D2）：不设 carrier，重开类型由**纯函数** `out_restart_for`
+            // （`out_side` + 最后触球方）决定。
+            // out_pos 存真实越界值；重开锚（角旗/掷球点）与球位必须留在场内 → 在此 clamp
             // （start_corner/start_throw_in 内部也会再钳一次，此处钳是为了 st.ball_pos 与
-            //  last_emitted 的确定性——探针实测不钳会破 D6 逐 seed 一致）。事件字段不受影响。
+            //  last_emitted 的确定性——探针实测不钳会破逐 seed 一致）。事件字段不受影响。
             let out_pos = (clamp01(out_pos.0), clamp01(out_pos.1));
             st.ball_pos = out_pos;
             st.carrier = -1;
-            match source {
-                PassOutSource::NormalPass => {
-                    if detail == "out_sideline" {
-                        // 界外球（对方掷）
-                        start_throw_in(st, rng, events, t, out_pos, 1 - st.possession);
-                    } else {
-                        // 门球（对方门将开大脚）
-                        start_goal_kick(st, rng, events, t);
-                    }
+            let side = if detail == "out_sideline" { OutSide::Sideline } else { OutSide::GoalLine };
+            match out_restart_for(source, side, own_goal_line) {
+                // 门球：对方门将开大脚（`start_goal_kick` 内部切 possession）
+                OutRestart::GoalKick => start_goal_kick(st, rng, events, t),
+                // 界外球：普通传球 → 对方掷；防方解围出边线 → 进攻方掷（= 1 − 防方）
+                OutRestart::ThrowIn => {
+                    start_throw_in(st, rng, events, t, out_pos, 1 - st.possession)
                 }
-                PassOutSource::Clearance => {
-                    // 防方解围出界：重开给进攻方（possession 此时=防方，进攻方 = 1-防方）
-                    if detail == "out_sideline" {
-                        // 界外球（进攻方掷）——防方解围出边线
-                        start_throw_in(st, rng, events, t, out_pos, 1 - st.possession);
-                    } else {
-                        // 角球（进攻方）——防方解围出底线
-                        start_corner(st, rng, events, t, out_pos, 1 - st.possession);
-                    }
-                }
-                PassOutSource::CornerDirect => {
-                    // 槽位角球（P7）：出底线 → 角球（攻方发，possession=攻方）
-                    start_corner(st, rng, events, t, out_pos, st.possession);
-                }
+                // 角球：防方解围出底线 → 进攻方发（possession 此时 = 防方）
+                OutRestart::Corner => start_corner(st, rng, events, t, out_pos, 1 - st.possession),
             }
         }
         HighlightOutcome::CornerAward { rebound_from } => {
@@ -3222,8 +3392,6 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.ball_pos = contact;
             st.carrier = victim;
             st.carrier_from = contact;
-            st.hold_ticks = 0;
-            st.hold_max = slot_hold_max(st.match_duration);
             emit_beat_with_main(st, rng, events, t);
         }
     }
@@ -3340,6 +3508,8 @@ fn advance_restart_prep(st: &mut MatchState, rng: &mut SeededRng, events: &mut V
     }
     // 包抄到位 → 触发发球高亮
     st.restart_prep = None;
+    // P31 D3：发球重开（角球 / 界外球 / 任意球）＝ meaningful action。
+    note_meaningful_action(st);
     match kind {
         RestartKind::Corner => emit_corner_kick(st, rng, events, t),
         RestartKind::ThrowIn => emit_throw_in(st, rng, events, t),
@@ -3481,6 +3651,8 @@ fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     let chaser_pos = st.pos[chaser as usize];
     let d = dist_norm(chaser_pos, loose_pos);
     if d < norm_step(PICKUP_RADIUS_METERS) {
+        // P31 D3：松散球拾取 = meaningful action（球权落定，新的持球段开始）。
+        note_meaningful_action(st);
         // 角球 battle 争抢：攻方 chaser 到落点拾取半径 → 就地 roll 攻/防。
         // 主场优势通道②：二点争顶——攻方 home 胜率 58（助威争顶）、攻方 away 52（主队防守更稳）。
         if let Some((atk_chaser, def_chaser)) = st.loose.as_ref().unwrap().battle {
@@ -3504,8 +3676,6 @@ fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
         st.pos[chaser as usize] = loose_pos;
         st.carrier_from = loose_pos;
         st.last_emitted[chaser as usize] = loose_pos;
-        st.hold_ticks = 0;
-        st.hold_max = slot_hold_max(st.match_duration);
         st.loose = None;
         emit_beat_with_main(st, rng, events, t);
         return;
@@ -3555,8 +3725,6 @@ fn battle_attack_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     st.pos[atk as usize] = loose_pos;
     st.carrier_from = loose_pos;
     st.last_emitted[atk as usize] = loose_pos;
-    st.hold_ticks = 0;
-    st.hold_max = slot_hold_max(st.match_duration);
     let roll = rng.next_u64() % 100;
     if roll < 55 {
         // 头球射门（shot 高亮 detail=header、h=0）
@@ -3661,8 +3829,6 @@ fn battle_defend_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     st.pos[def as usize] = loose_pos;
     st.carrier_from = loose_pos;
     st.last_emitted[def as usize] = loose_pos;
-    st.hold_ticks = 0;
-    st.hold_max = slot_hold_max(st.match_duration);
     let roll = rng.next_u64() % 100;
     if roll < 70 {
         // 头球解围（pass 顶出禁区 detail=clearance、h=0 → 松散球重新争，普通非 battle）
@@ -3696,7 +3862,7 @@ fn emit_clearance(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
         t_end = t + distance_meters(pos, (x2, y2)) / speed;
         detail = "out_goal_line";
         out_pos = Some((out_x, y));
-        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (out_x, y), source: PassOutSource::Clearance };
+        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (out_x, y), source: PassOutSource::Clearance, own_goal_line: true };
     } else if out_sideline {
         // 解围出边线：y 越界（防方半场边线）→ 界外球（攻方掷）
         let out_y = if y > 0.5 { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
@@ -3704,7 +3870,7 @@ fn emit_clearance(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
         t_end = t + distance_meters(pos, (x2, y2)) / speed;
         detail = "out_sideline";
         out_pos = Some((pos.0 + clear_dir * 0.15, out_y));
-        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (pos.0 + clear_dir * 0.15, out_y), source: PassOutSource::Clearance };
+        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (pos.0 + clear_dir * 0.15, out_y), source: PassOutSource::Clearance, own_goal_line: true };
     } else {
         // 正常解围：顶出禁区（落点往中场方向 0.18-0.32 归一化）→ 松散球重新争（普通）
         let dist = 0.18 + (rng.next_u64() % 14) as f64 / 100.0;
@@ -3753,8 +3919,6 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
             events.push(beat_event(t, None, None, movers));
         } else {
             st.dead_ball = None;
-            st.hold_ticks = 0;
-            st.hold_max = slot_hold_max(st.match_duration);
             emit_beat_with_main(st, rng, events, t);
         }
         return;
@@ -3796,6 +3960,8 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
         // 到中圈 → fall through 到 kickoff
     }
     // kickoff（丢球方开球者在中圈拨给同队）
+    // P31 D3：开球重开 = meaningful action。
+    note_meaningful_action(st);
     let receiver_pos = st.pos[receiver as usize];
     let (kx2, ky2) = lead_point((0.5, 0.5), receiver_pos, 0.1);
     events.push(Event {
@@ -3812,8 +3978,6 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
     st.carrier_from = (kx2, ky2);
     st.last_emitted[receiver as usize] = (kx2, ky2);
     st.possession = if receiver <= 10 { 0 } else { 1 };
-    st.hold_ticks = 0;
-    st.hold_max = slot_hold_max(st.match_duration);
     st.dead_ball = Some(DeadBall { goal, remaining: 0, preparing, kickoff_id, kicked: true, receiver, kickoff_end });
 }
 
@@ -4698,7 +4862,9 @@ mod tests {
 
     #[test]
     fn simulate_produces_minimal_match() {
-        let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
+        // P31：seed 7 在 2700s 内不出射门（删槽位后射门由 hazard 涌现、机会数随 seed 波动，
+        // 短比赛可能整场无射门）。改用 90 分钟默认时长——本测试只验事件流**类型齐全**，不验频率。
+        let cfg = MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION };
         let s = simulate(7, cfg);
         let types: Vec<String> = json_events(&s).iter().map(|e| type_of(e)).collect();
         // v2：kickoff + beat 节拍流 + pass/shot 高亮 + whistle + lineup；无顶层 dribble
@@ -5309,7 +5475,7 @@ mod tests {
         // 球侧平移：直接验证 formation_target（home 持球、球在左半 vs 右半时，id5 目标 x 偏左 vs 偏右）。
         // 不依赖事件流采样（槽位机制下开放比赛分布变化，采样法不稳定）。
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.possession = 0; // home 持球
         st.ball_pos = (0.2, 0.5);
         let left_x = formation_target(&st, 5).0;
@@ -5328,7 +5494,7 @@ mod tests {
         // 门将豁免（P7 槽位下门将 mover 极少，直接测 compute_movers 的 keeper_return 分支）：
         // 门将离门线时产 mover 回门线（x≈0.02），不受球位置影响
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.pos[0] = (0.2, 0.5); // 门将离门
         st.ball_pos = (0.8, 0.5); // 球远
         st.possession = 0;
@@ -5367,7 +5533,7 @@ mod tests {
         // repulsion：两个同队球员放在同一位置、球在远处 → compute_movers 应把目标推开（不贴脸）。
         // 内部单测（构造 MatchState）——直接验证 repulsion 目标层逻辑。
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.ball_pos = (0.8, 0.5);
         st.possession = 0; // home 持球
         st.carrier = 9;
@@ -5394,7 +5560,7 @@ mod tests {
     /// 返回一个已知会产 mover 的球员 id（其队形目标离当前位置足够远）。
     fn sent_off_scene() -> (MatchState, SeededRng) {
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.ball_pos = (0.8, 0.5);
         st.possession = 0;
         st.carrier = 9;
@@ -5427,7 +5593,7 @@ mod tests {
     fn p23_sent_off_keeper_produces_no_keeper_return() {
         // 对照组：门将离门 → 产 keeper_return
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.pos[0] = (0.2, 0.5);
         st.ball_pos = (0.8, 0.5);
         st.possession = 0;
@@ -5439,7 +5605,7 @@ mod tests {
             "对照组失败：未罚下门将离门应产 keeper_return"
         );
         // 实验组：门将被罚下 → 不产 keeper_return（罚下门将不得再上场）
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.pos[0] = (0.2, 0.5);
         st.ball_pos = (0.8, 0.5);
         st.possession = 0;
@@ -5457,7 +5623,7 @@ mod tests {
     fn p23_sent_off_not_picked_as_tackler() {
         // 罚下球员比合法防守者更近，也不得被 nearest_defender 选中
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         let target = (0.5, 0.5);
         st.pos[4] = (0.51, 0.5); // 罚下者最近（home 防守方）
         st.pos[5] = (0.6, 0.5); // 合法防守者较远
@@ -5474,7 +5640,7 @@ mod tests {
     fn p23_sent_off_not_picked_as_close_down() {
         // 罚下球员比队友更近，也不得被 pick_close_down_players 选中
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         let target = (0.5, 0.5);
         st.pos[11] = (0.51, 0.5); // 罚下者最近（away）
         st.pos[12] = (0.55, 0.5); // 合法队友次近
@@ -5488,7 +5654,7 @@ mod tests {
     #[test]
     fn p23_kickoff_pick_skips_sent_off() {
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         // 无人罚下：恒返回默认（不改变既有事件流）
         assert_eq!(kickoff_pick(&st, 9, -1), 9);
         assert_eq!(kickoff_pick(&st, 12, -1), 12);
@@ -5517,7 +5683,7 @@ mod tests {
     fn p23_kickoff_receiver_never_equals_kicker() {
         // 自传退化守卫：开球者与接球者不得为同一人（两 id 都合法未罚下，L2 零参与抓不到）。
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         // 最坏情形：home 丢球，开球者 9 被罚下 → 开球者回绕到 10；接球者默认 10 被 avoid 排除 → 11？
         // 构造：home 侧 9 罚下，away 侧 11 罚下，验证 kicker/receiver 不相等。
         st.sent_off[9] = true;
@@ -5532,7 +5698,7 @@ mod tests {
         // 退化态：某队 10 名外场全部罚下（每队最多 10 红，门将不产犯规）。三个选择器都必须
         // total（不 panic）且不返回罚下球员——由恒不被罚下的门将顶上。
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         for id in 1..=10 {
             st.sent_off[id] = true; // home 外场清空（门将 0 保留）
         }
@@ -5562,20 +5728,20 @@ mod tests {
         // nearest_in_team（P24）：home 外场全罚下 → 回退门将 0（不返回 -1，避免 st.pos[-1] panic）
         assert_eq!(nearest_in_team(&st, target, 0), 0, "home 外场全罚下时 nearest_in_team 应回退门将 0");
         // away 侧对称：away 外场全罚下 → 回退门将 21
-        let mut st3 = MatchState::new(&lineup, 5400.0);
+        let mut st3 = MatchState::new(&lineup);
         for id in 11..=20 {
             st3.sent_off[id] = true; // away 外场清空（门将 21 保留）
         }
         assert_eq!(nearest_in_team(&st3, target, 1), 21, "away 外场全罚下时 nearest_in_team 应回退门将 21");
         // 对照组：未全罚下 → 返回最近外场（非门将 0）
-        let mut st2 = MatchState::new(&lineup, 5400.0);
+        let mut st2 = MatchState::new(&lineup);
         st2.pos[1] = (0.6, 0.5); // 把外场 id 1 放离 target 更近
         st2.pos[0] = (0.05, 0.5);
         let picked = nearest_in_team(&st2, target, 0);
         assert!(picked >= 1 && picked <= 10, "未全罚下时应返回最近外场，got {}", picked);
 
         // nearest_any（P25/#46）：两队外场全罚下 → 回退 home 门将 0（不返回 -1）
-        let mut st4 = MatchState::new(&lineup, 5400.0);
+        let mut st4 = MatchState::new(&lineup);
         for id in 1..=10 {
             st4.sent_off[id] = true;
         }
@@ -5592,7 +5758,7 @@ mod tests {
         // P25/#45：该队外场全罚下且仅存球员持球需向前推进时，emit_forward_pass_highlight
         // 内联选择器不得返回 -1（否则 st.pos[-1] 越界 panic），应回退该队门将。
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         // home 外场 1..=9 罚下，仅存 10 持球；把 10 放离球门足够远触发向前传球路径
         for id in 1..=9 {
             st.sent_off[id] = true;
@@ -5793,7 +5959,9 @@ mod tests {
                 let detail = json_str(&e, "detail");
                 let is_corner = detail.as_deref() == Some("corner");
                 let subj = json_num(&e, "subject").unwrap_or(-1.0) as i32;
-                let is_gk_pass = !has_to && (subj == 0 || subj == 21);
+                // 门球开大脚：无 to + 门将 subject + **无 lead**（重开发球不带走位/落点演绎字段；
+                // 开放比赛里门将自己的出球也满足前两条，但它带 lead，不是重开）。
+                let is_gk_pass = !has_to && (subj == 0 || subj == 21) && json_num(&e, "lead").is_none();
                 if is_corner {
                     assert_eq!(json_str(&e, "result").as_deref(), Some("contested"), "角球发球应仍为 contested: {}", e);
                     assert!(out_pos_of(&e).is_none(), "角球发球不应带 out_pos: {}", e);
@@ -6260,79 +6428,6 @@ mod tests {
         assert!(seen > 0, "没有任何 seed 产出带结算终点的 tackle");
     }
 
-    #[test]
-    fn p7_frequency_5min_vs_90min_consistent() {
-        // P7 核心：5 分钟与 90 分钟比赛产出同一数量级的核心精彩事件（槽位机制，不随时长漂移）。
-        // 核心事件 = shot + corner 发球 + throw_in 掷球 + tackle + 进球。
-        // spec：5min 核心事件 ≥ 90min 的 60%（5min 物理容纳 ~20 槽、90min ~24 槽）。
-        //
-        // P29 窗口加宽：5min 侧的 seed 数从 20 提到 100。理由——5min 进球/场是低均值计数
-        // （真实率 ~0.6-0.7），20 seed 下采样标准差 ~0.1（相对 ~15%），旧窗口实测 1.05 而长程
-        // 真值 0.72（偏离 45%），断言实际靠运气过。90min 侧每场计数高得多、20 seed 已稳，保持
-        // 不变以控成本（90min tick 数是 5min 的 18 倍，扩大它才贵）。
-        let mut count = |dur: f64, seed: u64| -> [usize; 5] {
-            let s = simulate(seed, MatchConfig { match_duration_seconds: dur, demo_mode: false, model_version: MODEL_VERSION });
-            let evts = json_events(&s);
-            let mut shot = 0;
-            let mut corner = 0;
-            let mut throw_in = 0;
-            let mut tackle = 0;
-            let mut goal = 0;
-            for e in &evts {
-                if type_of(e) == "shot" {
-                    shot += 1;
-                    if e.contains("\"result\":\"goal\"") { goal += 1; }
-                } else if type_of(e) == "tackle" {
-                    tackle += 1;
-                } else if type_of(e) == "pass" {
-                    if json_field(e, "detail").as_deref() == Some("\"corner\"") { corner += 1; }
-                    else if json_field(e, "detail").as_deref() == Some("\"throw_in\"") { throw_in += 1; }
-                }
-            }
-            [shot, corner, throw_in, tackle, goal]
-        };
-        let n5 = 100usize; // 5min 侧加宽（见上）
-        let n90 = 20usize;
-        let mut a5 = [0usize; 5];
-        let mut a90 = [0usize; 5];
-        for seed in 1..=n5 as u64 {
-            let c5 = count(300.0, seed);
-            for i in 0..5 { a5[i] += c5[i]; }
-        }
-        for seed in 1..=n90 as u64 {
-            let c90 = count(5400.0, seed);
-            for i in 0..5 { a90[i] += c90[i]; }
-        }
-        let names = ["shot", "corner", "throw_in", "tackle", "goal"];
-        // 4 个**槽位/几何**类核心事件仍应「同数量级」（不随时长塌缩）：
-        // shot / corner / throw_in / goal（下标 0/1/2/4）。5min 核心事件 ≥ 90min 的 ~53%
-        // （ratio ≤ 1.9）；进球最差可接受 ratio ≤ 2.5（小样本波动）。
-        for i in [0usize, 1, 2, 4] {
-            let v5 = a5[i] as f64 / n5 as f64;
-            let v90 = a90[i] as f64 / n90 as f64;
-            let ratio = v90 / v5.max(0.5);
-            let limit = if i == 4 { 2.5 } else { 1.9 };
-            assert!(ratio <= limit, "{} 数量级不一致：5min {:.1} vs 90min {:.1}（ratio {:.2}，限 {:.2}）", names[i], v5, v90, ratio, limit);
-        }
-        // P30（D6）：**tackle 轴改为方向性断言**——2C 后抢断不再由槽位产生，而是开放比赛防守
-        // 接触竞争的涌现产物，随「防守机会点数量」缩放（90min ~758 机会点 vs 5min ~19）。
-        // 短比赛抢断本就稀少（实测 5min ~0.1/场 vs 90min ~5-7/场），要求两者「同数量级」是槽位
-        // 时代的产物，与涌现语义矛盾。故断言：
-        //   (a) 方向：90min 抢断 > 5min 抢断（涌现正确方向——机会多则接触多）；
-        //   (b) 长比赛抢断落在**体量带**内（不塌缩/不爆炸）：90min 场均 ∈ [2, 15]；
-        //   (c) 短比赛抢断**可达**（宽窗口下非恒 0，防机制在短比赛里死亡）。
-        let t5 = a5[3] as f64 / n5 as f64;
-        let t90 = a90[3] as f64 / n90 as f64;
-        assert!(t90 > t5, "90min 抢断({:.2}) 应多于 5min({:.2})——涌现方向错误", t90, t5);
-        assert!((2.0..=15.0).contains(&t90), "90min 抢断/场 {:.2} ∉ [2,15]（塌缩或爆炸）", t90);
-        assert!(a5[3] > 0, "100 场 5min 比赛零抢断——短比赛里抢断机制死亡");
-        // 5min 也要有足够的精彩内容（集锦）：进球 ≥0.5、shot ≥4。P29 起射门由 hazard 门控
-        // （不再「到射程即射」），实测 5min shot 4.6/场、进球 0.47/场（加宽窗口 100 seed）；
-        // 均为「集锦不塌缩」的体量下界，非频率目标。
-        assert!(a5[4] as f64 / n5 as f64 >= 0.4, "5min 进球过少（{:.2}）", a5[4] as f64 / n5 as f64);
-        assert!(a5[0] as f64 / n5 as f64 >= 4.0, "5min 射门过少（{:.2}）", a5[0] as f64 / n5 as f64);
-    }
-
     // ==== P28 持球行动机会（#25 阶段 2A）纯函数测试 ====
 
     /// D2：deadline 公式的方向、边界与钳制（不依赖 MatchState，零 RNG）。
@@ -6378,37 +6473,20 @@ mod tests {
         assert_eq!(compute_action_deadline(9.0, 9.0, 9.0), 5);
     }
 
-    /// D3：结算优先级——死球/重开 > 防守中断 > 持球终结 > 持球普通 > 无事件防守 > beat。
+    /// D3：结算优先级——防守中断 > 持球终结 > 持球普通 > 无事件防守 > beat。
+    /// P31：槽位时代的「持球侧直接产死球」级已删（出界改由 pass_risk 调制通道涌现）。
     #[test]
     fn p28_resolution_priority() {
-        let dribble = CarrierPlan {
-            action: Some(CarrierAction::Dribble),
-            dead_ball: None,
-            situation: None,
-            exec: CarrierExecution::ContinueDribble,
-        };
         let pass = CarrierPlan {
             action: Some(CarrierAction::Pass { target: Some(3) }),
-            dead_ball: None,
-            situation: None,
             exec: CarrierExecution::Pass { allow_out: true },
         };
         let shoot = CarrierPlan {
             action: Some(CarrierAction::Shoot),
-            dead_ball: None,
-            situation: None,
             exec: CarrierExecution::Shoot,
-        };
-        let out = CarrierPlan {
-            action: Some(CarrierAction::Pass { target: None }),
-            dead_ball: Some(DeadBallKind::Corner),
-            situation: None,
-            exec: CarrierExecution::PassOut { kind: DeadBallKind::Corner },
         };
         let idle = CarrierPlan {
             action: None,
-            dead_ball: None,
-            situation: None,
             exec: CarrierExecution::ContinueDribble,
         };
         let tackle = DefensiveAction::Tackle;
@@ -6416,22 +6494,18 @@ mod tests {
         let jockey = DefensiveAction::Jockey;
         let none = DefensiveAction::None;
 
-        // 第 1 级：死球/重开压过一切
-        assert_eq!(resolve_action_opportunity(&out, tackle), ActionResolution::DeadBall(DeadBallKind::Corner));
-        assert_eq!(resolve_action_opportunity(&out, none), ActionResolution::DeadBall(DeadBallKind::Corner));
-        // 第 2 级：防守中断压过持球终结
+        // 第 1 级：防守中断压过持球终结
         assert_eq!(resolve_action_opportunity(&shoot, tackle), ActionResolution::InterruptedByTackle);
         assert_eq!(resolve_action_opportunity(&shoot, DefensiveAction::Foul), ActionResolution::InterruptedByFoul);
-        // 第 3 级：持球终结压过无事件防守
+        // 第 2 级：持球终结压过无事件防守
         assert_eq!(resolve_action_opportunity(&shoot, contain), ActionResolution::CarrierAction(CarrierAction::Shoot));
         assert_eq!(resolve_action_opportunity(&shoot, jockey), ActionResolution::CarrierAction(CarrierAction::Shoot));
-        // 第 4 级：持球普通（pass/dribble）压过无事件防守
+        // 第 3 级：持球普通（pass）压过无事件防守
         assert_eq!(resolve_action_opportunity(&pass, contain), ActionResolution::CarrierAction(CarrierAction::Pass { target: Some(3) }));
-        assert_eq!(resolve_action_opportunity(&dribble, jockey), ActionResolution::CarrierAction(CarrierAction::Dribble));
-        // 第 5 级：无事件防守（持球侧未承诺行动时才可见）
+        // 第 4 级：无事件防守（持球侧未承诺行动时才可见）
         assert_eq!(resolve_action_opportunity(&idle, contain), ActionResolution::DefensiveContainment);
         assert_eq!(resolve_action_opportunity(&idle, jockey), ActionResolution::DefensiveJockey);
-        // 第 6 级：无显著行动
+        // 第 5 级：无显著行动
         assert_eq!(resolve_action_opportunity(&idle, none), ActionResolution::NoAction);
     }
 
@@ -6439,11 +6513,9 @@ mod tests {
     #[test]
     fn p28_resolution_consistent_with_candidates() {
         let carriers = [
-            ("dribble", Some(CarrierAction::Dribble), None),
-            ("pass", Some(CarrierAction::Pass { target: Some(5) }), None),
-            ("shoot", Some(CarrierAction::Shoot), None),
-            ("out", Some(CarrierAction::Pass { target: None }), Some(DeadBallKind::ThrowIn)),
-            ("idle", None, None),
+            ("pass", Some(CarrierAction::Pass { target: Some(5) })),
+            ("shoot", Some(CarrierAction::Shoot)),
+            ("idle", None),
         ];
         let defensives = [
             DefensiveAction::Tackle,
@@ -6452,17 +6524,11 @@ mod tests {
             DefensiveAction::Jockey,
             DefensiveAction::None,
         ];
-        for (name, action, dead) in carriers {
+        for (name, action) in carriers {
             for d in defensives {
                 let plan = CarrierPlan {
                     action,
-                    dead_ball: dead,
-                    situation: None,
-                    exec: if let Some(k) = dead {
-                        CarrierExecution::PassOut { kind: k }
-                    } else {
-                        CarrierExecution::ContinueDribble
-                    },
+                    exec: CarrierExecution::ContinueDribble,
                 };
                 let full = ActionPlan {
                     carrier: plan,
@@ -6472,9 +6538,7 @@ mod tests {
                 };
                 full.assert_resolution_consistent();
                 // 结算必须落在「优先级最高」的那一条上
-                let expected = if dead.is_some() {
-                    ActionResolution::DeadBall(dead.unwrap())
-                } else if matches!(d, DefensiveAction::Tackle { .. }) {
+                let expected = if matches!(d, DefensiveAction::Tackle { .. }) {
                     ActionResolution::InterruptedByTackle
                 } else if matches!(d, DefensiveAction::Foul) {
                     ActionResolution::InterruptedByFoul
@@ -6482,10 +6546,7 @@ mod tests {
                     match action {
                         Some(CarrierAction::Shoot) => ActionResolution::CarrierAction(CarrierAction::Shoot),
                         Some(a @ CarrierAction::Pass { .. }) => ActionResolution::CarrierAction(a),
-                        Some(CarrierAction::Dribble) => ActionResolution::CarrierAction(CarrierAction::Dribble),
-                        // P29：背向球门（D2）转死球——第 1 级（dead_ball 已置位，见上分支）
-                        Some(CarrierAction::AwardDeadBall(k)) => ActionResolution::DeadBall(k),
-                        None => match d {
+                                        None => match d {
                             DefensiveAction::Contain => ActionResolution::DefensiveContainment,
                             DefensiveAction::Jockey => ActionResolution::DefensiveJockey,
                             _ => ActionResolution::NoAction,
@@ -6501,7 +6562,7 @@ mod tests {
     #[test]
     fn p28_deadline_geometry_directions() {
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.carrier = 9;
         st.possession = 0;
         for id in 0..22usize {
@@ -6547,68 +6608,111 @@ mod tests {
         assert!(gk_deadline <= MAX_ACTION_DEADLINE_TICKS);
     }
 
-    /// 防空转（P27 model_version 教训）：fallback 路径上抽情境必须**恰好消耗 1 次 RNG**，
-    /// 且与旧槽位抽签逐值同构；自然 deadline 路径零 RNG。RNG 序是等价性的地基。
+    /// P31：开放比赛的持球决策是**几何状态**的函数（无事件类型配额）。
+    /// 方向性断言：
+    /// - 被贴身逼抢 → 出球档（普通传球）；
+    /// - 无压 + 正对球门近门 → 射门推进档（进窗口 / 带球推进 / 长传推进三选一）；
+    /// - 无压 + 远在自家后场背向 → 带球档。
     #[test]
-    fn p28_fallback_situation_rng_parity() {
-        // 抽情境 = 1 次 roll（与旧 roll_highlight_slot 同构）
+    fn p31_open_play_carrier_decision_is_geometric() {
+        let setup = |carrier_x: f64, nearest_x: f64| {
+            let lineup = default_lineup();
+            let mut st = MatchState::new(&lineup);
+            st.possession = 0;
+            st.carrier = 9;
+            for id in 0..22usize {
+                st.pos[id] = (0.5, 0.5);
+            }
+            st.pos[9] = (carrier_x, 0.5);
+            for id in 11..=20usize {
+                st.pos[id] = (0.05, 0.5); // 防守者全部远离（营造「无压」）
+            }
+            st.pos[11] = (nearest_x, 0.5); // 最近防守者
+            st
+        };
+        // ① 贴身逼抢 → 出球（普通传球，且允许出界误差）
+        let mut st = setup(0.5, 0.505);
+        let mut rng = SeededRng::new(1);
+        let plan = evaluate_open_play_carrier_action(&mut st, &mut rng);
+        assert!(
+            matches!(plan.action, Some(CarrierAction::Pass { .. })),
+            "贴身逼抢应出球，实得 {:?}",
+            plan.action
+        );
+        assert_eq!(plan.exec, CarrierExecution::Pass { allow_out: true }, "出球档应允许落点误差出界");
+
+        // ② 无压 + 近门正对 → 射门推进档（起始点必须在射程外或射程内，但一定不是「带球无动作」）
+        let mut st = setup(0.88, 0.05); // 距右门 ~12.6m，最近防守者 ~90m 外
+        let mut saw_shot_engage = false;
         for seed in 1..=50u64 {
-            let mut a = SeededRng::new(seed);
-            let mut b = SeededRng::new(seed);
-            let s = roll_fallback_situation(&mut a);
-            let roll = b.next_u64() % 100;
-            let expect = if roll < 35 {
-                FallbackSituation::Shot
-            } else if roll < 47 {
-                FallbackSituation::Corner
-            } else if roll < 65 {
-                FallbackSituation::ThrowIn
-            } else if roll < 87 {
-                FallbackSituation::Tackle
-            } else {
-                FallbackSituation::Pass
-            };
-            assert_eq!(s, expect, "seed {} 情境抽签与旧槽位配额不同构", seed);
-            assert_eq!(a.next_u64(), b.next_u64(), "seed {} 抽情境后的 RNG 状态应一致", seed);
+            let mut rng = SeededRng::new(seed);
+            let plan = evaluate_open_play_carrier_action(&mut st, &mut rng);
+            if matches!(
+                plan.exec,
+                CarrierExecution::EnterShotWindow { .. }
+                    | CarrierExecution::DriveThenShoot { .. }
+                    | CarrierExecution::ForwardPass
+            ) {
+                saw_shot_engage = true;
+                break;
+            }
         }
+        assert!(saw_shot_engage, "近门无压站定 50 次从未启动射门推进（hazard 塌缩？）");
+
+        // ③ 无压 + 后场远离球门 → 以带球为主（射门推进档概率应显著更低）
+        let mut st = setup(0.15, 0.05);
+        let mut engage = 0;
+        for seed in 1..=100u64 {
+            let mut rng = SeededRng::new(seed);
+            let plan = evaluate_open_play_carrier_action(&mut st, &mut rng);
+            if !matches!(plan.exec, CarrierExecution::ContinueDribble) {
+                engage += 1;
+            }
+        }
+        let mut near_engage = 0;
+        let mut st_near = setup(0.88, 0.05);
+        for seed in 1..=100u64 {
+            let mut rng = SeededRng::new(seed);
+            let plan = evaluate_open_play_carrier_action(&mut st_near, &mut rng);
+            if !matches!(plan.exec, CarrierExecution::ContinueDribble) {
+                near_engage += 1;
+            }
+        }
+        assert!(
+            near_engage > engage,
+            "近门启动射门推进的次数({}) 应多于后场({})——推进方向错误",
+            near_engage, engage
+        );
     }
 
-    /// 防空转（结构性）：自然 deadline 的评估必须零 RNG 且结算为「继续带球」类。
+    /// P31：开放比赛持球决策**零配额**——同几何同 RNG 必得同计划（确定性），且不存在
+    /// 「第 N 次机会必产某类事件」。
     #[test]
-    fn p28_natural_deadline_is_decision_neutral() {
+    fn p31_natural_deadline_is_deterministic() {
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.carrier = 9;
         st.pos[9] = (0.5, 0.5);
-        let mut rng = SeededRng::new(7);
-        let mut probe = SeededRng::new(7);
-
-        let plan = build_action_plan(&mut st, &mut rng, OpportunityTrigger::NaturalDeadline);
-        assert!(plan.carrier.action.is_none(), "自然 deadline 在 2A 内不应承诺任何行动");
-        assert!(
-            matches!(
-                plan.resolution,
-                ActionResolution::NoAction
-                    | ActionResolution::DefensiveContainment
-                    | ActionResolution::DefensiveJockey
-            ),
-            "自然 deadline 应结算为无事件类：{:?}",
-            plan.resolution
-        );
-        assert_eq!(
-            plan.carrier.exec,
-            CarrierExecution::ContinueDribble,
-            "自然 deadline 的执行绑定应为继续带球"
-        );
-        // 零 RNG：消费后的状态与「未消费」的探针一致
-        assert_eq!(rng.next_u64(), probe.next_u64(), "自然 deadline 评估不应消耗 RNG");
+        for id in 11..=20usize {
+            st.pos[id] = (0.05, 0.5); // 无压后场：确定性最高（带球档）
+        }
+        // 同 seed 两次评估（各自独立 rng）→ 同计划
+        for seed in 1..=20u64 {
+            let mut a = SeededRng::new(seed);
+            let mut b = SeededRng::new(seed);
+            let pa = build_action_plan(&mut st, &mut a, OpportunityTrigger::NaturalDeadline);
+            let pb = build_action_plan(&mut st, &mut b, OpportunityTrigger::NaturalDeadline);
+            assert_eq!(pa.carrier.action, pb.carrier.action, "同几何同 seed 应得同候选动作");
+            assert_eq!(pa.carrier.exec, pb.carrier.exec, "同几何同 seed 应得同执行绑定");
+            assert_eq!(pa.resolution, pb.resolution, "同几何同 seed 应得同结算");
+        }
     }
 
     /// deadline 实测范围：跑满一场，每条机会的 deadline 都落在 [MIN, MAX]。
     #[test]
     fn p28_deadline_bounds_over_full_match() {
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         let mut rng = SeededRng::new(3);
         let mut events = Vec::new();
         let mut t = TICK_SECONDS;
@@ -6853,7 +6957,7 @@ mod tests {
     /// 默认：home 9 持球、距门 ~7m、正对球门、防守者远（无压）。
     fn window_state(defenders_at: &[(i32, f64, f64)]) -> MatchState {
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.possession = 0;
         st.carrier = 9;
         for id in 0..22usize {
@@ -6919,7 +7023,7 @@ mod tests {
             st
         };
         let carry_plan = CarrierPlan {
-            action: Some(CarrierAction::Shoot), dead_ball: None, situation: None,
+            action: Some(CarrierAction::Shoot),
             exec: CarrierExecution::Shoot,
         };
 
@@ -6927,7 +7031,7 @@ mod tests {
         {
             let st = build(false);
             let mut rng = SeededRng::new(9);
-            let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow, &carry_plan);
+            let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow);
             assert!(
                 matches!(d, DefensiveAction::Tackle { .. }),
                 "对照臂：未提交 + 贴身应产 Tackle（geometry 未触发抢断则本测试空跑），实得 {:?}", d
@@ -6939,7 +7043,7 @@ mod tests {
             let st = build(true);
             let mut rng = SeededRng::new(9);
             let mut probe = SeededRng::new(9);
-            let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow, &carry_plan);
+            let (d, _) = evaluate_defensive_action(&st, &mut rng, OpportunityTrigger::ShotWindow);
             assert_eq!(d, DefensiveAction::None, "提交后防守动作应为 None（不可回溯）");
             assert_eq!(rng.next_u64(), probe.next_u64(), "提交后防守评估不应消耗 RNG");
         }
@@ -7000,9 +7104,9 @@ mod tests {
         // carrier 中圈附近（远射、禁区外 → 犯规有资格），防守者贴身且落后（depth_lead < 0 →
         // 抢断被 bad_angle 压、犯规胜出）。
         let build = || {
-            let mut st = window_state(&[(11, 0.545, 0.5)]);
-            st.pos[9] = (0.58, 0.5);   // carrier 在防守者前方
-            st.pos[11] = (0.545, 0.5); // 约 3.7m，身后 → 犯规带
+            let mut st = window_state(&[(11, 0.57, 0.5)]);
+            st.pos[9] = (0.58, 0.5);  // carrier 在防守者前方
+            st.pos[11] = (0.57, 0.5); // 约 1.05m，略在身后 → 犯规带（P31 重标定后）
             st.shot_setup = Some(ShotSetup::new(30.0, true));
             st
         };
@@ -7235,7 +7339,7 @@ mod tests {
     fn p30_foul_cooldown_decays_every_tick() {
         // 构造：一个犯规刚发生（foul_cooldown = FOUL_MIN_GAP_TICKS）、处于 restart_prep 的局
         let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup, 5400.0);
+        let mut st = MatchState::new(&lineup);
         st.foul_cooldown_ticks = FOUL_MIN_GAP_TICKS;
         st.restart_prep = Some(RestartPrep {
             player: 9, target: (0.5, 0.5), kind: RestartKind::FreeKick, ticks: 0,
@@ -7360,8 +7464,7 @@ mod tests {
                     if a != DefensiveAction::None {
                         assert_eq!(sc, max, "dist={} lead={} danger={} 返回分非最高", dist, lead, danger);
                     }
-                    let carrier = CarrierPlan { action: Some(CarrierAction::Dribble), dead_ball: None,
-                        situation: None, exec: CarrierExecution::ContinueDribble };
+                    let carrier = CarrierPlan { action: None, exec: CarrierExecution::ContinueDribble };
                     let r = resolve_action_opportunity(&carrier, a);
                     let exclusive = match a {
                         DefensiveAction::Tackle => r == ActionResolution::InterruptedByTackle,
@@ -7395,8 +7498,7 @@ mod tests {
             let lineup = default_lineup();
             let mut rng = SeededRng::new(seed);
             let mut events = Vec::new();
-            let mut st = MatchState::new(&lineup, 5400.0);
-            st.hold_max = slot_hold_max(5400.0);
+            let mut st = MatchState::new(&lineup);
             let mut t = TICK_SECONDS;
             let mut prev_age = st.contact_age_ticks;
             while t < 5400.0 {
@@ -7485,7 +7587,7 @@ mod tests {
             "4.2m 应选无事件防守，实得 {:?}（d={:.2}）", a, f.dist_m);
         // 状态置位路径：执行 contain/jockey 结算（结算由 action 推出，保自洽）
         st.pressure_state_ticks = 0;
-        let carrier = CarrierPlan { action: None, dead_ball: None, situation: None,
+        let carrier = CarrierPlan { action: None,
             exec: CarrierExecution::ContinueDribble };
         let plan = ActionPlan {
             carrier,
@@ -7584,7 +7686,7 @@ mod tests {
         let mut agg = OpportunityTally::default();
         let mut bound_shots = 0u64;
         for seed in 1..=20u64 {
-            let (st, events) = run_match(seed, 5400.0);
+            let (st, events) = tests::run_match(seed, 5400.0);
             let t = st.opportunity_tally;
             let ev_shots = count_bound_events(&events)[0]; // shot（detail 非 header）
             // 1. 执行绑定：窗口提交数 == 事件流射门数（射门的唯一来源是窗口提交）。
@@ -7629,12 +7731,11 @@ mod tests {
     }
 
     /// 跑一场比赛（与 `simulate` 同构：tick 循环 + 终场前高亮排空），返回状态与事件流。
-    fn run_match(seed: u64, dur: f64) -> (MatchState, Vec<Event>) {
+    pub(crate) fn run_match(seed: u64, dur: f64) -> (MatchState, Vec<Event>) {
         let lineup = default_lineup();
         let mut rng = SeededRng::new(seed);
         let mut events = Vec::new();
-        let mut st = MatchState::new(&lineup, dur);
-        st.hold_max = slot_hold_max(dur);
+        let mut st = MatchState::new(&lineup);
         let mut t = TICK_SECONDS;
         while t < dur {
             tick(&mut st, &mut rng, &mut events, t);
@@ -7649,8 +7750,10 @@ mod tests {
     /// 从事件流里数出与「执行绑定」一一对应的事件（生产者唯一）：
     /// - `shot`（detail 非 "header"）：唯一生产者 `emit_shot_highlight`（头球走 emit_header_shot，带 detail=header）
     /// - `tackle`：唯一生产者 `emit_tackle_highlight_impl`
-    /// - 死球出界 pass（result=out 且无 h/lead）：唯一生产者 `emit_pass_out_play_slot`，
-    ///   按 detail 分角球（out_goal_line）/ 界外球（out_sideline）
+    /// - 出界 pass（P31：`result=out` 且带 `lead`）：唯一生产者 = `emit_pass_highlight_inner` 的
+    ///   落点误差分支，按 detail 分「底线侧」（out_goal_line）/「边线侧」（out_sideline）。
+    ///   注：`detial=out_*` 且**无** lead 的形态（头球解围出界，`PassOutSource::Clearance`）
+    ///   不在此计数内——它不是落点误差的产物，其重开在 finalize 里按 `out_restart_for` 落地。
     fn count_bound_events(events: &[Event]) -> [u64; 4] {
         let mut shot = 0;
         let mut tackle = 0;
@@ -7661,7 +7764,7 @@ mod tests {
                 EventType::Shot if e.detail.is_none() => shot += 1,
                 EventType::Tackle => tackle += 1,
                 EventType::Pass
-                    if e.result.as_deref() == Some("out") && e.h.is_none() && e.lead.is_none() =>
+                    if e.result.as_deref() == Some("out") && e.lead.is_some() =>
                 {
                     match e.detail.as_deref() {
                         Some("out_goal_line") => out_corner += 1,
@@ -7685,7 +7788,7 @@ mod tests {
         let mut bound = [0u64; 4];
         let seeds = 1..=20u64;
         for seed in seeds {
-            let (st, events) = run_match(seed, 5400.0);
+            let (st, events) = tests::run_match(seed, 5400.0);
             let t = st.opportunity_tally;
             // 逐场先守「计数 vs 事件流」
             let b = count_bound_events(&events);
@@ -7696,13 +7799,10 @@ mod tests {
             assert_eq!(t.shots_unattributed, 0, "seed {}: 有射门绕过了模块归因", seed);
             agg.natural_deadline += t.natural_deadline;
             agg.natural_deadline_due += t.natural_deadline_due;
-            agg.fallback_deadline += t.fallback_deadline;
-            agg.hold_timeout += t.hold_timeout;
             agg.invalidated += t.invalidated;
             agg.invalidated_foul += t.invalidated_foul;
             agg.invalidated_play_broken += t.invalidated_play_broken;
             agg.opportunity_leaks += t.opportunity_leaks;
-            agg.carrier_dribble += t.carrier_dribble;
             agg.carrier_pass += t.carrier_pass;
             agg.carrier_shoot += t.carrier_shoot;
             agg.defensive_tackle += t.defensive_tackle;
@@ -7712,8 +7812,6 @@ mod tests {
             agg.defensive_none += t.defensive_none;
             agg.res_carrier_shoot += t.res_carrier_shoot;
             agg.res_carrier_pass += t.res_carrier_pass;
-            agg.res_carrier_dribble += t.res_carrier_dribble;
-            agg.res_dead_ball += t.res_dead_ball;
             agg.res_interrupted_tackle += t.res_interrupted_tackle;
             agg.res_interrupted_foul += t.res_interrupted_foul;
             agg.res_containment += t.res_containment;
@@ -7738,9 +7836,7 @@ mod tests {
         }
 
         // 1. 触发源全覆盖
-        assert!(agg.fallback_deadline > 0, "fallback 触发从未发生");
         assert!(agg.natural_deadline > 0, "自然 deadline 从未开启");
-        assert!(agg.hold_timeout > 0, "持球超时触发从未发生");
         // 2. D1 生命周期：deadline 真正到期被评估 + 失效路径覆盖
         assert!(agg.natural_deadline_due > 0, "自然 deadline 从未真正到期");
         assert!(agg.invalidated > 0, "机会从未失效");
@@ -7754,7 +7850,6 @@ mod tests {
         // 3. 持球候选动作全覆盖（Dribble 来自 fallback 的被逼抢情境）
         assert!(agg.carrier_shoot > 0, "候选动作 Shoot 从未产生");
         assert!(agg.carrier_pass > 0, "候选动作 Pass 从未产生");
-        assert!(agg.carrier_dribble > 0, "候选动作 Dribble 从未产生");
         // 4. 防守候选动作与结算分支（含无事件防守两类）
         assert!(agg.defensive_tackle > 0, "防守候选 Tackle 从未产生");
         assert!(agg.defensive_foul > 0, "防守候选 Foul 从未产生");
@@ -7765,11 +7860,25 @@ mod tests {
         assert!(agg.defensive_none > 0, "防守候选 None 从未产生");
         assert!(agg.res_carrier_shoot > 0, "持球终结（射门）结算未覆盖");
         assert!(agg.res_carrier_pass > 0, "持球普通（传球）结算未覆盖");
-        assert!(agg.carrier_dribble > 0, "候选动作 Dribble 从未产生");
-        assert!(agg.res_dead_ball > 0, "死球结算从未发生");
         assert!(agg.res_interrupted_tackle > 0, "抢断中断结算从未发生");
         assert!(agg.res_interrupted_foul > 0, "犯规中断结算从未发生");
-        assert!(agg.res_containment > 0 && agg.res_jockey > 0, "无事件防守结算未覆盖");
+        // P31：无事件防守结算的**可达性口径**——两个动作的距离带与 carrier 决策的交互：
+        //   - contain（中距带 4-12m 峰 9m）：与 carrier「带球档未承诺」的区间（dist > 8m）**相交**，
+        //     故结算可达（实测 20 场 ~3276 次）。这是 D5 压力状态的承重路径。
+        //   - jockey（贴身带 3-6.5m）：其胜出区间**完全落在** carrier「被逼抢 → 出球」的区间
+        //     （dist ≤ `OPEN_PLAY_PASS_PRESSURE_M`=8m）内 → carrier 已承诺传球，按 D3 结算优先级
+        //     压过无事件防守。故 `DefensiveJockey` 结算在当前 carrier 决策下**结构性不可达**。
+        //     这是两个各自自洽的设计（防守打分距离带 × carrier 接触威胁阈值）交互后的**推论**，
+        //     不是遗漏；断言其恰为 0，一旦将来可达（改了阈值/距离带）立即红，促使人**有意**更新。
+        assert!(
+            agg.res_containment > 0,
+            "contain 结算不可达（{}）——D5 压力状态机制失效",
+            agg.res_containment
+        );
+        assert_eq!(
+            agg.res_jockey, 0,
+            "jockey 结算本应结构性不可达（见注释）；变为可达说明 carrier 逼抢阈值或防守距离带已改，             请复核 D5 口径并有意更新本断言"
+        );
         // 5. 执行绑定：计数 > 0（换回旧路径 → 归零 → 红）
         assert!(agg.exec_shoot > 0, "射门执行绑定从未生效（模块可能被绕过）");
         assert!(agg.exec_tackle > 0, "抢断执行绑定从未生效");
@@ -7795,25 +7904,783 @@ mod tests {
         //    任一结算未记账、或某触发源绕过模块直接产事件 → 该等式立刻不等。
         //    2A 时这条等式是「自然 deadline 恒为无事件类」的特例；2C 后自然 deadline 可选
         //    抢断/犯规，故改为**全局**分区（跨全部触发源）。
-        let total_res = agg.res_carrier_shoot + agg.res_carrier_pass + agg.res_carrier_dribble
-            + agg.res_dead_ball + agg.res_interrupted_tackle + agg.res_interrupted_foul
+        let total_res = agg.res_carrier_shoot + agg.res_carrier_pass
+            + agg.res_interrupted_tackle + agg.res_interrupted_foul
             + agg.res_containment + agg.res_jockey + agg.res_no_action;
         assert_eq!(
             total_res, agg.plans_executed,
             "结算桶计数之和({}) 应等于执行层实际执行的机会数({})——有结算未记账或绕过模块",
             total_res, agg.plans_executed
         );
-        // P30：2A 的结构性不可达（Dribble 结算）在 2C 后**可达**——防守动作打分可能选出
-        // contain/jockey（无事件防守），此时 carrier 的 Dribble 候选按 D3 优先级胜出。
-        // 断言其可达，证明「打分不再恒选抢断」（若恒选抢断则本桶为 0）。
-        assert!(agg.res_carrier_dribble > 0,
-            "P30 后 Dribble 结算应可达（防守动作不再恒为抢断）——为 0 说明打分恒选 Tackle");
+        // 继续带球（未承诺行动）+ 无事件防守的结算**必须可达**：P30（D5）的
+        // `pressure_state_sets` 依赖无事件防守结算真实发生（射门 hazard 的
+        // `defensive_pressure` 因子输入）。若 carrier 在带球档承诺了持球动作，结算优先级会把
+        // contain/jockey 全部压掉 → 本断言红。两个动作各自的距离带不同（contain 中距 ~7-12m /
+        // jockey 贴身 ~3.5-6m），真实机会点的距离分布决定孰多孰少——只要求**至少一类**可达，
+        // 且 `pressure_state_sets` 与之一致（下面第 5 组已断言其 > 0）。
+        assert!(
+            agg.res_containment > 0 || agg.res_jockey > 0,
+            "无事件防守结算不可达（contain={} jockey={}）——carrier 带球档不应承诺持球动作",
+            agg.res_containment, agg.res_jockey
+        );
+    }
+
+    // ==== P31 删槽位 + 出界涌现 + liveness guard（#25 阶段 3）====
+
+    /// P1 删槽位层：槽位时代的符号在**生产代码**里必须全部不存在。
+    /// 这是「删干净、无残留隐性配额」的机器守卫——只扫 `#[cfg(test)]` 之前的源段，
+    /// 因为测试自己会引用这些名字（负向断言）。扫描前先反证定位正确（必存在的符号）。
+    #[test]
+    fn p31_slot_layer_is_gone() {
+        let src = include_str!("lib.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("源文件应有测试段");
+        assert!(prod.contains("fn tick("), "源扫描定位错误（生产段里找不到 fn tick）");
+        for sym in [
+            "HIGHLIGHTS_PER_MATCH",
+            "SLOT_HOLD_MIN_TICKS",
+            "SLOT_AVG_EVENT_TICKS",
+            "slot_hold_max",
+            "slot_clock",
+            "slot_interval",
+            "roll_fallback_situation",
+            "FallbackSituation",
+            "FallbackDeadline",
+            "SlotFallback",
+            "emit_pass_out_play_slot",
+            "CornerDirect",
+            "PASS_BREAK_TICKS",
+        ] {
+            assert!(
+                !prod.contains(sym),
+                "槽位层符号 `{}` 仍在生产代码里（删干净失败：隐性配额残留）",
+                sym
+            );
+        }
+    }
+
+    /// P1：删槽位后，开放比赛不得存在任何「固定评估节拍」——`deadline` 只由几何量决定。
+    /// 结构性断言：跑满一场，`deadline` 的取值集合应覆盖多个不同值（几何驱动的证据），
+    /// 而不是恒定槽位间距。
+    #[test]
+    fn p31_no_fixed_evaluation_beat() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        let mut rng = SeededRng::new(3);
+        let mut events = Vec::new();
+        let mut t = TICK_SECONDS;
+        while t < 5400.0 {
+            tick(&mut st, &mut rng, &mut events, t);
+            t += TICK_SECONDS;
+        }
+        let tally = st.opportunity_tally;
+        assert!(tally.natural_deadline > 0, "自然 deadline 从未开启");
+        assert!(
+            tally.deadline_max > tally.deadline_min,
+            "全场比赛 deadline 恒为 {}（无几何驱动，疑似固定节拍）",
+            tally.deadline_min
+        );
+    }
+
+    // ---- P2 出界涌现（落点误差）----
+
+    /// P2：落点误差方向——传球风险越高、传球越长，raw 落点偏离越大（纯函数、零状态）。
+    /// 对照组：同一 RNG 种子上只改 `pass_risk`。
+    #[test]
+    fn p31_landing_error_grows_with_risk_and_length() {
+        let from = (0.5, 0.5);
+        let intended = (0.6, 0.5);
+        let dev = |risk: f64, meters_seed: u64| -> f64 {
+            let mut rng = SeededRng::new(7);
+            let l = sample_pass_landing(from, intended, risk, &mut rng);
+            let _ = meters_seed;
+            dist_norm(l.raw, intended)
+        };
+        // 风险越高偏离越大（三角形分布同 seed → 同一单位偏离，只看 sigma 差异）
+        assert!(dev(0.0, 0) < dev(1.0, 0), "高风险的落点偏离应大于低风险");
+        // 长传偏离大于短传（误差按传球距离比例缩放）
+        let mut rng = SeededRng::new(7);
+        let short = sample_pass_landing(from, (0.52, 0.5), 0.3, &mut rng);
+        let mut rng = SeededRng::new(7);
+        let long = sample_pass_landing(from, (0.90, 0.5), 0.3, &mut rng);
+        assert!(
+            dist_norm(long.raw, (0.90, 0.5)) > dist_norm(short.raw, (0.52, 0.5)),
+            "长传的落点偏离应大于短传"
+        );
+    }
+
+    /// P2：raw 越界判定 + 投影（`projected` 恒在 [0,1]²，`raw` 保留真实越界值）。
+    #[test]
+    fn p31_landing_out_side_classification() {
+        // 目标点故意贴近边界 + 大风险 → 必然越界。三个方向分别钉死。
+        let mut seen_goal_line = 0;
+        let mut seen_sideline = 0;
+        let mut seen_in = 0;
+        for seed in 1..=200u64 {
+            let mut rng = SeededRng::new(seed);
+            // x 方向：目标已贴右底线
+            let l = sample_pass_landing((0.8, 0.5), (0.998, 0.5), 1.0, &mut rng);
+            if let Some(s) = l.out_side {
+                assert_eq!(s, OutSide::GoalLine, "x 越界应判 goal_line");
+                assert!(l.raw.0 > 1.0, "goal_line 越界应体现为 raw.x > 1");
+                seen_goal_line += 1;
+            } else {
+                seen_in += 1;
+            }
+            assert!((0.0..=1.0).contains(&l.projected.0), "projected.x 应钳回场内");
+            assert!((0.0..=1.0).contains(&l.projected.1), "projected.y 应钳回场内");
+
+            let mut rng = SeededRng::new(seed);
+            // y 方向：目标已贴边线
+            let l = sample_pass_landing((0.5, 0.8), (0.5, 0.998), 1.0, &mut rng);
+            if let Some(s) = l.out_side {
+                assert_eq!(s, OutSide::Sideline, "y 越界应判 sideline");
+                seen_sideline += 1;
+            }
+        }
+        assert!(seen_goal_line > 0, "200 seed 里 x 越界从未发生（goal_line 分支不可达）");
+        assert!(seen_sideline > 0, "200 seed 里 y 越界从未发生（sideline 分支不可达）");
+        assert!(seen_in > 0, "应存在未越界的样本（否则「误差」退化为「必出界」）");
+    }
+
+    /// P2：确定性——同 seed 同落点（引擎可复现性的地基）。
+    #[test]
+    fn p31_landing_is_deterministic() {
+        for seed in 1..=20u64 {
+            let mut a = SeededRng::new(seed);
+            let mut b = SeededRng::new(seed);
+            let la = sample_pass_landing((0.3, 0.4), (0.7, 0.6), 0.5, &mut a);
+            let lb = sample_pass_landing((0.3, 0.4), (0.7, 0.6), 0.5, &mut b);
+            assert_eq!(la.raw, lb.raw, "seed {} 落点不确定", seed);
+            assert_eq!(la.projected, lb.projected);
+            assert_eq!(la.out_side, lb.out_side);
+        }
+    }
+
+    /// P2：重开映射——按 `out_side` + 最后触球方（`PassOutSource`）判角球/界外球/门球。
+    /// 纯函数级钉死四种组合；发球重开（角球/界外球/任意球/门球）**不允许**走出界误差。
+    #[test]
+    fn p31_out_restart_mapping() {
+        use OutRestart::*;
+        use OutSide::*;
+        use PassOutSource::*;
+        // 普通传球：对方底线 → 门球；己方底线 → 角球；任一边线 → 界外球
+        assert_eq!(out_restart_for(NormalPass, GoalLine, false), GoalKick);
+        assert_eq!(out_restart_for(NormalPass, GoalLine, true), Corner);
+        assert_eq!(out_restart_for(NormalPass, Sideline, false), ThrowIn);
+        assert_eq!(out_restart_for(NormalPass, Sideline, true), ThrowIn);
+        // 防方解围：自家底线 → 角球；边线 → 界外球
+        assert_eq!(out_restart_for(Clearance, GoalLine, true), Corner);
+        assert_eq!(out_restart_for(Clearance, Sideline, true), ThrowIn);
+    }
+
+    /// P2：出界方向函数的**方向性**——贴对方底线的落点更可能出「对方底线」（→ 门球），
+    /// 贴己方底线的落点更可能出「己方底线」（→ 角球），贴边线的更可能出边线。
+    #[test]
+    fn p31_out_side_direction_is_geometric() {
+        let tally = |intended: (f64, f64), home: bool| {
+            let (mut goal, mut side, mut own) = (0, 0, 0);
+            for seed in 1..=400u64 {
+                let mut rng = SeededRng::new(seed);
+                match out_side_for_intended(home, intended, &mut rng) {
+                    (OutSide::GoalLine, o) => {
+                        goal += 1;
+                        if o { own += 1; }
+                    }
+                    (OutSide::Sideline, _) => side += 1,
+                }
+            }
+            (goal, side, own)
+        };
+        // home 攻右：贴对方底线（x→1）且中路 → 多数出对方底线（own=false）
+        let (g, s, own) = tally((0.98, 0.5), true);
+        assert!(g > s, "贴对方底线应多数出底线（得 goal={} sideline={}）", g, s);
+        assert!(own * 2 < g, "对方底线出界不应多数记为「己方底线」");
+        // home 攻右：贴己方底线（x→0）且中路 → 多数出己方底线（own=true → 角球）
+        let (g2, s2, own2) = tally((0.02, 0.5), true);
+        assert!(g2 > s2, "贴己方底线应多数出底线");
+        assert!(own2 * 2 > g2, "己方底线出界应多数记为 own（→ 角球）");
+        // 贴边线 → 多数出边线
+        let (g3, s3, _) = tally((0.5, 0.97), true);
+        assert!(s3 > g3, "贴边线应多数出边线（得 goal={} sideline={}）", g3, s3);
+    }
+
+    /// P2：出界由 **`pass_risk` 调制通道**涌现——跑真实比赛断言（**通道**是生产路径；
+    /// `sample_pass_landing` 的「误差自然越界」分支实测基本不可达，见 design D2 修订理由）：
+    /// 1. 每条 `result="out"` 的开放比赛传球都带 `lead`（唯一生产者 = `emit_pass_highlight_inner`
+    ///    的出界通道分支）且 `out_pos` 为真实越界值、`x2/y2` 为场内投影；
+    /// 2. 出界确实发生（可达）；
+    /// 3. 发球重开（角球/界外球/任意球/门球）**从不**出界（它们的落点不经过出界通道）。
+    #[test]
+    fn p31_out_of_play_emerges_from_pass_risk_channel() {
+        let mut out_goal_line = 0;
+        let mut out_sideline = 0;
+        let mut restart_out = 0;
+        // 头球解围出界（`PassOutSource::Clearance`，lead=None）：另一条合法出界路径，
+        // 不是开放比赛传球的出界通道产物——**断言它至少出现过**（否则下面的
+        // 「通道产物 vs 解围产物」互斥口径是空跑），同时与通道产物分开计数。
+        let mut clearance_out = 0;
+        for seed in 1..=20u64 {
+            let (_, events) = run_match(seed, 5400.0);
+            for e in &events {
+                if e.type_ != EventType::Pass {
+                    continue;
+                }
+                let detail = e.detail.as_deref();
+                let is_restart = matches!(detail, Some("corner") | Some("throw_in") | Some("free_kick"));
+                let is_goal_kick = e.to.is_none()
+                    && e.h.is_some()
+                    && e.result.as_deref() == Some("contested");
+                if e.result.as_deref() == Some("out") {
+                    if is_restart || is_goal_kick {
+                        restart_out += 1;
+                    } else if e.lead.is_none() {
+                        // Clearance 出界是 battle 派生（防方头球解围出底线 → 角球），
+                        // 不走出界通道（唯一调用点守卫已钉死 `sample_pass_landing`）。
+                        clearance_out += 1;
+                    } else {
+                        match detail {
+                            Some("out_goal_line") => out_goal_line += 1,
+                            Some("out_sideline") => out_sideline += 1,
+                            _ => {}
+                        }
+                    }
+                    // out_pos 必须是真实越界值（不 clamp）——落点误差的直接证据
+                    let (ox, oy) = e.out_pos.expect("out pass 应带 out_pos");
+                    assert!(
+                        ox < 0.0 || ox > 1.0 || oy < 0.0 || oy > 1.0,
+                        "out_pos 应在场外（真实越界值），实得 ({:.4}, {:.4})",
+                        ox, oy
+                    );
+                    // 投影落点必须在场内（viewer 渲染用）
+                    if let (Some(x2), Some(y2)) = (e.x2, e.y2) {
+                        assert!(
+                            (0.0..=1.0).contains(&x2) && (0.0..=1.0).contains(&y2),
+                            "出界 pass 的 x2/y2 应钳回场内"
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            out_goal_line + out_sideline > 0,
+            "20 场里开放比赛传球从未因落点误差出界（出界涌现未接线）"
+        );
+        assert_eq!(
+            restart_out, 0,
+            "发球重开（角球/界外球/任意球/门球）走出了界——D2 要求重开不走出界通道"
+        );
+        // Clearance 出界（头球解围）是独立合法路径，与通道产物互斥计数。断言其**可达**——
+        // 否则「两者互斥」的分支从未被验证（20 场窗口下头球解围出界可能为 0，故只作
+        // 存在性声明而不设下限：角球 battle 出底线的概率本就低）。
+        assert!(
+            clearance_out > 0,
+            "20 场里解围出界从未发生——「通道产物 vs 解围产物」的分离口径无样本支撑"
+        );
+    }
+
+    /// P2：普通传球的落点误差**按概率**出界，不是「必出界」——出界率必须落在合理量级
+    /// （0 < 出界率 < 15%），否则要么机制死亡、要么比赛退化为「传球即出界」。
+    #[test]
+    fn p31_out_rate_is_sane() {
+        let (mut out, mut directed) = (0usize, 0usize);
+        for seed in 1..=20u64 {
+            let (_, events) = run_match(seed, 5400.0);
+            for e in &events {
+                if e.type_ != EventType::Pass {
+                    continue;
+                }
+                // 分母 = 全部**开放比赛普通传球**（含落点误差致出界的那些，它们 `to=None`）：
+                // 判据是带 `lead`（只有 `emit_pass_highlight_inner` 产 lead；发球重开不带）。
+                let is_open_play_pass = e.lead.is_some();
+                if is_open_play_pass {
+                    directed += 1;
+                    if e.result.as_deref() == Some("out") {
+                        out += 1;
+                    }
+                }
+            }
+        }
+        assert!(directed > 0, "无有向传球样本");
+        let rate = out as f64 / directed as f64;
+        assert!(
+            rate > 0.0 && rate < 0.15,
+            "有向传球出界率 {:.4} ∉ (0, 0.15)——机制死亡或比赛退化为传球即出界",
+            rate
+        );
+    }
+
+    /// P2：发球重开（角球/界外球/任意球/门球/头球 battle）**不经过**落点误差采样——
+    /// 结构性守卫：`sample_pass_landing` 在**代码行**（非注释行）里恰有 1 处定义 + 1 处调用，
+    /// 且调用点的所属函数是 `emit_pass_highlight_inner`（唯一带误差的生产者）。
+    #[test]
+    fn p31_landing_error_only_in_open_play_passes() {
+        let src = include_str!("lib.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("源文件应有测试段");
+        // 只扫代码行（注释/文档里提到函数名不算调用），并记录每行的所属函数。
+        let mut current_fn = "";
+        let mut code_hits: Vec<(usize, &str)> = Vec::new();
+        for (i, line) in prod.lines().enumerate() {
+            let t = line.trim_start();
+            if t.starts_with("//") {
+                continue;
+            }
+            if t.starts_with("fn ") || t.starts_with("pub fn ") {
+                current_fn = line;
+            }
+            if line.contains("sample_pass_landing(") {
+                code_hits.push((i + 1, current_fn));
+            }
+        }
+        assert_eq!(
+            code_hits.len(),
+            2,
+            "`sample_pass_landing` 应恰有 1 处定义 + 1 处调用（都在代码行里），实得 {:?}",
+            code_hits
+        );
+        let callers: Vec<&str> = code_hits
+            .iter()
+            .filter(|(_, f)| !f.contains("fn sample_pass_landing("))
+            .map(|(_, f)| *f)
+            .collect();
+        assert_eq!(callers.len(), 1, "应恰有 1 个调用者，实得 {:?}", callers);
+        assert!(
+            callers[0].contains("fn emit_pass_highlight_inner("),
+            "落点误差的唯一调用点应是 emit_pass_highlight_inner，实得 `{}`",
+            callers[0]
+        );
+    }
+
+    // ---- P3 liveness guard ----
+
+    /// P3：三层递进——停滞 8/12/16s 逐档加强，档内阶跃恒定、全域单调不减。
+    #[test]
+    fn p31_liveness_profile_three_stages_monotone() {
+        assert_eq!(LIVENESS_STAGE_1_TICKS, 8, "一档阈值应为 8s");
+        assert_eq!(LIVENESS_STAGE_2_TICKS, 12, "二档阈值应为 12s");
+        assert_eq!(LIVENESS_STAGE_3_TICKS, 16, "三档阈值应为 16s");
+
+        // 未达一档：全零（护栏不介入）
+        for t in 0..LIVENESS_STAGE_1_TICKS {
+            let p = liveness_profile(t);
+            assert_eq!(
+                (p.forward_intent_bonus, p.pass_risk_bonus, p.deadline_pressure_ticks),
+                (0.0, 0.0, 0),
+                "停滞 {}s 未达一档，护栏不应介入",
+                t
+            );
+        }
+        let s1 = liveness_profile(LIVENESS_STAGE_1_TICKS);
+        let s2 = liveness_profile(LIVENESS_STAGE_2_TICKS);
+        let s3 = liveness_profile(LIVENESS_STAGE_3_TICKS);
+        assert!(
+            s1.forward_intent_bonus > 0.0
+                && s1.pass_risk_bonus > 0.0
+                && s1.deadline_pressure_ticks > 0,
+            "一档应开始生效：{:?}",
+            s1
+        );
+        for (lo, hi, name) in [(s1, s2, "二档"), (s2, s3, "三档")] {
+            assert!(
+                hi.forward_intent_bonus > lo.forward_intent_bonus,
+                "{}前插加成应强于上一档（{:?} → {:?}）",
+                name,
+                lo,
+                hi
+            );
+            assert!(
+                hi.pass_risk_bonus > lo.pass_risk_bonus,
+                "{}传球风险加成应高于上一档",
+                name
+            );
+            assert!(
+                hi.deadline_pressure_ticks > lo.deadline_pressure_ticks,
+                "{}deadline 压迫应大于上一档",
+                name
+            );
+        }
+        // 档内恒定（阶跃语义，非连续渐变）
+        assert_eq!(liveness_profile(LIVENESS_STAGE_1_TICKS + 3), s1);
+        assert_eq!(liveness_profile(LIVENESS_STAGE_2_TICKS + 2), s2);
+        assert_eq!(liveness_profile(10_000), s3);
+        // 全域单调不减
+        let mut prev = liveness_profile(0);
+        for t in 0..=40u32 {
+            let p = liveness_profile(t);
+            assert!(p.forward_intent_bonus >= prev.forward_intent_bonus, "t={} 前插加成回退", t);
+            assert!(p.pass_risk_bonus >= prev.pass_risk_bonus, "t={} 传球风险回退", t);
+            assert!(p.deadline_pressure_ticks >= prev.deadline_pressure_ticks, "t={} deadline 压迫回退", t);
+            prev = p;
+        }
+    }
+
+    /// P3：护栏**只改行为状态、不直接造事件**——机器守卫（源码区段扫描）。
+    /// liveness 区段里出现 `events.push` / `emit_*` / `Vec<Event>` 即为违规。
+    #[test]
+    fn p31_liveness_section_never_emits_events() {
+        let src = include_str!("lib.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("源文件应有测试段");
+        let start = prod.find("==== P31 liveness guard").expect("liveness 区段标记缺失");
+        let rest = &prod[start..];
+        let end = rest[1..].find("\n// ====").map(|i| i + 1).unwrap_or(rest.len());
+        let section = &rest[..end];
+        assert!(section.contains("fn liveness_profile"), "liveness 区段定位错误");
+        for forbidden in ["events.push", "emit_", "Vec<Event>", "Event {"] {
+            assert!(
+                !section.contains(forbidden),
+                "liveness guard 区段出现 `{}`——护栏只应改行为状态，不得直接生成事件（D3）",
+                forbidden
+            );
+        }
+        // **覆盖补强（审阅指出）**：上面的区段扫描只能覆盖**纯函数定义**，覆盖不到「接入点
+        // 是否偷偷直接产事件」。逐个抽取护栏的**状态写入 + 四个消费点**的函数体（按函数边界
+        // 截取），断言它们内部无 `events.push` / `emit_*`——保证「护栏只改状态、事件由既有
+        // 生产者产」在**接线层**也被机器守着，而不是只活在纯函数区段的局部扫描里。
+        // 注：`carrier_move` 返回 `MainAction`（写 `st.pos`/产 main 由调用方 `beat_event`），
+        // 其函数体不含 `events.push`，故可纳入。
+        for fname in [
+            "fn liveness_profile(",
+            "fn forward_intent_pp(",
+            "fn note_meaningful_action(",
+            "fn resolution_is_meaningful(",
+            "fn action_deadline_for(",
+            "fn carrier_move(",
+        ] {
+            let i = prod.find(fname).unwrap_or_else(|| panic!("找不到 {}（接入点改名？）", fname));
+            let body = &prod[i..];
+            // 函数体到下一个顶层 `fn ` 或文件末尾
+            let next = body[1..].find("\nfn ").map(|k| k + 1).unwrap_or(body.len());
+            let body = &body[..next];
+            for forbidden in ["events.push", "emit_"] {
+                assert!(
+                    !body.contains(forbidden),
+                    "`{}` 函数体内出现 `{}`——护栏接入点应只改状态/返回动作，不得直接产事件（D3）",
+                    fname, forbidden
+                );
+            }
+        }
+    }
+
+    /// P3（审阅发现的时序 bug 的回归守卫）：**四个接入点都必须真的被命中**——
+    /// 不是「纯函数对」，而是「接线后运行时确实读到了非零的档位参数」。
+    /// 背景：接入点③（`pass_risk_bonus` → 出界通道风险）曾因 `note_meaningful_action`
+    /// 在 emit **之前**归零而恒读 0（de facto 死代码），纯函数测试全绿却毫无效果。
+    /// 本测试跑真实比赛，读**执行层绑定计数**（生产代码在真实调用点写的），断言各自非零：
+    ///   - `liveness_deadline_pressure_max`（接入点①，`open_action_opportunity` 写）
+    ///   - `liveness_pass_risk_bonus_permille_max`（接入点③，`emit_pass_highlight_inner` 写）
+    ///   - `liveness_stage_hits`（接入点④的前置：停滞达档的机会开启次数）
+    #[test]
+    fn p31_all_four_liveness_hooks_are_live() {
+        let mut deadline_pressure_max = 0u32;
+        let mut pass_risk_bonus_max = 0u64;
+        let mut stage_hits = [0u64; 3];
+        let mut channel_hits = 0u64;
+        let mut forward_intent_pp_max = 0u64;
+        let mut risk_min_permille = u64::MAX;
+        let mut risk_max_permille = 0u64;
+        for seed in 1..=8u64 {
+            let (st, _) = run_match(seed, 5400.0);
+            let t = st.opportunity_tally;
+            deadline_pressure_max = deadline_pressure_max.max(t.liveness_deadline_pressure_max);
+            pass_risk_bonus_max = pass_risk_bonus_max.max(t.liveness_pass_risk_bonus_permille_max);
+            risk_min_permille = risk_min_permille.min(t.out_channel_prob_permille_min);
+            risk_max_permille = risk_max_permille.max(t.out_channel_prob_permille_max);
+            channel_hits += t.out_channel_hits;
+            forward_intent_pp_max = forward_intent_pp_max.max(t.liveness_forward_intent_pp_max);
+            for i in 0..3 {
+                stage_hits[i] += t.liveness_stage_hits[i];
+            }
+        }
+        let risk_span_permille = risk_max_permille.saturating_sub(risk_min_permille);
+        assert!(deadline_pressure_max > 0, "接入点①（deadline 压缩）在执行层从未被应用（恒 0）");
+        assert!(
+            pass_risk_bonus_max > 0,
+            "接入点③（出界通道 pass_risk 加成）在执行层从未被读到（恒 0）——\
+             检查 `note_meaningful_action` 是否早于 emit 归零（历史 bug 回归）"
+        );
+        assert!(
+            stage_hits[0] + stage_hits[1] + stage_hits[2] > 0,
+            "接入点④的前置（停滞达一档的机会开启）从未发生"
+        );
+        assert!(stage_hits[1] + stage_hits[2] > 0, "停滞从未达二档（接入点④无触发机会）");
+        assert!(
+            forward_intent_pp_max > 0,
+            "接入点②（carrier_move 前插倾向）在执行层从未被应用（恒 0）"
+        );
+
+        // **D2 的 pass_risk 调制守卫**（审阅指出：`OUT_CHANNEL_RISK_GAIN = 0` 时全部测试
+        // 仍绿——通道退化成与风险无关的固定掷骰，正是 D2 声称已抛弃的「两张皮」形态）。
+        // 断言出界通道实际读到的 `pass_risk` **有实质跨度**（距离 + 压迫分量真的在起作用），
+        // 且通道真的命中过。`risk` 是纯函数输出，跨度塌缩只可能是距离/压迫/GAIN 失效。
+        // 概率必须有实质跨度：`OUT_CHANNEL_RISK_GAIN = 0` 时恒为 base（12‰）→ 跨度 0 → 红。
+        assert!(
+            risk_span_permille >= 20,
+            "出界通道概率跨度仅 {}‰（min={} max={}）——`OUT_CHANNEL_RISK_GAIN` 或 pass_risk \
+             分量疑似失效（通道退化为与风险无关的固定掷骰）",
+            risk_span_permille, risk_min_permille, risk_max_permille
+        );
+        // 概率必须落在设计区间（base 12‰ + gain 62‰ × risk ∈ [0,1]）
+        assert!(risk_min_permille >= 10, "出界概率下界 {}‰ 低于 base 1.2%", risk_min_permille);
+        assert!(risk_max_permille <= 200, "出界概率上界 {}‰ 越界（应 ≤20%）", risk_max_permille);
+        assert!(channel_hits > 0, "出界通道 8 场里从未命中（通道失效）");
+    }
+
+    /// P3：**接入点③必须在 emit 之前读、之后归零**——顺序反了它就恒读 0（死代码）。
+    /// 断言方式用**执行层绑定**（而不是「执行后计数为 0」，后者在 bug 形态下同样为 0，
+    /// 是空转——审阅指出上一版正是如此）。这里构造一次停滞三档的出球，断言
+    /// `emit_pass_highlight_inner` 实际读到的 liveness 加成 > 0；再断言执行后计时归零。
+    #[test]
+    fn p31_pass_risk_bonus_reads_pre_reset_ticks() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.carrier = 9;
+        st.possession = 0;
+        for id in 0..22usize { st.pos[id] = (0.5, 0.5); }
+        st.pos[9] = (0.5, 0.5);
+        for id in 11..=20usize { st.pos[id] = (0.05, 0.5); }
+        st.pos[11] = (0.45, 0.5); // 无压（距 ~5.3m？不——离 carrier 0.5 有 0.05×68m 边距）
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_3_TICKS; // 停滞三档 → 强制出球档
+        let mut rng = SeededRng::new(1);
+        let plan = build_action_plan(&mut st, &mut rng, OpportunityTrigger::NaturalDeadline);
+        assert!(matches!(plan.carrier.action, Some(CarrierAction::Pass { .. })), "应为出球档");
+        let mut events = Vec::new();
+        execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan));
+        // 核心断言：emit 内**真的读到了**非零 liveness 加成（时序 bug 形态下恒 0 → 红）
+        assert!(
+            st.opportunity_tally.liveness_pass_risk_bonus_permille_max > 0,
+            "emit 未读到 liveness 的 pass_risk_bonus（恒 0）——归零时序回退？"
+        );
+        // 执行后归零（传球是 meaningful action）
+        assert_eq!(st.ticks_since_meaningful_action, 0, "传球执行后应归零停滞计时");
+    }
+
+    /// P3：三处接入的方向——deadline 缩短 / 传球风险抬高 / 前插倾向抬高。
+    #[test]
+    fn p31_liveness_consumed_in_three_places() {
+        // ① deadline：同一几何下，停滞越久 deadline 越短（且仍受下界钳制）
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.carrier = 9;
+        st.pos[9] = (0.5, 0.5);
+        for id in 11..=20usize {
+            st.pos[id] = (0.95, 0.5);
+        }
+        st.ticks_since_meaningful_action = 0;
+        let d0 = action_deadline_for(&st, 9);
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_1_TICKS;
+        let d1 = action_deadline_for(&st, 9);
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_3_TICKS;
+        let d3 = action_deadline_for(&st, 9);
+        assert!(d1 < d0, "一档停滞应缩短 deadline（{} → {}）", d0, d1);
+        assert!(d3 <= d1, "三档 deadline 不应长于二档");
+        assert!(d3 >= MIN_ACTION_DEADLINE_TICKS, "deadline 仍应受下界钳制");
+        // 档位只由 ticks 决定：同几何 + 同档 → 同值
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_3_TICKS;
+        assert_eq!(action_deadline_for(&st, 9), d3);
+
+        // ② 传球风险：liveness 加成抬高风险分（纯函数）
+        let base = open_play_pass_risk(20.0, 20.0, 0.0);
+        let boosted = open_play_pass_risk(
+            20.0,
+            20.0,
+            liveness_profile(LIVENESS_STAGE_3_TICKS).pass_risk_bonus,
+        );
+        assert!(boosted > base, "liveness 的 pass_risk_bonus 应抬高传球风险（{} → {}）", base, boosted);
+        // 风险分与「距离越远风险越高」「压迫越近风险越高」同向
+        assert!(open_play_pass_risk(40.0, 20.0, 0.0) > open_play_pass_risk(10.0, 20.0, 0.0));
+        assert!(open_play_pass_risk(20.0, 1.0, 0.0) > open_play_pass_risk(20.0, 20.0, 0.0));
+
+        // ③ 前插倾向：停滞越久，前插档的掷定阈值越高（更高概率选择前插而非原地控球）
+        let f0 = forward_intent_pp(&liveness_profile(0));
+        let f1 = forward_intent_pp(&liveness_profile(LIVENESS_STAGE_1_TICKS));
+        let f3 = forward_intent_pp(&liveness_profile(LIVENESS_STAGE_3_TICKS));
+        assert!(f0 == 0, "未停滞时不应有前插加成（基线由 carrier_move 自己的概率决定）");
+        assert!(f1 > f0 && f3 > f1, "前插倾向应逐档加强（{} → {} → {}）", f0, f1, f3);
+
+        // ④ 无压久持 → 出球档（D3 接入点④，用户二次拍板）：停滞达二档且无压 → 持球决策选出球。
+        //    对照组：同几何、停滞 0 vs 二档，后者必须出球；把持球者设为无压后场。
+        let mut st = setup_for_tier(0.35, 0.05);
+        st.ticks_since_meaningful_action = 0;
+        let mut rng = SeededRng::new(5);
+        let quiet = evaluate_open_play_carrier_action(&mut st, &mut rng);
+        // 停滞 0 且无压：射门推进 hazard 可能命中（带球推进）也可能不命中（带球档），但不该恒为出球
+        let _ = quiet;
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_2_TICKS;
+        let mut rng = SeededRng::new(5);
+        let stalled = evaluate_open_play_carrier_action(&mut st, &mut rng);
+        assert!(
+            matches!(stalled.action, Some(CarrierAction::Pass { .. })),
+            "停滞达二档且无压应强制出球，实得 {:?}",
+            stalled.action
+        );
+        assert_eq!(stalled.exec, CarrierExecution::Pass { allow_out: true });
+    }
+
+    /// 「无压久持 → 出球」档的测试状态：持球者在中后场、最近防守者很远（无压）。
+    fn setup_for_tier(carrier_x: f64, nearest_x: f64) -> MatchState {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.possession = 0;
+        st.carrier = 9;
+        for id in 0..22usize {
+            st.pos[id] = (0.5, 0.5);
+        }
+        st.pos[9] = (carrier_x, 0.5);
+        for id in 11..=20usize {
+            st.pos[id] = (0.05, 0.5);
+        }
+        st.pos[11] = (nearest_x, 0.5);
+        st
+    }
+
+    /// P3：meaningful action 重置计时——跑真实比赛逐 tick 采样。
+    /// 断言：
+    ///  1. 本 tick 产了 meaningful 事件（射门/传球/抢断/犯规/重开）→ 计时归零；
+    ///  2. 纯带球 beat tick（无高亮/松散球/死球/重开，球权未变）→ 计时 +1；
+    ///  3. 计时**有界**（护栏真的把比赛拉回来，不会无限停滞）。
+    /// P31 D3 测试辅助：一条事件是否代表 meaningful action（与生产代码的
+    /// `resolution_is_meaningful` 同口径的**事件层**读法）：射门 / 传球（含发球重开、拦截、
+    /// 传失）/ 抢断 / 犯规。beat 与纯跑位 movers 不算（带 main 的普通带球 beat 是典型的非
+    /// meaningful tick）。
+    fn meaningful_event_of(e: &Event) -> bool {
+        matches!(e.type_, EventType::Shot | EventType::Pass | EventType::Tackle | EventType::Foul)
+    }
+
+    #[test]
+    fn p31_meaningful_action_resets_counter() {
+        let mut reset_on_event = 0u64;
+        let mut grew_on_plain_beat = 0u64;
+        let mut max_seen = 0u32;
+        for seed in 1..=6u64 {
+            let lineup = default_lineup();
+            let mut rng = SeededRng::new(seed);
+            let mut events = Vec::new();
+            let mut st = MatchState::new(&lineup);
+            let mut t = TICK_SECONDS;
+            while t < 5400.0 {
+                let pre = (
+                    st.highlight.is_some(),
+                    st.loose.is_some(),
+                    st.dead_ball.is_some(),
+                    st.restart_prep.is_some(),
+                );
+                let prev_ticks = st.ticks_since_meaningful_action;
+                let prev_carrier = st.carrier;
+                let start = events.len();
+                tick(&mut st, &mut rng, &mut events, t);
+                let batch = &events[start..];
+                if batch.iter().any(meaningful_event_of) {
+                    assert_eq!(
+                        st.ticks_since_meaningful_action, 0,
+                        "seed {} t={} 产了 meaningful 事件但停滞计时未重置",
+                        seed, t
+                    );
+                    reset_on_event += 1;
+                } else if !pre.0
+                    && !pre.1
+                    && !pre.2
+                    && !pre.3
+                    && st.carrier == prev_carrier
+                    && st.highlight.is_none()
+                    && st.loose.is_none()
+                    && st.dead_ball.is_none()
+                    && st.restart_prep.is_none()
+                    && batch.len() == 1
+                    && batch[0].type_ == EventType::Beat
+                    && batch[0].main.is_some()
+                {
+                    // 纯带球 beat：没有 meaningful action → 计时必须增长
+                    assert_eq!(
+                        st.ticks_since_meaningful_action,
+                        prev_ticks + 1,
+                        "seed {} t={} 纯带球 tick 未推进停滞计时",
+                        seed,
+                        t
+                    );
+                    grew_on_plain_beat += 1;
+                }
+                max_seen = max_seen.max(st.ticks_since_meaningful_action);
+                t += TICK_SECONDS;
+            }
+        }
+        assert!(reset_on_event > 0, "6 场里没有任何 meaningful 事件（样本异常）");
+        assert!(grew_on_plain_beat > 0, "没有任何纯带球 tick（样本异常）");
+        // 护栏把停滞拉回来：全场停滞上限应落在三档量级附近（不是无限增长）
+        assert!(
+            max_seen >= LIVENESS_STAGE_1_TICKS,
+            "6 场里停滞从未达到一档（{}）——护栏无触发机会",
+            max_seen
+        );
+        assert!(
+            max_seen <= LIVENESS_STAGE_3_TICKS + 12,
+            "停滞上限 {} 远超三档({})——护栏未真正拉回比赛",
+            max_seen,
+            LIVENESS_STAGE_3_TICKS
+        );
+    }
+
+    /// P3（修订）：护栏**有效**的证据——一档/二档在真实比赛里可达（不是纸面常量），
+    /// 且二档的「无压久持 → 出球」决策档把停滞**在二档内拉回**（三档是极限储备，
+    /// 正常不应频繁触达——若频繁触达说明出球档未生效）。
+    #[test]
+    fn p31_liveness_stages_reachable_and_pulls_back() {
+        let mut reached_1 = false;
+        let mut reached_2 = false;
+        let mut max_seen = 0u32;
+        for seed in 1..=40u64 {
+            let (st, _) = run_match(seed, 5400.0);
+            let ticks = st.opportunity_tally.liveness_max_ticks;
+            max_seen = max_seen.max(ticks);
+            if ticks >= LIVENESS_STAGE_1_TICKS {
+                reached_1 = true;
+            }
+            if ticks >= LIVENESS_STAGE_2_TICKS {
+                reached_2 = true;
+            }
+        }
+        assert!(reached_1, "40 场里停滞从未达到一档——护栏无触发机会（常量空转）");
+        assert!(reached_2, "40 场里停滞从未达到二档——「无压久持→出球」档无触发机会");
+        // 拉回有效：全场停滞上限应显著低于「无止境」（实测三档 16 是储备；上限应在二档量级）
+        assert!(
+            max_seen <= LIVENESS_STAGE_3_TICKS + 8,
+            "停滞上限 {} 远超三档({})——出球档未把比赛拉回",
+            max_seen,
+            LIVENESS_STAGE_3_TICKS
+        );
+    }
+
+    /// P3：deadline 实测范围仍落在 [MIN, MAX]（接入 liveness 后不变量不破）。
+    #[test]
+    fn p31_deadline_bounds_with_liveness() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        let mut rng = SeededRng::new(3);
+        let mut events = Vec::new();
+        let mut t = TICK_SECONDS;
+        while t < 5400.0 {
+            tick(&mut st, &mut rng, &mut events, t);
+            t += TICK_SECONDS;
+        }
+        let tally = st.opportunity_tally;
+        assert!(
+            (MIN_ACTION_DEADLINE_TICKS..=MAX_ACTION_DEADLINE_TICKS).contains(&tally.deadline_min),
+            "实测 deadline 下界 {} 越界",
+            tally.deadline_min
+        );
+        assert!(
+            (MIN_ACTION_DEADLINE_TICKS..=MAX_ACTION_DEADLINE_TICKS).contains(&tally.deadline_max),
+            "实测 deadline 上界 {} 越界",
+            tally.deadline_max
+        );
+        assert!(
+            tally.liveness_max_ticks >= tally.deadline_max,
+            "停滞采样上限 {} 应 ≥ deadline 上界（采样在机会开启时进行）",
+            tally.liveness_max_ticks
+        );
     }
 
 
 
 
-
-
-
 }
+
+
