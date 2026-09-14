@@ -6413,17 +6413,35 @@ mod tests {
         assert!(agg[0] > 0, "1000 场 5min 比赛累计零射门——射门机制在短比赛里死亡");
         assert!(agg[1] > 0, "1000 场 5min 比赛累计零重开（角球+界外球+门球）——出界/重开机制死亡");
         assert!(per(1) >= 0.5, "5min 重开/场 {:.2} < 0.5（出界涌现过弱）", per(1));
-        assert!(agg[3] >= 0, "进球应 ≥ 0（恒真，作方向性口径声明）");
+        // 进球方向：5min 进球应是**可达但不保证**的低均值计数（真实 ~0.15/场量级）。
+        // 断言上界防「进球爆炸」；下界不断言（0 进球场次完全正常，spec 明确进球 ≥ 0）。
+        assert!(
+            per(3) <= 2.0,
+            "5min 进球/场 {:.2} > 2（进球爆炸——5min 不可能有这么多球）",
+            per(3)
+        );
         // 犯规宽带：5min 犯规应是 90min（~23/场）的 1/18 量级——给宽带上界防「哨声爆炸」，
         // 下界只要求机制存活（>0）。真实 5min 约 1-3 次犯规。
         assert!(agg[2] > 0, "1000 场 5min 比赛累计零犯规——犯规机制在短比赛里死亡");
         assert!(per(2) <= 8.0, "5min 犯规/场 {:.2} > 8（哨声爆炸）", per(2));
-        // 反向：显式拒绝「与 90min 的固定比例」式断言（D4 删掉的正是这类）。
-        // 5min 射门/场 明显低于 90min（~8/场）：真实物理时间语义下短比赛内容就是更少。
+        // **真实方向性**（不是「上界够宽就恒真」）：5min 射门率必须**显著低于** 90min 射门率。
+        // 用同引擎的 90min 实测率（同 seed 窗口，20 场已稳）做对照——比硬编码上界强：
+        // 硬编码 `per(0) < 8.0` 对 90min 实测 7.85 也成立，等于什么都没断言（审阅指出的假绿）。
+        let n90 = 20u64;
+        let mut shots_90 = 0u64;
+        for seed in 1..=n90 {
+            let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION });
+            for e in json_events(&s) {
+                if type_of(&e) == "shot" {
+                    shots_90 += 1;
+                }
+            }
+        }
+        let per90 = shots_90 as f64 / n90 as f64;
         assert!(
-            per(0) < 8.0,
-            "5min 射门/场 {:.2} 不应达到 90min 量级——5min 与 90min 不应有固定比例关系（D4）",
-            per(0)
+            per(0) < per90 * 0.5,
+            "5min 射门/场 {:.2} 应显著低于 90min 的 {:.2}（真实物理时间语义：短比赛内容更少）",
+            per(0), per90
         );
     }
 
@@ -8103,13 +8121,14 @@ mod tests {
         assert!(s3 > g3, "贴边线应多数出边线（得 goal={} sideline={}）", g3, s3);
     }
 
-    /// P2：出界由 **`pass_risk` 调制通道**涌现——跑真实比赛断言：
+    /// P2：出界由 **`pass_risk` 调制通道**涌现——跑真实比赛断言（**通道**是生产路径；
+    /// `sample_pass_landing` 的「误差自然越界」分支实测基本不可达，见 design D2 修订理由）：
     /// 1. 每条 `result="out"` 的开放比赛传球都带 `lead`（唯一生产者 = `emit_pass_highlight_inner`
     ///    的出界通道分支）且 `out_pos` 为真实越界值、`x2/y2` 为场内投影；
     /// 2. 出界确实发生（可达）；
     /// 3. 发球重开（角球/界外球/任意球/门球）**从不**出界（它们的落点不经过出界通道）。
     #[test]
-    fn p31_out_of_play_emerges_from_landing_error() {
+    fn p31_out_of_play_emerges_from_pass_risk_channel() {
         let mut out_goal_line = 0;
         let mut out_sideline = 0;
         let mut restart_out = 0;
