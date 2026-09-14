@@ -720,9 +720,12 @@ fn l1_tackle_dilution_and_slot_mix() {
     let shots_regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
     assert!(shots_regular >= 800, "普通射门总数不足：{}", shots_regular);
     let ratio = shots_regular as f64 / tackles as f64;
+    // spec「射门槽频率」带 [1.0,1.8] 保留（P30 实测 1.12）。**语义已变**：不再是槽位配额比
+    // （35%/22%≈1.59），而是「两类涌现事件量级相当」的经验体量带——射门由 hazard 涌现（2B）、
+    // 抢断由防守接触竞争涌现（2C），比值与槽位脱钩。
     assert!(
-        (0.6..=3.0).contains(&ratio),
-        "shot/tackle 比值 {:.3} ∉ [0.6,3.0]（P30 经验体量带，两侧都涌现后放宽）",
+        (1.0..=1.8).contains(&ratio),
+        "shot/tackle 比值 {:.3} ∉ [1.0,1.8]",
         ratio
     );
 
