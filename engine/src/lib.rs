@@ -6997,25 +6997,28 @@ mod tests {
     /// **不产 Shot**。与抢断打断同构（D4 犯规并入竞争后的窗口落点）。
     #[test]
     fn p30_window_foul_cancels_without_shot() {
-        // carrier 中圈附近（远射、禁区外 → 犯规有资格），防守者贴身（~1.5m，落后于 carrier
-        // 即 depth_lead < 0 → 抢断被 bad_angle 压、犯规胜出）。
+        // carrier 中圈附近（远射、禁区外 → 犯规有资格），防守者贴身且落后（depth_lead < 0 →
+        // 抢断被 bad_angle 压、犯规胜出）。
         let build = || {
             let mut st = window_state(&[(11, 0.545, 0.5)]);
-            st.pos[9] = (0.58, 0.5);  // carrier 在防守者前方（防守者回追）
-            st.pos[11] = (0.545, 0.5); // 距 ~3.7m，身后 → 犯规带
+            st.pos[9] = (0.58, 0.5);   // carrier 在防守者前方
+            st.pos[11] = (0.545, 0.5); // 约 3.7m，身后 → 犯规带
             st.shot_setup = Some(ShotSetup::new(30.0, true));
             st
         };
-        let mut saw_foul = false;
-        let mut saw_tackle = false;
-        for seed in 1..=60u64 {
+        // 几何前置断言：该几何确实由打分选出 Foul（否则本测试的前提不成立 → 空跑）
+        {
+            let st = build();
+            let f = defensive_features(&st, 11, st.pos[9]);
+            assert_eq!(select_defensive_action(&f).0, DefensiveAction::Foul,
+                "构造几何应选出犯规（否则测试空跑）：{:?}", select_defensive_action(&f));
+        }
+        // 跑多 seed（hazard 掷定随 seed 变，未提交的窗口 tick 才轮到防守评估）：
+        // 每个窗口 tick 至多一个防守事件；出现犯规时必须取消射门序列、不产 Shot。
+        let mut n_foul = 0u64;
+        let mut n_other = 0u64;
+        for seed in 1..=80u64 {
             let mut st = build();
-            // 先确认该几何打分选出犯规（否则换几何）
-            let vp = st.pos[9];
-            let f = defensive_features(&st, 11, vp);
-            let (a, _) = select_defensive_action(&f);
-            if a != DefensiveAction::Foul { continue; }
-            if saw_foul { break; }
             let mut rng = SeededRng::new(seed);
             let mut events = Vec::new();
             advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
@@ -7023,16 +7026,18 @@ mod tests {
             let fouls = events.iter().filter(|e| e.type_ == EventType::Foul).count();
             let tackles = events.iter().filter(|e| e.type_ == EventType::Tackle).count();
             assert!(shots + fouls + tackles <= 1, "seed {}：同一 tick 至多一个防守事件", seed);
+            assert!(!(fouls > 0 && shots > 0), "seed {}：被犯规的窗口 tick 不得产 Shot", seed);
             if fouls > 0 {
-                saw_foul = true;
-                assert_eq!(shots, 0, "被犯规的窗口 tick 不得产 Shot");
-                assert!(st.shot_setup.is_none(), "被犯规后射门序列应取消");
-                assert_eq!(st.opportunity_tally.shot_window_fouls, 1);
+                n_foul += 1;
+                assert!(st.shot_setup.is_none(), "seed {}：被犯规后射门序列应取消", seed);
+                assert_eq!(st.opportunity_tally.shot_window_fouls, 1, "seed {}：窗口犯规未记账", seed);
+            } else {
+                n_other += 1;
             }
-            if tackles > 0 { saw_tackle = true; }
         }
-        let _ = saw_tackle;
-        assert!(saw_foul, "该几何下窗口应至少出现一次犯规打断（否则测试空跑）");
+        assert!(n_foul > 0, "80 seed 内窗口应至少出现一次犯规打断（否则测试空跑）");
+        // 覆盖口径诚实：未全部走犯规（否则「至多一个」的对照不成立）
+        assert!(n_other > 0, "80 seed 全部走犯规——对照组缺失（hazard 未参与？）");
     }
 
     /// P29 D2/D4：起脚窗口的**方向性**——无压窗口的提交率高于贴身窗口。
