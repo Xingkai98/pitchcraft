@@ -751,14 +751,14 @@ fn l1_tackle_dilution_and_slot_mix() {
     assert!(shots_regular >= 800, "普通射门总数不足：{}", shots_regular);
     let ratio = shots_regular as f64 / tackles as f64;
     // **P31 D6 重标定**：带从 [1.0,1.8] 改为 [0.5,1.5]。
-    // 依据：删槽位后抢断由 5.6/场 变为 9.4/场（原 5.6 含槽位 `FallbackSituation::Tackle` 的
-    // 22% 强制评估腿；改由自然机会点的防守接触竞争涌现后，贴身接触更密集），射门 7.85/场
-    // → 200 场实测 ratio = 0.835（旧引擎 1.12）。**方向是对的**：真实比赛射门 ~13/场、
+    // 依据：删槽位后抢断由 5.6/场 变为 9.3/场（原 5.6 含槽位 `FallbackSituation::Tackle` 的
+    // 22% 强制评估腿；改由自然机会点的防守接触竞争涌现后，贴身接触更密集），射门 7.95/场
+    // → 200 场实测 ratio = 0.855（旧引擎 1.12）。**方向是对的**：真实比赛射门 ~13/场、
     // 抢断 ~25/场 → ratio ~0.52；旧 [1.0,1.8] 是槽位配额（35%/22%≈1.59）的产物，偏虚高。
     // 本带只守「某一类塌缩/爆炸」的数量级，不是配额断言（D6：不给防守竞争补强制来源）。
     assert!(
         (0.5..=1.5).contains(&ratio),
-        "shot/tackle 比值 {:.3} ∉ [0.5,1.5]（P31 D6 重标定：实测 0.835，真实比赛 ~0.52）",
+        "shot/tackle 比值 {:.3} ∉ [0.5,1.5]（P31 D6 重标定：实测 0.855，真实比赛 ~0.52）",
         ratio
     );
 
@@ -784,7 +784,7 @@ fn l1_tackle_dilution_and_slot_mix() {
     let ti_per = throw_ins as f64 / SEEDS_L1 as f64;
     assert!(
         (3.0..=20.0).contains(&ti_per),
-        "场均界外球 {:.2} ∉ [3,20]（P31 实测 9.54）——pass_risk 出界通道疑似失效",
+        "场均界外球 {:.2} ∉ [3,20]（P31 实测 8.74）——pass_risk 出界通道疑似失效",
         ti_per
     );
 }
@@ -1298,7 +1298,8 @@ fn p31_frequency_5min_directional() {
         let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION };
         let s = simulate(seed, cfg);
         let mut shot = 0;
-        let mut restart = 0; // 角球 + 界外球 + 门球（重开的三种来源）
+        let mut restart = 0; // **出界重开**：角球 + 界外球 + 门球（spec scenario 口径）
+        let mut out_of_play = 0; // 出界通道的直接产物：角球 + 界外球（门球另有 off_target 来源）
         let mut foul = 0;
         let mut goal = 0;
         for e in split_events(&s) {
@@ -1309,28 +1310,48 @@ fn p31_frequency_5min_directional() {
                 }
                 "foul" => foul += 1,
                 "pass" => match field_str(&e, "detail").as_deref() {
-                    Some("corner") | Some("throw_in") | Some("free_kick") => restart += 1,
-                    _ => {}
+                    // 角球 / 界外球：出界通道的直接产物
+                    Some("corner") | Some("throw_in") => {
+                        restart += 1;
+                        out_of_play += 1;
+                    }
+                    // 门球：无 to + 门将 subject + 无 lead（`start_goal_kick` 的唯一形态）
+                    _ => {
+                        if field_str(&e, "to").is_none()
+                            && field_str(&e, "lead").is_none()
+                            && matches!(field_str(&e, "subject").as_deref(), Some("0") | Some("21"))
+                        {
+                            restart += 1;
+                        }
+                    }
                 },
                 _ => {}
             }
         }
-        [shot, restart, foul, goal, 0]
+        [shot, restart, foul, goal, out_of_play]
     };
-    let mut agg = [0u64; 5];
+    let mut agg = [0u64; 5]; // 0 shot 1 restart 2 foul 3 goal 4 out_of_play(角球+界外球)
     for seed in 1..=L1_5MIN_SEEDS {
         let c = count(seed);
         for i in 0..5 { agg[i] += c[i]; }
     }
     let per = |i: usize| agg[i] as f64 / L1_5MIN_SEEDS as f64;
     println!(
-        "[P31 5min cohort n={}] 射门/场={:.2} 重开/场={:.2} 犯规/场={:.2} 进球/场={:.2}",
-        L1_5MIN_SEEDS, per(0), per(1), per(2), per(3)
+        "[P31 5min cohort n={}] 射门/场={:.2} 出界重开/场={:.2}（其中角球+界外球 {:.2}）犯规/场={:.2} 进球/场={:.2}",
+        L1_5MIN_SEEDS, per(0), per(1), per(4), per(2), per(3)
     );
     // 方向性护栏（全部为「机制在短比赛里没死」的下界，非频率目标）：
     assert!(agg[0] > 0, "1000 场 5min 比赛累计零射门——射门机制在短比赛里死亡");
-    assert!(agg[1] > 0, "1000 场 5min 比赛累计零重开（角球+界外球+门球）——出界/重开机制死亡");
-    assert!(per(1) >= 0.5, "5min 重开/场 {:.2} < 0.5（出界涌现过弱）", per(1));
+    assert!(agg[1] > 0, "1000 场 5min 比赛累计零出界重开（角球+界外球+门球）——出界/重开机制死亡");
+    assert!(per(1) >= 0.5, "5min 出界重开/场 {:.2} < 0.5（出界涌现过弱）", per(1));
+    // **出界通道专项守卫**（审阅指出：上面的 restart 口径含门球，而门球另有 `off_target`
+    // 来源——通道全死时门球仍在，restart 断言照过）。这里只数**通道的直接产物**
+    // （角球 + 界外球），通道死掉时它塌到 ~0.14/场 → 红。
+    assert!(
+        per(4) >= 0.15,
+        "5min 角球+界外球/场 {:.3} < 0.15——出界通道在短比赛里过弱或死亡（门球掩盖不住）",
+        per(4)
+    );
     // 进球方向：5min 进球应是**可达但不保证**的低均值计数（真实 ~0.15/场量级）。
     // 断言上界防「进球爆炸」；下界不断言（0 进球场次完全正常，spec 明确进球 ≥ 0）。
     assert!(

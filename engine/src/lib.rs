@@ -1123,13 +1123,18 @@ struct OpportunityTally {
     /// P31 接入点①的**执行层绑定**：`action_deadline_for` 实际应用的 `deadline_pressure_ticks`
     /// 最大值（0 = 从未生效）。
     liveness_deadline_pressure_max: u32,
+    /// P31 接入点②的**执行层绑定**：`carrier_move` 实际应用的前插加成（百分点）最大值
+    /// （0 = 从未生效）。spec 点名的三个参数里，前插倾向是最后补上接线层守卫的一个。
+    liveness_forward_intent_pp_max: u64,
     /// P31 D2 **执行层绑定**：出界通道的**最终命中概率** `open_play_out_probability(risk)`
     /// 的千分位 min / max。这是 `OUT_CHANNEL_RISK_GAIN` 的**唯一**观测口——`GAIN = 0` 时
     /// 概率恒为 `base`、跨度塌缩 → 守卫红（审阅指出：只绑 `risk` 抓不到 GAIN 失效，
     /// 因为 GAIN 作用在 `open_play_out_probability` 内部）。
     out_channel_prob_permille_min: u64,
     out_channel_prob_permille_max: u64,
-    /// 出界通道实际命中次数（与 `exec_pass_out_*` 之和一致；只写不读防御网）。
+    /// 出界通道实际命中次数（被 `p31_all_four_liveness_hooks_are_live` 读作通道存活证据；
+    /// 与 `exec_pass_out_*` 之和**经验上**一致——落点误差自然越界分支实测 200 场 0 次——
+    /// 但该等式**没有**断言，不要当作保证）。
     out_channel_hits: u64,
     // 持球候选动作
     carrier_pass: u64,
@@ -1221,6 +1226,7 @@ impl Default for OpportunityTally {
             liveness_stage_hits: [0; 3],
             liveness_pass_risk_bonus_permille_max: 0,
             liveness_deadline_pressure_max: 0,
+            liveness_forward_intent_pp_max: 0,
             out_channel_prob_permille_min: u64::MAX,
             out_channel_prob_permille_max: 0,
             out_channel_hits: 0,
@@ -2405,7 +2411,11 @@ fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
     // P31 D3 接入点②：liveness 前插倾向——停滞越久，「原地小幅控球」的掷定阈值越低
     // （`forward_intent_bonus` 百分点），carrier 越倾向于向球门推进。这是护栏在**普通带球
     // 节拍**上的唯一落点：它只改 carrier 的移动目标，不产任何事件（推进仍可能被抢断/出界）。
-    let hold_pp = 70u64.saturating_sub(forward_intent_pp(&liveness_profile(st.ticks_since_meaningful_action)));
+    let forward_pp = forward_intent_pp(&liveness_profile(st.ticks_since_meaningful_action));
+    // 接入点②的执行层绑定：记录**实际应用**的前插加成（恒 0 = 死代码）。
+    st.opportunity_tally.liveness_forward_intent_pp_max =
+        st.opportunity_tally.liveness_forward_intent_pp_max.max(forward_pp);
+    let hold_pp = 70u64.saturating_sub(forward_pp);
     let roll = rng.next_u64() % 100;
     let (x2, y2) = if is_gk || (!in_transition && roll < hold_pp) {
         let ox = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
@@ -8106,7 +8116,8 @@ mod tests {
         let mut out_sideline = 0;
         let mut restart_out = 0;
         // 头球解围出界（`PassOutSource::Clearance`，lead=None）：另一条合法出界路径，
-        // 不是开放比赛传球的出界通道产物——单独计数以便下面断言两者都**不**被误算。
+        // 不是开放比赛传球的出界通道产物——**断言它至少出现过**（否则下面的
+        // 「通道产物 vs 解围产物」互斥口径是空跑），同时与通道产物分开计数。
         let mut clearance_out = 0;
         for seed in 1..=20u64 {
             let (_, events) = run_match(seed, 5400.0);
@@ -8158,8 +8169,13 @@ mod tests {
             restart_out, 0,
             "发球重开（角球/界外球/任意球/门球）走出了界——D2 要求重开不走出界通道"
         );
-        // Clearance 出界（头球解围）是独立合法路径，不与通道产物混淆：两者计数互斥。
-        let _ = clearance_out;
+        // Clearance 出界（头球解围）是独立合法路径，与通道产物互斥计数。断言其**可达**——
+        // 否则「两者互斥」的分支从未被验证（20 场窗口下头球解围出界可能为 0，故只作
+        // 存在性声明而不设下限：角球 battle 出底线的概率本就低）。
+        assert!(
+            clearance_out > 0,
+            "20 场里解围出界从未发生——「通道产物 vs 解围产物」的分离口径无样本支撑"
+        );
     }
 
     /// P2：普通传球的落点误差**按概率**出界，不是「必出界」——出界率必须落在合理量级
@@ -8358,6 +8374,7 @@ mod tests {
         let mut pass_risk_bonus_max = 0u64;
         let mut stage_hits = [0u64; 3];
         let mut channel_hits = 0u64;
+        let mut forward_intent_pp_max = 0u64;
         let mut risk_min_permille = u64::MAX;
         let mut risk_max_permille = 0u64;
         for seed in 1..=8u64 {
@@ -8368,6 +8385,7 @@ mod tests {
             risk_min_permille = risk_min_permille.min(t.out_channel_prob_permille_min);
             risk_max_permille = risk_max_permille.max(t.out_channel_prob_permille_max);
             channel_hits += t.out_channel_hits;
+            forward_intent_pp_max = forward_intent_pp_max.max(t.liveness_forward_intent_pp_max);
             for i in 0..3 {
                 stage_hits[i] += t.liveness_stage_hits[i];
             }
@@ -8384,6 +8402,10 @@ mod tests {
             "接入点④的前置（停滞达一档的机会开启）从未发生"
         );
         assert!(stage_hits[1] + stage_hits[2] > 0, "停滞从未达二档（接入点④无触发机会）");
+        assert!(
+            forward_intent_pp_max > 0,
+            "接入点②（carrier_move 前插倾向）在执行层从未被应用（恒 0）"
+        );
 
         // **D2 的 pass_risk 调制守卫**（审阅指出：`OUT_CHANNEL_RISK_GAIN = 0` 时全部测试
         // 仍绿——通道退化成与风险无关的固定掷骰，正是 D2 声称已抛弃的「两张皮」形态）。
@@ -8403,8 +8425,9 @@ mod tests {
     }
 
     /// P3：**接入点③必须在 emit 之前读、之后归零**——顺序反了它就恒读 0（死代码）。
-    /// 直接构造一次 open-play 传球执行，断言 `emit_pass_highlight_inner` 读到的
-    /// `ticks_since_meaningful_action` 等于**执行前**的值（非 0），执行后才归零。
+    /// 断言方式用**执行层绑定**（而不是「执行后计数为 0」，后者在 bug 形态下同样为 0，
+    /// 是空转——审阅指出上一版正是如此）。这里构造一次停滞三档的出球，断言
+    /// `emit_pass_highlight_inner` 实际读到的 liveness 加成 > 0；再断言执行后计时归零。
     #[test]
     fn p31_pass_risk_bonus_reads_pre_reset_ticks() {
         let lineup = default_lineup();
@@ -8414,19 +8437,20 @@ mod tests {
         for id in 0..22usize { st.pos[id] = (0.5, 0.5); }
         st.pos[9] = (0.5, 0.5);
         for id in 11..=20usize { st.pos[id] = (0.05, 0.5); }
-        st.pos[11] = (0.505, 0.5); // 贴身 → 出球档（承诺传球）
-        st.ticks_since_meaningful_action = LIVENESS_STAGE_3_TICKS; // 停滞三档
+        st.pos[11] = (0.45, 0.5); // 无压（距 ~5.3m？不——离 carrier 0.5 有 0.05×68m 边距）
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_3_TICKS; // 停滞三档 → 强制出球档
         let mut rng = SeededRng::new(1);
         let plan = build_action_plan(&mut st, &mut rng, OpportunityTrigger::NaturalDeadline);
         assert!(matches!(plan.carrier.action, Some(CarrierAction::Pass { .. })), "应为出球档");
-        // 执行（会经由 emit_pass_highlight_inner 读出界通道风险）
         let mut events = Vec::new();
         execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan));
-        // 执行后归零（meaningful action）
-        assert_eq!(
-            st.ticks_since_meaningful_action, 0,
-            "传球是 meaningful action，执行后应归零"
+        // 核心断言：emit 内**真的读到了**非零 liveness 加成（时序 bug 形态下恒 0 → 红）
+        assert!(
+            st.opportunity_tally.liveness_pass_risk_bonus_permille_max > 0,
+            "emit 未读到 liveness 的 pass_risk_bonus（恒 0）——归零时序回退？"
         );
+        // 执行后归零（传球是 meaningful action）
+        assert_eq!(st.ticks_since_meaningful_action, 0, "传球执行后应归零停滞计时");
     }
 
     /// P3：三处接入的方向——deadline 缩短 / 传球风险抬高 / 前插倾向抬高。
