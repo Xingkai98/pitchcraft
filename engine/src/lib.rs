@@ -217,13 +217,15 @@ impl Event {
     }
 }
 
-/// 当前引擎/协议模型版本（P29 起 = 3）。
+/// 当前引擎/协议模型版本（P30 起 = 4）。
 /// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
 /// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
 /// v3：P29 射门机会迁移（射门由 hazard 五因子涌现，非槽强制；`shot_setup` 可被抢断打断）——
 ///     **第一个改变可观测行为的版本**（事件流变、golden 重基线、频率变）。
+/// v4：P30 防守接触竞争迁移（抢断/犯规统一打分选一 + 三层 cooldown，删 `same_pair`/`far`）——
+///     防守侧与射门侧对称涌现，事件流再次改变（golden 重基线）。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 3;
+pub const MODEL_VERSION: u32 = 4;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
@@ -254,8 +256,9 @@ pub const PITCH_WIDTH_M: f64 = 68.0;
 /// 就近阈值（米）：距持球者最近的防守者超过此距离则不产 tackle（避免跨半场逼抢）。
 /// v2 标定：高亮 ~200/场 × tackle 掷出 32% × 贴防率 ≈ 目标 8-15 次/场 → 阈值 12m。
 pub const TACKLE_DISTANCE_THRESHOLD_METERS: f64 = 12.0;
-/// 抢断积极性：贴防时"真的去抢"的概率。
-/// P7 槽位：tackle 槽总是产（检查失败 force_fail），贴防通过率需够高才能出现 success——0.5。
+/// 抢断积极性（pilot 语义更新）：P7 起是「贴防时真的去抢」的概率（掷骰子）；
+/// **P30 起改为打分基线**——同一几何下积极性越高，`score_tackle` 越高（不再消耗 RNG，
+/// 「是否上抢」由几何 + 冷却的打分竞争决定，见 `select_defensive_action`）。
 pub const TACKLE_EAGERNESS: f64 = 0.5;
 /// 抢断成功率（success/fail 各半，用户确认 50/50）。
 pub const TACKLE_SUCCESS_RATE: f64 = 0.5;
@@ -287,19 +290,17 @@ pub const PASS_MISS_P: f64 = 2.5;
 /// 犯规须从 ~370 次/场的过渡传球之间的 carrier 持球段产生）。触发条件：防守方有球员
 /// ≤ FOUL_PRESS_DIST_M 贴身持球者（真实犯规多发生在逼抢/缠斗），carrier 非门将、
 /// 距所攻球门 > BOX_DIST_M（禁区内防守犯规 = 点球，本试点不做点球 → 禁区内不产犯规）。
-/// 频率由 FOUL_OPEN_TICK_P（每个满足条件的开放持球 tick 的犯规概率）标定。
+/// 频率由「防守动作打分选一」标定（P30 起，见 `score_foul` / `FOUL_PRESS_DIST_M` 为本条资格门槛）。
 pub const FOUL_PRESS_DIST_M: f64 = 8.0;
-/// 每个"贴身持球 tick"的犯规概率（fraction）。§标定（200 seed 90min 实测，SEEDS_L1_START 窗口）：
-/// 贴身持球 tick ≈ 开放比赛的多数（队形让防线贴近持球者，贴身率很高），0.028 → 犯规 50.7/场，
-/// 线性回缩到 0.0115 → ~24/场（任务目标带 [14,28]，真实 ~21）。吃黄威慑折扣使最终 ~23/场。
-pub const FOUL_OPEN_TICK_P: f64 = 0.0115;
 /// 黄牌率（无牌犯规中）：犯规 ~24/场 × 13% ≈ ~3.1 黄事件/场（带 [2.5,5]；真实 3.8）。
 /// 同人第二黄自动升级红（真实规则）——威慑折扣把二黄升级压到 ~0.2 红/场量级。
 pub const CARD_YELLOW_P: f64 = 0.13;
 /// 红牌率（直红，‰档独立于黄）：犯规 ~25/场 × 0.35% ≈ ~0.09 直红/场（真实 0.12）；另有二黄累计红。
 pub const CARD_RED_P: f64 = 0.0035;
-/// 吃黄球员的犯规率折扣（真实：吃黄后收敛，避免再吃一黄罚下）。折扣只影响其犯规频率，
-/// 不影响黄牌/红牌自身概率（已吃黄者若再犯规，二黄升级红照常判定）。
+/// 吃黄球员的犯规**威慑**（真实：吃黄后收敛，避免再吃一黄罚下）。P30 前的语义是「犯规概率乘
+/// 折扣」；P30 起犯规并入防守打分，折扣相应变为**打分惩罚权重**（`FOUL_YELLOW_PENALTY`）——
+/// 吃黄者同一几何下犯规分更低，于是更少犯规。它只影响犯规倾向，不影响黄牌/红牌自身概率
+/// （已吃黄者若再犯规，二黄升级红照常判定）。
 pub const FOUL_YELLOWED_DETERRENCE: f64 = 0.35;
 /// 犯规类型分布（roll 百分比分档，事件 detail=foul_<type>）：tackle(抢截犯规)/hold(拉拽)/
 /// push(推人)/trip(绊人)/handball(手球)。真实构成以 tackle 型为主（~60%），handball 最少。
@@ -309,6 +310,85 @@ pub const FOUL_TYPE_PUSH_P: u64 = 12;
 pub const FOUL_TYPE_TRIP_P: u64 = 13;
 /// 任意球由 detail="free_kick" 的 pass 表达（复用 pass 演绎层；发球者就地从犯规点发出）。
 /// 犯规主体恒为防守方、球权保留给被犯规方 → 任意球重开给当前 possession 方。
+
+// ---- P30 防守接触竞争（#25 阶段 2C）----
+//
+// 抢断/犯规/封堵/跟防从「独立判定 + 补丁式成功率修正（same_pair/far）」改为
+// 「每个防守机会点按 score 取最高」（D2/D4）。打分是**纯函数**（几何 + 局部冷却 → 4 个 score，
+// 零 RNG），资格在打分阶段判定（D3），cooldown 只改变 score、不直接禁止事件（D1）。
+//
+// 打分基线刻意让 contain/jockey 成为「默认动作」（大多数机会点没有接触条件），tackle/foul
+// 只有几何足够极端时才胜出。尺度依据 —— 开放比赛 tick 的最近防守者距离分布（20 seed 90min 实测，
+// 见 `.p30-progress.md`）：<1m 0.8% / 1-2m 2.0% / 2-4m 9.5% / 4-6m 19.0% / 6-8m 25.4% /
+// 8-12m 40.1% / >12m 3.2%。即「贴身」是常态、「脚下」是少数——故抢断的接触尺度收到 2.5m
+// （窄），犯规用 8m（宽），两者错开距离窗口。
+
+/// defender 级抢断冷却（tick，3-5s 档）：同一防守者抢断/犯规后此窗口内 `score_tackle` 被压（D1）。
+const TACKLE_COOLDOWN_TICKS: u32 = 4;
+/// pair 级接触冷却（tick，5-8s 档）：同一（防守者, 被抢者）对接触后此窗口内再次接触的
+/// `score_tackle` 被压（D1）。取代旧的 `last_tackle_pair`（单 pair、无 age、只用于
+/// 「连续同对强制失败」的事后补丁）。
+const CONTACT_PAIR_COOLDOWN_TICKS: u32 = 6;
+/// **抢断**的接触尺度（米）：`tackle_closeness = clamp01(1 - d / SCALE)`。取 2.5m——抢断是
+/// 「脚下」动作，只在极近处成立。校准依据：每场 90min 约 715 次防守评估，抢断目标 ~5-7/场
+/// → 命中率需 ~1%，故抢断只能在评估中占比很小的「≤2.5m」带里胜出（见 `.p30-progress.md`）。
+/// 犯规用更宽尺度（`foul_closeness` 用 `FOUL_PRESS_DIST_M`=8m，与犯规资格阈值同尺度）。
+const DEF_CONTACT_SCALE_M: f64 = 2.50;
+/// 跟防的距离衰减尺度（米）：`distance_fit` 在 `DEF_JOCKEY_IDEAL_M` 之外按此尺度线性衰减。
+const DEF_PRESS_SCALE_M: f64 = FOUL_PRESS_DIST_M;
+/// 纵深领先的归一化尺度（米）：防守者领先持球者此距离 → `approach` 满、`bad_angle` 归 0。
+const DEF_APPROACH_SCALE_M: f64 = 6.0;
+/// 封堵因子的归零距离（米）：此距离以内 contain 不计分（那是 contact 动作的地盘）。
+const DEF_CONTAIN_ZERO_M: f64 = 4.0;
+/// 封堵的峰值距离（米）：`pressure_without_contact` 在此处最高（向远处衰减到抢断阈值）。
+const DEF_CONTAIN_PEAK_M: f64 = 9.0;
+/// 跟防理想距离（米）：太近是接触（该去抢）、太远是脱防（够不着），此距离附近 `distance_fit` 最高。
+/// 与 `DEF_CONTAIN_ZERO_M`(4m) 重合，使 jockey（~1-6m）与 contain（~6-12m）在距离上错开。
+const DEF_JOCKEY_IDEAL_M: f64 = 4.0;
+/// 跟防下界的「已贴身」距离（米）：≤ 此值视为「不是跟防距离」→ `distance_fit = 0`。
+const DEF_JOCKEY_IDLE_MIN_M: f64 = 1.0;
+// 四个 score 的基线 / 增益（严格按 D2 公式形状：`tackle = base + closeness + approach −
+// cooldown − bad_angle`；`foul = base + danger + closeness − yellow − foul_cd`；
+// `contain = base + pressure_without_contact`；`jockey = base + distance_fit`）。
+//
+// 标定（200 seed 90min 实测，见 `.p30-progress.md`「打分标定」）：抢断/犯规各只有在**各自的
+// 距离窗口 + 角度条件**下才压过 contain/jockey，两窗口由 closeness 尺度/增益差 + 抢断独有的
+// bad_angle 惩罚错开——抢断在「贴身（≲2.5m）且正面（approach）」胜出；犯规在「近身（≲8m）
+// 但已失去抢断位置（身后 / 稍远）」胜出。这不是系数巧合，而是「被过掉的防守者只能拉人」的落点。
+// 实测 90min（200 seed）：tackle ~5.6/场、foul ~22.7/场、shot/tackle ~1.23（均在 L1 带内）。
+const BASE_DEF_CONTAIN: f64 = 0.15;
+const CONTAIN_PRESS_GAIN: f64 = 0.55;
+const BASE_DEF_JOCKEY: f64 = 0.05;
+const JOCKEY_FIT_GAIN: f64 = 0.45;
+/// 抢断打分基线（log 尺度）：与 `TACKLE_EAGERNESS` 相加构成抢断的「无几何」倾向。
+const BASE_DEF_TACKLE: f64 = -1.10;
+/// 抢断 closeness 增益：把「贴到脚下」放大到能压过 contain/jockey 的量级。必须**大于**
+/// `FOUL_CLOSENESS_GAIN`——两者形状相同，增益差决定「贴身且正面 → 抢断」的分界。
+const TACKLE_CLOSENESS_GAIN: f64 = 1.80;
+/// 抢断「迎面逼近」增益（防守者深入持球者与球门之间 = 正面拦截/关门）。
+const TACKLE_APPROACH_GAIN: f64 = 0.50;
+/// 抢断坏角度惩罚权重（身后回追铲球：容易犯规/失位）。这条是**犯规的入口**——D2 里 tackle
+/// 独有的 `-bad_angle` 项，正是「被过掉的防守者只能拉人」这一现实的落点（foul 无此惩罚）。
+const TACKLE_BAD_ANGLE_PENALTY: f64 = 0.50;
+/// defender 级冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]）。
+const TACKLE_CD_PENALTY: f64 = 0.60;
+/// pair 级冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]）。
+const TACKLE_PAIR_CD_PENALTY: f64 = 0.60;
+/// 犯规打分基线（log 尺度）：犯规是「危险的防守选择」——基线高于抢断，唯有近身缠斗时才胜出。
+const BASE_DEF_FOUL: f64 = 0.05;
+const FOUL_DANGER_GAIN: f64 = 0.40;
+/// 犯规的 closeness 增益：**小于** `TACKLE_CLOSENESS_GAIN`（见上）。
+const FOUL_CLOSENESS_GAIN: f64 = 0.55;
+/// 吃黄威慑的打分惩罚（由 `FOUL_YELLOWED_DETERRENCE` 换算，保持同一「威慑」常量族）。
+const FOUL_YELLOW_PENALTY: f64 = FOUL_YELLOWED_DETERRENCE;
+/// 全局犯规冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]，分母 `FOUL_MIN_GAP_TICKS`）。
+const FOUL_CD_PENALTY: f64 = 0.80;
+/// 持球者压迫状态的保持时长（tick，D5）：contain/jockey 结算时置满，每 tick 衰减 1。
+/// 取 8 ≈ 机会点平均间距（~7 tick），使「无事件防守」在两次机会之间保持生效但会衰减。
+const PRESSURE_STATE_HOLD_TICKS: u32 = 8;
+/// 压迫状态对射门 hazard `defensive_pressure` 因子的权重（D5 的唯一落点）。
+/// 取小值：它是几何压迫的**补充**（无事件防守的持续逼抢），不是替代。
+const PRESSURE_STATE_GAIN: f64 = 0.12;
 
 // ---- 事件驱动时间推进参数（grill Q11b 确认）----
 /// 有球动作之间的"控球/决策间隔"（秒）：持球者控球观察、队友跑位的时间。
@@ -720,18 +800,22 @@ enum CarrierAction {
     AwardDeadBall(DeadBallKind),
 }
 
-/// 防守者候选动作（D3 第 2/5 级）
+/// 防守者候选动作（D3 第 2/5 级）。
+///
+/// P30（#25 阶段 2C）：四类动作由 `select_defensive_action` 在**每个防守机会点**按 score 取最高
+/// （D2）。`Tackle` 的 `same_pair`/`far` 补丁已删（D3）——资格在打分阶段判定（距离/冷却/角度），
+/// 结果只有成败两态（`TACKLE_SUCCESS_RATE`）。
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum DefensiveAction {
-    /// 抢断（成败由执行层掷定；`far` = 超阈值抢断降成功率，`same_pair` = 连续同对强制失败）
-    Tackle { same_pair: bool, far: bool },
-    /// 犯规（由既有涌现判定 `maybe_open_foul` 产生；D3 第 2 级「防守中断」）
+    /// 抢断（接触动作；成败由执行层按 `TACKLE_SUCCESS_RATE` 掷定）
+    Tackle,
+    /// 犯规（与抢断同窗口竞争胜出者；D3 第 2 级「防守中断」，D4）
     Foul,
-    /// 封堵（无事件防守，D3 第 5 级）
+    /// 封堵（无事件防守，D3 第 5 级；只调压力状态，D5）
     Contain,
-    /// 跟防（无事件防守，D3 第 5 级）
+    /// 跟防（无事件防守，D3 第 5 级；只调压力状态，D5）
     Jockey,
-    /// 无防守动作
+    /// 无防守动作（无防守者进入争夺范围）
     None,
 }
 
@@ -780,11 +864,14 @@ enum CarrierExecution {
     EnterShotWindow { target_dist: f64 },
 }
 
-/// 2A 执行绑定（防守侧）
+/// 2A 执行绑定（防守侧）。
+/// P30：`Tackle` 只带防守者 id（被打断的是哪名防守者）——`same_pair`/`far` 已删（D3）；
+/// `Foul` 的哨停/重开由执行层调 `emit_foul_and_free_kick`（犯规并入竞争后，事件产出点也在此）。
 #[derive(Clone, Copy, PartialEq, Debug)]
 enum DefensiveExecution {
     None,
-    Tackle { same_pair: bool, far: bool },
+    Tackle { defender: i32 },
+    Foul { defender: i32 },
 }
 
 /// 持球侧行动计划（D3 第 1 步：carrier 先产计划）
@@ -820,7 +907,7 @@ impl ActionPlan {
                 ActionResolution::DeadBall(kind) =>
                     self.carrier.dead_ball == Some(kind),
                 ActionResolution::InterruptedByTackle =>
-                    matches!(self.defensive, DefensiveAction::Tackle { .. }),
+                    matches!(self.defensive, DefensiveAction::Tackle),
                 ActionResolution::InterruptedByFoul =>
                     matches!(self.defensive, DefensiveAction::Foul),
                 ActionResolution::DefensiveContainment =>
@@ -838,21 +925,6 @@ impl ActionPlan {
         );
     }
 
-    /// 持球侧未承诺行动、且防守方也未中断时的「中性」计划（犯规 tick 用：哨停已由判定链完成）
-    fn foul_only(defensive: DefensiveAction) -> ActionPlan {
-        let carrier = CarrierPlan {
-            action: None,
-            dead_ball: None,
-            situation: None,
-            exec: CarrierExecution::ContinueDribble,
-        };
-        ActionPlan {
-            carrier,
-            defensive,
-            defensive_exec: DefensiveExecution::None,
-            resolution: resolve_action_opportunity(&carrier, defensive),
-        }
-    }
 }
 
 /// 2A 观测计数器：只写、不进事件流、不耗 RNG（防空转守卫用）。
@@ -887,6 +959,9 @@ struct OpportunityTally {
     defensive_contain: u64,
     defensive_jockey: u64,
     defensive_none: u64,
+    /// P30：`execute_action_resolution` 真正执行（非 None 计划）的次数。全部 `res_*` 桶之和
+    /// 必须等于它——每个被执行的机会恰记一个结算桶（D2 全分区的机器守卫）。
+    plans_executed: u64,
     // 结算
     res_carrier_shoot: u64,
     res_carrier_pass: u64,
@@ -899,6 +974,12 @@ struct OpportunityTally {
     res_no_action: u64,
     // 执行绑定（与事件流中对应事件数绑死）
     exec_tackle: u64,
+    /// P30：执行层真正落地的犯规数（与事件流 foul 事件数绑死）——犯规并入竞争后，
+    /// 犯规事件由执行层产（见 `execute_action_resolution` 的 `InterruptedByFoul`）。
+    exec_foul: u64,
+    /// P30（D5）：contain/jockey 结算真正把 `pressure_state_ticks` 置满的次数——证明
+    /// 「只调状态不产事件」这条路径被真实命中（非空转）。
+    pressure_state_sets: u64,
     exec_shoot: u64,
     exec_pass: u64,
     exec_forward_pass: u64,
@@ -919,6 +1000,8 @@ struct OpportunityTally {
     shot_window_commits: u64,
     /// 窗口内被抢断打断（canceled → tackle，不产 Shot）的次数
     shot_window_tackles: u64,
+    /// P30：窗口内犯规打断（canceled → foul，不产 Shot）的次数——「被过掉拉人」的落点
+    shot_window_fouls: u64,
     /// 窗口内 hazard 未命中、且无人抢断 → 本 tick 持球等待（窗口继续计时）的次数
     shot_window_holds: u64,
     /// 窗口耗尽仍未提交、转为继续带球（「转」）的次数
@@ -962,6 +1045,7 @@ impl Default for OpportunityTally {
             defensive_contain: 0,
             defensive_jockey: 0,
             defensive_none: 0,
+            plans_executed: 0,
             res_carrier_shoot: 0,
             res_carrier_pass: 0,
             res_carrier_dribble: 0,
@@ -972,6 +1056,8 @@ impl Default for OpportunityTally {
             res_jockey: 0,
             res_no_action: 0,
             exec_tackle: 0,
+            exec_foul: 0,
+            pressure_state_sets: 0,
             exec_shoot: 0,
             exec_pass: 0,
             exec_forward_pass: 0,
@@ -984,6 +1070,7 @@ impl Default for OpportunityTally {
             shot_window_entries: 0,
             shot_window_commits: 0,
             shot_window_tackles: 0,
+            shot_window_fouls: 0,
             shot_window_holds: 0,
             shot_window_expiries: 0,
             shot_window_entries_by_bucket: [0; 3],
@@ -1193,14 +1280,6 @@ fn carrier_pass_target(st: &MatchState) -> Option<i32> {
     Some(nearest_teammate(st, st.pos[carrier as usize], st.possession == 0, carrier).0)
 }
 
-/// 最近防守者是否在持球者与所攻球门之间（跟防 / 封堵分流用）
-fn defender_goal_side(st: &MatchState, carrier_pos: (f64, f64)) -> bool {
-    let home = st.possession == 0;
-    let (_, def_pos, _) = nearest_defender(st, carrier_pos, !home);
-    let depth = |p: (f64, f64)| if home { p.0 } else { -p.0 }; // 越大越靠所攻球门
-    depth(def_pos) > depth(carrier_pos)
-}
-
 /// D3 第 1 步：carrier 产行动计划。
 /// - `FallbackDeadline`：抽情境（1 次 RNG，与旧槽位同序）→ 映射候选行动；射门情境的
 ///   `sample_shot_target` 与三态分流原样保留（RNG 序：情境 → 目标 → …）。
@@ -1360,83 +1439,63 @@ fn evaluate_fallback_carrier_action(st: &MatchState, rng: &mut SeededRng) -> Car
     }
 }
 
-/// D3 第 2 步：贴身 defender 产防守行动计划。
-/// - fallback 抽到 Tackle（持球者非门将）：按旧次序算 `same_pair` / `far`——`nearest_defender`
-///   （零 RNG）→ `same_pair`（零 RNG）→ `far = dist > 阈值 || !should_tackle(rng)`。
-///   `||` 短路语义原样保留：dist > 12m 时**不消耗** RNG（RNG 序等价的关键）。
-/// - 自然 deadline：纯几何分类（零 RNG）——贴身且在球门侧 → 跟防；贴身但不在球门侧 → 封堵；
-///   无人贴身 → None。
-/// - 其余触发：None（不耗 RNG）。
+/// D3 第 2 步：防守者产防守行动计划（P30 = 统一打分选一，D2/D4）。
+///
+/// 每个机会点对候选防守者（`nearest_defender`）算 tackle/foul/contain/jockey 的 score，取最高 →
+/// **一个** `DefensiveAction`。资格（抢断距离 / 犯规禁区外+贴身+冷却过）在打分阶段判定（D3）；
+/// `same_pair`/`far` 补丁已删（D3），结果只有成败两态（执行层掷 `TACKLE_SUCCESS_RATE`）。
+///
+/// 三处机会点（自然 deadline / 起脚窗口 / fallback-逼抢情境）共用同一打分；**唯一的区别**是
+/// 起脚窗口受 `committed` 不可回溯守卫（D1：已提交射门不可被改写为 tackle）。
+///
+/// 零 RNG（打分是几何 + 冷却的纯函数）→ 不再消耗抢断积极性掷骰。
 fn evaluate_defensive_action(
     st: &MatchState,
     rng: &mut SeededRng,
     trigger: OpportunityTrigger,
     carrier: &CarrierPlan,
 ) -> (DefensiveAction, DefensiveExecution) {
-    match trigger {
-        OpportunityTrigger::NaturalDeadline => {
-            let carrier_id = st.carrier;
-            if carrier_id < 0 || carrier_id > 21 {
-                return (DefensiveAction::None, DefensiveExecution::None);
-            }
-            let c = st.pos[carrier_id as usize];
-            let (_, _, near_m) = nearest_defender(st, c, st.possession != 0);
-            if near_m > TACKLE_DISTANCE_THRESHOLD_METERS {
-                (DefensiveAction::None, DefensiveExecution::None)
-            } else if defender_goal_side(st, c) {
-                (DefensiveAction::Jockey, DefensiveExecution::None)
-            } else {
-                (DefensiveAction::Contain, DefensiveExecution::None)
-            }
-        }
-        OpportunityTrigger::HoldTimeout => (DefensiveAction::None, DefensiveExecution::None),
-        // P29 D3：起脚窗口内的防守候选——贴身且决定上抢 → Tackle（打断射门序列，见
-        // `advance_shot_setup` 的窗口相：**抢断成败都取消射门**，成败只决定球权去向）。
-        // 不贴身 / 没积极性 → None（无事件防守，窗口继续计时）。
-        // **D1 不可回溯**：`committed = true`（hazard 已提交射门）时直接返回 None 且不消耗
-        // RNG——防守者不能把已提交的射门改写成 tackle。
-        OpportunityTrigger::ShotWindow => {
-            if st.shot_setup.as_ref().map_or(false, |s| s.committed) {
-                return (DefensiveAction::None, DefensiveExecution::None);
-            }
-            let victim = st.carrier;
-            if victim < 0 || victim > 21 {
-                return (DefensiveAction::None, DefensiveExecution::None);
-            }
-            let victim_pos = st.pos[victim as usize];
-            let def_home = st.possession != 0;
-            let (def_id, _, dist) = nearest_defender(st, victim_pos, def_home);
-            let same_pair = st.last_tackle_pair == Some((def_id, victim));
-            // 窗口触发时传球/推进已结束，防守者尚未贴身 → `far` 的「远离阈值」语义不适用，
-            // 恒 false；是否上抢由 `should_tackle`（与 fallback 抢断槽同积极性）决定。
-            if dist <= TACKLE_DISTANCE_THRESHOLD_METERS && should_tackle(rng) {
-                (
-                    DefensiveAction::Tackle { same_pair, far: false },
-                    DefensiveExecution::Tackle { same_pair, far: false },
-                )
-            } else {
-                (DefensiveAction::None, DefensiveExecution::None)
-            }
-        }
-        OpportunityTrigger::FallbackDeadline => {
-            match carrier.situation {
-                Some(FallbackSituation::Tackle)
-                    if st.carrier != 0 && st.carrier != 21 =>
-                {
-                    let victim = st.carrier;
-                    let victim_pos = st.pos[victim as usize];
-                    let def_home = st.possession != 0;
-                    let (def_id, _, dist) = nearest_defender(st, victim_pos, def_home);
-                    let same_pair = st.last_tackle_pair == Some((def_id, victim));
-                    let far = dist > TACKLE_DISTANCE_THRESHOLD_METERS || !should_tackle(rng);
-                    (
-                        DefensiveAction::Tackle { same_pair, far },
-                        DefensiveExecution::Tackle { same_pair, far },
-                    )
-                }
-                _ => (DefensiveAction::None, DefensiveExecution::None),
-            }
-        }
+    let _ = rng; // 打分选一零 RNG（保留参数以维持调用契约与将来扩展）
+    // 起脚窗口：hazard 已提交射门 → 防守侧不可回溯（D1），零 RNG 直接 None。
+    if trigger == OpportunityTrigger::ShotWindow
+        && st.shot_setup.as_ref().map_or(false, |s| s.committed)
+    {
+        return (DefensiveAction::None, DefensiveExecution::None);
+    }
+    // 只有这三类机会点会评估防守（持球超时是普通过渡传球，防守方不上抢）。
+    let evaluates = matches!(
+        trigger,
+        OpportunityTrigger::NaturalDeadline
+            | OpportunityTrigger::ShotWindow
+            | OpportunityTrigger::FallbackDeadline
+    );
+    if !evaluates {
+        return (DefensiveAction::None, DefensiveExecution::None);
+    }
+    // fallback 且情境不是「被逼抢」→ 无接触语义（同 2A：只有 Tackle 情境才评估）。
+    if trigger == OpportunityTrigger::FallbackDeadline
+        && carrier.situation != Some(FallbackSituation::Tackle)
+    {
+        return (DefensiveAction::None, DefensiveExecution::None);
+    }
+    let victim = st.carrier;
+    // 门将持球不被抢断/犯规（同旧守卫：门将多在后场短传，真实极少被逼抢）。
+    if victim < 0 || victim > 21 || victim == 0 || victim == 21 {
+        return (DefensiveAction::None, DefensiveExecution::None);
+    }
+    let victim_pos = st.pos[victim as usize];
+    let (def_id, _, _) = nearest_defender(st, victim_pos, st.possession != 0);
+    let f = defensive_features(st, def_id, victim_pos);
+    match select_defensive_action(&f) {
+        (DefensiveAction::Tackle, _) => (
+            DefensiveAction::Tackle,
+            DefensiveExecution::Tackle { defender: def_id },
+        ),
+        (DefensiveAction::Foul, _) => (
+            DefensiveAction::Foul,
+            DefensiveExecution::Foul { defender: def_id },
+        ),
+        (action, _) => (action, DefensiveExecution::None),
     }
 }
 
@@ -1449,7 +1508,7 @@ fn resolve_action_opportunity(carrier: &CarrierPlan, defensive: DefensiveAction)
         return ActionResolution::DeadBall(kind);
     }
     match defensive {
-        DefensiveAction::Tackle { .. } => return ActionResolution::InterruptedByTackle,
+        DefensiveAction::Tackle => return ActionResolution::InterruptedByTackle,
         DefensiveAction::Foul => return ActionResolution::InterruptedByFoul,
         _ => {}
     }
@@ -1488,7 +1547,7 @@ fn build_action_plan(
             None => {}
         }
         match defensive {
-            DefensiveAction::Tackle { .. } => t.defensive_tackle += 1,
+            DefensiveAction::Tackle => t.defensive_tackle += 1,
             DefensiveAction::Foul => t.defensive_foul += 1,
             DefensiveAction::Contain => t.defensive_contain += 1,
             DefensiveAction::Jockey => t.defensive_jockey += 1,
@@ -1543,7 +1602,9 @@ fn advance_action_opportunity(st: &mut MatchState, rng: &mut SeededRng) -> Optio
     }
     st.opportunity_tally.natural_deadline_due += 1;
     let plan = build_action_plan(st, rng, OpportunityTrigger::NaturalDeadline);
-    // 结算为「继续带球」→ 重置 deadline 再等下一次（D1 可重复）
+    // 结算为「继续带球」→ 重置 deadline 再等下一次（D1 可重复）。
+    // 犯规结算的失效在**执行层**统一处理（见 `execute_action_resolution`）——因为犯规可由
+    // 三个触发源中的任意一个选出（自然 deadline / fallback / 起脚窗口），集中一处才不漏。
     open_action_opportunity(st, OpportunityTrigger::NaturalDeadline);
     Some(plan)
 }
@@ -1571,6 +1632,13 @@ fn execute_action_resolution(
         }
     };
     plan.assert_resolution_consistent();
+    st.opportunity_tally.plans_executed += 1;
+    // P30（D1/D4）：犯规结算（哨停 + 任意球重开）打断持球段 → 存活的行动机会必须失效。
+    // 犯规现在可由三个触发源中任意一个选出（自然 deadline / fallback / 起脚窗口），故在
+    // **执行层**统一失效，而不是散在各调用点（漏一处就跨越持球段边界 → D1 违约 + leak 计数）。
+    if matches!(plan.resolution, ActionResolution::InterruptedByFoul) {
+        invalidate_action_opportunity(st, OpportunityReason::Foul);
+    }
     {
         let t = &mut st.opportunity_tally;
         match plan.resolution {
@@ -1599,17 +1667,26 @@ fn execute_action_resolution(
             emit_pass_out_play_slot(st, rng, events, t, kind);
         }
         ActionResolution::InterruptedByTackle => match plan.defensive_exec {
-            DefensiveExecution::Tackle { same_pair, far } => {
+            DefensiveExecution::Tackle { defender } => {
                 st.opportunity_tally.exec_tackle += 1;
-                emit_tackle_highlight_impl(st, rng, events, t, same_pair, far);
+                emit_tackle_highlight_impl(st, rng, events, t, defender);
             }
-            DefensiveExecution::None => {
-                st.opportunity_tally.exec_continue += 1;
-                emit_beat_with_main(st, rng, events, t);
-            }
+            // 抢断结算必须有执行绑定（否则「结算说是抢断、执行却什么都没做」= 空转）。
+            // 与 `assert_resolution_consistent` 同层的发布态硬守卫。
+            _ => unreachable!("InterruptedByTackle 的执行绑定应为 Tackle：{:?}", plan.defensive_exec),
         },
-        // 犯规的哨停 / 任意球重开已由 `maybe_open_foul` → `emit_foul_and_free_kick` 在本 tick 完成
-        ActionResolution::InterruptedByFoul => {}
+        // P30（D4）：犯规并入防守打分 → 犯规事件的产出点也移到执行层（与抢断同构）。
+        // 资格（禁区外 + 贴身 + 冷却过）已在 `select_defensive_action` 判定；此处只负责
+        // 把哨停 / 任意球重开落地。
+        ActionResolution::InterruptedByFoul => match plan.defensive_exec {
+            DefensiveExecution::Foul { defender } => {
+                st.opportunity_tally.exec_foul += 1;
+                let carrier = st.carrier;
+                let spot = st.pos[carrier as usize];
+                emit_foul_and_free_kick(st, rng, events, t, carrier, spot, defender);
+            }
+            _ => unreachable!("InterruptedByFoul 的执行绑定应为 Foul：{:?}", plan.defensive_exec),
+        },
         ActionResolution::CarrierAction(_) => match plan.carrier.exec {
             CarrierExecution::Shoot => {
                 st.module_shot_pending = true;
@@ -1650,9 +1727,15 @@ fn execute_action_resolution(
                 emit_beat_with_main(st, rng, events, t);
             }
         },
-        ActionResolution::DefensiveContainment
-        | ActionResolution::DefensiveJockey
-        | ActionResolution::NoAction => {
+        ActionResolution::DefensiveContainment | ActionResolution::DefensiveJockey => {
+            // P30（D5）：contain/jockey **不产事件**，只调持球者压迫状态——供射门 hazard 的
+            // `defensive_pressure` 因子读。置满保持时长，随后每 tick 衰减（`tick()` 顶部）。
+            st.pressure_state_ticks = PRESSURE_STATE_HOLD_TICKS;
+            st.opportunity_tally.pressure_state_sets += 1;
+            st.opportunity_tally.exec_continue += 1;
+            emit_beat_with_main(st, rng, events, t);
+        }
+        ActionResolution::NoAction => {
             st.opportunity_tally.exec_continue += 1;
             emit_beat_with_main(st, rng, events, t);
         }
@@ -1679,7 +1762,14 @@ struct MatchState {
     restart_prep: Option<RestartPrep>,
     home_score: u32,
     away_score: u32,
-    last_tackle_pair: Option<(i32, i32)>,
+    /// P30 三层 cooldown（D1）——抢断/接触的冷却状态，**只改变下一次防守动作打分**，不直接
+    /// 禁止事件。取代旧的 `last_tackle_pair`（单 pair、无 age、只用于「连续同对强制失败」补丁）。
+    /// - `tackle_cooldown[id]`：defender 级剩余冷却 tick（0 = 无冷却），每 tick 衰减。
+    /// - `last_contact_pair` + `contact_age_ticks`：pair 级——最近一次接触的（防守者, 被抢者）
+    ///   及其**接触后经过的 tick 数**（0 = 本 tick 刚接触）。只有这一对受 pair 冷却约束。
+    tackle_cooldown: [u32; 22],
+    last_contact_pair: Option<(i32, i32)>,
+    contact_age_ticks: u32,
     // P5：静态防线身份（每队离己方门线最近的 4 名外场，default_lineup 基准）
     home_defenders: [i32; 4],
     away_defenders: [i32; 4],
@@ -1700,6 +1790,11 @@ struct MatchState {
     /// **不读「本场已射多少次」**——C 路原则（D2）。全局单计时器（简化：一次射门后双方窗口
     /// 都短暂受抑；射门稀疏时影响小，见 `.p29-progress.md`）。
     shot_cooldown_ticks: u32,
+    /// P30 持球者压迫状态（#25 阶段 2C，D5）：**剩余**保持 tick 数（倒计时，0 = 无压迫状态）。
+    /// 防守动作结算为 contain/jockey（无事件防守）时置为 `PRESSURE_STATE_HOLD_TICKS`，
+    /// 每 tick 衰减 1。**只被射门 hazard 的 `defensive_pressure` 因子读**（`PRESSURE_STATE_GAIN`
+    /// 权重）——这是 contain/jockey「只调状态不产事件」的唯一可观测后果。
+    pressure_state_ticks: u32,
     // P28 持球行动机会（#25 阶段 2A）：当前机会 + 观测计数器（tally 只写、不进事件流、不耗 RNG）
     action_opportunity: Option<ActionOpportunity>,
     opportunity_tally: OpportunityTally,
@@ -1812,7 +1907,9 @@ impl MatchState {
             restart_prep: None,
             home_score: 0,
             away_score: 0,
-            last_tackle_pair: None,
+            tackle_cooldown: [0; 22],
+            last_contact_pair: None,
+            contact_age_ticks: 0,
             home_defenders,
             away_defenders,
             transition: None,
@@ -1822,6 +1919,7 @@ impl MatchState {
             sent_off: [false; 22],
             foul_cooldown_ticks: 0,
             shot_cooldown_ticks: 0, // 开球时无冷却（penalty = 0）
+            pressure_state_ticks: 0, // 开球时无压迫状态
             action_opportunity: None,
             opportunity_tally: OpportunityTally::default(),
             module_shot_pending: false,
@@ -1938,8 +2036,33 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     // 终场前若高亮未 finalize（射门/传球飞行跨过 dur）：在 dur 时刻强制交接，比分按结局确认。
     // 循环到无悬空高亮：P9 forward-pass → 射门 的链式高亮（PassCaught 接 shot）可能续产新高亮，
     // 若不继续 finalize 会吞比分（shot result=goal 未计入 whistle）。
+    //
+    // **P30 修复（既有 bug，非 2C 引入）**：本循环可能**链式** finalize（如射门 off_target →
+    // 门球 → 门球高亮的松散球），每次 finalize 都在同一 `t = dur` 产一拍 beat → 相邻 beat 同
+    // 时间戳（dt=0），违反 L2「相邻 beat 间隙 ∈ {1,2}s」不变量。该缺陷在 P29 引擎同样存在
+    // （实测 seed 544 于 t=5400 触发），只是各版本的 RNG 流把触发 seed 落在不同位置；2C 的 RNG
+    // 重排把触发 seed 移进了 L2 窗口（1..=300）才暴露。比赛已结束（紧接 whistle），排空期的
+    // **重复时间戳** beat 不表达任何进程 → 每个时间戳只保留第一拍。
+    let drain_start = events.len();
     while st.highlight.is_some() {
         finalize_highlight(&mut st, &mut rng, &mut events, dur);
+    }
+    {
+        let mut seen_t: Vec<f64> = Vec::new();
+        let tail: Vec<Event> = events
+            .drain(drain_start..)
+            .filter(|e| {
+                if e.type_ != EventType::Beat {
+                    return true;
+                }
+                if seen_t.iter().any(|x| (x - e.t).abs() < 1e-9) {
+                    return false;
+                }
+                seen_t.push(e.t);
+                true
+            })
+            .collect();
+        events.extend(tail);
     }
 
     events.push(whistle_event(dur, st.home_score, st.away_score, "half_time"));
@@ -1970,6 +2093,17 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     // P29 射门冷却倒计时：每 tick 衰减 1（零 RNG、零事件；在 `emit_shot_highlight` 射门时重置
     // 为 `SHOT_COOLDOWN_TICKS`）。放在最前，任何状态下都推进，冷却语义与比赛进程绑定。
     st.shot_cooldown_ticks = st.shot_cooldown_ticks.saturating_sub(1);
+    // P30 三层 cooldown（D1）衰减（零 RNG、零事件）：defender 级剩余冷却 / pair 级接触年龄 /
+    // 全局犯规冷却 / 持球者压迫状态，全部每 tick 无条件推进（放在最前，任何状态下都衰减——
+    // 犯规后下一 tick 通常进入任意球 `restart_prep`，若只在该分支外递减则冷却永不推进）。
+    for c in st.tackle_cooldown.iter_mut() {
+        *c = c.saturating_sub(1);
+    }
+    if st.last_contact_pair.is_some() {
+        st.contact_age_ticks = st.contact_age_ticks.saturating_add(1);
+    }
+    st.foul_cooldown_ticks = st.foul_cooldown_ticks.saturating_sub(1);
+    st.pressure_state_ticks = st.pressure_state_ticks.saturating_sub(1);
     // 1. 死球阶段（transition 不在此阶段，进球/死球已清除）
     if st.dead_ball.is_some() {
         st.ball_pos = (0.5, 0.5); // 死球/准备/kickoff：球在中圈附近（队形目标用）
@@ -2031,10 +2165,6 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     } else {
         st.hold_ticks += 1;
         st.slot_clock += 1;
-        // 犯规（本轮试点）：犯规冷却递减；冷却结束且本 tick 不触发槽位高亮时评估贴身犯规。
-        if st.foul_cooldown_ticks > 0 {
-            st.foul_cooldown_ticks -= 1;
-        }
         if st.slot_clock >= st.slot_interval {
             // P28 D4：槽位时钟降级为 fallback 触发——不再 `roll_highlight_slot` 选事件类型，
             // 改为开一次行动机会 → 统一评估 → 结算 → 执行。
@@ -2050,61 +2180,14 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
             open_action_opportunity(st, OpportunityTrigger::HoldTimeout);
             let plan = build_action_plan(st, rng, OpportunityTrigger::HoldTimeout);
             execute_action_resolution(st, rng, events, t, Some(plan));
-        } else if maybe_open_foul(st, rng, events, t) {
-            // 贴身持球段犯规（D3 第 2 级「防守中断」）：防守侧候选 = Foul，持球侧不承诺行动，
-            // 结算走统一优先级函数（不是就地打戳）；哨停/重开已由 emit_foul_and_free_kick 完成，
-            // 故执行层对本结算无事可做。机会在犯规 tick 失效（D1）。
-            invalidate_action_opportunity(st, OpportunityReason::Foul);
-            let plan = ActionPlan::foul_only(DefensiveAction::Foul);
-            st.opportunity_tally.defensive_foul += 1;
-            execute_action_resolution(st, rng, events, t, Some(plan));
         } else {
             // 普通 tick：自然 deadline 生命周期（D1）+ 统一执行层。
-            // 2A 内自然 deadline 结算恒为「继续带球」（决策中性，零 RNG、零事件）。
+            // P30：犯规不再独立判定——它并入自然 deadline 的防守动作打分（`maybe_open_foul` 已删），
+            // 与抢断同窗口竞争（D4）。自然 deadline 结算可能是抢断/犯规/封堵/跟防（D2/D5）。
             let plan = advance_action_opportunity(st, rng);
             execute_action_resolution(st, rng, events, t, plan);
         }
     }
-}
-
-/// 犯规判定（开放持球段，槽位高亮不触发时评估）：
-/// 防守方有球员 ≤ FOUL_PRESS_DIST_M 贴身持球者、carrier 非门将且非罚下、犯规点距所攻球门
-/// > BOX_DIST_M（禁区内防守犯规=点球，本试点不做点球 → 禁区内不产犯规）时，以 FOUL_OPEN_TICK_P
-/// 掷犯规。命中 → emit_foul_and_free_kick（进入任意球重开）；未命中本 tick 照常产 main。
-fn maybe_open_foul(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) -> bool {
-    let carrier = st.carrier;
-    if carrier < 0 || carrier == 0 || carrier == 21 {
-        return false; // 无持球者 / 门将持球不产犯规（门将持球多在后场短传，真实极少被犯规）
-    }
-    if st.sent_off[carrier as usize] {
-        return false; // 罚下球员不可能再持球（外围守卫）
-    }
-    if st.foul_cooldown_ticks > 0 {
-        return false; // 犯规短冷却（哨停后重开需要时间，防连续 tick 连吹）
-    }
-    let carrier_pos = st.pos[carrier as usize];
-    let def_home = st.possession != 0; // 防守方 = 对方
-    // 禁区内（距所攻球门 ≤ BOX_DIST_M）不产防守犯规（防守犯规=点球，本试点不做点球语义）。
-    if dist_to_goal_m(st, carrier) <= BOX_DIST_M {
-        return false;
-    }
-    // 犯规主体选择（真实：谁贴身谁犯规；吃黄球员收敛——偏好无黄贴身者，降低二黄连红概率）。
-    let (def_id, _, def_dist_m) = nearest_defender_avail(st, carrier_pos, def_home);
-    if def_id < 0 || def_dist_m > FOUL_PRESS_DIST_M {
-        return false; // 无贴身防守：犯规来自逼抢缠斗，无人贴身不产
-    }
-    // 威慑：已吃黄球员的犯规倾向打折（真实球员吃黄后收敛；模型上压低二黄升级红）
-    let foul_rate = if st.has_yellow[def_id as usize] {
-        FOUL_OPEN_TICK_P * FOUL_YELLOWED_DETERRENCE
-    } else {
-        FOUL_OPEN_TICK_P
-    };
-    let roll = rng.next_u64() % 1000;
-    if (roll as f64) < foul_rate * 1000.0 {
-        emit_foul_and_free_kick(st, rng, events, t, carrier, carrier_pos, def_id);
-        return true;
-    }
-    false
 }
 
 /// 高亮期间球位置（队形目标用）：按结局的球终点推导
@@ -2834,6 +2917,13 @@ fn shot_window_plan(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
             st.opportunity_tally.shot_window_tackles += 1;
             execute_action_resolution(st, rng, events, t, Some(plan));
         }
+        // P30（D4）：起脚窗口内打分选中犯规（被过掉的防守者拉人）→ 取消射门序列，产 foul
+        // （哨停 + 任意球重开）——与抢断同构：犯规也打断起脚节奏。**不产 Shot**。
+        ActionResolution::InterruptedByFoul => {
+            st.shot_setup = None;
+            st.opportunity_tally.shot_window_fouls += 1;
+            execute_action_resolution(st, rng, events, t, Some(plan));
+        }
         // D2 背向球门 → 禁 Shoot、转死球重开（结构性不可达；见 `CarrierAction::AwardDeadBall`）。
         // 按结算如实执行重开，**不**当作「等待」吞掉。
         ActionResolution::DeadBall(_) => {
@@ -2917,20 +3007,21 @@ fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events:
     events.push(beat_event(t, None, None, movers));
 }
 
-/// P7：`same_pair`（连续同 pair）强制 fail；`far`（远离阈值）降成功率（15%，偶尔成功）；
-/// 贴防正常 50/50。保证 tackle 数量稳定且 success 可出现。
-fn emit_tackle_highlight_impl(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, same_pair: bool, far: bool) {
+/// P30（D3）：结果只有 success/fail **两态**（`TACKLE_SUCCESS_RATE`）——`same_pair`/`far` 的
+/// 补丁式成功率修正已删。资格（距离/冷却/角度）由 `select_defensive_action` 在打分阶段判定。
+/// `defender` = 打分选中的防守者（与 `nearest_defender` 同口径，显式传入以免二次求解）。
+fn emit_tackle_highlight_impl(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    defender: i32,
+) {
     let victim = st.carrier;
     let victim_pos = st.pos[victim as usize];
-    let def_home = st.possession != 0;
-    let (def_id, def_pos, _) = nearest_defender(st, victim_pos, def_home);
-    let success = if same_pair {
-        false
-    } else if far {
-        (rng.next_u64() % 100) < 15
-    } else {
-        (rng.next_u64() % 100) < (TACKLE_SUCCESS_RATE * 100.0) as u64
-    };
+    let def_id = defender;
+    let def_pos = st.pos[def_id as usize];
+    let success = (rng.next_u64() % 100) < (TACKLE_SUCCESS_RATE * 100.0) as u64;
     let result = if success { "success" } else { "fail" };
     let (loose_x, loose_y) = deflect_point(
         def_pos.0, def_pos.1, victim_pos.0, victim_pos.1,
@@ -2960,7 +3051,11 @@ fn emit_tackle_highlight_impl(st: &mut MatchState, rng: &mut SeededRng, events: 
     } else {
         HighlightOutcome::TackleFail { victim, contact: victim_pos }
     };
-    st.last_tackle_pair = Some((def_id, victim));
+    // P30（D1）：设置三层 cooldown 中的两层——defender 级（同一防守者不连抢）+ pair 级
+    // （同一对不立即重复接触）。全局 foul 冷却由犯规路径设置。cooldown 只改变后续打分。
+    st.tackle_cooldown[def_id as usize] = TACKLE_COOLDOWN_TICKS;
+    st.last_contact_pair = Some((def_id, victim));
+    st.contact_age_ticks = 0;
     // tackle 成功：在 tackle 高亮起点 tick 即武装 transition（接触即得球权，全队前压/回撤立即生效）
     if success {
         st.possession = if def_id <= 10 { 0 } else { 1 };
@@ -3891,6 +3986,10 @@ struct ShotOpportunityFeatures {
     second_defender_m: f64,
     /// **剩余**射门冷却 tick 数（局部倒计时，0 = 无冷却；刚射完 = `SHOT_COOLDOWN_TICKS`）
     cooldown_ticks: u32,
+    /// P30（#25 阶段 2C，D5）：持球者压迫状态 ∈ [0,1]（contain/jockey 无事件防守的持续逼抢）。
+    /// 由 `pressure_state_ticks / PRESSURE_STATE_HOLD_TICKS` 得出，是 contain/jockey
+    /// 「只调状态不产事件」的唯一可观测后果。
+    pressure_state: f64,
 }
 
 impl ShotOpportunityFeatures {
@@ -3928,10 +4027,13 @@ impl ShotOpportunityFeatures {
             + 0.35 * shot_space_score(self.second_defender_m)
     }
 
-    /// 防守压迫（D2）：`0.65 * 最近 + 0.35 * 第二`，各自按尺度线性衰减到 0。
+    /// 防守压迫（D2）：`0.65 * 最近 + 0.35 * 第二`，各自按尺度线性衰减到 0；
+    /// P30（D5）再叠加持球者压迫状态（contain/jockey 无事件防守的持续逼抢），权重
+    /// `PRESSURE_STATE_GAIN`——这是「只调状态」的 state 真正被消费的地方。
     fn defensive_pressure(&self) -> f64 {
         0.65 * clamp01(1.0 - self.nearest_defender_m / SHOT_PRESSURE_NEAR_M)
             + 0.35 * clamp01(1.0 - self.second_defender_m / SHOT_PRESSURE_SECOND_M)
+            + self.pressure_state * PRESSURE_STATE_GAIN
     }
 
     /// 冷却惩罚（D2）：`shot_cooldown_ticks / SHOT_COOLDOWN_TICKS` ∈ [0,1]（`shot_cooldown_ticks`
@@ -4007,6 +4109,202 @@ fn shot_opportunity_features(st: &MatchState, carrier: i32) -> ShotOpportunityFe
         nearest_defender_m: near_m,
         second_defender_m: second_nearest_defender_m(st, c, def_home),
         cooldown_ticks: st.shot_cooldown_ticks,
+        pressure_state: st.pressure_state_ticks.min(PRESSURE_STATE_HOLD_TICKS) as f64
+            / PRESSURE_STATE_HOLD_TICKS as f64,
+    }
+}
+
+// ==== P30 防守动作打分（#25 阶段 2C，D1/D2/D3/D4）====
+//
+// 纯函数（几何 + 局部冷却进、4 个 score 出，零 RNG、零状态）。每个防守机会点对候选防守者算
+// tackle/foul/contain/jockey 四个 score，取最高 → 一个 `DefensiveAction`（**不既抢又犯**，D2/D4）。
+// 资格在打分阶段判定（D3）：不在资格内的动作给 `f64::NEG_INFINITY` 分，永不入选（而非事后修正）。
+
+/// 一次防守机会的几何特征（D2 打分的输入）。量纲：距离米、比例 [0,1]、冷却比例 [0,1]。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct DefensiveFeatures {
+    /// 候选防守者到持球者的距离（米）
+    dist_m: f64,
+    /// 持球者危险度 ∈ [0,1]（复用 `opportunity_geometry` 的 danger：近门 × 中路 × 向前空间）
+    danger: f64,
+    /// 防守者相对持球者的**纵深领先**（米，沿进攻轴；>0 = 防守者在持球者与所攻球门之间）。
+    depth_lead_m: f64,
+    /// defender 级抢断冷却的**剩余比例** ∈ [0,1]（0 = 无冷却）
+    tackle_cd_ratio: f64,
+    /// pair 级接触冷却的**剩余比例** ∈ [0,1]（0 = 无冷却）
+    pair_cd_ratio: f64,
+    /// 全局犯规冷却的**剩余比例** ∈ [0,1]（0 = 无冷却）
+    foul_cd_ratio: f64,
+    /// 候选防守者是否已吃黄（犯规打分打折，D4）
+    yellowed: bool,
+    /// 是否允许犯规（禁区外）：禁区内防守犯规 = 点球，本试点不做点球语义 → 不给犯规资格
+    foul_allowed: bool,
+}
+
+impl DefensiveFeatures {
+    /// 抢断的贴身度 ∈ [0,1]：≤0m 满、≥`DEF_CONTACT_SCALE_M`(2m) 归 0。**窄尺度**——抢断是
+    /// 「脚下」动作，只在极近处成立（这是 D3「资格在打分阶段判定」的落点）。
+    fn tackle_closeness(&self) -> f64 {
+        clamp01(1.0 - self.dist_m / DEF_CONTACT_SCALE_M)
+    }
+
+    /// 犯规的贴身度 ∈ [0,1]：≤0m 满、≥`FOUL_PRESS_DIST_M`(8m) 归 0。**宽尺度**——犯规是
+    /// 缠斗动作，与犯规资格阈值同尺度（2C 打分阶段取代旧 `FOUL_OPEN_TICK_P` 概率）。
+    fn foul_closeness(&self) -> f64 {
+        clamp01(1.0 - self.dist_m / FOUL_PRESS_DIST_M)
+    }
+
+    /// **无接触的远距逼抢** ∈ [0,1]（`score_contain` 的因子）：接触距离内为 0（那是 tackle/foul
+    /// 的地盘），向 `DEF_CONTAIN_PEAK_M`(9m) 升满，再向抢断阈值(12m) 衰减回 0。
+    /// 与 `distance_fit` 的 4m 峰值形状错开，使 contain 与 jockey 各占一段距离：
+    /// jockey ~3.5-6m（贴身护送）、contain ~7-12m（中距延缓）。
+    fn pressure_without_contact(&self) -> f64 {
+        let d = self.dist_m;
+        if d <= DEF_CONTAIN_ZERO_M {
+            0.0
+        } else if d <= DEF_CONTAIN_PEAK_M {
+            (d - DEF_CONTAIN_ZERO_M) / (DEF_CONTAIN_PEAK_M - DEF_CONTAIN_ZERO_M)
+        } else {
+            clamp01(
+                1.0 - (d - DEF_CONTAIN_PEAK_M)
+                    / (TACKLE_DISTANCE_THRESHOLD_METERS - DEF_CONTAIN_PEAK_M),
+            )
+        }
+    }
+
+    /// **迎面逼近度** ∈ [0,1]（`score_tackle` 的 `approach` 项）：防守者越深入持球者与球门
+    /// 之间越高（迎面拦截 / 正面关门）。领先 ≥ `DEF_APPROACH_SCALE_M` 即为满。
+    fn approach(&self) -> f64 {
+        clamp01(self.depth_lead_m / DEF_APPROACH_SCALE_M)
+    }
+
+    /// **坏角度** ∈ [0,1]（`score_tackle` 的 `bad_angle` 项）：防守者在持球者身后（回追）越远
+    /// 越高——背后铲球容易犯规/失位，是**犯规的入口**（`score_foul` 无此项）。
+    fn bad_angle(&self) -> f64 {
+        clamp01(-self.depth_lead_m / DEF_APPROACH_SCALE_M)
+    }
+
+    /// 跟防距离契合度 ∈ [0,1]：距理想距离（`DEF_JOCKEY_IDEAL_M`）越远越低；
+    /// ≤ `DEF_JOCKEY_IDLE_MIN_M`（已贴身，该去抢）→ 0。
+    fn distance_fit(&self) -> f64 {
+        let d = self.dist_m;
+        if d <= DEF_JOCKEY_IDLE_MIN_M {
+            0.0
+        } else if d <= DEF_JOCKEY_IDEAL_M {
+            (d - DEF_JOCKEY_IDLE_MIN_M) / (DEF_JOCKEY_IDEAL_M - DEF_JOCKEY_IDLE_MIN_M)
+        } else {
+            clamp01(1.0 - (d - DEF_JOCKEY_IDEAL_M) / DEF_PRESS_SCALE_M)
+        }
+    }
+}
+
+/// `score_tackle = base + eagerness + closeness·gain + goal_side_bonus - bad_angle
+///                - cd·def_cd - pair_cd·pair_cd`（D2）。
+/// 资格（D3）：≥ 抢断距离阈值 → 无资格（不产 tackle 事件）。
+fn score_tackle(f: &DefensiveFeatures) -> f64 {
+    if f.dist_m > TACKLE_DISTANCE_THRESHOLD_METERS {
+        return f64::NEG_INFINITY;
+    }
+    BASE_DEF_TACKLE
+        + TACKLE_EAGERNESS
+        + f.tackle_closeness() * TACKLE_CLOSENESS_GAIN
+        + f.approach() * TACKLE_APPROACH_GAIN
+        - f.bad_angle() * TACKLE_BAD_ANGLE_PENALTY
+        - f.tackle_cd_ratio * TACKLE_CD_PENALTY
+        - f.pair_cd_ratio * TACKLE_PAIR_CD_PENALTY
+}
+
+/// `score_foul = base + danger·gain + closeness·gain - yellow_penalty - foul_cd·gain`（D2/D4）。
+/// 资格：禁区外 + 贴身（≤ `FOUL_PRESS_DIST_M`）+ 全局犯规冷却已过（`foul_cd_ratio == 0`）。
+/// 犯规无 `bad_angle` 惩罚 —— 这正是「被过掉的防守者只能拉人」的机制来源（见
+/// `TACKLE_BAD_ANGLE_PENALTY`）。
+fn score_foul(f: &DefensiveFeatures) -> f64 {
+    if !f.foul_allowed || f.dist_m > FOUL_PRESS_DIST_M || f.foul_cd_ratio > 0.0 {
+        return f64::NEG_INFINITY;
+    }
+    BASE_DEF_FOUL
+        + f.danger * FOUL_DANGER_GAIN
+        + f.foul_closeness() * FOUL_CLOSENESS_GAIN
+        - if f.yellowed { FOUL_YELLOW_PENALTY } else { 0.0 }
+        - f.foul_cd_ratio * FOUL_CD_PENALTY
+}
+
+/// `score_contain = base + pressure_without_contact·gain`（D2）。
+/// 封堵 = 中距延缓型防守（不进入接触距离，等队友回位）——`pressure_without_contact` 在
+/// `DEF_CONTAIN_ZERO_M`(4m) 以内为 0、向 `DEF_CONTAIN_PEAK_M`(9m) 升满再向 12m 衰减，
+/// 故它天然让位于更近的 contact 动作，只在 6-12m 的中距接管。
+fn score_contain(f: &DefensiveFeatures) -> f64 {
+    BASE_DEF_CONTAIN + f.pressure_without_contact() * CONTAIN_PRESS_GAIN
+}
+
+/// `score_jockey = base + fit·gain`（D2）。
+/// 跟防 = 近身护送型防守（贴住但不进入抢断距离，把持球者往边路赶）——`distance_fit` 在
+/// `DEF_JOCKEY_IDEAL_M`(4m) 附近最高，故它接管「贴身逼抢但没抢」的那一段距离。
+fn score_jockey(f: &DefensiveFeatures) -> f64 {
+    BASE_DEF_JOCKEY + f.distance_fit() * JOCKEY_FIT_GAIN
+}
+
+/// 得分最高的防守动作 + 其得分（并列取 `DefensiveAction` 声明序靠前者 → 确定性）。零 RNG。
+///
+/// **不既抢又犯（D2/D4）**：函数返回**恰好一个** `DefensiveAction`，调用方据此产恰好一个结算
+/// （`resolve_action_opportunity` 的优先级里 Tackle/Foul 互斥）——同一机会点不可能既抢又犯。
+///
+/// 资格门槛（D3）：候选防守者超出就近阈值（`TACKLE_DISTANCE_THRESHOLD_METERS`）→ `None`
+/// （沿用 2A 的「不跨半场逼抢」语义，此时也不该有 contain/jockey——没人在附近）。
+fn select_defensive_action(f: &DefensiveFeatures) -> (DefensiveAction, f64) {
+    if f.dist_m > TACKLE_DISTANCE_THRESHOLD_METERS {
+        return (DefensiveAction::None, f64::NEG_INFINITY);
+    }
+    let mut best = (DefensiveAction::None, f64::NEG_INFINITY);
+    for (action, score) in [
+        (DefensiveAction::Tackle, score_tackle(f)),
+        (DefensiveAction::Foul, score_foul(f)),
+        (DefensiveAction::Contain, score_contain(f)),
+        (DefensiveAction::Jockey, score_jockey(f)),
+    ] {
+        // 严格 `>`：并列时保留先声明的动作（Tackle > Foul > Contain > Jockey）。
+        if score > best.1 {
+            best = (action, score);
+        }
+    }
+    best
+}
+
+/// 从 `MatchState` 提取候选防守者（`nearest_defender` 口径：排除门将/罚下/无该队语义）的
+/// 防守几何特征。零 RNG、零状态。
+fn defensive_features(st: &MatchState, defender_id: i32, victim_pos: (f64, f64)) -> DefensiveFeatures {
+    let d_pos = st.pos[defender_id as usize];
+    let dist_m = distance_meters(d_pos, victim_pos);
+    let (danger, _, _) = opportunity_geometry(st, st.carrier);
+    // 纵深领先（米）：防守者比持球者更靠近所攻球门的量。>0 = 正面拦在持球者与球门之间
+    // （好角度 / 迎面逼近）；<0 = 在持球者身后（回追，坏角度）。沿进攻轴的真实米差。
+    let home = st.possession == 0;
+    let depth = |p: (f64, f64)| if home { p.0 } else { -p.0 };
+    let depth_lead_m = (depth(d_pos) - depth(victim_pos)) * PITCH_LENGTH_M;
+    DefensiveFeatures {
+        dist_m,
+        danger,
+        depth_lead_m,
+        tackle_cd_ratio: st.tackle_cooldown[defender_id as usize] as f64 / TACKLE_COOLDOWN_TICKS as f64,
+        pair_cd_ratio: pair_cooldown_ratio(st, defender_id),
+        foul_cd_ratio: st.foul_cooldown_ticks as f64 / FOUL_MIN_GAP_TICKS as f64,
+        yellowed: st.has_yellow[defender_id as usize],
+        // 禁区内防守犯规 = 点球（本试点不做）→ 不给犯规资格（同旧 `maybe_open_foul` 守卫）
+        foul_allowed: dist_to_goal_m(st, st.carrier) > BOX_DIST_M,
+    }
+}
+
+/// pair 级冷却的**剩余**比例 ∈ [0,1]（0 = 已到期 / 不是当前接触对）。
+/// 只在 `(defender, victim)` 恰为最近那次接触对时非零——不同防守者之间不互相锁死（Q1 理由）。
+/// **接触当刻最接近 1**（刚接触完，最该避免立刻再接触），随 `contact_age_ticks` 增长线性衰减，
+/// 达到 `CONTACT_PAIR_COOLDOWN_TICKS` 后归 0（D1：pair 级 5-8 tick 窗口内降低再次接触，**到期恢复**）。
+fn pair_cooldown_ratio(st: &MatchState, defender_id: i32) -> f64 {
+    match st.last_contact_pair {
+        Some((d, v)) if d == defender_id && v == st.carrier => {
+            CONTACT_PAIR_COOLDOWN_TICKS.saturating_sub(st.contact_age_ticks) as f64
+                / CONTACT_PAIR_COOLDOWN_TICKS as f64
+        }
+        _ => 0.0,
     }
 }
 
@@ -4077,11 +4375,6 @@ fn nearest_defender(st: &MatchState, target: (f64, f64), def_home: bool) -> (i32
         }
     };
     (id, p, dist)
-}
-
-/// 决策：防守者是否真的去抢（抢断积极性）。将来接战术（票据04）/属性（票据05）。
-fn should_tackle(rng: &mut SeededRng) -> bool {
-    (rng.next_u64() % 100) < (TACKLE_EAGERNESS * 100.0) as u64
 }
 
 /// 无球跑位目标：从当前位置随机方向碎步移动 OFF_BALL_RUN_DIST（1-2m），越界钳制。
@@ -4241,22 +4534,6 @@ fn out_side_of(detail: &str) -> &'static str {
 
 // ---- 犯规/纪律牌：判定链（全部走 SeededRng，同 seed 同流）----
 
-/// 找离 target 最近的对方外场球员（排除门将与已罚下球员）。foul 用。返回 (id, pos, 距离米)。
-fn nearest_defender_avail(st: &MatchState, target: (f64, f64), def_home: bool) -> (i32, (f64, f64), f64) {
-    let mut best = -1;
-    let mut best_pos = (0.0, 0.0);
-    let mut best_d = f64::MAX;
-    for (id, &p) in st.pos.iter().enumerate() {
-        let is_def = if def_home { id <= 10 } else { id >= 11 };
-        if !is_def { continue; }
-        if id == 0 || id == 21 { continue; } // 门将不犯规
-        if st.sent_off[id] { continue; }      // 罚下球员不产新犯规
-        let d = distance_meters(p, target);
-        if d < best_d { best_d = d; best = id as i32; best_pos = p; }
-    }
-    (best, best_pos, best_d)
-}
-
 /// 犯规类型（foul 事件 detail 枚举：foul_tackle/foul_hold/foul_push/foul_trip/foul_handball）。
 fn roll_foul_type(rng: &mut SeededRng) -> &'static str {
     let roll = rng.next_u64() % 100;
@@ -4330,7 +4607,12 @@ fn emit_foul_and_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mu
     // 进入任意球重开：球放犯规点，被犯规方（当前 possession）就近球员走向犯规点发球。
     // 注意：不 pos-sync 犯规者到犯规点——犯规者保持其真实缠斗位置，后续 restart beat 的 mover
     // 从该位置出发，viewer 保持上拍末态到重开 beat 天然连续（pos-sync 会在非豁免的下一拍露出跳变）。
+    // P30（D1）：三层 cooldown 的第三层（全局犯规冷却）+ pair 级接触冷却（犯规也是一次接触）
+    // + defender 级冷却（犯规者本人也要冷却，与抢断共用同一 defender 冷却数组）。
     st.foul_cooldown_ticks = FOUL_MIN_GAP_TICKS;
+    st.tackle_cooldown[def as usize] = TACKLE_COOLDOWN_TICKS;
+    st.last_contact_pair = Some((def, carrier));
+    st.contact_age_ticks = 0;
     st.carrier = -1;
     st.ball_pos = spot;
     let kicker = nearest_in_team(st, spot, st.possession);
@@ -4479,8 +4761,8 @@ mod tests {
 
     #[test]
     fn tackle_events_carry_loose_and_carrier_from() {
-        // 多 seed 扫：tackle 是每事件点按距离阈值 + TACKLE_EAGERNESS 决策，不保证每个 seed 都有 tackle，
-        // 故多 seed 扫描确保至少有一个带新字段。
+        // 多 seed 扫：tackle 由防守动作竞争在几何满足时涌现（P30 起），不保证每个 seed 都有
+        // tackle，故多 seed 扫描确保至少有一个带新字段。
         for seed in 1..30u64 {
             let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
             let s = simulate(seed, cfg);
@@ -4790,6 +5072,10 @@ mod tests {
             let from = json_num(e, "from").unwrap() as i32;
             // 门球开大脚 pass 无 to（落点是争抢点）——跳过（非传跑配合高亮）
             let to = match json_num(e, "to") { Some(t) => t as i32, None => continue };
+            // 只检查**接到**的传球（result=success）：被拦截（intercepted）时接球者不是高亮
+            // 参与者（拦截者才是），传失（lost）落点变松散球（接球者不参与高亮）——它们的
+            // 参与集合不同，不适用本不变量。
+            if json_field(e, "result").as_deref() != Some("\"success\"") { continue; }
             let pt = json_num(e, "t").unwrap();
             // 只检查飞行 >1.5s 的长传（确保 pt+1 仍在高亮覆盖区间内）
             let speed = json_num(e, "speed").unwrap();
@@ -6018,21 +6304,32 @@ mod tests {
             for i in 0..5 { a90[i] += c90[i]; }
         }
         let names = ["shot", "corner", "throw_in", "tackle", "goal"];
-        // 5min 核心事件 ≥ 90min 的 ~53%（ratio ≤ 1.9）；进球最差可接受 ratio ≤ 2.5（小样本波动）。
-        // P9 射门推进（带球/传球 setup）占用 5min 槽位时间 → ratio 略升，限 1.9（实测 tackle 1.76）。
-        // P13 fix：失败传球让 90min 抢断略降（5.0 vs 7）、5min 抢断 2.6（tackle 槽在高密度短比赛里
-        // 因失败传球把球权切走而部分让位）→ tackle ratio 实测 1.94，限放宽到 2.1（仍守住"数量级一致"）。
-        for i in 0..5 {
+        // 4 个**槽位/几何**类核心事件仍应「同数量级」（不随时长塌缩）：
+        // shot / corner / throw_in / goal（下标 0/1/2/4）。5min 核心事件 ≥ 90min 的 ~53%
+        // （ratio ≤ 1.9）；进球最差可接受 ratio ≤ 2.5（小样本波动）。
+        for i in [0usize, 1, 2, 4] {
             let v5 = a5[i] as f64 / n5 as f64;
             let v90 = a90[i] as f64 / n90 as f64;
             let ratio = v90 / v5.max(0.5);
-            let limit = if i == 4 { 2.5 } else if i == 3 { 2.1 } else { 1.9 };
+            let limit = if i == 4 { 2.5 } else { 1.9 };
             assert!(ratio <= limit, "{} 数量级不一致：5min {:.1} vs 90min {:.1}（ratio {:.2}，限 {:.2}）", names[i], v5, v90, ratio, limit);
         }
+        // P30（D6）：**tackle 轴改为方向性断言**——2C 后抢断不再由槽位产生，而是开放比赛防守
+        // 接触竞争的涌现产物，随「防守机会点数量」缩放（90min ~758 机会点 vs 5min ~19）。
+        // 短比赛抢断本就稀少（实测 5min ~0.1/场 vs 90min ~5-7/场），要求两者「同数量级」是槽位
+        // 时代的产物，与涌现语义矛盾。故断言：
+        //   (a) 方向：90min 抢断 > 5min 抢断（涌现正确方向——机会多则接触多）；
+        //   (b) 长比赛抢断落在**体量带**内（不塌缩/不爆炸）：90min 场均 ∈ [2, 15]；
+        //   (c) 短比赛抢断**可达**（宽窗口下非恒 0，防机制在短比赛里死亡）。
+        let t5 = a5[3] as f64 / n5 as f64;
+        let t90 = a90[3] as f64 / n90 as f64;
+        assert!(t90 > t5, "90min 抢断({:.2}) 应多于 5min({:.2})——涌现方向错误", t90, t5);
+        assert!((2.0..=15.0).contains(&t90), "90min 抢断/场 {:.2} ∉ [2,15]（塌缩或爆炸）", t90);
+        assert!(a5[3] > 0, "100 场 5min 比赛零抢断——短比赛里抢断机制死亡");
         // 5min 也要有足够的精彩内容（集锦）：进球 ≥0.5、shot ≥4。P29 起射门由 hazard 门控
-        // （不再「到射程即射」），实测 5min shot 5.5/场、进球 0.62/场（加宽窗口 100 seed）；
+        // （不再「到射程即射」），实测 5min shot 4.6/场、进球 0.47/场（加宽窗口 100 seed）；
         // 均为「集锦不塌缩」的体量下界，非频率目标。
-        assert!(a5[4] as f64 / n5 as f64 >= 0.5, "5min 进球过少（{:.2}）", a5[4] as f64 / n5 as f64);
+        assert!(a5[4] as f64 / n5 as f64 >= 0.4, "5min 进球过少（{:.2}）", a5[4] as f64 / n5 as f64);
         assert!(a5[0] as f64 / n5 as f64 >= 4.0, "5min 射门过少（{:.2}）", a5[0] as f64 / n5 as f64);
     }
 
@@ -6114,7 +6411,7 @@ mod tests {
             situation: None,
             exec: CarrierExecution::ContinueDribble,
         };
-        let tackle = DefensiveAction::Tackle { same_pair: false, far: false };
+        let tackle = DefensiveAction::Tackle;
         let contain = DefensiveAction::Contain;
         let jockey = DefensiveAction::Jockey;
         let none = DefensiveAction::None;
@@ -6149,8 +6446,7 @@ mod tests {
             ("idle", None, None),
         ];
         let defensives = [
-            DefensiveAction::Tackle { same_pair: true, far: false },
-            DefensiveAction::Tackle { same_pair: false, far: true },
+            DefensiveAction::Tackle,
             DefensiveAction::Foul,
             DefensiveAction::Contain,
             DefensiveAction::Jockey,
@@ -6349,6 +6645,7 @@ mod tests {
             nearest_defender_m: 12.0,
             second_defender_m: 20.0,
             cooldown_ticks: 0,
+            pressure_state: 0.0,
         };
         let p_base = p(&base);
 
@@ -6382,11 +6679,11 @@ mod tests {
         // 综合方向：近门+正对+无压 vs 远射+边路+贴身
         let good = ShotOpportunityFeatures {
             distance_m: 8.0, angle_cos: 0.98, nearest_defender_m: 15.0,
-            second_defender_m: 25.0, cooldown_ticks: 0,
+            second_defender_m: 25.0, cooldown_ticks: 0, pressure_state: 0.0,
         };
         let bad = ShotOpportunityFeatures {
             distance_m: 32.0, angle_cos: 0.1, nearest_defender_m: 1.0,
-            second_defender_m: 2.0, cooldown_ticks: SHOT_COOLDOWN_TICKS,
+            second_defender_m: 2.0, cooldown_ticks: SHOT_COOLDOWN_TICKS, pressure_state: 0.0,
         };
         assert!(p(&good) > 0.5, "好机会 p_shot 应很高（实测 {:.3}）", p(&good));
         assert!(p(&bad) < 0.05, "差机会 p_shot 应很低（实测 {:.3}）", p(&bad));
@@ -6420,7 +6717,7 @@ mod tests {
     fn p29_back_to_goal_forbids_shoot_candidate() {
         let facing = |cos: f64| ShotOpportunityFeatures {
             distance_m: 12.0, angle_cos: cos, nearest_defender_m: 20.0,
-            second_defender_m: 30.0, cooldown_ticks: 0,
+            second_defender_m: 30.0, cooldown_ticks: 0, pressure_state: 0.0,
         }.facing_goal();
         assert!(facing(1.0), "正对球门应允许 Shoot");
         assert!(facing(0.01), "略微面向球门应允许 Shoot");
@@ -6429,7 +6726,7 @@ mod tests {
         // 角度因子对背向钳制为 0（不产生负贡献）
         assert_eq!(
             ShotOpportunityFeatures { distance_m: 12.0, angle_cos: -0.9, nearest_defender_m: 20.0,
-                second_defender_m: 30.0, cooldown_ticks: 0 }.angle_quality(),
+                second_defender_m: 30.0, cooldown_ticks: 0, pressure_state: 0.0 }.angle_quality(),
             0.0
         );
     }
@@ -6440,7 +6737,7 @@ mod tests {
     fn p29_distance_quality_reuses_shot_bucket_bands() {
         let dq = |d: f64| ShotOpportunityFeatures {
             distance_m: d, angle_cos: 1.0, nearest_defender_m: 20.0,
-            second_defender_m: 30.0, cooldown_ticks: 0,
+            second_defender_m: 30.0, cooldown_ticks: 0, pressure_state: 0.0,
         }.distance_quality();
         assert!((dq(6.0) - 1.0).abs() < 1e-9, "6m 应为满分 1.0");
         assert!((dq(BOX_DIST_M) - 0.9).abs() < 1e-9, "禁区线应为 0.9");
@@ -6464,7 +6761,7 @@ mod tests {
     fn p29_cooldown_penalty_shape() {
         let cp = |ticks: u32| ShotOpportunityFeatures {
             distance_m: 12.0, angle_cos: 1.0, nearest_defender_m: 20.0,
-            second_defender_m: 30.0, cooldown_ticks: ticks,
+            second_defender_m: 30.0, cooldown_ticks: ticks, pressure_state: 0.0,
         }.cooldown_penalty();
         assert_eq!(cp(0), 0.0, "无冷却 → 无惩罚");
         assert_eq!(cp(SHOT_COOLDOWN_TICKS), 1.0, "满冷却 → 满惩罚");
@@ -6696,6 +6993,53 @@ mod tests {
         assert!(saw_tackle, "40 seed 内应至少出现一次窗口内被抢断（否则测试空跑）");
     }
 
+    /// P30 D4：起脚窗口内打分选**犯规**（被过掉的防守者拉人）→ 射门序列取消、产 foul、
+    /// **不产 Shot**。与抢断打断同构（D4 犯规并入竞争后的窗口落点）。
+    #[test]
+    fn p30_window_foul_cancels_without_shot() {
+        // carrier 中圈附近（远射、禁区外 → 犯规有资格），防守者贴身且落后（depth_lead < 0 →
+        // 抢断被 bad_angle 压、犯规胜出）。
+        let build = || {
+            let mut st = window_state(&[(11, 0.545, 0.5)]);
+            st.pos[9] = (0.58, 0.5);   // carrier 在防守者前方
+            st.pos[11] = (0.545, 0.5); // 约 3.7m，身后 → 犯规带
+            st.shot_setup = Some(ShotSetup::new(30.0, true));
+            st
+        };
+        // 几何前置断言：该几何确实由打分选出 Foul（否则本测试的前提不成立 → 空跑）
+        {
+            let st = build();
+            let f = defensive_features(&st, 11, st.pos[9]);
+            assert_eq!(select_defensive_action(&f).0, DefensiveAction::Foul,
+                "构造几何应选出犯规（否则测试空跑）：{:?}", select_defensive_action(&f));
+        }
+        // 跑多 seed（hazard 掷定随 seed 变，未提交的窗口 tick 才轮到防守评估）：
+        // 每个窗口 tick 至多一个防守事件；出现犯规时必须取消射门序列、不产 Shot。
+        let mut n_foul = 0u64;
+        let mut n_other = 0u64;
+        for seed in 1..=80u64 {
+            let mut st = build();
+            let mut rng = SeededRng::new(seed);
+            let mut events = Vec::new();
+            advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+            let shots = events.iter().filter(|e| e.type_ == EventType::Shot).count();
+            let fouls = events.iter().filter(|e| e.type_ == EventType::Foul).count();
+            let tackles = events.iter().filter(|e| e.type_ == EventType::Tackle).count();
+            assert!(shots + fouls + tackles <= 1, "seed {}：同一 tick 至多一个防守事件", seed);
+            assert!(!(fouls > 0 && shots > 0), "seed {}：被犯规的窗口 tick 不得产 Shot", seed);
+            if fouls > 0 {
+                n_foul += 1;
+                assert!(st.shot_setup.is_none(), "seed {}：被犯规后射门序列应取消", seed);
+                assert_eq!(st.opportunity_tally.shot_window_fouls, 1, "seed {}：窗口犯规未记账", seed);
+            } else {
+                n_other += 1;
+            }
+        }
+        assert!(n_foul > 0, "80 seed 内窗口应至少出现一次犯规打断（否则测试空跑）");
+        // 覆盖口径诚实：未全部走犯规（否则「至多一个」的对照不成立）
+        assert!(n_other > 0, "80 seed 全部走犯规——对照组缺失（hazard 未参与？）");
+    }
+
     /// P29 D2/D4：起脚窗口的**方向性**——无压窗口的提交率高于贴身窗口。
     /// 这是「射门不是配置的数量，而是 hazard 在真实几何下涌现」的引擎内直接证据：
     /// 进入窗口的机会按**进入时压迫**分桶，**提交率**应随压迫下降。
@@ -6705,6 +7049,459 @@ mod tests {
     /// 于是「远射」桶的样本天然偏无压、提交率反而不低（实测近门 99.3% vs 远射 100%）。
     /// 压迫维度没有这层混淆：它是 hazard 里 `defensive_pressure` 因子的直接对照。
     /// 距离因子的方向由 `p29_hazard_factor_directions`（纯函数控制变量）钉死。
+    // ==== P30 防守接触竞争（#25 阶段 2C）测试 ====
+
+    /// 构造一个 `DefensiveFeatures`（默认：不贴身、无冷却、无黄、可犯规），便于控制变量。
+    fn feat() -> DefensiveFeatures {
+        DefensiveFeatures {
+            dist_m: 1.0,
+            danger: 0.0,
+            depth_lead_m: 0.0,
+            tackle_cd_ratio: 0.0,
+            pair_cd_ratio: 0.0,
+            foul_cd_ratio: 0.0,
+            yellowed: false,
+            foul_allowed: true,
+        }
+    }
+
+    /// P30 D2：`score_tackle` 随 closeness/approach 上升、随 bad_angle/冷却下降。
+    #[test]
+    fn p30_tackle_score_directions() {
+        let base = score_tackle(&feat());
+        // 越贴身越高（0m 处满 closeness）
+        let closer = score_tackle(&DefensiveFeatures { dist_m: 0.1, ..feat() });
+        assert!(closer > base, "0.1m ({}) 应高于 1m ({})", closer, base);
+        // 迎面（depth_lead > 0）高于身后（< 0）
+        let front = score_tackle(&DefensiveFeatures { depth_lead_m: 5.0, ..feat() });
+        let behind = score_tackle(&DefensiveFeatures { depth_lead_m: -5.0, ..feat() });
+        assert!(front > base && base > behind, "正面({}) > 基准({}) > 身后({})", front, base, behind);
+        // 距离超过抢断阈值 → 无资格
+        assert_eq!(score_tackle(&DefensiveFeatures { dist_m: 13.0, ..feat() }), f64::NEG_INFINITY,
+            "超过抢断阈值应无资格（NEG_INFINITY）");
+    }
+
+    /// P30 D1：defender 级 / pair 级冷却**各自**压低 `score_tackle`（两通道独立、线性可加）。
+    #[test]
+    fn p30_tackle_cooldowns_lower_score() {
+        let hot = score_tackle(&feat());
+        // defender 级冷却满 → 压低
+        let def_cd = score_tackle(&DefensiveFeatures { tackle_cd_ratio: 1.0, ..feat() });
+        assert!(def_cd < hot, "defender 级冷却应压低 score（{} < {}）", def_cd, hot);
+        // pair 级冷却满 → 压低（独立通道）
+        let pair_cd = score_tackle(&DefensiveFeatures { pair_cd_ratio: 1.0, ..feat() });
+        assert!(pair_cd < hot, "pair 级冷却应压低 score（{} < {}）", pair_cd, hot);
+        // 冷却衰减到 0 → 恢复（到期前后）
+        let expired = score_tackle(&DefensiveFeatures { tackle_cd_ratio: 0.0, pair_cd_ratio: 0.0, ..feat() });
+        assert_eq!(expired, hot, "两层冷却都到期后 score 应恢复到无冷却值");
+        // 两层独立可加：同时满冷却的压低 ≈ 各自压低之和
+        let both = score_tackle(&DefensiveFeatures { tackle_cd_ratio: 1.0, pair_cd_ratio: 1.0, ..feat() });
+        assert!(both < def_cd && both < pair_cd, "两层都冷却应压得更低（{}）", both);
+    }
+
+    /// P30 D1（pair 级**方向 + 到期恢复**，实状态绑定）：`pair_cooldown_ratio` 走真实
+    /// `MatchState` 的 `last_contact_pair`/`contact_age_ticks`——接触当刻最接近 1（最该避免
+    /// 立刻再接触），随年龄增长衰减，到期（≥ `CONTACT_PAIR_COOLDOWN_TICKS`）归 0。
+    ///
+    /// 这条测试是为「pair 冷却方向写反」的缺陷专门加的守卫（把 ratio 写成 `age/cooldown`
+    /// 会让接触当刻为 0、到期后恒 1 → 本测试红）。**必须走 `pair_cooldown_ratio` 而非直接
+    /// 喂 `pair_cd_ratio`**——后者是纯函数输入，测不到「实状态 → 比例」这层。
+    #[test]
+    fn p30_pair_cooldown_direction_and_expiry() {
+        let mut st = window_state(&[(11, 0.44, 0.5)]);
+        st.carrier = 9;
+        st.pos[9] = (0.40, 0.5);
+        st.pos[11] = (0.44, 0.5);
+        let vp = st.pos[9];
+        // 不是接触对 → 无 pair 冷却
+        st.last_contact_pair = None;
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "非接触对应无 pair 冷却");
+        st.last_contact_pair = Some((12, 9)); // 别的对
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "别的 pair 不应锁死本防守者");
+        // 恰为本对：接触当刻（age=0）→ 剩余比例 = 1（最满）
+        st.last_contact_pair = Some((11, 9));
+        st.contact_age_ticks = 0;
+        let at_contact = pair_cooldown_ratio(&st, 11);
+        assert!((at_contact - 1.0).abs() < 1e-9, "接触当刻 pair 剩余冷却应为 1（实得 {}）", at_contact);
+        // 衰减：age 越大剩余越小（单调不增）
+        let mut prev = at_contact;
+        for age in 1..=CONTACT_PAIR_COOLDOWN_TICKS {
+            st.contact_age_ticks = age;
+            let r = pair_cooldown_ratio(&st, 11);
+            assert!(r <= prev + 1e-9, "age {} 的剩余冷却 {} 应不增（prev {}）", age, r, prev);
+            prev = r;
+        }
+        // 到期（age == 窗口）→ 归 0（恢复）
+        st.contact_age_ticks = CONTACT_PAIR_COOLDOWN_TICKS;
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "pair 冷却到期应恢复（归 0）");
+        st.contact_age_ticks = CONTACT_PAIR_COOLDOWN_TICKS + 50;
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "远超窗口仍应恒 0（不反向增长）");
+        // 闭环：接触当刻 score_tackle 被压低 < 到期后 score_tackle（D1 语义）
+        st.contact_age_ticks = 0;
+        let f_hot = defensive_features(&st, 11, vp);
+        st.contact_age_ticks = CONTACT_PAIR_COOLDOWN_TICKS;
+        let f_cold = defensive_features(&st, 11, vp);
+        assert!(score_tackle(&f_hot) < score_tackle(&f_cold),
+            "接触当刻 score({}) 应低于到期后 score({})——pair 冷却方向反了",
+            score_tackle(&f_hot), score_tackle(&f_cold));
+    }
+
+    /// P30 D1（cooldown **写—读闭环**，直接绑定执行路径）：不经 tally 间接证明，而是
+    /// **真执行**一次抢断 / 一次犯规，断言三个 cooldown 字段被写、再经 `defensive_features`
+    /// → `score_tackle` 读到惩罚、并随 tick 衰减恢复。覆盖「删掉写入点仍能过测试」的空洞
+    /// （审阅第二轮 P2）。
+    #[test]
+    fn p30_cooldown_write_read_closed_loop() {
+        // ---------- 抢断写路径 ----------
+        let mut st = window_state(&[(11, 0.60, 0.5)]);
+        st.carrier = 9;
+        st.pos[9] = (0.62, 0.5);
+        st.pos[11] = (0.60, 0.5);
+        let vp = st.pos[9];
+        // 前置：无冷却 → 无惩罚
+        let s_before = score_tackle(&defensive_features(&st, 11, vp));
+        let mut rng = SeededRng::new(5);
+        let mut events = Vec::new();
+        emit_tackle_highlight_impl(&mut st, &mut rng, &mut events, 1.0, 11);
+        // 写：defender 级 + pair 级都被置位
+        assert_eq!(st.tackle_cooldown[11], TACKLE_COOLDOWN_TICKS, "抢断后 defender 冷却应被置满");
+        assert_eq!(st.last_contact_pair, Some((11, 9)), "抢断后应记接触对");
+        assert_eq!(st.contact_age_ticks, 0, "接触当刻年龄应为 0");
+        // 读：score 被压低（defender 冷却 + pair 冷却）
+        let s_after = score_tackle(&defensive_features(&st, 11, vp));
+        assert!(s_after < s_before, "抢断后 score_tackle 应被压低（{} < {}）", s_after, s_before);
+        // 到期恢复：**只推进冷却字段的衰减**（不跑整场 tick——那会移动球员/换持球者，
+        // 破坏几何与状态不变量）。`tick()` 顶部的衰减逻辑等价于此处的 `saturating_sub`，
+        // 已在 `p30_foul_cooldown_decays_every_tick` 里对真实 tick 路径单独钉死。
+        let decay = |st: &mut MatchState| {
+            for c in st.tackle_cooldown.iter_mut() { *c = c.saturating_sub(1); }
+            if st.last_contact_pair.is_some() { st.contact_age_ticks = st.contact_age_ticks.saturating_add(1); }
+        };
+        // 接触后的几何（emit 已把两人对账到结算终点）——取作「冷却归零后」的对照基准。
+        // 注意不能用接触**前**的 `s_before`：emit 改变了位置，几何不同。对照应解耦几何：
+        // 同一（接触后）几何下，冷却项为 0 的 score 即是「到期恢复」的目标值。
+        // `emit_tackle_highlight_impl` 会把 carrier 置 -1（success）或保留（fail）→ 钉回 9
+        // （defensive_features 经 opportunity_geometry 读 st.carrier，须为合法 id）。
+        st.carrier = 9;
+        st.pos[9] = (0.62, 0.5);
+        st.pos[11] = (0.60, 0.5);
+        let f_now = defensive_features(&st, 11, st.pos[9]);
+        let f_no_cd = DefensiveFeatures { tackle_cd_ratio: 0.0, pair_cd_ratio: 0.0, ..f_now };
+        let target = score_tackle(&f_no_cd);
+        while st.tackle_cooldown[11] > 0 || pair_cooldown_ratio(&st, 11) > 0.0 {
+            decay(&mut st);
+        }
+        let f_expired = defensive_features(&st, 11, vp);
+        assert_eq!(f_expired.tackle_cd_ratio, 0.0, "defender 冷却应到期归零");
+        assert_eq!(f_expired.pair_cd_ratio, 0.0, "pair 冷却应到期归零");
+        assert!((score_tackle(&f_expired) - target).abs() < 1e-9,
+            "两层冷却都到期后 score 应恢复到「无冷却同几何」（{} vs {}）", score_tackle(&f_expired), target);
+
+        // ---------- 犯规写路径 ----------
+        let mut st2 = window_state(&[(11, 0.60, 0.5)]);
+        st2.carrier = 9;
+        st2.pos[9] = (0.62, 0.5);
+        st2.pos[11] = (0.60, 0.5);
+        st2.foul_cooldown_ticks = 0;
+        let mut rng2 = SeededRng::new(5);
+        let mut events2 = Vec::new();
+        emit_foul_and_free_kick(&mut st2, &mut rng2, &mut events2, 1.0, 9, (0.62, 0.5), 11);
+        assert_eq!(st2.foul_cooldown_ticks, FOUL_MIN_GAP_TICKS, "犯规后全局冷却应被置满");
+        assert_eq!(st2.tackle_cooldown[11], TACKLE_COOLDOWN_TICKS, "犯规者也应进 defender 冷却（共用数组）");
+        assert_eq!(st2.last_contact_pair, Some((11, 9)), "犯规后应记接触对");
+        // `emit_foul_and_free_kick` 把 carrier 置 -1（死球）→ 读 feature 前钉回 9
+        st2.carrier = 9;
+        st2.pos[9] = (0.62, 0.5);
+        st2.pos[11] = (0.60, 0.5);
+        // 读：犯规资格被全局冷却挡住（score_foul = NEG_INFINITY）
+        assert_eq!(score_foul(&defensive_features(&st2, 11, (0.62, 0.5))), f64::NEG_INFINITY,
+            "犯规后全局冷却未过 → 犯规应无资格");
+        // 到期恢复：只推进 foul 冷却衰减 → 恢复资格（同理由，不跑整场 tick）
+        let _ = (rng2, events2);
+        while st2.foul_cooldown_ticks > 0 {
+            st2.foul_cooldown_ticks -= 1;
+        }
+        st2.carrier = 9;
+        st2.pos[9] = (0.62, 0.5);
+        st2.pos[11] = (0.60, 0.5);
+        assert!(score_foul(&defensive_features(&st2, 11, st2.pos[9])).is_finite(),
+            "全局犯规冷却到期后应恢复犯规资格");
+    }
+
+    /// P30 D1（全局 foul 冷却**每 tick 无条件衰减**，实 tick 绑定）：犯规冷却在
+    /// `tick()` 顶部推进，而非只在开放比赛分支——犯规后下一 tick 通常进入任意球
+    /// `restart_prep`（提前 return），若只在该分支递减则冷却永不推进。
+    #[test]
+    fn p30_foul_cooldown_decays_every_tick() {
+        // 构造：一个犯规刚发生（foul_cooldown = FOUL_MIN_GAP_TICKS）、处于 restart_prep 的局
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.foul_cooldown_ticks = FOUL_MIN_GAP_TICKS;
+        st.restart_prep = Some(RestartPrep {
+            player: 9, target: (0.5, 0.5), kind: RestartKind::FreeKick, ticks: 0,
+        });
+        let mut rng = SeededRng::new(1);
+        let mut events = Vec::new();
+        tick(&mut st, &mut rng, &mut events, 1.0);
+        assert_eq!(st.foul_cooldown_ticks, FOUL_MIN_GAP_TICKS - 1,
+            "任意球重开 tick 里 foul 冷却也应推进（否则冷永不衰减）");
+        // 连续推进任意状态（重开 → 发球 → 高亮 …）→ 必须**每个 tick 都递减**、最终到 0
+        // （而非停在某值）。这钉死「衰减放在 tick 顶部、无条件」——若只在开放比赛分支递减，
+        // 一旦进入重开/高亮就停住，本循环立刻红。
+        let mut prev = st.foul_cooldown_ticks;
+        for k in 0..FOUL_MIN_GAP_TICKS {
+            tick(&mut st, &mut rng, &mut events, 2.0 + k as f64);
+            let want = prev.saturating_sub(1);
+            assert_eq!(st.foul_cooldown_ticks, want,
+                "第 {} 个 tick 后 foul 冷却应从 {} 递减到 {}（实得 {}）——未按 tick 推进？",
+                k, prev, want, st.foul_cooldown_ticks);
+            prev = st.foul_cooldown_ticks;
+        }
+        assert_eq!(st.foul_cooldown_ticks, 0,
+            "连续 tick 后 foul 冷却应衰减到 0（实得 {}）", st.foul_cooldown_ticks);
+    }
+
+    /// P30 D4：吃黄球员的犯规分打折（`FOUL_YELLOW_PENALTY`），且**不改**其它动作的分。
+    #[test]
+    fn p30_foul_yellow_deterrence() {
+        let clean = score_foul(&feat());
+        let booked = score_foul(&DefensiveFeatures { yellowed: true, ..feat() });
+        assert!(booked < clean, "吃黄球员犯规分应打折（{} < {}）", booked, clean);
+        assert!((clean - booked - FOUL_YELLOW_PENALTY).abs() < 1e-9,
+            "打折幅度应为 FOUL_YELLOW_PENALTY");
+        // 不影响抢断分
+        assert_eq!(score_tackle(&DefensiveFeatures { yellowed: true, ..feat() }), score_tackle(&feat()),
+            "吃黄不应改变抢断分");
+    }
+
+    /// P30 D4：犯规资格——禁区内不产犯规（点球语义不做）+ 全局犯规冷却未过则无资格。
+    #[test]
+    fn p30_foul_qualifications() {
+        assert_eq!(score_foul(&DefensiveFeatures { foul_allowed: false, ..feat() }), f64::NEG_INFINITY,
+            "禁区内应无犯规资格");
+        assert_eq!(score_foul(&DefensiveFeatures { foul_cd_ratio: 0.5, ..feat() }), f64::NEG_INFINITY,
+            "全局犯规冷却未过应无犯规资格");
+        assert_eq!(score_foul(&DefensiveFeatures { dist_m: 9.0, ..feat() }), f64::NEG_INFINITY,
+            "超过犯规贴身阈值（8m）应无犯规资格");
+    }
+
+    /// P30 D2（核心）：**打分选一**——`select_defensive_action` 对每个机会点返回**恰好一个**
+    /// 防守动作，绝不「既抢又犯」。这是「同一 tick 只选一个防守动作」的机器守卫。
+    #[test]
+    fn p30_select_is_exclusive() {
+        // 极贴身且正面（0.3m，领先 5m）→ 抢断胜出
+        let t = select_defensive_action(&DefensiveFeatures { dist_m: 0.3, depth_lead_m: 5.0, ..feat() });
+        assert_eq!(t.0, DefensiveAction::Tackle, "贴身正面应选抢断，实得 {:?}", t.0);
+        // 中距（6m）→ 无事件防守（contain/jockey）
+        let m = select_defensive_action(&DefensiveFeatures { dist_m: 6.0, ..feat() });
+        assert!(matches!(m.0, DefensiveAction::Contain | DefensiveAction::Jockey),
+            "中距应选无事件防守，实得 {:?}", m.0);
+        // 超阈值（13m）→ None
+        let n = select_defensive_action(&DefensiveFeatures { dist_m: 13.0, ..feat() });
+        assert_eq!(n.0, DefensiveAction::None, "超阈值应选 None");
+        // 分数最高的动作与返回值一致（选一自洽——动作与 argmax 对应，不只是 enum 类型互斥）
+        let f = DefensiveFeatures { dist_m: 2.0, danger: 0.9, depth_lead_m: -3.0, ..feat() };
+        let (a, sc) = select_defensive_action(&f);
+        let all = [
+            (DefensiveAction::Tackle, score_tackle(&f)),
+            (DefensiveAction::Foul, score_foul(&f)),
+            (DefensiveAction::Contain, score_contain(&f)),
+            (DefensiveAction::Jockey, score_jockey(&f)),
+        ];
+        let (argmax_action, max) = all.iter().cloned().fold(
+            (DefensiveAction::None, f64::NEG_INFINITY),
+            |acc, (act, sc)| if sc > acc.1 { (act, sc) } else { acc },
+        );
+        assert_eq!(a, argmax_action, "返回动作应为 argmax（实得 {:?}）", a);
+        assert_eq!(sc, max, "返回的 score 应为四者最高");
+    }
+
+    /// P30 D2/D4（关键否定断言）：**同一几何下不会既抢又犯**——`select_defensive_action`
+    /// 的返回是单一枚举，`resolve_action_opportunity` 对 Tackle/Foul 走互斥分支。
+    #[test]
+    fn p30_never_both_tackle_and_foul() {
+        // **事件层**守卫（这是审查指出的原测试空洞之处）：跑真实比赛，逐场断言**同一 tick**
+        // 绝不既产 tackle 又产 foul。同一机会点只选一个防守动作 → 执行层只产一个防守中断事件；
+        // 若打分/执行脱节（例如 resolve 或执行层另追加事件），本断言立刻红。
+        let mut saw_tackle_tick = 0u64;
+        let mut saw_foul_tick = 0u64;
+        for seed in 1..=60u64 {
+            let (_, events) = run_match(seed, 5400.0);
+            // 按 t 归并：同一 t 的防守中断事件（tackle / foul）至多一条
+            let mut last_t: Option<f64> = None;
+            let mut n_break = 0u32;
+            for e in &events {
+                let is_break = matches!(e.type_, EventType::Tackle | EventType::Foul);
+                if !is_break { continue; }
+                if e.type_ == EventType::Tackle { saw_tackle_tick += 1; }
+                if e.type_ == EventType::Foul { saw_foul_tick += 1; }
+                if last_t == Some(e.t) {
+                    n_break += 1;
+                } else {
+                    assert_eq!(n_break, 0, "seed {} t={} 同一 tick 出现多个防守中断事件（既抢又犯？）", seed, e.t);
+                    last_t = Some(e.t);
+                }
+            }
+            assert_eq!(n_break, 0, "seed {} 存在同一 tick 多个防守中断事件", seed);
+        }
+        // 两类事件都真实出现（非空跑）
+        assert!(saw_tackle_tick > 0 && saw_foul_tick > 0,
+            "tackle/foul 事件未同时出现（tackle {} / foul {}）", saw_tackle_tick, saw_foul_tick);
+
+        // **纯函数层**（保留）：几何网格上 select 恒返回单一动作、结算与之互斥一致。
+        for dist in [0.2f64, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 9.0, 11.0] {
+            for lead in [-5.0f64, -2.0, 0.0, 2.0, 5.0] {
+                for danger in [0.0f64, 0.5, 1.0] {
+                    let f = DefensiveFeatures { dist_m: dist, depth_lead_m: lead, danger, ..feat() };
+                    let (a, sc) = select_defensive_action(&f);
+                    // 返回单一动作 + 分数应为四者最高（选一自洽，非仅 enum 类型互斥）
+                    let scores = [score_tackle(&f), score_foul(&f), score_contain(&f), score_jockey(&f)];
+                    let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                    if a != DefensiveAction::None {
+                        assert_eq!(sc, max, "dist={} lead={} danger={} 返回分非最高", dist, lead, danger);
+                    }
+                    let carrier = CarrierPlan { action: Some(CarrierAction::Dribble), dead_ball: None,
+                        situation: None, exec: CarrierExecution::ContinueDribble };
+                    let r = resolve_action_opportunity(&carrier, a);
+                    let exclusive = match a {
+                        DefensiveAction::Tackle => r == ActionResolution::InterruptedByTackle,
+                        DefensiveAction::Foul => r == ActionResolution::InterruptedByFoul,
+                        _ => true,
+                    };
+                    assert!(exclusive, "结算 ({:?}) 应与所选动作 ({:?}) 互斥一致", r, a);
+                }
+            }
+        }
+    }
+
+    /// P30 D1（三层 cooldown **行为**测试）：跑满多场，断言三层冷却各自真实生效——
+    /// - defender 级：同一防守者抢断后 `tackle_cooldown[id] > 0`；
+    /// - pair 级：每次接触后 `last_contact_pair`/`contact_age_ticks` 被置位；
+    /// - 全局 foul：犯规后 `foul_cooldown_ticks` 被置位，且**冷却期内**不能再选集犯规。
+    /// 并且冷却**会到期**（不是恒置位不衰减）。
+    #[test]
+    fn p30_three_layer_cooldown_live() {
+        // 三层 cooldown 的**行为**测试：跑真实比赛，逐 tick 采样三个字段，断言每层都被**写过**
+        // （出现过非零值）、`defender` 级按球员记录、pair 年龄会增长、三层都**到期归零**。
+        // 直接读字段（不再从 tally 间接推断）——覆盖审阅第二轮 P2 指出的覆盖缺口。
+        let mut saw_def_cd: [bool; 22] = [false; 22];
+        let mut saw_pair = false;
+        let mut saw_foul = false;
+        let mut saw_age_growth = false;
+        let mut def_cd_expired = false;
+        let mut pair_cd_expired = false;
+        let mut foul_cd_expired = false;
+        for seed in 1..=40u64 {
+            let lineup = default_lineup();
+            let mut rng = SeededRng::new(seed);
+            let mut events = Vec::new();
+            let mut st = MatchState::new(&lineup, 5400.0);
+            st.hold_max = slot_hold_max(5400.0);
+            let mut t = TICK_SECONDS;
+            let mut prev_age = st.contact_age_ticks;
+            while t < 5400.0 {
+                tick(&mut st, &mut rng, &mut events, t);
+                // defender 级：**逐球员**记录是否曾被置位
+                for (id, &c) in st.tackle_cooldown.iter().enumerate() {
+                    if c > 0 { saw_def_cd[id] = true; }
+                }
+                if st.last_contact_pair.is_some() {
+                    saw_pair = true;
+                    if st.contact_age_ticks > prev_age { saw_age_growth = true; }
+                    if st.contact_age_ticks >= CONTACT_PAIR_COOLDOWN_TICKS { pair_cd_expired = true; }
+                }
+                if st.foul_cooldown_ticks > 0 { saw_foul = true; }
+                // 到期归零：冷却曾 >0、现在 ==0（且不是被新接触重置）→ 观察到一次「到期」
+                if st.tackle_cooldown.iter().all(|&c| c == 0) && saw_def_cd.iter().any(|&b| b) {
+                    def_cd_expired = true;
+                }
+                if st.foul_cooldown_ticks == 0 && saw_foul { foul_cd_expired = true; }
+                prev_age = st.contact_age_ticks;
+                t += TICK_SECONDS;
+            }
+        }
+        assert!(saw_def_cd.iter().any(|&b| b), "40 场里从未有任何球员进入 defender 级冷却");
+        let n_def = saw_def_cd.iter().filter(|&&b| b).count();
+        assert!(n_def >= 2, "defender 级冷却应记录到多个球员（实得 {}）", n_def);
+        assert!(saw_pair, "40 场里从未记录接触对（pair 冷却层未生效？）");
+        assert!(saw_foul, "40 场里从未进入全局犯规冷却（全局 foul 冷却层未生效？）");
+        assert!(saw_age_growth, "contact_age_ticks 从未增长（pair 衰减未接线）");
+        assert!(pair_cd_expired, "pair 冷却从未到期（恒不衰减？）");
+        assert!(def_cd_expired, "defender 冷却从未到期归零");
+        assert!(foul_cd_expired, "全局犯规冷却从未到期归零");
+    }
+
+    /// P30 D1（纯函数级，三层各自独立）：冷却**只**改变打分，不禁止事件——到期即恢复（对照 `p30_tackle_cooldowns_lower_score`）。
+    /// 这里补「全局 foul 冷却」的独立通道 + 冷却对『资格』无影响（冷却满时 foul 仍**有资格**但分低，
+    /// 而非 `NEG_INFINITY`——后者只由禁区/距离决定）。
+    #[test]
+    fn p30_cooldown_is_score_only_not_eligibility() {
+        // foul：冷却未过（ratio > 0）→ 资格层直接 NEG_INFINITY（D4 明确要求「冷却过」才可犯）
+        assert_eq!(score_foul(&DefensiveFeatures { foul_cd_ratio: 0.01, ..feat() }), f64::NEG_INFINITY,
+            "foul 冷却未过应无资格（D4）");
+        // 冷却刚过（ratio == 0）→ 有资格、有有限分
+        let ok = score_foul(&DefensiveFeatures { foul_cd_ratio: 0.0, ..feat() });
+        assert!(ok.is_finite(), "foul 冷却过后应恢复资格");
+        // tackle：冷却满时仍有资格（有限分），只是被压低——不直接禁止（D1）
+        let cd = score_tackle(&DefensiveFeatures { tackle_cd_ratio: 1.0, ..feat() });
+        assert!(cd.is_finite(), "tackle 冷却满时仍应有资格（冷却只改打分，不禁止事件）");
+    }
+
+    /// P30 D3：删 `same_pair`/`far` 后 tackle 结果只有 success/fail **两态**（结构上无第三态）。
+    /// 跑满多场，断言事件流里每个 tackle 的 result ∈ {success,fail}，且两种都出现。
+    #[test]
+    fn p30_tackle_result_only_two_states() {
+        let mut success = 0u64;
+        let mut fail = 0u64;
+        for seed in 1..=30u64 {
+            let (_, events) = run_match(seed, 5400.0);
+            for e in &events {
+                if e.type_ != EventType::Tackle { continue; }
+                match e.result.as_deref() {
+                    Some("success") => success += 1,
+                    Some("fail") => fail += 1,
+                    other => panic!("tackle result 只应 success/fail 两态，实得 {:?}", other),
+                }
+            }
+        }
+        assert!(success > 0 && fail > 0, "两态都应出现（success {} / fail {}）", success, fail);
+        let r = success as f64 / (success + fail) as f64;
+        assert!((0.35..=0.65).contains(&r), "success 占比 {:.3} 应 ≈ TACKLE_SUCCESS_RATE(0.5)", r);
+    }
+
+    /// P30 D5：contain/jockey 结算**不产事件**，只把 `pressure_state_ticks` 置满。
+    /// 直接构造「中距无事件防守」几何，跑一次评估+执行，断言无事件产出、状态被置位。
+    #[test]
+    fn p30_contain_jockey_state_only() {
+        // 中距（5m）几无接触 → 打分应选 contain/jockey；执行层不产事件、置压力状态
+        let mut st = window_state(&[(11, 0.90, 0.5)]); // 防守者离 carrier ~2m? 需调
+        st.carrier = 9;
+        st.pos[9] = (0.40, 0.5);
+        st.pos[11] = (0.44, 0.5); // 距 ~4.2m → jockey 带
+        let victim_pos = st.pos[9];
+        let f = defensive_features(&st, 11, victim_pos);
+        let (a, _) = select_defensive_action(&f);
+        assert!(matches!(a, DefensiveAction::Contain | DefensiveAction::Jockey),
+            "4.2m 应选无事件防守，实得 {:?}（d={:.2}）", a, f.dist_m);
+        // 状态置位路径：执行 contain/jockey 结算（结算由 action 推出，保自洽）
+        st.pressure_state_ticks = 0;
+        let carrier = CarrierPlan { action: None, dead_ball: None, situation: None,
+            exec: CarrierExecution::ContinueDribble };
+        let plan = ActionPlan {
+            carrier,
+            defensive: a,
+            defensive_exec: DefensiveExecution::None,
+            resolution: resolve_action_opportunity(&carrier, a),
+        };
+        let mut rng = SeededRng::new(1);
+        let mut events = Vec::new();
+        execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan));
+        assert_eq!(st.pressure_state_ticks, PRESSURE_STATE_HOLD_TICKS, "contain/jockey 应置压力状态");
+        assert!(!events.iter().any(|e| matches!(e.type_,
+            EventType::Tackle | EventType::Foul | EventType::Shot | EventType::Pass)),
+            "contain/jockey 不应产高亮事件");
+    }
+
     #[test]
     fn p29_window_commit_rate_falls_with_pressure() {
         let mut agg = OpportunityTally::default();
@@ -6714,6 +7511,7 @@ mod tests {
             agg.shot_window_entries += t.shot_window_entries;
             agg.shot_window_commits += t.shot_window_commits;
             agg.shot_window_tackles += t.shot_window_tackles;
+            agg.shot_window_fouls += t.shot_window_fouls;
             agg.shot_window_holds += t.shot_window_holds;
             agg.shot_window_expiries += t.shot_window_expiries;
             // 覆盖口径诚实性（防空转守卫的窗口版）：每个窗口恰以一个终局结束——提交 /
@@ -6724,7 +7522,10 @@ mod tests {
             // 允许差 1——推进相的 `shot_setup` 尚未进窗口、不计 entries，故不算残留。
             // 把容差绑到这个可观测条件（而非无条件 ±1）：否则「每场恰好丢 1 个终局」的 bug
             // 会一直落在容差里不被发现（审阅 P2-3）。
-            let ends = t.shot_window_commits + t.shot_window_tackles + t.shot_window_expiries;
+            let ends = t.shot_window_commits
+                + t.shot_window_tackles
+                + t.shot_window_fouls
+                + t.shot_window_expiries;
             let dangling = st.shot_setup.as_ref().map_or(false, |s| s.in_window) as u64;
             assert_eq!(
                 ends,
@@ -6743,6 +7544,13 @@ mod tests {
                 "{}桶 窗口进入样本不足（{}）——方向断言会空跑", name, agg.shot_window_entries_by_pressure[b]);
         }
         assert!(agg.shot_window_commits > 0, "窗口从未提交（hazard 塌缩到 0？）");
+        // P30：窗口内打断分支（抢断/犯规）在广窗（300 seed）里必须可达——否则 2B 的「起脚
+        // 窗口可被打断」机制在涌现比赛里空跑。实测 300 seed 有犯规打断（抢断打断更稀有，
+        // 由构造几何测试单独钉死）。
+        assert!(
+            agg.shot_window_tackles + agg.shot_window_fouls > 0,
+            "300 seed 内窗口从未被打断（抢断/犯规分支在真实比赛里空跑）"
+        );
         // 「等待」是窗口内的真实中间态（首 tick 未提交/未被抢 → 推进到下一决策 tick）。
         // 断言其可达，避免它退化为只写不读的死计数器（P28 审阅同类问题）。
         assert!(agg.shot_window_holds > 0,
@@ -6791,6 +7599,7 @@ mod tests {
             agg.shot_window_entries += t.shot_window_entries;
             agg.shot_window_commits += t.shot_window_commits;
             agg.shot_window_tackles += t.shot_window_tackles;
+            agg.shot_window_fouls += t.shot_window_fouls;
             agg.shot_window_expiries += t.shot_window_expiries;
             agg.exec_enter_shot_window += t.exec_enter_shot_window;
             for b in 0..3 {
@@ -6798,10 +7607,14 @@ mod tests {
             }
             bound_shots += ev_shots;
         }
-        // 2. 窗口进入 / 提交 / 被抢断三条分支都在 20 场里被真实命中（不空跑）。
+        // 2. 窗口进入 / 提交 / 打断三条分支都真实命中（不空跑）。
         assert!(agg.shot_window_entries > 0, "起脚窗口从未进入（2B 未接线？）");
         assert!(agg.shot_window_commits > 0, "窗口从未提交射门");
-        assert!(agg.shot_window_tackles > 0, "窗口内从未被抢断（D3 未覆盖——抢断分支空跑）");
+        // P30：窗口内打断（抢断/犯规）在**涌现**比赛里稀有——统一打分要求 ≤2m 才能抢，而能
+        // 推进到起脚窗口的持球者通常已摆脱贴身（「能起脚说明没被贴死」）。打断分支的**可达性**
+        // 由构造几何测试 `p29_window_tackle_cancels_without_shot`（抢断）/ `p29_window_foul_*`
+        // （犯规）单独钉死；广窗（300 seed）可达性由 `p29_window_commit_rate_falls_with_pressure`
+        // 补断言。本 20-seed 测试只守 D1 唯一生产者与终局计数自洽。
         // `exec_enter_shot_window`（「fallback 情境直达射程 → 直接进窗口」的执行绑定）也必须
         // 真实命中，否则是只写不读的死计数器（P28 审阅同类问题）。
         assert!(agg.exec_enter_shot_window > 0,
@@ -6906,7 +7719,11 @@ mod tests {
             agg.res_containment += t.res_containment;
             agg.res_jockey += t.res_jockey;
             agg.res_no_action += t.res_no_action;
+            agg.plans_executed += t.plans_executed;
             agg.exec_tackle += t.exec_tackle;
+            agg.exec_foul += t.exec_foul;
+            agg.pressure_state_sets += t.pressure_state_sets;
+            agg.shot_window_fouls += t.shot_window_fouls;
             agg.exec_shoot += t.exec_shoot;
             agg.exec_pass += t.exec_pass;
             agg.exec_forward_pass += t.exec_forward_pass;
@@ -6948,10 +7765,6 @@ mod tests {
         assert!(agg.defensive_none > 0, "防守候选 None 从未产生");
         assert!(agg.res_carrier_shoot > 0, "持球终结（射门）结算未覆盖");
         assert!(agg.res_carrier_pass > 0, "持球普通（传球）结算未覆盖");
-        // `CarrierAction(Dribble)` 在 2A 结构性不可达：唯一的 Dribble 候选来自 fallback 的
-        // 「被逼抢」情境，而该情境必伴随防守候选 Tackle → D3 优先级下结算恒为 InterruptedByTackle。
-        // 2C 引入真实接触竞争（抢断可能不胜出）后可达；此处不谎报覆盖（候选 Dribble 已单独覆盖）。
-        assert_eq!(agg.res_carrier_dribble, 0, "2A 内 Dribble 结算不应出现（D3 优先级所限）");
         assert!(agg.carrier_dribble > 0, "候选动作 Dribble 从未产生");
         assert!(agg.res_dead_ball > 0, "死球结算从未发生");
         assert!(agg.res_interrupted_tackle > 0, "抢断中断结算从未发生");
@@ -6960,6 +7773,10 @@ mod tests {
         // 5. 执行绑定：计数 > 0（换回旧路径 → 归零 → 红）
         assert!(agg.exec_shoot > 0, "射门执行绑定从未生效（模块可能被绕过）");
         assert!(agg.exec_tackle > 0, "抢断执行绑定从未生效");
+        // P30（D4）：犯规的执行绑定——犯规并入竞争后由执行层产事件，与事件流 foul 数绑死。
+        assert!(agg.exec_foul > 0, "犯规执行绑定从未生效（犯规并入竞争后未接线？）");
+        // P30（D5）：contain/jockey 只调状态的落点——必须真实命中（非空转）。
+        assert!(agg.pressure_state_sets > 0, "contain/jockey 从未设置压力状态（D5 未接线）");
         assert!(agg.exec_pass > 0 && agg.exec_continue > 0);
         assert!(agg.exec_forward_pass > 0, "远段向前推进执行绑定未覆盖");
         assert!(agg.exec_drive_then_shoot > 0, "带球推进射门执行绑定未覆盖");
@@ -6970,12 +7787,33 @@ mod tests {
         assert_eq!(agg.exec_pass_out_corner, bound[2], "聚合角球出界绑定计数 ≠ 事件数");
         assert_eq!(agg.exec_pass_out_throw_in, bound[3], "聚合界外球出界绑定计数 ≠ 事件数");
         assert_eq!(agg.shots_unattributed, 0, "存在未经模块发起即落地的射门");
-        // 7. 自然 deadline 在 2A 内决策中性（D5）：每次「到期被评估」的结算都落在无事件类
-        //    （继续带球 / 封堵 / 跟防），两次计数必须相等——不等即说明该路径产出了承诺行动。
+        // 7. P30（D2 全分区）：每次「评估并执行」恰落地**一个**结算。触发源与结算桶一一对应：
+        //    - 自然 deadline 到期 / fallback / 持球超时：各执行一次 plan → 各记一个 res_*；
+        //    - 起脚窗口：只有提交射门 / 抢断 / 犯规三种结算走 `execute_action_resolution`
+        //      （各记一个 res_*）；「等待 / 转」两态直接 emit beat、不经执行层 → 不记 res_*。
+        //    故：全部 res_* 之和 == 自然到期 + fallback + 持球超时 + 窗口三种终局计数。
+        //    任一结算未记账、或某触发源绕过模块直接产事件 → 该等式立刻不等。
+        //    2A 时这条等式是「自然 deadline 恒为无事件类」的特例；2C 后自然 deadline 可选
+        //    抢断/犯规，故改为**全局**分区（跨全部触发源）。
+        let total_res = agg.res_carrier_shoot + agg.res_carrier_pass + agg.res_carrier_dribble
+            + agg.res_dead_ball + agg.res_interrupted_tackle + agg.res_interrupted_foul
+            + agg.res_containment + agg.res_jockey + agg.res_no_action;
         assert_eq!(
-            agg.natural_deadline_due,
-            agg.res_containment + agg.res_jockey + agg.res_no_action,
-            "自然 deadline 到期次数应等于无事件结算次数（2A 决策中性）"
+            total_res, agg.plans_executed,
+            "结算桶计数之和({}) 应等于执行层实际执行的机会数({})——有结算未记账或绕过模块",
+            total_res, agg.plans_executed
         );
+        // P30：2A 的结构性不可达（Dribble 结算）在 2C 后**可达**——防守动作打分可能选出
+        // contain/jockey（无事件防守），此时 carrier 的 Dribble 候选按 D3 优先级胜出。
+        // 断言其可达，证明「打分不再恒选抢断」（若恒选抢断则本桶为 0）。
+        assert!(agg.res_carrier_dribble > 0,
+            "P30 后 Dribble 结算应可达（防守动作不再恒为抢断）——为 0 说明打分恒选 Tackle");
     }
+
+
+
+
+
+
+
 }
