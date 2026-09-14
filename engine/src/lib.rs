@@ -8004,14 +8004,19 @@ mod tests {
         for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
             assert!(samples[b] > 0, "{}桶 记账样本为 0——桶边界与判定边界漂移？", name);
         }
-        // 主要桶（贴防，判定提及的「必须达到最小样本」桶）实测样本：见下方注释。
+        // 三桶都断言 ≥ 最小样本（不只是主要桶）：否则某个桶跌到 <200 时会走
+        // `assert_interception_self_consistent` 的 `Err` 分支（eprintln 在默认 `cargo test`
+        // 下被捕获、不可见）——逐桶自洽会**静默失效**（审阅 N-2）。钉住三桶样本量，让
+        // 「样本不足」变成硬失败而非静默降级。
         // 实测 200 seed：贴防 23955 / 中距 45536 / 远距 1229（远距桶样本天然稀少——大部分
-        // 落点附近都有防守者）。三桶均 ≥ P32_MIN_BUCKET_SAMPLES(200)，故逐桶自洽全部生效。
-        assert!(
-            samples[0] >= P32_MIN_BUCKET_SAMPLES,
-            "贴防桶样本 {} < {}——主要桶样本不足，逐桶自洽断言会退化为 insufficient_sample",
-            samples[0], P32_MIN_BUCKET_SAMPLES
-        );
+        // 落点附近都有防守者），三桶均远超 200。
+        for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
+            assert!(
+                samples[b] >= P32_MIN_BUCKET_SAMPLES,
+                "{}桶样本 {} < {}——逐桶自洽会退化为 insufficient_sample（静默失效）",
+                name, samples[b], P32_MIN_BUCKET_SAMPLES
+            );
+        }
         // 记账恒等式：分桶样本之和 == 总数（防「只记总数不记桶」的漏记）。
         assert_eq!(
             samples[0] + samples[1] + samples[2], total_samples,
@@ -8023,19 +8028,22 @@ mod tests {
             "分桶预期之和 ≠ 总预期——分桶量化口径不一致"
         );
 
-        // 2. 逐桶自洽。样本不足的桶被 assert_interception_self_consistent 返回 Err
-        //    （insufficient_sample）而非静默——这里把该状态显式打印出来，使「样本不足」
-        //    是可观测事实（spec 的「逐桶自洽」scenario 要求）。贴防/中距/远距桶在标定下
-        //    样本充足（实测 23955/45536/1229），故全部完成判定。
-        match assert_interception_self_consistent("全局", total_samples, total_expected, total_actual) {
-            Ok(()) => {}
-            Err(e) => eprintln!("P32 全局：{}", e),
-        }
+        // 2. 逐桶自洽。样本不足的桶本会返回 Err(insufficient_sample)——但上面已**硬断言**
+        //    三桶样本 ≥ P32_MIN_BUCKET_SAMPLES，故此处每个调用**必须** Ok。用 `assert!` 而
+        //    非 eprintln：`insufficient_sample` 就此不可达（不是静默跳过、也不是被测试框架
+        //    捕获的 stderr 噪音——审阅 N-1/N-2）。若将来 seed/profile 变化让某桶跌破下限，
+        //    上一段硬断言会先红并点名该桶，不会走到这里。
+        assert!(
+            assert_interception_self_consistent("全局", total_samples, total_expected, total_actual).is_ok(),
+            "全局样本 {} 充足（分桶硬断言已过）却返回 insufficient_sample——口径不一致",
+            total_samples
+        );
         for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
-            match assert_interception_self_consistent(name, samples[b], expected[b], actual[b]) {
-                Ok(()) => {}
-                Err(e) => eprintln!("P32 {}桶：{}（样本 {}）", name, e, samples[b]),
-            }
+            assert!(
+                assert_interception_self_consistent(name, samples[b], expected[b], actual[b]).is_ok(),
+                "{}桶样本 {} 充足（已硬断言 ≥ {}）却返回 insufficient_sample——口径不一致",
+                name, samples[b], P32_MIN_BUCKET_SAMPLES
+            );
         }
 
         // 3. 长传加成常量接线（**逐常量**杀死，防互相遮蔽——变异实测：只分「长传/非长传」

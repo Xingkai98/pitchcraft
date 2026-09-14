@@ -54,9 +54,23 @@
 
 修复 2 条 P2 + 7 条 P3 后，独立复审确认：
 
-- 全部修复到位，无回归；`cargo test`（含 golden）、`viewer` 303、`tools` 404、`openspec validate --all --strict`、`verify.sh` 全绿。
-- 变异守卫仍绑住 4 条接线（ceil / LONG 加成 / VERY_LONG 加成 / 记账调用）。
-- **无遗留问题，审阅闭环通过。**
+- 9 条修复**逐条**验证到位，无回归；`cargo test --lib p32_` 2/2、`cargo test --test realism` 4/4、
+  `viewer` 303/303、`tools` 404/404、`openspec validate --all --strict` 17/17、`verify.sh` 五步全绿。
+- 变异守卫仍绑住接线（审阅者独立把 `intercept_long_actual += 1` 改空操作 → 断言红）。
+- 两个重点复核无回归：**A** `hits_long_pass` 替代内联比较逐字等价、RNG 序列未变、golden 绿；
+  **B** `unknown_h` 不误分类（探针实测真实引擎 8359 条 pass 的 missing_h=0；fixture 里 2 条缺 h
+  的 out pass 经 git 取证确认是 P27 时点无 h 发射点的陈旧快照，P31 删槽位后生产链路恒带 h）。
+- R2 新发现 3 条 P3（见下），全部处置完毕。
+
+### R2 新发现问题与处置（第三轮修复）
+
+| ID | 严重度 | 问题 | 处置 |
+|---|---|---|---|
+| N-1 | 建议 | `insufficient_sample` 走 eprintln，默认 `cargo test` 下被框架捕获、不可见 | ✅ 改为：先硬断言三桶样本 ≥ 200，再 `assert!(... .is_ok())`；`insufficient_sample` 就此**不可达**（不是被捕获的 stderr 噪音） |
+| N-2 | 建议 | 只有贴防桶有最小样本断言，中距/远距桶可能静默退化 | ✅ 三桶统一硬断言 `samples[b] >= P32_MIN_BUCKET_SAMPLES` |
+| N-3 | 建议 | tasks.md 把两条命令写成一条，易误读 | ✅ 措辞修正为「两条命令分开跑」 |
+
+**最终：审阅通过，可归档。**
 
 ## 遗留风险（不阻断归档，登记为后续）
 
