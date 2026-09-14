@@ -83,31 +83,6 @@ export const DETECTOR_FIELD_CONTRACT = {
       '出界证据优先 result==="out"（P27 主路径），兼容 out_side、detail（out_sideline/out_goal_line，P21）与几何出界（D4）。',
   },
 
-  ignored_interception_opportunity: {
-    reads: [
-      ...EVENT_SKELETON,
-      'corridor_distance',
-      'pass_distance',
-      'pass_speed',
-      'defender_id',
-      'defender_moved_toward_corridor',
-    ],
-    legacy_reads: [],
-    producers: {
-      t: 'engine',
-      type: 'engine',
-      index: 'viewer',
-      corridor_distance: 'derive',
-      pass_distance: 'derive',
-      pass_speed: 'derive',
-      defender_id: 'derive',
-      defender_moved_toward_corridor: 'derive',
-    },
-    known_gaps: [],
-    notes:
-      '本轮未标定（D4）：finding 带 calibrated:false，聚合不升级 failure，标定归 #36。',
-  },
-
   player_overlap: {
     // 只读球员快照的 t/x/y——team 不读（快照没有该字段），按 id 范围推（0-10 home /
     // 11-21 away，与 viewer/derive-audit-features.js 的 teamOf 同口径）。
@@ -155,10 +130,11 @@ export const DETECTOR_FIELD_CONTRACT = {
 
   // pass_outcomes 不是 detector，是 runAudit 的普通传球分桶统计；它和 unforced_out 共享
   // 排除位契约，所以一并登记，防止两处再漂移。
-  // 注意 reads 必须精确反映实现：分桶只按 type / 排除位 / nearest_defender_distance / 出界
-  // 结果，不读 t/index/pass_distance（那是 finding 与其它 detector 才需要的信息）。
+  // 注意 reads 必须精确反映实现：分桶按 type / 排除位 / nearest_defender_distance / 出界
+  // 结果；**P32 软分层**额外读 `h`（高球）与 `pass_distance`（长传）——两者都只进 strata，
+  // 不参与 band/告警。不读 t/index（那是 finding 与其它 detector 才需要的信息）。
   pass_outcomes: {
-    reads: ['type', 'result', 'out_side', 'detail', 'x2', 'y2', 'nearest_defender_distance'],
+    reads: ['type', 'result', 'out_side', 'detail', 'x2', 'y2', 'nearest_defender_distance', 'h', 'pass_distance'],
     legacy_reads: ['corner', 'throw_in', 'clearance'],
     producers: {
       type: 'engine',
@@ -168,9 +144,12 @@ export const DETECTOR_FIELD_CONTRACT = {
       x2: 'derive',
       y2: 'derive',
       nearest_defender_distance: 'derive',
+      // h 是引擎直出（protocol 字段）；pass_distance 由 derive 米制化（同 x2/y2 口径）。
+      h: 'engine',
+      pass_distance: 'derive',
     },
     known_gaps: ['goal_kick_exclusion'],
-    notes: '排除位与出界分类复用 unforced_out 的同一契约（D4/D2）。',
+    notes: '排除位与出界分类复用 unforced_out 的同一契约（D4/D2）；P32 起 result 识别 intercepted/lost，strata 按高球(h)/长传(pass_distance)/重开(detail) 软分层。',
   },
 };
 

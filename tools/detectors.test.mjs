@@ -306,40 +306,22 @@ test('runAudit reports unknown when no responsibility trigger is present', () =>
   assert.match(inactive[0].reason, /no responsibility-trigger evidence/);
 });
 
-test('runAudit flags an ignored interception opportunity', () => {
+test('runAudit never emits the removed ignored_interception detector (P32)', () => {
+  // #36/P32：detector 已彻底删除（不是降级）。喂一条**曾经**会触发它的 pass（走廊距离 2m、
+  // 球到达 2s、防守者到达 0.33s——旧语义下必报），断言 findings 与 stats 里都不再出现该
+  // detector_id。任何「留 deprecated 壳」的回潮都会让本用例红。
   const input = {
     events: [
       {
-        index: 20,
-        t: 200,
-        type: 'pass',
-        result: 'complete',
-        defender_id: 'away_3',
-        corridor_distance: 2.0,
-        pass_distance: 20,
-        pass_speed: 10,
+        index: 20, t: 200, type: 'pass', result: 'complete', defender_id: 'away_3',
+        corridor_distance: 2.0, pass_distance: 20, pass_speed: 10,
         defender_moved_toward_corridor: false,
       },
     ],
   };
-  const { findings } = runAudit(input);
-  const inter = findings.filter((f) => f.detector_id === 'ignored_interception_opportunity');
-  assert.equal(inter.length, 1);
-  assert.equal(inter[0].entity_id, 'away_3');
-  assert.equal(inter[0].severity, 'realism_warning');
-  // ball arrives in 2.0s; defender arrives in 2.0/6.0 = 0.333s + 0.5 margin < 2.0.
-  assert.ok(inter[0].features.ball_arrival_time > inter[0].features.defender_arrival_time);
-});
-
-test('runAudit reports unknown when interception corridor evidence is missing', () => {
-  const input = {
-    events: [{ index: 21, t: 210, type: 'pass', result: 'complete', defender_id: 'away_3' }],
-  };
-  const { findings } = runAudit(input);
-  const inter = findings.filter((f) => f.detector_id === 'ignored_interception_opportunity');
-  assert.equal(inter.length, 1);
-  assert.equal(inter[0].severity, 'unknown');
-  assert.match(inter[0].reason, /cannot prove interception corridor/);
+  const { findings, stats } = runAudit(input);
+  assert.equal(findings.filter((f) => f.detector_id === 'ignored_interception_opportunity').length, 0);
+  assert.equal(stats.filter((s) => s.detector_id === 'ignored_interception_opportunity').length, 0);
 });
 
 test('runAudit is deterministic across repeated runs of the same bundle', () => {
@@ -705,6 +687,99 @@ test('aggregateAudit pass_outcomes is deterministic and preserves unknown_outcom
   });
 });
 
+// --- P32（#36）D3：pass_outcomes 软分层 ---------------------------------------
+
+test('pass_outcomes strata classify high_ball / long_pass / restart_type (P32 D3)', () => {
+  // 一条 pass 可同时落入多个分层（各自独立）。构造覆盖全部分层键：
+  //   - 高球（h>0）长传（pass_distance>22）角球（detail=corner）
+  //   - 低球短传开放比赛
+  //   - intercepted 结果（result="intercepted"）——P32 起不再落入 unknown_outcome。
+  const { pass_outcomes } = runAudit({
+    events: [
+      { index: 0, t: 1, type: 'pass', result: 'success', h: 0.6, pass_distance: 40, detail: 'corner', nearest_defender_distance: 12 },
+      { index: 1, t: 2, type: 'pass', result: 'intercepted', h: 0, pass_distance: 10, nearest_defender_distance: 5 },
+      { index: 2, t: 3, type: 'pass', result: 'lost', h: 0, pass_distance: 50, nearest_defender_distance: 5 },
+    ],
+  });
+  const s = pass_outcomes.strata;
+  // 高球层：只有 index0（h=0.6>0）。
+  assert.equal(s.high_ball.sample_count, 1);
+  assert.equal(s.high_ball.success_count, 1);
+  // 低球层：index1 + index2。
+  assert.equal(s.low_ball.sample_count, 2);
+  assert.equal(s.low_ball.intercepted_count, 1);
+  assert.equal(s.low_ball.lost_count, 1);
+  // 长传层：index0(40m) + index2(50m)。
+  assert.equal(s.long_pass.sample_count, 2);
+  // 短传层：index1(10m)。
+  assert.equal(s.short_pass.sample_count, 1);
+  assert.equal(s.short_pass.intercepted_count, 1);
+  // 重开层：index0(corner)。
+  assert.equal(s.restart_type.sample_count, 1);
+  // 开放比赛层：index1 + index2。
+  assert.equal(s.open_play.sample_count, 2);
+  // intercepted/lost 不再落入 unknown_outcome（识别为真实结果）。
+  assert.equal(s.short_pass.unknown_outcome_count, 0);
+  assert.equal(s.low_ball.unknown_outcome_count, 0);
+});
+
+test('pass_outcomes strata: missing h/pass_distance are not fabricated (P32 D3)', () => {
+  // h 缺失 → 归 low_ball（保守：不把「不知道」混进 high_ball）；pass_distance 缺失 →
+  // **不计入** long_pass/short_pass 任一层（无法判定，不猜）。
+  const { pass_outcomes } = runAudit({
+    events: [{ index: 0, t: 1, type: 'pass', result: 'success', nearest_defender_distance: 12 }],
+  });
+  const s = pass_outcomes.strata;
+  assert.equal(s.high_ball.sample_count, 0);
+  assert.equal(s.low_ball.sample_count, 1);
+  assert.equal(s.long_pass.sample_count, 0);
+  assert.equal(s.short_pass.sample_count, 0);
+  assert.equal(s.open_play.sample_count, 1);
+});
+
+test('pass_outcomes strata do not affect the pressure buckets or escalate anything (P32 D3)', () => {
+  // 软分层的契约：**不改既有键、不产 finding、不进 band**。同一条输入，pressure 桶计数与
+  // 未加分层前一致；findings 里没有分层产生的任何东西。
+  const events = [
+    { index: 0, t: 1, type: 'pass', result: 'success', h: 0.5, pass_distance: 40, nearest_defender_distance: 12 },
+    { index: 1, t: 2, type: 'pass', result: 'intercepted', nearest_defender_distance: 5 },
+  ];
+  const { findings, pass_outcomes } = runAudit({ events });
+  assert.equal(pass_outcomes.unpressured.sample_count, 1);
+  assert.equal(pass_outcomes.pressured.sample_count, 1);
+  assert.equal(pass_outcomes.unpressured.success_count, 1);
+  assert.equal(pass_outcomes.pressured.success_count, 0);
+  // 分层不产 finding：两条 pass 都不该出现任何 detector 的 finding（无出界/无重叠/无责任）。
+  assert.deepEqual(findings, []);
+});
+
+test('aggregateAudit merges strata across seeds without touching the existing keys (P32 D3)', () => {
+  const seedA = runAudit({ events: [{ index: 0, t: 1, type: 'pass', result: 'success', h: 0.5, pass_distance: 40, nearest_defender_distance: 12 }] });
+  const seedB = runAudit({ events: [{ index: 0, t: 1, type: 'pass', result: 'intercepted', h: 0, pass_distance: 10, nearest_defender_distance: 5 }] });
+  const agg = aggregateAudit([seedA, seedB]);
+  const st = agg.pass_outcomes.strata;
+  assert.equal(st.high_ball.sample_count, 1);
+  assert.equal(st.high_ball.success_count, 1);
+  assert.equal(st.long_pass.sample_count, 1);
+  assert.equal(st.short_pass.sample_count, 1);
+  assert.equal(st.short_pass.intercepted_count, 1);
+  // 既有键不受影响（回归：mergePassOutcomes 的原有输出形状不变）。
+  assert.equal(agg.pass_outcomes.unpressured.sample_count, 1);
+  assert.equal(agg.pass_outcomes.pressured.sample_count, 1);
+  assert.equal(agg.pass_outcomes.total_ordinary_passes, 2);
+  // 确定性：两次聚合结果一致。
+  assert.deepEqual(aggregateAudit([seedA, seedB]).pass_outcomes, agg.pass_outcomes);
+});
+
+test('mergePassOutcomes tolerates audits without strata (backward compat, P32 D3)', () => {
+  // 旧 audit 报告（本 change 之前落盘的）没有 strata 键 → 合并时按零计，不崩。
+  const agg = aggregateAudit([
+    { profile: { id: 'p', version: '0' }, findings: [], stats: [], pass_outcomes: { unpressured: { sample_count: 1, out_count: 0, success_count: 1, unknown_outcome_count: 0 } } },
+  ]);
+  assert.equal(agg.pass_outcomes.strata.high_ball.sample_count, 0);
+  assert.equal(agg.pass_outcomes.strata.open_play.sample_count, 0);
+});
+
 // --- P21 L1：真实 audit_input 形状回归（P4.2/P5.1） ---------------------------
 // 前面的合成输入覆盖边界；下面这组用真实引擎采集链路产出的 audit_input
 // （tools/fixtures/real-audit-input.json），钉住「detector 对真实数据不再瞎」这件事。
@@ -1044,40 +1119,34 @@ test('runAudit accepts the known schema_version', () => {
 });
 
 // --- P21 D4：未标定 detector 降级 --------------------------------------------
+//
+// P32（#36）：`ignored_interception` 已删，未标定降级机制的回归样本改用 `player_overlap`
+// （同为 calibrated:false，机制测试不再绑定已删 detector）。
 
-const ignoredInterceptionEvent = (index) => ({
-  events: [
-    {
-      index,
-      t: 200 + index,
-      type: 'pass',
-      result: 'complete',
-      defender_id: 11,
-      corridor_distance: 2.0,
-      pass_distance: 20,
-      pass_speed: 10,
-      defender_moved_toward_corridor: false,
+test('uncalibrated findings carry calibrated:false (P32: player_overlap)', () => {
+  // 同队两人贴到 0.1m（<2.0m 阈值）→ player_overlap 产 realism_warning 且带 calibrated:false。
+  const { findings } = runAudit({
+    events: [],
+    players: {
+      4: [{ t: 1, x: 50, y: 30 }, { t: 1, x: 50, y: 30 }],
+      5: [{ t: 1, x: 50.005, y: 30 }],
     },
-  ],
-});
-
-test('ignored_interception findings are marked calibrated:false (D4)', () => {
-  const { findings } = runAudit(ignoredInterceptionEvent(20));
-  const inter = findings.filter((f) => f.detector_id === 'ignored_interception_opportunity');
-  assert.equal(inter.length, 1);
-  assert.equal(inter[0].severity, 'realism_warning');
-  assert.equal(inter[0].calibrated, false);
+  });
+  const overlap = findings.filter((f) => f.detector_id === 'player_overlap');
+  assert.equal(overlap.length, 1);
+  assert.equal(overlap[0].severity, 'realism_warning');
+  assert.equal(overlap[0].calibrated, false);
   // 其它 detector 的 finding 不受影响（不被打上该标记）。
   for (const f of findings) {
-    if (f.detector_id !== 'ignored_interception_opportunity') assert.equal(f.calibrated, undefined);
+    if (f.detector_id !== 'player_overlap') assert.equal(f.calibrated, undefined);
   }
 });
 
 test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (D4)', () => {
   // 标定状态必须**显式**声明（isUncalibrated 只认 calibrated:true；「没声明」= 未标定，
-  // fail-closed）。默认 profile 里只有 ignored_interception 未标定，其余显式 true。
+  // fail-closed）。默认 profile 里只有 player_overlap 未标定，其余显式 true。
   // 配置块 = 与 detector 对应的对象块（非顶层标量/非 pitch/aggregation）。
-  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'ignored_interception', 'player_overlap', 'invariants']) {
+  for (const blockKey of ['unforced_out', 'inactive_responsibility', 'player_overlap', 'invariants']) {
     const block = DEFAULT_AUDIT_PROFILE[blockKey];
     assert.equal(
       typeof block.calibrated,
@@ -1085,29 +1154,41 @@ test('DEFAULT_AUDIT_PROFILE declares calibration explicitly for every detector (
       `DEFAULT_AUDIT_PROFILE.${blockKey} must explicitly declare calibrated`
     );
   }
-  assert.equal(DEFAULT_AUDIT_PROFILE.ignored_interception.calibrated, false);
   assert.equal(DEFAULT_AUDIT_PROFILE.unforced_out.calibrated, true);
   assert.equal(DEFAULT_AUDIT_PROFILE.inactive_responsibility.calibrated, true);
   assert.equal(DEFAULT_AUDIT_PROFILE.invariants.calibrated, true);
   // P26：阈值 2.0m 是真实比赛常识，但告警率未用真实比赛标定（标定归 #36）→ 显式未标定。
   assert.equal(DEFAULT_AUDIT_PROFILE.player_overlap.calibrated, false);
   assert.equal(DEFAULT_AUDIT_PROFILE.player_overlap.min_distance, 2.0);
+  // P32：#36 删掉了 ignored_interception，其配置块 / band / 映射都必须一并消失。
+  assert.equal(DEFAULT_AUDIT_PROFILE.ignored_interception, undefined);
+  assert.equal(
+    DEFAULT_AUDIT_PROFILE.aggregation.reference_bands.ignored_interception_opportunity,
+    undefined
+  );
 });
 
 test('aggregateAudit does not escalate an uncalibrated detector, even above band (D4)', () => {
-  // 3 个 seed 各有一条 ignored_interception 告警，并给一个 max=0.1 的「已标定」band。
+  // 3 个 seed 各有一条 player_overlap 告警，并给一个 max=0.1 的「已标定」band。
   // detector 未标定 → band 判定不生效 → 不升级 realism_failure。
-  const audits = [1, 2, 3].map((i) => runAudit(ignoredInterceptionEvent(i)));
-  const agg = aggregateAudit(audits, {
-    referenceBands: {
-      ignored_interception_opportunity: { min: 0, max: 0.1, source: 'calibrated-test' },
+  const overlapInput = () => ({
+    events: [],
+    players: {
+      4: [{ t: 1, x: 50, y: 30 }],
+      5: [{ t: 1, x: 50.005, y: 30 }],
     },
   });
-  const inter = agg.detectors.find((d) => d.detector_id === 'ignored_interception_opportunity');
-  assert.equal(inter.anomaly_count, 3);
-  assert.equal(inter.calibration, 'uncalibrated');
-  assert.equal(inter.aggregate_severity, 'realism_warning');
-  assert.equal(inter.band_state, null);
+  const audits = [1, 2, 3].map(() => runAudit(overlapInput()));
+  const agg = aggregateAudit(audits, {
+    referenceBands: {
+      player_overlap: { min: 0, max: 0.1, source: 'calibrated-test' },
+    },
+  });
+  const overlap = agg.detectors.find((d) => d.detector_id === 'player_overlap');
+  assert.equal(overlap.anomaly_count, 3);
+  assert.equal(overlap.calibration, 'uncalibrated');
+  assert.equal(overlap.aggregate_severity, 'realism_warning');
+  assert.equal(overlap.band_state, null);
 });
 
 test('aggregateAudit still escalates a calibrated detector above band (D4 regression)', () => {
@@ -1219,32 +1300,32 @@ test('a partial custom profile cannot make a known-uncalibrated detector look ca
   // 审阅发现的第二条 fail-open 通路：detector_id 在映射表里，但调用方传给 aggregateAudit
   // 的 profile 少了对应配置块（例如只给 reference_bands 的 partial profile）。此时「块缺失」
   // 不能被当成「已标定」——无法证明已标定 → 算未标定。否则 known-uncalibrated 的
-  // ignored_interception_opportunity 会超 band 升级 realism_failure。
+  // player_overlap 会超 band 升级 realism_failure。
   // 用合成 audit 对象直接打 aggregateAudit（runAudit 需要完整 profile，partial 会在
   // detectInvariants 崩——那是另一回事，不属本用例）。
   const audit = {
     profile: { id: 'p', version: '0' },
     findings: [],
     stats: [
-      { detector_id: 'ignored_interception_opportunity', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
+      { detector_id: 'player_overlap', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
     ],
     pass_outcomes: {},
   };
   const partialProfile = { id: 'partial', version: '0', aggregation: { reference_bands: {} } };
   // 先确认这条 detector 在默认 profile 下确实被标为未标定（否则本用例无意义）。
   const withDefault = aggregateAudit([audit], {
-    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+    referenceBands: { player_overlap: { min: 0, max: 0.01, source: 't' } },
   });
   assert.equal(
-    withDefault.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity').calibration,
+    withDefault.detectors.find((x) => x.detector_id === 'player_overlap').calibration,
     'uncalibrated'
   );
   // 换成缺块的 partial profile：仍须未标定、不升级。
   const agg = aggregateAudit([audit], {
     profile: partialProfile,
-    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+    referenceBands: { player_overlap: { min: 0, max: 0.01, source: 't' } },
   });
-  const d = agg.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity');
+  const d = agg.detectors.find((x) => x.detector_id === 'player_overlap');
   assert.equal(d.calibration, 'uncalibrated');
   assert.notEqual(d.aggregate_severity, 'realism_failure');
   assert.equal(d.band_state, null);
@@ -1257,20 +1338,20 @@ test('a profile block without a calibrated key is not trusted (D4 N5)', () => {
     profile: { id: 'p', version: '0' },
     findings: [],
     stats: [
-      { detector_id: 'ignored_interception_opportunity', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
+      { detector_id: 'player_overlap', samples: 10, determinate: 10, unknown: 0, unknown_reasons: {} },
     ],
     pass_outcomes: {},
   };
   const profileWithoutCalibrationKey = {
     ...DEFAULT_AUDIT_PROFILE,
     // 覆盖掉带 calibrated:false 的默认块，改成「只部分覆盖、没有 calibrated 键」。
-    ignored_interception: { defender_speed: 6.0, arrival_margin: 0.5 },
+    player_overlap: { min_distance: 2.0 },
   };
   const agg = aggregateAudit([audit], {
     profile: profileWithoutCalibrationKey,
-    referenceBands: { ignored_interception_opportunity: { min: 0, max: 0.01, source: 't' } },
+    referenceBands: { player_overlap: { min: 0, max: 0.01, source: 't' } },
   });
-  const d = agg.detectors.find((x) => x.detector_id === 'ignored_interception_opportunity');
+  const d = agg.detectors.find((x) => x.detector_id === 'player_overlap');
   assert.equal(d.calibration, 'uncalibrated');
   assert.notEqual(d.aggregate_severity, 'realism_failure');
   assert.equal(d.band_state, null);
@@ -1442,20 +1523,16 @@ test('threshold direction: inactive duration is < (equal static_duration still w
   assert.equal(inactive[0].features.static_duration, 3);
 });
 
-test('threshold direction: interception is strict < (equal arrival does not flag)', () => {
-  // `defenderArrival + margin < ballArrival`：恰等于时不构成机会。改成 `<=` 会让本用例红。
-  const { findings } = runAudit({
+test('threshold direction: long-pass strata boundary is strict > (equal LONG_PASS_M is short)', () => {
+  // P32 软分层：`pass_distance > LONG_PASS_M(22m)` 才进 long_pass 层；恰等于 22m 进 short_pass。
+  // 改成 `>=` 会让本用例红。（顶替已删的 ignored_interception 严格 `<` 方向守卫。）
+  const { pass_outcomes } = runAudit({
     events: [
-      {
-        index: 0, t: 1, type: 'pass', result: 'complete',
-        corridor_distance: 9.0, // 9.0 / 6.0 = 1.5；+0.5 margin = 2.0
-        pass_distance: 20, pass_speed: 10, // 20 / 10 = 2.0 → 恰好相等
-        defender_moved_toward_corridor: false,
-      },
+      { index: 0, t: 1, type: 'pass', result: 'success', pass_distance: 22.0, nearest_defender_distance: 12 },
     ],
   });
-  const inter = findings.filter((f) => f.detector_id === 'ignored_interception_opportunity' && f.severity === 'realism_warning');
-  assert.equal(inter.length, 0);
+  assert.equal(pass_outcomes.strata.short_pass.sample_count, 1);
+  assert.equal(pass_outcomes.strata.long_pass.sample_count, 0);
 });
 
 test('threshold direction: pass_outcomes is strict > (equal threshold is pressured)', () => {
@@ -1517,18 +1594,18 @@ test('threshold direction: near-boundary is strict < (distance == margin is not 
 // golden finding 签名：真实窗口的 finding 集合逐条一致。改判据方向/阈值/删分支，只要让
 // 真实数据上的 finding 集合变化（含「现有边界测试没覆盖到的那一处」），本用例当场红。
 // 签名基于 P21 落盘的 tools/fixtures/real-audit-input.json（逐字节可复现），值由当前正确
-// 实现产出。有意改阈值（#36 标定）时需同步更新——这正是「改了就红」的预期代价。
+// 实现产出。有意改阈值时需同步更新——这正是「改了就红」的预期代价。
+//
+// P32（#36）：本签名同步删除全部 `ignored_interception_opportunity` 行（detector 已删）。
+// 注意「有意改」的先例仍在生效：签名里**没有**任何一行因本次改动而改变 severity/位置——
+// 删的只是被删 detector 自己的 finding，其余 detector 的 finding 不变（删 detector 不改
+// 共享契约）。
 const GOLDEN_FINDINGS = [
-  'clearance | ignored_interception_opportunity | realism_warning | ev=3412 | ent=12',
-  'corner | ignored_interception_opportunity | realism_warning | ev=1687 | ent=7',
   'corner | player_overlap | realism_warning | ev=null | ent=4,5',
-  'free_kick | ignored_interception_opportunity | realism_warning | ev=474 | ent=15',
   'free_kick | inactive_responsibility | unknown | ev=null | ent=6',
-  'out_goal_line | ignored_interception_opportunity | realism_warning | ev=2523 | ent=17',
   'out_goal_line | inactive_responsibility | unknown | ev=null | ent=1',
   'out_goal_line | inactive_responsibility | unknown | ev=null | ent=2',
   'out_goal_line | unforced_out | realism_warning | ev=2523 | ent=null',
-  'out_sideline | ignored_interception_opportunity | realism_warning | ev=263 | ent=16',
   'out_sideline | inactive_responsibility | unknown | ev=null | ent=9',
   'out_sideline | unforced_out | realism_warning | ev=263 | ent=null',
   'throw_in | inactive_responsibility | unknown | ev=null | ent=17',

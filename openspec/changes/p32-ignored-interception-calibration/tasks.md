@@ -17,16 +17,36 @@
 
 ## P2. detector 彻底删除
 
-- [ ] P2.1 `tools/detectors.mjs` 删 `detectIgnoredInterception` + profile 块 + band + 映射 + runAudit 集成 + stats
-- [ ] P2.2 `tools/detector-field-contract.mjs` 删 `ignored_interception_opportunity` 条目
-- [ ] P2.3 删 `tools/detectors.test.mjs` / `tools/detector-field-contract.test.mjs` 相关用例
-- [ ] P2.4 确认 viewer derive 层 `corridor_distance`/`defender_moved_toward_corridor` 生产保留、测试保留
+- [x] P2.1 `tools/detectors.mjs` 删 `detectIgnoredInterception` + profile 块 + band + 映射 + runAudit 集成 + stats
+      — 另删 `DEFAULT_AUDIT_PROFILE.ignored_interception`、`reference_bands.ignored_interception_opportunity`、
+      `DETECTOR_PROFILE_KEY.ignored_interception_opportunity`、`runAudit` 的 `interceptionFindings`
+      集成与 stats 条目。`detectIgnoredInterception` 无其他消费者（grep 确认）。
+- [x] P2.2 `tools/detector-field-contract.mjs` 删 `ignored_interception_opportunity` 条目
+      — 同时把 `pass_outcomes` 的 reads 补上 `h` / `pass_distance`（P3 软分层读的字段）。
+- [x] P2.3 删 `tools/detectors.test.mjs` / `tools/detector-field-contract.test.mjs` 相关用例
+      — 未标定降级机制的回归样本改用 player_overlap；`ignored_interception` 严格 `<` 方向守卫
+      换成新分层的 `LONG_PASS_M` 严格 `>` 方向守卫；golden 签名删 6 行 `ignored_interception_opportunity`；
+      扫描器自检的 `corridor_distance` 锚点换成现存解构读取；新增「删了不再产 finding」守卫。
+      **保留**（不变）：无。
+- [x] P2.4 确认 viewer derive 层 `corridor_distance`/`defender_moved_toward_corridor` 生产保留、测试保留
+      — `viewer/derive-audit-features.js` 未改（生产保留）；`derived-audit.test.js` 的 derive 层
+      corridor 断言保留，只删了 detector 端到端消费用例；`observation.test.js` 全绿。
 
 ## P3. pass_outcomes 分层扩展（软参考）
 
-- [ ] P3.1 `computePassOutcomes` 加 strata：高球（h）/ 长传（pass_distance>22m）/ 重开类型（detail）
-- [ ] P3.2 各层记 sample/out/success/intercepted，不进 band 升级
-- [ ] P3.3 新增分层测试（含「高球 85%」复现与否的对照数据）
+- [x] P3.1 `computePassOutcomes` 加 strata：高球（h）/ 长传（pass_distance>22m）/ 重开类型（detail）
+      — `strata: { high_ball, low_ball, long_pass, short_pass, restart_type, open_play }`，
+      分层在排除判定**之前**累计（否则 restart_type 层在排除后为空）。`LONG_PASS_M = 22.0`
+      与引擎常量同值。
+- [x] P3.2 各层记 sample/out/success/intercepted，不进 band 升级
+      — 每层记 sample/out/success/**intercepted**/lost/unknown_outcome；`classifyPassOutcome`
+      新增识别 `intercepted`/`lost`（此前落 unknown_outcome）。`mergePassOutcomes` 只**加** strata
+      键（既有四桶 + total 不变），缺失 strata 按零计（旧 report 兼容）。分层不产 finding、不进 band。
+- [x] P3.3 新增分层测试（含「高球 85%」复现与否的对照数据）
+      — 新增 5 个用例（分层归类 / 缺失字段不伪造 / 不影响 pressure 桶与 finding / 跨 seed 合并
+      确定性 / 旧 report 无 strata 兼容）。**「高球 85%」复现结论**：真实 fixture 仅 6 条 pass
+      （h>0 者 1 条），样本远不足以复现或否定 85%——登记为后续标定任务（需真实多 seed 全 90min
+      bundle），本轮只提供分层机制与对照口径。见 reviews/review.md。
 
 ## P4. 主 spec 同步 + 收尾
 
