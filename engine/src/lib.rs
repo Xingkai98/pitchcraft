@@ -281,6 +281,9 @@ pub const LONG_PASS_M: f64 = 22.0;
 pub const VERY_LONG_PASS_M: f64 = 35.0;
 pub const LONG_PASS_INTERCEPT_BONUS: f64 = 7.0;
 pub const VERY_LONG_PASS_INTERCEPT_BONUS: f64 = 8.0;
+/// 拦截概率上限（%）：贴防 + 长传加成叠加后的封顶值。P32 起提到具名常量——自洽硬门要断言
+/// 极端贴防场景的整数 roll 命中宽度恰为 `ceil(cap)` = 60（不是浮点漂移值）。
+pub const INTERCEPT_P_CAP: f64 = 60.0;
 /// 传失概率（%）：有压力传球中失准（落点变松散球，双方可争，不直接丢球权）。
 pub const PASS_MISS_P: f64 = 2.5;
 
@@ -1209,6 +1212,51 @@ struct OpportunityTally {
     /// `.p29-progress.md`；压迫方向不受此混淆）。
     shot_window_entries_by_pressure: [u64; 3],
     shot_window_commits_by_pressure: [u64; 3],
+    // ---- P32（#36）：开放比赛拦截概率自洽硬门 ----
+    //
+    // 记账点 = `emit_pass_highlight_inner` 的拦截判定处（出界通道未命中之后、拦截/传失/成功
+    // 三选一之前）——即**精确的「进入拦截 roll 的分母」**。向前推进传球（`emit_forward_pass_highlight`）
+    // 与重开传球都不走该函数，天然被排除（见 `p32_interception_self_consistency` 的分母守卫）。
+    //
+    // 单位口径（关键）：引擎判定是 `fail_roll = rng.next_u64() % 100; fail_roll < interception_p`
+    // ——roll 是 [0,99] 的**整数**，故 `interception_p = 7.5` 命中 `fail_roll ∈ {0..7}` = **8 个
+    // roll 值**，不是 7.5 个。`intercept_*_expected` 因此以「roll 命中值宽度」为单位累加
+    // `ceil(interception_p)`（7.5→8、4.5→5、2.0→2、cap 60.0→60）；**期望拦截数 = expected/100**。
+    // 拿浮点常量直接 ÷100 会把每个样本的期望压低 (p.ceil()−p)/100 → 系统性下偏 → 假红。
+    /// 进入开放比赛拦截 roll 的 pass 总数。
+    intercept_roll_samples: u64,
+    /// Σ `ceil(interception_p)`（roll 命中值宽度单位；除以 100 得期望拦截数）。
+    intercept_roll_expected: u64,
+    /// 实际进入拦截分支的次数（`fail_roll as f64 < interception_p`）。
+    intercept_roll_actual: u64,
+    /// 落点距离桶（0 = 贴防 ≤ `INTERCEPT_D_TIGHT_M`，1 = 中距 ≤ `INTERCEPT_D_MID_M`，2 = 更远）
+    /// 的样本 / 预期 / 实际——与引擎自身的分档边界同源，防「桶边界与判定边界漂移」。
+    intercept_bucket_samples: [u64; 3],
+    intercept_bucket_expected: [u64; 3],
+    intercept_bucket_actual: [u64; 3],
+    /// 长传加成的交叉分层：`meters > LONG_PASS_M`（22m）/ `> VERY_LONG_PASS_M`（35m）。
+    /// 用于守护 `LONG_PASS_INTERCEPT_BONUS` / `VERY_LONG_PASS_INTERCEPT_BONUS` 的接线不被误删
+    /// （加成归零 → 长传桶 expected 相对基线不再抬升 → 守卫红）。samples 与 expected 同记，
+    /// 使测试能用**平均宽度**比较，不受样本量差异混淆。actual 供子层自洽核对。
+    intercept_long_samples: u64,
+    intercept_long_expected: u64,
+    intercept_long_actual: u64,
+    intercept_very_long_samples: u64,
+    intercept_very_long_expected: u64,
+    intercept_very_long_actual: u64,
+    /// 「落点距离桶 × 长传档」组合桶（只记长传侧，非长传侧用同桶减法导出）：
+    ///   - `_long_`      = `meters > LONG_PASS_M`（22m）
+    ///   - `_very_long_` = `meters > VERY_LONG_PASS_M`（35m），是 `_long_` 的**子集**
+    ///   - 「长传但非超长」= `_long_ − _very_long_`（同桶相减，不另记字段）
+    ///
+    /// 分三层而不是只分「长传/非长传」：两个加成常量要**各自**可被守卫杀死。同桶（base 档相同）
+    /// 内，每层的 `interception_p` 是**确定值**（如贴防桶：非长传 7.5、长传非超长 14.5、超长
+    /// 22.5），故 `Σ ceil(p)/n` 是确定整数——删任一加成常量都会让对应层的均值塌回下层值 → 红。
+    /// （只分长传/非长传时，删 `LONG_PASS` 加成会被 `VERY_LONG` 加成遮住而不红——变异实测暴露。）
+    intercept_bucket_long_samples: [u64; 3],
+    intercept_bucket_long_expected: [u64; 3],
+    intercept_bucket_very_long_samples: [u64; 3],
+    intercept_bucket_very_long_expected: [u64; 3],
 }
 
 impl Default for OpportunityTally {
@@ -1269,6 +1317,22 @@ impl Default for OpportunityTally {
             shot_cooldown_resets: 0,
             shot_window_entries_by_pressure: [0; 3],
             shot_window_commits_by_pressure: [0; 3],
+            intercept_roll_samples: 0,
+            intercept_roll_expected: 0,
+            intercept_roll_actual: 0,
+            intercept_bucket_samples: [0; 3],
+            intercept_bucket_expected: [0; 3],
+            intercept_bucket_actual: [0; 3],
+            intercept_long_samples: 0,
+            intercept_long_expected: 0,
+            intercept_long_actual: 0,
+            intercept_very_long_samples: 0,
+            intercept_very_long_expected: 0,
+            intercept_very_long_actual: 0,
+            intercept_bucket_long_samples: [0; 3],
+            intercept_bucket_long_expected: [0; 3],
+            intercept_bucket_very_long_samples: [0; 3],
+            intercept_bucket_very_long_expected: [0; 3],
         }
     }
 }
@@ -1292,6 +1356,60 @@ impl OpportunityTally {
             | OpportunityReason::Restart => {}
         }
     }
+
+    /// P32（#36）：记一次**进入开放比赛拦截 roll** 的传球样本。**只写、零 RNG、零事件流**。
+    ///
+    /// 期望拦截数按 `ceil(interception_p)`（roll 命中值个数）累加，不是浮点概率——见
+    /// `interception_roll_width` 的口径说明。`fail_roll` 由调用方传入（判定用的同一个整数
+    /// roll），命中判定与引擎分支**逐字一致**：`fail_roll as f64 < interception_p`。
+    fn note_interception_roll(
+        &mut self,
+        def_dist_m: f64,
+        meters: f64,
+        interception_p: f64,
+        fail_roll: u64,
+    ) {
+        let width = interception_roll_width(interception_p);
+        let bucket = interception_distance_bucket(def_dist_m);
+        let long = hits_long_pass(meters);
+        let hit = (fail_roll as f64) < interception_p;
+        self.intercept_roll_samples += 1;
+        self.intercept_roll_expected += width;
+        self.intercept_bucket_samples[bucket] += 1;
+        self.intercept_bucket_expected[bucket] += width;
+        if long {
+            self.intercept_long_samples += 1;
+            self.intercept_long_expected += width;
+            self.intercept_bucket_long_samples[bucket] += 1;
+            self.intercept_bucket_long_expected[bucket] += width;
+        }
+        if hits_very_long_pass(meters) {
+            self.intercept_very_long_samples += 1;
+            self.intercept_very_long_expected += width;
+            self.intercept_bucket_very_long_samples[bucket] += 1;
+            self.intercept_bucket_very_long_expected[bucket] += width;
+        }
+        if hit {
+            self.intercept_roll_actual += 1;
+            self.intercept_bucket_actual[bucket] += 1;
+            if long {
+                self.intercept_long_actual += 1;
+            }
+            if hits_very_long_pass(meters) {
+                self.intercept_very_long_actual += 1;
+            }
+        }
+    }
+}
+
+/// 长传分层判据（与 `open_play_interception_p` 的加成判据同源，避免两处边界漂移）。
+fn hits_long_pass(meters: f64) -> bool {
+    meters > LONG_PASS_M
+}
+
+/// 超长传分层判据（同源）。
+fn hits_very_long_pass(meters: f64) -> bool {
+    meters > VERY_LONG_PASS_M
 }
 
 /// D2 纯函数：`deadline = clamp(BASE - DANGER_URGENCY*danger - PRESSURE_URGENCY*pressure
@@ -2692,6 +2810,45 @@ fn compute_movers(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[
     movers
 }
 
+/// 开放比赛传球被拦截的概率（纯函数，零 RNG、零状态）。
+/// 分档按**拦截者到落点距离** `def_dist_m`：贴防 ≤ `INTERCEPT_D_TIGHT_M` / 中距 ≤ `INTERCEPT_D_MID_M`
+/// / 更远；长传（`meters > LONG_PASS_M`，>35m 再叠一档）额外加成；总概率 cap 60.0。
+///
+/// 从 `emit_pass_highlight_inner` 抽出只为让「cap 边界」「档位边界」可被单元测试直接钉死
+/// （P32 #36 的自洽硬门需要断言 `ceil` 量化在 cap 上的取值）。抽函数不改变任何取值或 RNG 顺序。
+fn open_play_interception_p(def_dist_m: f64, meters: f64) -> f64 {
+    let base = if def_dist_m <= INTERCEPT_D_TIGHT_M {
+        INTERCEPT_P_TIGHT
+    } else if def_dist_m <= INTERCEPT_D_MID_M {
+        INTERCEPT_P_MID
+    } else {
+        INTERCEPT_P_FAR
+    };
+    let long_bonus = if meters > LONG_PASS_M { LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
+    let very_long_bonus = if meters > VERY_LONG_PASS_M { VERY_LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
+    (base + long_bonus + very_long_bonus).min(INTERCEPT_P_CAP)
+}
+
+/// 拦截判定的**整数 roll 命中宽度**：判定是 `fail_roll ∈ [0,99]` 的整数与 `interception_p`
+/// 比较（`fail_roll as f64 < interception_p`），故实际命中 `ceil(interception_p)` 个 roll 值
+/// （7.5 → 8、4.5 → 5、2.0 → 2、60.0 → 60）。期望拦截数 = Σ 本值 / 100。
+/// **不得**改用浮点常量本身——那会把每样本期望压低 `(ceil(p)−p)/100` → 系统性下偏。
+fn interception_roll_width(interception_p: f64) -> u64 {
+    // 概率恒 ≥ 0；ceil 后非负，unwrap_or(0) 只防御 NaN（不会发生，纯常量输入）。
+    if interception_p.is_finite() { interception_p.ceil() as u64 } else { 0 }
+}
+
+/// 落点距离桶下标（与 `open_play_interception_p` 的分档边界**同源**，用同两个常量）。
+fn interception_distance_bucket(def_dist_m: f64) -> usize {
+    if def_dist_m <= INTERCEPT_D_TIGHT_M {
+        0
+    } else if def_dist_m <= INTERCEPT_D_MID_M {
+        1
+    } else {
+        2
+    }
+}
+
 /// pass 高亮：起点整数 tick，覆盖 [t, t_end)，参与者 = 传球者(静止) + 接球者(落点)。
 ///
 /// P31 D2：**出界由落点误差涌现**——`allow_out=true` 时落点经 `sample_pass_landing` 加确定性
@@ -2804,17 +2961,11 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
     // 拦截者 = 离落点最近的对方外场球员；拦截概率按"拦截者到落点距离"分档（贴防高、中距中、远离低），
     // 长传额外加成。传失（失准）固定 PASS_MISS_P，球权不直接丢——球到落点变松散球双方争。
     let (def_id, _, def_dist_m) = nearest_defender(st, (clamp01(lx), clamp01(ly)), !home);
-    let base = if def_dist_m <= INTERCEPT_D_TIGHT_M {
-        INTERCEPT_P_TIGHT
-    } else if def_dist_m <= INTERCEPT_D_MID_M {
-        INTERCEPT_P_MID
-    } else {
-        INTERCEPT_P_FAR
-    };
-    let long_bonus = if meters > LONG_PASS_M { LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
-    let very_long_bonus = if meters > VERY_LONG_PASS_M { VERY_LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
-    let interception_p = (base + long_bonus + very_long_bonus).min(60.0);
+    let interception_p = open_play_interception_p(def_dist_m, meters);
     let fail_roll = rng.next_u64() % 100;
+    // P32（#36）记账：**必须**在 `fail_roll` 之后、任何分支之前。零 RNG、零事件流写入——
+    // 只写 `OpportunityTally`，故事件流逐字节不变（golden-v5 守卫）。
+    st.opportunity_tally.note_interception_roll(def_dist_m, meters, interception_p, fail_roll);
     if (fail_roll as f64) < interception_p {
         return intercept_pass_highlight(st, rng, events, t, from, from_pos, to, rx, ry, lead, def_id);
     }
@@ -7728,6 +7879,230 @@ mod tests {
         }
         // 4. 窗口提交是射门的唯一生产者：两处计数应一致。
         assert_eq!(bound_shots, agg.shot_window_commits, "射门数 ≠ 窗口提交数（存在绕过窗口的射门）");
+    }
+
+    // ==== P32（#36）：开放比赛拦截概率自洽硬门 ====
+    //
+    // 把 issue #36 的「detector 逐事件假阳性」换成**引擎侧分布级自洽**：记账点
+    // `OpportunityTally::note_interception_roll` 精确覆盖「进入开放比赛拦截 roll 的 pass」，
+    // 断言实际拦截数落在预期（整数 roll 量化）的统计区间内。原有逐事件 detector 已删（P2）。
+
+    /// 95% 置信区间半宽（Poisson-binomial 的正态近似），**单位 = 拦截次数**。
+    ///
+    /// 每个样本是独立的伯努利试验，但**概率逐样本不同**（p_i = ceil(interception_p_i)/100，
+    /// 取值 8/100、5/100、2/100、15/100、…），故实际分布是 Poisson-binomial 而非二项。
+    /// 其方差 `Σ p_i(1−p_i)` 在 p̄ = (Σ p_i)/n 为加权平均概率时等于 `E·(1−p̄)`（E = 期望拦截
+    /// 次数）——`1.96·sqrt(E·(1−p̄))` 即 95% 半宽。样本足够（每桶 N 数百~上万）时正态近似可靠；
+    /// `insufficient_sample` 的桶不参与断言（见下），避免了小样本区近似失真的区间。
+    ///
+    /// 入参 `expected` 是**roll 宽度单位**（Σ ceil(interception_p)），入参 `samples` 是样本数。
+    fn poisson_binomial_ci95_halfwidth(expected: u64, samples: u64) -> f64 {
+        if samples == 0 {
+            return 0.0;
+        }
+        let expected_count = expected as f64 / 100.0; // Σceil(p) / 100 = 期望拦截次数
+        let p_bar = expected_count / samples as f64;
+        let variance = expected_count * (1.0 - p_bar);
+        1.96 * variance.max(0.0).sqrt()
+    }
+
+    /// 每桶最小样本量：低于此不判定（记 insufficient_sample，不失败）。取 200 与 grill Q9 的
+    /// N≥200 口径一致。
+    const P32_MIN_BUCKET_SAMPLES: u64 = 200;
+
+    /// 断言「实际拦截次数落在期望拦截次数的 95% 区间内」。
+    /// 期望拦截次数 = Σceil(interception_p)/100 = `expected/100`；实际拦截次数 = `actual`。
+    /// 两边都以**拦截次数**为单位比较（换算只此一处，避免前次的 100× 量纲错）。
+    fn assert_interception_self_consistent(label: &str, samples: u64, expected: u64, actual: u64) {
+        if samples < P32_MIN_BUCKET_SAMPLES {
+            return; // insufficient_sample：样本不足，不判定
+        }
+        let expected_count = expected as f64 / 100.0;
+        let half = poisson_binomial_ci95_halfwidth(expected, samples);
+        let lo = expected_count - half;
+        let hi = expected_count + half;
+        assert!(
+            (actual as f64) >= lo && (actual as f64) <= hi,
+            "{}：实际拦截 {} 次落在期望 [{:.1}, {:.1}]（期望 {:.2} 次，样本 {}）的 95% 区间外——\
+             拦截概率接线/RNG 漂移，或记账的期望量化口径错（应为 ceil(interception_p) 累加）",
+            label, actual, lo, hi, expected_count, samples
+        );
+    }
+
+    /// P32（#36）接线守卫 + 逐桶自洽 + 长传加成接线。
+    ///
+    /// 广窗（200 seed）理由：本测试要判**方向性**接线（长传加成是否抬升 expected）与逐桶
+    /// 自洽，样本量不足时方向断言会空跑、区间会失真。实测 200 seed 的贴防/中距桶各数千、
+    /// 远距桶数百（见断言中的样本报告）。20 seed 时贴防桶仅 ~3-6 样本——不足以判定，
+    /// 故按 grill Q9 的 N≥200 口径扩到 200 seed。运行时间与
+    /// `p29_cooldown_is_local_not_match_wide`（同为 200 seed）同量级。
+    ///
+    /// 变异绑定：
+    ///   - 删记账 / 换回旧路径 → `intercept_roll_samples` 归零 → 接线守卫红。
+    ///   - 把 expected 改成浮点常量累加（不 ceil）→ 期望下偏 → 桶自洽断言的区间外（系统性下偏）。
+    ///   - 删长传加成常量 → 长传桶 expected 相对基线不再抬升 → 加成接线断言红。
+    #[test]
+    fn p32_interception_self_consistency() {
+        let mut samples = [0u64; 3];
+        let mut expected = [0u64; 3];
+        let mut actual = [0u64; 3];
+        let mut total_samples = 0u64;
+        let mut total_expected = 0u64;
+        let mut total_actual = 0u64;
+        // 「落点距离桶 × 长传档」组合桶：长传侧直接累计，非长传侧 = 同桶减法。
+        // 方向守卫只看**桶内**比较（见下），跨档比较会被「长传者落点更远 → base 更低」的反向
+        // 效应混淆。
+        let mut bucket_long_samples = [0u64; 3];
+        let mut bucket_long_expected = [0u64; 3];
+        let mut bucket_very_long_samples = [0u64; 3];
+        let mut bucket_very_long_expected = [0u64; 3];
+        for seed in 1..=200u64 {
+            let (st, _events) = run_match(seed, 5400.0);
+            let t = st.opportunity_tally;
+            for b in 0..3 {
+                samples[b] += t.intercept_bucket_samples[b];
+                expected[b] += t.intercept_bucket_expected[b];
+                actual[b] += t.intercept_bucket_actual[b];
+                bucket_long_samples[b] += t.intercept_bucket_long_samples[b];
+                bucket_long_expected[b] += t.intercept_bucket_long_expected[b];
+                bucket_very_long_samples[b] += t.intercept_bucket_very_long_samples[b];
+                bucket_very_long_expected[b] += t.intercept_bucket_very_long_expected[b];
+            }
+            total_samples += t.intercept_roll_samples;
+            total_expected += t.intercept_roll_expected;
+            total_actual += t.intercept_roll_actual;
+        }
+
+        // 1. 接线守卫：记账点必须真实命中（换了路径 / 删了记账 → 归零 → 红）。
+        assert!(total_samples > 0, "拦截 roll 记账样本为 0——记账点未接线（#36 硬门空跑）");
+        assert!(total_actual > 0, "拦截 roll 实际命中为 0——拦截分支不可达或未记账");
+        for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
+            assert!(samples[b] > 0, "{}桶 记账样本为 0——桶边界与判定边界漂移？", name);
+        }
+        // 主要桶（贴防，判定提及的「必须达到最小样本」桶）实测样本：见下方注释。
+        // 实测 200 seed：贴防 23955 / 中距 45536 / 远距 1229（远距桶样本天然稀少——大部分
+        // 落点附近都有防守者）。三桶均 ≥ P32_MIN_BUCKET_SAMPLES(200)，故逐桶自洽全部生效。
+        assert!(
+            samples[0] >= P32_MIN_BUCKET_SAMPLES,
+            "贴防桶样本 {} < {}——主要桶样本不足，逐桶自洽断言会退化为 insufficient_sample",
+            samples[0], P32_MIN_BUCKET_SAMPLES
+        );
+        // 记账恒等式：分桶样本之和 == 总数（防「只记总数不记桶」的漏记）。
+        assert_eq!(
+            samples[0] + samples[1] + samples[2], total_samples,
+            "分桶样本之和({}) ≠ 拦截 roll 总数({})——分桶漏记",
+            samples[0] + samples[1] + samples[2], total_samples
+        );
+        assert_eq!(
+            expected[0] + expected[1] + expected[2], total_expected,
+            "分桶预期之和 ≠ 总预期——分桶量化口径不一致"
+        );
+
+        // 2. 逐桶自洽（样本不足桶静默，贴防/中距桶在标定下样本充足）。
+        assert_interception_self_consistent("全局", total_samples, total_expected, total_actual);
+        for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
+            assert_interception_self_consistent(name, samples[b], expected[b], actual[b]);
+        }
+
+        // 3. 长传加成常量接线（**逐常量**杀死，防互相遮蔽——变异实测：只分「长传/非长传」
+        //    时删 LONG_PASS_INTERCEPT_BONUS 会被 VERY_LONG_PASS_INTERCEPT_BONUS 遮住而不红）。
+        //
+        // 口径：同一距离桶内 base 档相同，故每层的 `interception_p` 是确定值、`ceil` 后的
+        // 平均宽度也是确定整数。贴防桶（base 7.5）三层：
+        //   非长传 ≤22m      → p = 7.5            → 宽度 8   （恒等，基线）
+        //   长传 22–35m      → p = 7.5 + 7   = 14.5 → 宽度 15
+        //   超长 >35m        → p = 7.5 + 7 + 8 = 22.5 → 宽度 23
+        // 删 `LONG_PASS_INTERCEPT_BONUS` → 「长传」层均值塌回 8 → 与 15 不等 → 红。
+        // 删 `VERY_LONG_PASS_INTERCEPT_BONUS` → 「超长」层均值塌回 15 → 与 23 不等 → 红。
+        // 用**均值 == 确定整数**（而非「>」）比较：既杀常量删除，也杀「加成被错接到别的档」。
+        let base_tight = interception_roll_width(INTERCEPT_P_TIGHT); // 8
+        let expect_long = interception_roll_width(INTERCEPT_P_TIGHT + LONG_PASS_INTERCEPT_BONUS); // 15
+        let expect_very = interception_roll_width(
+            INTERCEPT_P_TIGHT + LONG_PASS_INTERCEPT_BONUS + VERY_LONG_PASS_INTERCEPT_BONUS,
+        ); // 23
+        assert_eq!(base_tight, 8, "贴防基线宽度应为 8（常量接线前提）");
+        assert_eq!(expect_long, 15, "贴防 + 长传加成宽度应为 15（常量接线前提）");
+        assert_eq!(expect_very, 23, "贴防 + 长传 + 超长加成宽度应为 23（常量接线前提）");
+
+        // 贴防桶：非长传（基线）/ 长传非超长（+LONG）/ 超长（+LONG+VERY）三层各自样本充足。
+        let tight_non_long_n = samples[0] - bucket_long_samples[0];
+        let tight_long_only_n = bucket_long_samples[0] - bucket_very_long_samples[0];
+        let tight_very_long_n = bucket_very_long_samples[0];
+        let tight_non_long_w = expected[0] - bucket_long_expected[0];
+        let tight_long_only_w = bucket_long_expected[0] - bucket_very_long_expected[0];
+        let total_very_long_n: u64 = bucket_very_long_samples.iter().sum();
+        let total_very_long_w: u64 = bucket_very_long_expected.iter().sum();
+        assert!(
+            tight_non_long_n >= P32_MIN_BUCKET_SAMPLES && tight_long_only_n >= P32_MIN_BUCKET_SAMPLES,
+            "贴防桶 非长传/长传(22-35m) 样本不足（{} / {}）——LONG 加成接线断言会空跑",
+            tight_non_long_n, tight_long_only_n
+        );
+        let avg = |w: u64, n: u64| w as f64 / n as f64;
+        assert!(
+            (avg(tight_non_long_w, tight_non_long_n) - base_tight as f64).abs() < 1e-9,
+            "贴防桶非长传平均宽度 {:.3} ≠ {}（应为基线，无加成）",
+            avg(tight_non_long_w, tight_non_long_n), base_tight
+        );
+        assert!(
+            (avg(tight_long_only_w, tight_long_only_n) - expect_long as f64).abs() < 1e-9,
+            "贴防桶长传(22-35m)平均宽度 {:.3} ≠ {}——LONG_PASS_INTERCEPT_BONUS 未接线/被删/被错接",
+            avg(tight_long_only_w, tight_long_only_n), expect_long
+        );
+
+        // 超长档（>35m）样本天然稀少（实测 200 seed 全距离档仅 108 条：贴防 17 / 中距 78 /
+        // 远距 13）——无法在 N≥200 口径下做逐桶精确均值，故用**宽度的下界**杀掉常量删除：
+        // 每个超长样本的宽度 = ceil(base + LONG + VERY) ≥ ceil(INTERCEPT_P_FAR + 7 + 8) = 17。
+        // 删 `VERY_LONG_PASS_INTERCEPT_BONUS` → 每样本宽度 ≤ ceil(base + LONG) ≤ ceil(7.5+7)=15
+        //  < 17 → 总宽度 < 17·n → 红。上界 23（贴防层）杀「加成被错加大」。
+        assert!(
+            total_very_long_n > 0,
+            "超长档(>35m)在 200 seed 内无可达样本——VERY_LONG 加成接线断言空跑（扩 seed 数？）"
+        );
+        assert!(
+            total_very_long_w >= 17 * total_very_long_n,
+            "超长档平均宽度 {:.2} < 下界 17——VERY_LONG_PASS_INTERCEPT_BONUS 被删或未接线",
+            avg(total_very_long_w, total_very_long_n)
+        );
+        assert!(
+            total_very_long_w <= expect_very * total_very_long_n,
+            "超长档平均宽度 {:.2} > 上界 {}——长传加成被错加/常量被改大",
+            avg(total_very_long_w, total_very_long_n), expect_very
+        );
+    }
+
+    /// P32：整数 roll 量化的纯函数钉死（不依赖模拟样本）——`ceil` 语义在全部档位 + cap 边界
+    /// 上的取值，含「7.5→8、4.5→5、2.0→2、cap 60.0→60」这一组设计点名的期望。
+    #[test]
+    fn p32_interception_roll_width_quantizes_by_ceil() {
+        assert_eq!(interception_roll_width(INTERCEPT_P_TIGHT), 8, "贴防 7.5 → 8（命中 fail_roll 0..7）");
+        assert_eq!(interception_roll_width(INTERCEPT_P_MID), 5, "中距 4.5 → 5");
+        assert_eq!(interception_roll_width(INTERCEPT_P_FAR), 2, "远距 2.0 → 2");
+        // 档位边界（与 open_play_interception_p 的分档常量同源）：
+        // ≤6m 贴防 + 长传 7 + 超长 8 = 22.5 → 23；恰等于边界仍属内档。
+        assert_eq!(open_play_interception_p(INTERCEPT_D_TIGHT_M, LONG_PASS_M), INTERCEPT_P_TIGHT,
+            "落点距离恰等于贴防边界仍属贴防档");
+        assert_eq!(open_play_interception_p(INTERCEPT_D_MID_M, LONG_PASS_M), INTERCEPT_P_MID,
+            "落点距离恰等于中距边界仍属中距档");
+        assert_eq!(open_play_interception_p(INTERCEPT_D_TIGHT_M + 0.1, LONG_PASS_M), INTERCEPT_P_MID,
+            "刚过贴防边界 → 中距档");
+        // 长传加成：> 22m 加 7、> 35m 再加 8（判据是严格 >，恰等于不加）。
+        assert_eq!(open_play_interception_p(INTERCEPT_D_TIGHT_M, LONG_PASS_M + 0.1),
+            INTERCEPT_P_TIGHT + LONG_PASS_INTERCEPT_BONUS, ">22m 加长传档");
+        assert_eq!(open_play_interception_p(INTERCEPT_D_TIGHT_M, VERY_LONG_PASS_M + 0.1),
+            INTERCEPT_P_TIGHT + LONG_PASS_INTERCEPT_BONUS + VERY_LONG_PASS_INTERCEPT_BONUS,
+            ">35m 叠超长档");
+        // cap 边界（**构造**使之触顶）：本场景 base(7.5)+长传 7+超长 8 = 22.5 < 60，故真实
+        // 开放比赛传球够不到 cap——cap 是**防御性封顶**，不是可标定档位。用合成概率输入直接
+        // 钉 `ceil` 语义与 cap 语义：`min(60)` 之上必然记 60（无浮点漂移）。
+        assert_eq!(interception_roll_width(INTERCEPT_P_CAP), 60, "cap 60.0 → 60（整数 roll 量化）");
+        assert_eq!(interception_roll_width(60.0_f64.min(INTERCEPT_P_CAP)), 60, "恰好 60 → 60");
+        assert_eq!(interception_roll_width(59.999), 60, "59.999 向上取整仍为 60（不丢 roll 值）");
+        // cap 的语义由 `.min(INTERCEPT_P_CAP)` 保证：把超过 cap 的合成输入喂进 min 后必为 60。
+        assert_eq!((100.0_f64).min(INTERCEPT_P_CAP), INTERCEPT_P_CAP, "超过 cap 的输入被钳到 60");
+        // 贴防 + 超长传的真实封顶档是 22.5（不是 60）——钉住这个真实值，防止有人误以为
+        // 「贴防 + 长传会触顶」而把 cap 当可标定档（issue #36 的 60.0 cap 表述指防御性上限）。
+        assert_eq!(open_play_interception_p(INTERCEPT_D_TIGHT_M, VERY_LONG_PASS_M + 0.1), 22.5,
+            "真实可达的最高档 = 贴防 7.5 + 长传 7 + 超长 8 = 22.5");
     }
 
     /// 跑一场比赛（与 `simulate` 同构：tick 循环 + 终场前高亮排空），返回状态与事件流。
