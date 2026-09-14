@@ -351,17 +351,17 @@ const DEF_JOCKEY_IDLE_MIN_M: f64 = 1.0;
 // cooldown − bad_angle`；`foul = base + danger + closeness − yellow − foul_cd`；
 // `contain = base + pressure_without_contact`；`jockey = base + distance_fit`）。
 //
-// 标定（40 seed 90min 实测，见 `.p30-progress.md`「打分标定」）：抢断/犯规各只有在**各自的
+// 标定（200 seed 90min 实测，见 `.p30-progress.md`「打分标定」）：抢断/犯规各只有在**各自的
 // 距离窗口 + 角度条件**下才压过 contain/jockey，两窗口由 closeness 尺度/增益差 + 抢断独有的
 // bad_angle 惩罚错开——抢断在「贴身（≲2.5m）且正面（approach）」胜出；犯规在「近身（≲8m）
 // 但已失去抢断位置（身后 / 稍远）」胜出。这不是系数巧合，而是「被过掉的防守者只能拉人」的落点。
-// 实测 90min：tackle ~5.8/场、foul ~22.7/场（均在 L1 带内）。
+// 实测 90min（200 seed）：tackle ~5.6/场、foul ~22.7/场、shot/tackle ~1.23（均在 L1 带内）。
 const BASE_DEF_CONTAIN: f64 = 0.15;
 const CONTAIN_PRESS_GAIN: f64 = 0.55;
 const BASE_DEF_JOCKEY: f64 = 0.05;
 const JOCKEY_FIT_GAIN: f64 = 0.45;
 /// 抢断打分基线（log 尺度）：与 `TACKLE_EAGERNESS` 相加构成抢断的「无几何」倾向。
-const BASE_DEF_TACKLE: f64 = -0.90;
+const BASE_DEF_TACKLE: f64 = -1.10;
 /// 抢断 closeness 增益：把「贴到脚下」放大到能压过 contain/jockey 的量级。必须**大于**
 /// `FOUL_CLOSENESS_GAIN`——两者形状相同，增益差决定「贴身且正面 → 抢断」的分界。
 const TACKLE_CLOSENESS_GAIN: f64 = 1.80;
@@ -2069,13 +2069,15 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     // 为 `SHOT_COOLDOWN_TICKS`）。放在最前，任何状态下都推进，冷却语义与比赛进程绑定。
     st.shot_cooldown_ticks = st.shot_cooldown_ticks.saturating_sub(1);
     // P30 三层 cooldown（D1）衰减（零 RNG、零事件）：defender 级剩余冷却 / pair 级接触年龄 /
-    // 持球者压迫状态，全部每 tick 推进。放在最前，任何状态下都衰减。
+    // 全局犯规冷却 / 持球者压迫状态，全部每 tick 无条件推进（放在最前，任何状态下都衰减——
+    // 犯规后下一 tick 通常进入任意球 `restart_prep`，若只在该分支外递减则冷却永不推进）。
     for c in st.tackle_cooldown.iter_mut() {
         *c = c.saturating_sub(1);
     }
     if st.last_contact_pair.is_some() {
         st.contact_age_ticks = st.contact_age_ticks.saturating_add(1);
     }
+    st.foul_cooldown_ticks = st.foul_cooldown_ticks.saturating_sub(1);
     st.pressure_state_ticks = st.pressure_state_ticks.saturating_sub(1);
     // 1. 死球阶段（transition 不在此阶段，进球/死球已清除）
     if st.dead_ball.is_some() {
@@ -2138,10 +2140,6 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     } else {
         st.hold_ticks += 1;
         st.slot_clock += 1;
-        // 犯规（本轮试点）：犯规冷却递减；冷却结束且本 tick 不触发槽位高亮时评估贴身犯规。
-        if st.foul_cooldown_ticks > 0 {
-            st.foul_cooldown_ticks -= 1;
-        }
         if st.slot_clock >= st.slot_interval {
             // P28 D4：槽位时钟降级为 fallback 触发——不再 `roll_highlight_slot` 选事件类型，
             // 改为开一次行动机会 → 统一评估 → 结算 → 执行。
@@ -4271,12 +4269,14 @@ fn defensive_features(st: &MatchState, defender_id: i32, victim_pos: (f64, f64))
     }
 }
 
-/// pair 级冷却的剩余比例 ∈ [0,1]（0 = 无冷却 / 不是当前接触对）。
+/// pair 级冷却的**剩余**比例 ∈ [0,1]（0 = 已到期 / 不是当前接触对）。
 /// 只在 `(defender, victim)` 恰为最近那次接触对时非零——不同防守者之间不互相锁死（Q1 理由）。
+/// **接触当刻最接近 1**（刚接触完，最该避免立刻再接触），随 `contact_age_ticks` 增长线性衰减，
+/// 达到 `CONTACT_PAIR_COOLDOWN_TICKS` 后归 0（D1：pair 级 5-8 tick 窗口内降低再次接触，**到期恢复**）。
 fn pair_cooldown_ratio(st: &MatchState, defender_id: i32) -> f64 {
     match st.last_contact_pair {
         Some((d, v)) if d == defender_id && v == st.carrier => {
-            st.contact_age_ticks.min(CONTACT_PAIR_COOLDOWN_TICKS) as f64
+            CONTACT_PAIR_COOLDOWN_TICKS.saturating_sub(st.contact_age_ticks) as f64
                 / CONTACT_PAIR_COOLDOWN_TICKS as f64
         }
         _ => 0.0,
@@ -7069,6 +7069,86 @@ mod tests {
         assert!(both < def_cd && both < pair_cd, "两层都冷却应压得更低（{}）", both);
     }
 
+    /// P30 D1（pair 级**方向 + 到期恢复**，实状态绑定）：`pair_cooldown_ratio` 走真实
+    /// `MatchState` 的 `last_contact_pair`/`contact_age_ticks`——接触当刻最接近 1（最该避免
+    /// 立刻再接触），随年龄增长衰减，到期（≥ `CONTACT_PAIR_COOLDOWN_TICKS`）归 0。
+    ///
+    /// 这条测试是为「pair 冷却方向写反」的缺陷专门加的守卫（把 ratio 写成 `age/cooldown`
+    /// 会让接触当刻为 0、到期后恒 1 → 本测试红）。**必须走 `pair_cooldown_ratio` 而非直接
+    /// 喂 `pair_cd_ratio`**——后者是纯函数输入，测不到「实状态 → 比例」这层。
+    #[test]
+    fn p30_pair_cooldown_direction_and_expiry() {
+        let mut st = window_state(&[(11, 0.44, 0.5)]);
+        st.carrier = 9;
+        st.pos[9] = (0.40, 0.5);
+        st.pos[11] = (0.44, 0.5);
+        let vp = st.pos[9];
+        // 不是接触对 → 无 pair 冷却
+        st.last_contact_pair = None;
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "非接触对应无 pair 冷却");
+        st.last_contact_pair = Some((12, 9)); // 别的对
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "别的 pair 不应锁死本防守者");
+        // 恰为本对：接触当刻（age=0）→ 剩余比例 = 1（最满）
+        st.last_contact_pair = Some((11, 9));
+        st.contact_age_ticks = 0;
+        let at_contact = pair_cooldown_ratio(&st, 11);
+        assert!((at_contact - 1.0).abs() < 1e-9, "接触当刻 pair 剩余冷却应为 1（实得 {}）", at_contact);
+        // 衰减：age 越大剩余越小（单调不增）
+        let mut prev = at_contact;
+        for age in 1..=CONTACT_PAIR_COOLDOWN_TICKS {
+            st.contact_age_ticks = age;
+            let r = pair_cooldown_ratio(&st, 11);
+            assert!(r <= prev + 1e-9, "age {} 的剩余冷却 {} 应不增（prev {}）", age, r, prev);
+            prev = r;
+        }
+        // 到期（age == 窗口）→ 归 0（恢复）
+        st.contact_age_ticks = CONTACT_PAIR_COOLDOWN_TICKS;
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "pair 冷却到期应恢复（归 0）");
+        st.contact_age_ticks = CONTACT_PAIR_COOLDOWN_TICKS + 50;
+        assert_eq!(pair_cooldown_ratio(&st, 11), 0.0, "远超窗口仍应恒 0（不反向增长）");
+        // 闭环：接触当刻 score_tackle 被压低 < 到期后 score_tackle（D1 语义）
+        st.contact_age_ticks = 0;
+        let f_hot = defensive_features(&st, 11, vp);
+        st.contact_age_ticks = CONTACT_PAIR_COOLDOWN_TICKS;
+        let f_cold = defensive_features(&st, 11, vp);
+        assert!(score_tackle(&f_hot) < score_tackle(&f_cold),
+            "接触当刻 score({}) 应低于到期后 score({})——pair 冷却方向反了",
+            score_tackle(&f_hot), score_tackle(&f_cold));
+    }
+
+    /// P30 D1（全局 foul 冷却**每 tick 无条件衰减**，实 tick 绑定）：犯规冷却在
+    /// `tick()` 顶部推进，而非只在开放比赛分支——犯规后下一 tick 通常进入任意球
+    /// `restart_prep`（提前 return），若只在该分支递减则冷却永不推进。
+    #[test]
+    fn p30_foul_cooldown_decays_every_tick() {
+        // 构造：一个犯规刚发生（foul_cooldown = FOUL_MIN_GAP_TICKS）、处于 restart_prep 的局
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup, 5400.0);
+        st.foul_cooldown_ticks = FOUL_MIN_GAP_TICKS;
+        st.restart_prep = Some(RestartPrep {
+            player: 9, target: (0.5, 0.5), kind: RestartKind::FreeKick, ticks: 0,
+        });
+        let mut rng = SeededRng::new(1);
+        let mut events = Vec::new();
+        tick(&mut st, &mut rng, &mut events, 1.0);
+        assert_eq!(st.foul_cooldown_ticks, FOUL_MIN_GAP_TICKS - 1,
+            "任意球重开 tick 里 foul 冷却也应推进（否则冷永不衰减）");
+        // 连续推进任意状态（重开 → 发球 → 高亮 …）→ 必须**每个 tick 都递减**、最终到 0
+        // （而非停在某值）。这钉死「衰减放在 tick 顶部、无条件」——若只在开放比赛分支递减，
+        // 一旦进入重开/高亮就停住，本循环立刻红。
+        let mut prev = st.foul_cooldown_ticks;
+        for k in 0..FOUL_MIN_GAP_TICKS {
+            tick(&mut st, &mut rng, &mut events, 2.0 + k as f64);
+            let want = prev.saturating_sub(1);
+            assert_eq!(st.foul_cooldown_ticks, want,
+                "第 {} 个 tick 后 foul 冷却应从 {} 递减到 {}（实得 {}）——未按 tick 推进？",
+                k, prev, want, st.foul_cooldown_ticks);
+            prev = st.foul_cooldown_ticks;
+        }
+        assert_eq!(st.foul_cooldown_ticks, 0,
+            "连续 tick 后 foul 冷却应衰减到 0（实得 {}）", st.foul_cooldown_ticks);
+    }
+
     /// P30 D4：吃黄球员的犯规分打折（`FOUL_YELLOW_PENALTY`），且**不改**其它动作的分。
     #[test]
     fn p30_foul_yellow_deterrence() {
@@ -7107,11 +7187,20 @@ mod tests {
         // 超阈值（13m）→ None
         let n = select_defensive_action(&DefensiveFeatures { dist_m: 13.0, ..feat() });
         assert_eq!(n.0, DefensiveAction::None, "超阈值应选 None");
-        // 分数最高的动作与返回值一致（选一自洽）
+        // 分数最高的动作与返回值一致（选一自洽——动作与 argmax 对应，不只是 enum 类型互斥）
         let f = DefensiveFeatures { dist_m: 2.0, danger: 0.9, depth_lead_m: -3.0, ..feat() };
         let (a, sc) = select_defensive_action(&f);
-        let all = [score_tackle(&f), score_foul(&f), score_contain(&f), score_jockey(&f)];
-        let max = all.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+        let all = [
+            (DefensiveAction::Tackle, score_tackle(&f)),
+            (DefensiveAction::Foul, score_foul(&f)),
+            (DefensiveAction::Contain, score_contain(&f)),
+            (DefensiveAction::Jockey, score_jockey(&f)),
+        ];
+        let (argmax_action, max) = all.iter().cloned().fold(
+            (DefensiveAction::None, f64::NEG_INFINITY),
+            |acc, (act, sc)| if sc > acc.1 { (act, sc) } else { acc },
+        );
+        assert_eq!(a, argmax_action, "返回动作应为 argmax（实得 {:?}）", a);
         assert_eq!(sc, max, "返回的 score 应为四者最高");
     }
 
@@ -7119,18 +7208,46 @@ mod tests {
     /// 的返回是单一枚举，`resolve_action_opportunity` 对 Tackle/Foul 走互斥分支。
     #[test]
     fn p30_never_both_tackle_and_foul() {
-        // 扫描一个几何网格，断言任意组合下都只返回一个动作
+        // **事件层**守卫（这是审查指出的原测试空洞之处）：跑真实比赛，逐场断言**同一 tick**
+        // 绝不既产 tackle 又产 foul。同一机会点只选一个防守动作 → 执行层只产一个防守中断事件；
+        // 若打分/执行脱节（例如 resolve 或执行层另追加事件），本断言立刻红。
+        let mut saw_tackle_tick = 0u64;
+        let mut saw_foul_tick = 0u64;
+        for seed in 1..=60u64 {
+            let (_, events) = run_match(seed, 5400.0);
+            // 按 t 归并：同一 t 的防守中断事件（tackle / foul）至多一条
+            let mut last_t: Option<f64> = None;
+            let mut n_break = 0u32;
+            for e in &events {
+                let is_break = matches!(e.type_, EventType::Tackle | EventType::Foul);
+                if !is_break { continue; }
+                if e.type_ == EventType::Tackle { saw_tackle_tick += 1; }
+                if e.type_ == EventType::Foul { saw_foul_tick += 1; }
+                if last_t == Some(e.t) {
+                    n_break += 1;
+                } else {
+                    assert_eq!(n_break, 0, "seed {} t={} 同一 tick 出现多个防守中断事件（既抢又犯？）", seed, e.t);
+                    last_t = Some(e.t);
+                }
+            }
+            assert_eq!(n_break, 0, "seed {} 存在同一 tick 多个防守中断事件", seed);
+        }
+        // 两类事件都真实出现（非空跑）
+        assert!(saw_tackle_tick > 0 && saw_foul_tick > 0,
+            "tackle/foul 事件未同时出现（tackle {} / foul {}）", saw_tackle_tick, saw_foul_tick);
+
+        // **纯函数层**（保留）：几何网格上 select 恒返回单一动作、结算与之互斥一致。
         for dist in [0.2f64, 0.5, 1.0, 2.0, 3.0, 5.0, 7.0, 9.0, 11.0] {
             for lead in [-5.0f64, -2.0, 0.0, 2.0, 5.0] {
                 for danger in [0.0f64, 0.5, 1.0] {
                     let f = DefensiveFeatures { dist_m: dist, depth_lead_m: lead, danger, ..feat() };
-                    let (a, _) = select_defensive_action(&f);
-                    // 返回单一动作——枚举天然互斥；关键是它落在一个合法值上
-                    assert!(matches!(a,
-                        DefensiveAction::Tackle | DefensiveAction::Foul
-                        | DefensiveAction::Contain | DefensiveAction::Jockey | DefensiveAction::None),
-                        "dist={} lead={} danger={} 返回非法动作", dist, lead, danger);
-                    // 结算层：同一 action 只产一个结算
+                    let (a, sc) = select_defensive_action(&f);
+                    // 返回单一动作 + 分数应为四者最高（选一自洽，非仅 enum 类型互斥）
+                    let scores = [score_tackle(&f), score_foul(&f), score_contain(&f), score_jockey(&f)];
+                    let max = scores.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+                    if a != DefensiveAction::None {
+                        assert_eq!(sc, max, "dist={} lead={} danger={} 返回分非最高", dist, lead, danger);
+                    }
                     let carrier = CarrierPlan { action: Some(CarrierAction::Dribble), dead_ball: None,
                         situation: None, exec: CarrierExecution::ContinueDribble };
                     let r = resolve_action_opportunity(&carrier, a);

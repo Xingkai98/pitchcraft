@@ -76,11 +76,11 @@
 
 引擎 SHALL 使普通射门与抢断两类核心事件的数量级相当（防某一类塌缩/爆炸）。**P30 起语义更新**：射门由 hazard 涌现（2B，非槽强制）、抢断由防守接触竞争涌现（2C，非槽强制），两者的比值不再由槽位配额决定，而是「两类涌现事件量级相当」的经验体量带。
 
-#### Scenario: 射门 / 抢断体量比
+#### Scenario: 射门槽占比
 - **GIVEN** 引擎以多 seed 模拟
-- **THEN** 普通射门事件总数 / tackle 事件总数 SHALL ∈ [1.0, 1.8]（P30 实测 1.12；非槽位配额，为两类事件量级相当的 sanity 带）
+- **THEN** 普通射门事件总数 / tackle 事件总数 SHALL ∈ [1.0, 1.8]（P30 实测 1.12——**非槽位配额**：射门由 hazard 涌现、抢断由防守接触竞争涌现，此带为「两类事件量级相当」的 sanity 带）
 
-### Requirement: 抢断触发决策（距离感知 + 防守动作竞争）
+### Requirement: 抢断触发决策（距离感知 + 抢断积极性）
 
 引擎 SHALL 不固定概率必抢，而是由防守者基于情境（几何 + 冷却）自行判断是否抢断：每个防守机会点对候选防守者按统一防守动作打分选中抢断时才产 `tackle`。抢断的**资格与倾向**完全由打分阶段判定（`select_defensive_action`），取代旧的「贴身阈值 + 抢断积极性低概率掷定」二元判定：超出就近阈值（约 12m）的防守者无任何防守动作资格（不产 tackle/contain/jockey）；距离越近（`closeness`）、越正面（`approach`）→ 抢断分越高；身后回追（`bad_angle`）→ 抢断分被压低（犯规由此接管）。判据为引擎内常量 + 几何/冷却量，`SHALL NOT` 消耗 RNG 决定「是否去抢」。
 
@@ -92,13 +92,13 @@
 - **GIVEN** 最近防守者距离超过阈值
 - **THEN** 不产 tackle，该次机会落回 pass/dribble/shot（当作普通进攻事件处理）
 
-#### Scenario: 抢断资格由打分判定
+#### Scenario: 抢断积极性
 - **GIVEN** 最近防守者距离 ≤ 阈值
-- **THEN** 由 `select_defensive_action` 对 tackle/foul/contain/jockey 四类 score 取最高决定是否抢断——贴身且正面时抢断胜出，中距时 contain/jockey 胜出，近身但失位时犯规胜出；**不消耗 RNG 决定是否去抢**
+- **THEN** 由 `select_defensive_action` 对 tackle/foul/contain/jockey 四类 score 取最高决定是否抢断——贴身（closeness）且正面（approach）时抢断分最高而胜出，中距时 contain/jockey 胜出，近身但失位（bad_angle）时犯规胜出；**不再消耗 RNG 掷定「是否去抢」**（旧「抢断积极性低概率掷定」已被打分取代）
 
-#### Scenario: 抢断频率由涌现决定
-- **WHEN** 一整场比赛模拟
-- **THEN** tackle 事件总数由开放比赛的防守机会点数量与几何分布涌现（不再由槽位数量或固定积极性概率决定），且与比赛时长同向缩放（长比赛机会点多 → 抢断多）
+#### Scenario: 抢断频率目标
+- **WHEN** 一整场比赛（2700s / 5400s）模拟
+- **THEN** tackle 事件总数由开放比赛的防守机会点数量与几何分布**涌现**（不再由槽位数量或固定积极性概率决定），且与比赛时长同向缩放（长比赛机会点多 → 抢断多）；90min 场均落在经验体量带 [2,15]
 
 #### Scenario: 抢断可失败
 - **WHEN** 引擎产出一条 tackle 事件
