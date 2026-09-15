@@ -31,7 +31,7 @@ Rust 侧同口硬门：`engine/src/lib.rs` 的
 
 | 口径 | 结果 |
 |---|---|
-| 真实采集窗口（每 seed 的 6 个真实重开窗口 + 死球窗口；seed 42 1 2 3 4 5） | **全零** |
+| 真实采集 fixture（`tools/fixtures/real-audit-input.json`，**P27 时代冻结快照**）| ⚠️ **不作为本 change 的门**：该文件是 `_provenance` 自述的「SNAPSHOT，字段值在生成时冻结」，仍是**旧引擎**的输出（含 1 条 `corner 4,5@0.434m`）。它的用途是 detector 字段**形状**契约，不是间距门；不重新生成（生成器硬编码 `SEED=42`，且 P34 已改事件流，重生成会连带改形状契约与 golden 签名——超出本 change 范围）。**本 change 的真实门是下面的整场滑窗。** |
 | 整场滑窗 `tools/spacing-sweep.mjs`（每 seed 2157 窗） | **全零**（默认集 `42 1 2 3 7 59 18 94` + fresh seed 批 `5 17 29 41 53 67 71 83 97 101 127 149`）|
 | Rust 端点门 `p53_same_team_spacing_ge_2m`（10 seed 整场） | 绿 |
 | Rust 拍内中点门 `p53_same_team_spacing_holds_between_anchors`（8 seed） | 绿 |
