@@ -36,27 +36,18 @@ function teamOf(id, lineupMap) {
   return null;
 }
 
-// 罚下球员及其离场时刻（红牌 / 二黄升级）。引擎在 `foul` 事件带 `card` 字段；罚下后该球员
-// **不再出现在任何事件**（spec：不得成为持球者/追逐者/抢断者/传球目标/开球者，也不得进
-// movers）——因此引擎侧已无位置语义。但 viewer 的时间线会**保持其最后锚点**，若不显式排除，
-// 该球员会以「幽灵」形式停在场上：既被画出来，又被 audit 采样为有效位置（P34 审阅 R2-P0-1
-// 的残留全部来自此类幽灵：跑动队友擦过静止幽灵 → detector 报同队重叠）。
-// 返回 Map<id, t>（首次罚下时刻）。
+// 罚下球员及其离场时刻。引擎 `apply_card` **把二黄升级也记为 `card:"red"`**（"二黄变红：
+// 罚下，事件按红牌展示"），故 `foul` 事件的 `card:"red"` 是罚下的**唯一**对外信号；黄牌
+// （`card:"yellow"`）不产生罚下，无需跟踪。罚下后该球员**不再出现在任何事件**（spec：
+// 不得成为持球者/追逐者/抢断者/传球目标/开球者，也不得进 movers）——引擎侧已无位置语义。
+// 但 viewer 的时间线会**保持其最后锚点**，若不显式排除，该球员会以「幽灵」形式停在场上：
+// 既被画出来，又被 audit 采样为有效位置（P34 审阅 R2 的残留全部来自此类幽灵：跑动队友
+// 擦过静止幽灵 → detector 报同队重叠）。返回 Map<id, t>（首次罚下时刻）。
 function sentOffTimes(events = []) {
-  const yellow = new Set();
   const out = new Map();
   for (const e of events ?? []) {
-    if (!e || e.type !== 'foul' || typeof e.subject !== 'number') continue;
-    if (e.card === 'red') {
-      if (!out.has(e.subject)) out.set(e.subject, e.t);
-    } else if (e.card === 'yellow') {
-      // 二黄升级红牌：同人第二张黄牌即离场。
-      if (yellow.has(e.subject)) {
-        if (!out.has(e.subject)) out.set(e.subject, e.t);
-      } else {
-        yellow.add(e.subject);
-      }
-    }
+    if (!e || e.type !== 'foul' || e.card !== 'red' || typeof e.subject !== 'number') continue;
+    if (!out.has(e.subject)) out.set(e.subject, e.t);
   }
   return out;
 }
