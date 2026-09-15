@@ -603,7 +603,7 @@ pub const TRANSITION_TICKS: u32 = 4;
 /// 边缘误报（实测 2.05 余量下仍留 1.996–1.999m 的 finding，2.08 归零）。
 /// 判定与推开都在真实米制几何（x×105 / y×68）算——归一化欧氏口径在 105×68 球场上
 /// x 方向 2.1m、y 方向仅 1.36m，正是 #53 要根治的口径分裂。
-pub const SAME_TEAM_MIN_DIST_M: f64 = 2.08;
+pub const SAME_TEAM_MIN_DIST_M: f64 = 2.2;
 /// 分离判定容差：`separate_pair_m` 把间距推到**恰为** `SAME_TEAM_MIN_DIST_M`，浮点计算
 /// 会让实际值落在 `阈值 − 1e-16` 量级——若用严格 `<` 判定「已合规」，这类对会被反复
 /// 误判为「起点违规」而放弃扫掠修复（实测不收敛的来源之一）。内部「是否已达标」比较
@@ -621,10 +621,14 @@ fn same_team_ok_m(a: (f64, f64), b: (f64, f64)) -> bool {
 /// 累积的，介入越少、对比赛动态扰动越小）。
 const SAME_TEAM_SWEPT_MIN_M: f64 = SAME_TEAM_MIN_DIST_M - 0.06;
 
-/// 拍内扫掠侧向推移上限（米/拍）。取最快跑位速度 `RUN_SPEED_MS`（4m/s）× 1s 拍长：侧向
-/// 位移不得超过该球员本拍本可跑出的距离，否则 `p5_approach_cap`（单拍位移护栏）会红，
-/// 且不符合「最小必要推移」。超限即本拍无解（近乎对穿），留给下一拍。
-const SAME_TEAM_SWEPT_PUSH_CAP_M: f64 = RUN_SPEED_MS * TICK_SECONDS;
+/// carrier（或其它需保护几何的球员）在拍内侧推中的**分摊比例**：只承担这一小份，队友
+/// 吸收其余。0.12 实测调参——0（完全豁免）会让对穿的中点越界残留，0.5（对半）破 L3。
+const SWEPT_LIGHT_SHARE: f64 = 0.12;
+
+/// 拍内扫掠侧向推移上限（米/拍）。取 `SAME_TEAM_MIN_DIST_M * 3`：与 `budget` 同量级——
+/// 近对穿的侧推需数倍阈值才收敛（实测 ~3.4m），而分离位移本就允许超出单拍步长一个预算
+/// （`p5_approach_cap` 的上界 = 步长 + 预算）。超限即本拍无解，留给下一拍。
+const SAME_TEAM_SWEPT_PUSH_CAP_M: f64 = SAME_TEAM_MIN_DIST_M * 3.0;
 
 /// 同队间距分离的迭代上限（D2）。一轮 pair sweep 不保证全局无冲突：被后续 pair
 /// 推开的球员可能重新靠近先前的球员。solver 扫到无改动即停（常见 2–3 轮），此上限
@@ -3412,6 +3416,10 @@ fn emit_tackle_highlight_impl(
     // 抢断结算空间分离：subject/carrier 不再同落接触点（观感：两圆点叠一个、号码糊）。
     // 终点随事件发出，viewer 在 tackle 演绎里把两人分别画到各自终点——两端一致、不引入额外跳变。
     let (subject_end, carrier_end) = tackle_settle_points(victim_pos, def_pos, success);
+    // P34（#53）：结算点 `subject_end`/`carrier_end` 是**跨队**分离（抢断者 vs 被抢者），
+    // proposal 明确列为 out of scope（`player_overlap` 只查同队）。被抢者结算点与**其本方
+    // 队友**的间距由后续拍的统一分离负责——本拍此处不动，避免与 def↔victim 的跨队结算间距
+    // 硬门（`tackle_stream_participants_not_overlapping`）冲突。
     let t_end = t + TICK_SECONDS;
     st.highlight = Some(Highlight {
         t_end,
@@ -3422,7 +3430,29 @@ fn emit_tackle_highlight_impl(
             HighlightOutcome::TackleFail { victim, contact: victim_pos }
         },
     });
-    let movers = beat_movers(st, rng, t, &[victim, def_id], &[victim, def_id]);
+    let mut movers = beat_movers(st, rng, t, &[victim, def_id], &[victim, def_id]);
+    // 被抢者被对账到 `carrier_end`（`finalize_highlight` 会写入 `st.pos`）——若该点落在
+    // **被抢者本方队友** 2m 内，把**队友**推开（不是推被抢者：推它会破坏 def↔victim 的
+    // 跨队结算间距硬门）。队友不是本事件参与者，其位移不影响该间距。零 RNG。
+    let pushed_from = carrier_end;
+    let mut pushed: Vec<Mover> = Vec::new();
+    for oid in 0..22i32 {
+        if oid == victim || oid == def_id || st.sent_off[oid as usize] { continue; }
+        if (oid <= 10) != (victim <= 10) { continue; } // 同队
+        let op = st.pos[oid as usize];
+        if same_team_dist_m(pushed_from, op) < SAME_TEAM_MIN_DIST_M {
+            let (_, np) = separate_pair_m(pushed_from, op, SAME_TEAM_MIN_DIST_M, false, true);
+            if np != op {
+                st.pos[oid as usize] = np;
+                st.last_emitted[oid as usize] = np;
+                pushed.push(Mover {
+                    id: oid, from_x: op.0, from_y: op.1, to_x: np.0, to_y: np.1,
+                    speed: RUN_SPEED_MS, action: "run".to_string(),
+                });
+            }
+        }
+    }
+    movers.extend(pushed);
     events.push(beat_event(t, None, None, movers));
     let event = Event {
         t, type_: EventType::Tackle, subject: def_id,
@@ -4384,13 +4414,13 @@ fn separate_same_team_m(
     pos: &mut [(f64, f64); 22],
     sent_off: &[bool; 22],
     frozen: &[bool; 22],
-    swept_exempt: &[bool; 22],
+    swept_light: &[bool; 22],
 ) {
     // 每名球员每拍的**分离位移预算**（米）。多轮扫掠会把修正累积（实测把 mover 推出
     // 7.5m/拍，破 `p5_approach_cap`：单拍位移必须 ≤ 步长 + 有限预算）。同队分离在几何上
     // 最多只需把一对推到相隔一个阈值，故给每人一个 `SAME_TEAM_MIN_DIST_M` 预算，用尽即
     // 不再推动该球员（残留重叠交给下一拍，而不是让他横穿球场）。
-    let mut budget = [SAME_TEAM_MIN_DIST_M; 22];
+    let mut budget = [SAME_TEAM_MIN_DIST_M * 3.0; 22];
     for _ in 0..SAME_TEAM_SEPARATION_MAX_ROUNDS {
         let mut changed = false;
         for a in 0..22usize {
@@ -4418,12 +4448,12 @@ fn separate_same_team_m(
                 // （只查端点会漏掉「穿过队友」）。**只做侧向推移**：沿最近点方向把终点
                 // 推离，不改两人本拍行进距离 ⇒ 对比赛动态的扰动最小。
                 // 起点本身已 <2m 时本拍无解，跳过（起点不可动）。
-                let a2 = !frozen[a] && !swept_exempt[a] && budget[a] > 1e-9;
-                let b2 = !frozen[b] && !swept_exempt[b] && budget[b] > 1e-9;
+                let a2 = !frozen[a] && budget[a] > 1e-9;
+                let b2 = !frozen[b] && budget[b] > 1e-9;
                 if !a2 && !b2 { continue; }
                 let pa = pos[a];
                 let pb = pos[b];
-                let (na, nb) = sweep_pair_lateral(starts[a], pa, starts[b], pb, a2, b2);
+                let (na, nb) = sweep_pair_lateral(starts[a], pa, starts[b], pb, a2, b2, swept_light[a], swept_light[b]);
                 if a2 && na != pa {
                     budget[a] = (budget[a] - same_team_dist_m(na, pa)).max(0.0);
                     pos[a] = na; changed = true;
@@ -4438,44 +4468,76 @@ fn separate_same_team_m(
     }
 }
 
-/// 拍内扫掠修正（**侧向仅**）：若两人本拍线性轨迹（`from`→`to`）最近点 < 2m，沿该最近点
-/// 方向把终点推离到刚好达标。只改终点的**横向**位置，保持两人本拍位移方向与长度大致不变
-/// ——最小化对比赛动态的扰动。起点不可动；最近点靠近起点（`s*` 小）时本拍无力修复，原样返回。
+/// 拍内扫掠修正（**侧向推移 + 迭代收敛**）：viewer 在锚点间线性插值，两人的拍内轨迹
+/// 最近点 < `SAME_TEAM_SWEPT_MIN_M` 时沿最近点方向把终点推离；单次侧推欠修正（推终点会
+/// 让最近点漂移），故 pair 内部迭代到收敛。`swept_light` 侧只承担 `SWEPT_LIGHT_SHARE`。
+/// 起点不可动；起点本身已 < 阈值时本拍无解、原样返回。零 RNG、确定性。
 fn sweep_pair_lateral(
     a0: (f64, f64), a1: (f64, f64),
     b0: (f64, f64), b1: (f64, f64),
     a_movable: bool, b_movable: bool,
+    a_light: bool, b_light: bool,
 ) -> ((f64, f64), (f64, f64)) {
     if !a_movable && !b_movable { return (a1, b1); }
-    if same_team_dist_m(a0, b0) < SAME_TEAM_SWEPT_MIN_M { return (a1, b1); } // 起点遗留、本拍无解
-    let r0 = ((a0.0 - b0.0) * PITCH_LENGTH_M, (a0.1 - b0.1) * PITCH_WIDTH_M);
-    let r1 = ((a1.0 - b1.0) * PITCH_LENGTH_M, (a1.1 - b1.1) * PITCH_WIDTH_M);
-    let d = (r1.0 - r0.0, r1.1 - r0.1);
-    let vv = d.0 * d.0 + d.1 * d.1;
-    let sk = if vv < 1e-12 { 0.0 } else { (-(r0.0 * d.0 + r0.1 * d.1) / vv).clamp(0.0, 1.0) };
-    let (rx, ry) = (r0.0 + sk * d.0, r0.1 + sk * d.1);
-    let dmin = (rx * rx + ry * ry).sqrt();
-    if dmin >= SAME_TEAM_SWEPT_MIN_M || sk < 1e-6 { return (a1, b1); }
-    let (ux, uy) = if dmin < 1e-9 {
-        let l = vv.sqrt();
-        if l < 1e-12 { (1.0, 0.0) } else { (-d.1 / l, d.0 / l) }
-    } else { (rx / dmin, ry / dmin) };
-    let gap = SAME_TEAM_SWEPT_MIN_M - dmin;
+    if same_team_dist_m(a0, b0) < SAME_TEAM_SWEPT_MIN_M { return (a1, b1); }
     let (sa, sb) = match (a_movable, b_movable) {
-        (true, true) => (0.5, 0.5), (true, false) => (1.0, 0.0), (false, true) => (0.0, 1.0),
+        (true, false) => (1.0, 0.0),
+        (false, true) => (0.0, 1.0),
+        (true, true) => match (a_light, b_light) {
+            (true, false) => (SWEPT_LIGHT_SHARE, 1.0 - SWEPT_LIGHT_SHARE),
+            (false, true) => (1.0 - SWEPT_LIGHT_SHARE, SWEPT_LIGHT_SHARE),
+            _ => (0.5, 0.5),
+        },
         (false, false) => unreachable!(),
     };
-    let la = gap * sa / sk;
-    let lb = gap * sb / sk;
-    // 侧移上限（见 `SAME_TEAM_SWEPT_PUSH_CAP_M`）：超出即近乎对穿，交给下一拍（外层多轮
-    // sweep 会因起点更新继续收敛，且每人有每拍分离预算，故不会累积失控）。
-    if la > SAME_TEAM_SWEPT_PUSH_CAP_M || lb > SAME_TEAM_SWEPT_PUSH_CAP_M {
-        return (a1, b1);
+    // 两轮分摊尝试：先用**分摊份额**（保护 carrier 几何）；若仍达不到标（近对穿，
+    // 侧推需大位移），退到**对半**再试。代价（carrier 多推一点）只在真正要重叠时才付，
+    // 符合「最小必要推移」。
+    let shares: [[f64; 2]; 2] = [[sa, sb], if a_movable && b_movable { [0.5, 0.5] } else { [sa, sb] }];
+    let mut best = (a1, b1);
+    let mut best_dmin = -1.0f64;
+    for [wa, wb] in shares {
+        let (mut ca, mut cb) = (a1, b1);
+        for _ in 0..8 {
+            let r0 = ((a0.0 - b0.0) * PITCH_LENGTH_M, (a0.1 - b0.1) * PITCH_WIDTH_M);
+            let r1 = ((ca.0 - cb.0) * PITCH_LENGTH_M, (ca.1 - cb.1) * PITCH_WIDTH_M);
+            let d = (r1.0 - r0.0, r1.1 - r0.1);
+            let vv = d.0 * d.0 + d.1 * d.1;
+            let sk = if vv < 1e-12 { 0.0 } else { (-(r0.0 * d.0 + r0.1 * d.1) / vv).clamp(0.0, 1.0) };
+            let (rx, ry) = (r0.0 + sk * d.0, r0.1 + sk * d.1);
+            let dmin = (rx * rx + ry * ry).sqrt();
+            if dmin >= SAME_TEAM_SWEPT_MIN_M || sk < 1e-9 { break; }
+            let (ux, uy) = if dmin < 1e-9 {
+                let l = vv.sqrt();
+                if l < 1e-12 { (1.0, 0.0) } else { (-d.1 / l, d.0 / l) }
+            } else { (rx / dmin, ry / dmin) };
+            let gap = SAME_TEAM_SWEPT_MIN_M - dmin;
+            let la = gap * wa / sk;
+            let lb = gap * wb / sk;
+            let (nca, ncb) = (
+                (clamp01(ca.0 + la * ux / PITCH_LENGTH_M), clamp01(ca.1 + la * uy / PITCH_WIDTH_M)),
+                (clamp01(cb.0 - lb * ux / PITCH_LENGTH_M), clamp01(cb.1 - lb * uy / PITCH_WIDTH_M)),
+            );
+            if nca == ca && ncb == cb { break; }
+            if a_movable && same_team_dist_m(nca, a1) > SAME_TEAM_SWEPT_PUSH_CAP_M { break; }
+            if b_movable && same_team_dist_m(ncb, b1) > SAME_TEAM_SWEPT_PUSH_CAP_M { break; }
+            ca = nca;
+            cb = ncb;
+        }
+        // 复核整条轨迹的最恶劣间距（决定这轮成果取舍）。
+        let dm = {
+            let r0 = ((a0.0 - b0.0) * PITCH_LENGTH_M, (a0.1 - b0.1) * PITCH_WIDTH_M);
+            let r1 = ((ca.0 - cb.0) * PITCH_LENGTH_M, (ca.1 - cb.1) * PITCH_WIDTH_M);
+            let d = (r1.0 - r0.0, r1.1 - r0.1);
+            let vv = d.0 * d.0 + d.1 * d.1;
+            let sk = if vv < 1e-12 { 0.0 } else { (-(r0.0 * d.0 + r0.1 * d.1) / vv).clamp(0.0, 1.0) };
+            let (rx, ry) = (r0.0 + sk * d.0, r0.1 + sk * d.1);
+            (rx * rx + ry * ry).sqrt()
+        };
+        if dm > best_dmin { best_dmin = dm; best = (ca, cb); }
+        if best_dmin >= SAME_TEAM_SWEPT_MIN_M { break; }
     }
-    (
-        (clamp01(a1.0 + la * ux / PITCH_LENGTH_M), clamp01(a1.1 + la * uy / PITCH_WIDTH_M)),
-        (clamp01(b1.0 - lb * ux / PITCH_LENGTH_M), clamp01(b1.1 - lb * uy / PITCH_WIDTH_M)),
-    )
+    best
 }
 
 /// 单点终点分离（#53 D2 盲区兜底）：把**由事件直接指定的球员终点**（传球接球点 /
@@ -4492,60 +4554,57 @@ fn separate_target_point(st: &MatchState, id: i32, target: (f64, f64)) -> (f64, 
     separate_target_points(st, &[(id, target)])[0].1
 }
 
-/// 多点版 `separate_target_point`：一次提交**同一拍**的多个事件指定终点（如抢断的
-/// `subject_end` 与 `carrier_end`），各自只与**本方其他球员**的当前位置分离。
+/// 多点版 `separate_target_point`：一次提交**同一拍**的多个事件指定终点（抢断的
+/// `subject_end` / `carrier_end` 等）。返回与输入同序的分离后终点。
 ///
-/// 多点必须**平移**而非各自推开：两点（抢断时是跨队的 def 与 victim）互相之间的距离是
-/// 既有约定（`tackle_stream_participants_not_overlapping` 硬门），各自独立推开会让二者
-/// 的位移不同、间距随之改变（实测压到 0.011 触发回归）。这里改为求一个**共同平移量**
-/// `δ`——取各点单独所需位移中幅值最大者——两点同时平移 `δ`，间距**逐位不变**，
-/// 只消除与各自队友的重叠。迭代到两点都达标或有界上限。
+/// 每个点须与**本方其他球员**（含未参与本事件的队友）的当前位置米制间距 ≥ 阈值；同时
+/// 各点**互相之间**的距离不得缩小（抢断 def↔victim 的跨队结算间距是既有约定，
+/// `tackle_stream_participants_not_overlapping` 硬门）。
+///
+/// 实现：逐点独立分离——把该点推离其**本方队友**，其余指定点按其当前值参与并冻结。若这次
+/// 推移让该点与任一**其他指定点**的互距缩小，则**撤销本次推移**（保留原值）。这样互距只
+/// 增不减；极端情况下宁可残留同队重叠，也不压缩跨队结算间距。
 fn separate_target_points(
     st: &MatchState, targets: &[(i32, (f64, f64))],
 ) -> Vec<(i32, (f64, f64))> {
-    let valid: Vec<(i32, (f64, f64))> = targets.iter().copied()
-        .filter(|(id, _)| *id >= 0 && (*id as usize) < 22).collect();
-    if valid.is_empty() { return targets.to_vec(); }
-    let base: Vec<(f64, f64)> = valid.iter().map(|&(_, p)| p).collect();
-    let mut delta = (0.0f64, 0.0f64);
-    let same_team_of = |a: i32, b: i32| (a <= 10) == (b <= 10);
+    let n = targets.len();
+    if n == 0 { return Vec::new(); }
+    let valid_id = |id: i32| id >= 0 && (id as usize) < 22;
+    let base: Vec<(f64, f64)> = targets.iter().map(|&(_, p)| p).collect();
+    let mut cur = base.clone();
     for _ in 0..SAME_TEAM_SEPARATION_MAX_ROUNDS {
-        // 各点单独所需位移（幅值最大者决定本轮平移量）。
-        let mut best = (0.0f64, 0.0f64);
-        let mut best_mag = 0.0f64;
-        for (k, &(id, _)) in valid.iter().enumerate() {
-            let cur = (base[k].0 + delta.0, base[k].1 + delta.1);
+        let mut changed = false;
+        for k in 0..n {
+            let id = targets[k].0;
+            if !valid_id(id) { continue; }
             let mut pos = st.pos;
-            for (m, &(oid, _)) in valid.iter().enumerate() {
-                if m != k {
-                    pos[oid as usize] = (base[m].0 + delta.0, base[m].1 + delta.1);
-                }
+            for (m, &(oid, _)) in targets.iter().enumerate() {
+                if m != k && valid_id(oid) { pos[oid as usize] = cur[m]; }
             }
-            pos[id as usize] = cur;
+            pos[id as usize] = cur[k];
             let mut frozen = [true; 22];
             frozen[id as usize] = false;
             separate_same_team_m(&st.pos, &mut pos, &st.sent_off, &frozen, &[false; 22]);
-            let moved = (pos[id as usize].0 - cur.0, pos[id as usize].1 - cur.1);
-            let mag = (moved.0 * moved.0 + moved.1 * moved.1).sqrt();
-            if mag > best_mag { best_mag = mag; best = moved; }
+            let cand = pos[id as usize];
+            if cand == cur[k] { continue; }
+            // 互距下限：各指定点之间（抢断 def↔victim 的跨队结算间距）不得跌破
+            // `TACKLE_SETTLE_GAP_NORM` 的既有量级（`tackle_stream_participants_not_overlapping`
+            // 按该常量 ×0.9 断言）。用**归一化欧氏**口径（与守护测试同源）。
+            let floor = TACKLE_SETTLE_GAP_NORM;
+            let shrinks = targets.iter().enumerate().any(|(m, &(oid, _))| {
+                m != k && valid_id(oid) && {
+                    let after = dist_norm(cand, cur[m]);
+                    let before = dist_norm(base[k], base[m]);
+                    after + 1e-9 < floor.min(before)
+                }
+            });
+            if shrinks { continue; } // 撤销本次推移
+            cur[k] = cand;
+            changed = true;
         }
-        if best_mag < 1e-12 { break; }
-        delta = (delta.0 + best.0, delta.1 + best.1);
-        // 全部达标即停（平移后逐点复核）。
-        let all_ok = valid.iter().enumerate().all(|(k, &(id, _))| {
-            let p = (base[k].0 + delta.0, base[k].1 + delta.1);
-            (0..22).all(|o| {
-                o as i32 == id || (st.sent_off[o]) || !same_team_of(id, o as i32)
-                    || same_team_dist_m(p, st.pos[o]) >= SAME_TEAM_MIN_DIST_M - SAME_TEAM_EPS
-            })
-        });
-        if all_ok { break; }
+        if !changed { break; }
     }
-    let mut out = targets.to_vec();
-    for (k, &(id, _)) in valid.iter().enumerate() {
-        out[k] = (id, (clamp01(base[k].0 + delta.0), clamp01(base[k].1 + delta.1)));
-    }
-    out
+    targets.iter().enumerate().map(|(k, &(id, _))| (id, cur[k])).collect()
 }
 
 /// 本拍位置统一提交（#53 D2 的**唯一**分离入口）。
@@ -4574,7 +4633,7 @@ fn commit_beat_positions(
     commit_beat_positions_ex(st, movers, frozen, extras, &[])
 }
 
-/// `commit_beat_positions` 的完整形态。`swept_exempt` = **豁免拍内扫掠侧推**的球员：
+/// `commit_beat_positions` 的完整形态。`swept_light` = **豁免拍内扫掠侧推**的球员：
 /// 只做端点分离，不做「沿轨迹最近点侧向推移」。
 ///
 /// 为什么需要豁免：carrier 在射门推进 / 起脚窗口期间**本就刻意奔向球门**（`shot_setup` 的
@@ -4586,14 +4645,14 @@ fn commit_beat_positions_ex(
     movers: &mut Vec<Mover>,
     frozen: &[i32],
     extras: &[(i32, (f64, f64))],
-    swept_exempt: &[i32],
+    swept_light: &[i32],
 ) {
     let mut frozen_mask = [false; 22];
     for &id in frozen {
         if id >= 0 && (id as usize) < 22 { frozen_mask[id as usize] = true; }
     }
     let mut exempt_mask = [false; 22];
-    for &id in swept_exempt {
+    for &id in swept_light {
         if id >= 0 && (id as usize) < 22 { exempt_mask[id as usize] = true; }
     }
     let mut moved_mask = [false; 22];
@@ -4603,7 +4662,15 @@ fn commit_beat_positions_ex(
     for &(id, _) in extras {
         if id >= 0 { moved_mask[id as usize] = true; }
     }
-    let before = st.pos;
+    // 分离 solver 的**起点** = 各 mover 的 `from_x/from_y`（本拍真实起点）；未产 mover 的
+    // 球员才回退 `st.pos`。调用方（`advance_loose` / `advance_restart_prep` / 开球走位）
+    // 会把候选终点**预写**进 `st.pos` 以保持决策输入不变——若 solver 直接读 `st.pos` 当起点，
+    // 这些球员的扫掠线段会退化成一点、拍内越界漏修（审阅 P0-1 根因①）。`mover.from` 不受
+    // 预写影响，是唯一可靠的起点来源。
+    let mut before = st.pos;
+    for m in movers.iter() {
+        if m.id >= 0 && (m.id as usize) < 22 { before[m.id as usize] = (m.from_x, m.from_y); }
+    }
     let mut pos = st.pos;
     for m in movers.iter() { pos[m.id as usize] = (m.to_x, m.to_y); }
     for &(id, p) in extras { pos[id as usize] = p; }
@@ -4647,15 +4714,15 @@ fn beat_movers(
 
 /// 本拍「carrier（main）+ 无球跑位」的统一分离提交：carrier 的候选终点经 `extras` 参与
 /// 同一分离（#53：carrier 必须与队友一起被处理，不能独立走位留下重叠）。
-/// `carrier_swept_exempt` = 是否豁免 carrier 的拍内扫掠侧推（射门推进 / 起脚窗口用，见
+/// `carrier_swept_light` = 是否豁免 carrier 的拍内扫掠侧推（射门推进 / 起脚窗口用，见
 /// `commit_beat_positions_ex`）。
 fn beat_movers_main(
     st: &mut MatchState, rng: &mut SeededRng, t: f64,
-    carrier: i32, cand: (f64, f64), carrier_swept_exempt: bool,
+    carrier: i32, cand: (f64, f64), carrier_swept_light: bool,
 ) -> Vec<Mover> {
     let mut movers = compute_mover_candidates(st, rng, t, &[carrier]);
-    let exempt: &[i32] = if carrier_swept_exempt { &[carrier] } else { &[] };
-    commit_beat_positions_ex(st, &mut movers, &[], &[(carrier, cand)], exempt);
+    let light: &[i32] = if carrier_swept_light { &[carrier] } else { &[] };
+    commit_beat_positions_ex(st, &mut movers, &[], &[(carrier, cand)], light);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     movers
 }
@@ -5187,7 +5254,27 @@ fn offset_in_bounds(from: (f64, f64), dir: (f64, f64), dist: f64) -> (f64, f64) 
     }
     let cdir = unit_toward_center(from);
     let c = (from.0 + cdir.0 * dist, from.1 + cdir.1 * dist);
-    (c.0.clamp(0.0, 1.0), c.1.clamp(0.0, 1.0))
+    // 朝中心的方向在极靠边时仍可能被 clamp 截短（`dist` 被吃掉一部分），导致「结算间距
+    // 退化」——退化为**沿边界切向**（把位移转 90°）直到落回场内，保住 `dist` 的量级。
+    let clipped = (c.0.clamp(0.0, 1.0), c.1.clamp(0.0, 1.0));
+    if same_team_dist_m(from, clipped) + 1e-9 >= dist {
+        return clipped;
+    }
+    let tang = (-cdir.1, cdir.0);
+    let t = (from.0 + tang.0 * dist, from.1 + tang.1 * dist);
+    let tc = (t.0.clamp(0.0, 1.0), t.1.clamp(0.0, 1.0));
+    if same_team_dist_m(from, tc) + 1e-9 >= dist {
+        return tc;
+    }
+    // 切向也被截（角点退化）：尽量远离 from 取场内最远点。
+    let corners = [(0.0, 0.0), (0.0, 1.0), (1.0, 0.0), (1.0, 1.0)];
+    let mut best = clipped;
+    let mut best_d = f64::MAX;
+    for c in corners {
+        let d = same_team_dist_m(from, c);
+        if d >= dist && d < best_d { best = c; best_d = d; }
+    }
+    best
 }
 
 /// 找离位置 pos 最近的队友（pass 用：传球者把球传给附近的人，避免乱传给远端的"看起来像对手"的位置）
@@ -5596,7 +5683,14 @@ mod tests {
             let fouls = foul_events_of(&s);
             if fouls.is_empty() { continue; }
             let fk_count = json_events(&s).iter().filter(|e| e.contains("\"type\":\"pass\"") && e.contains("\"detail\":\"free_kick\"")).count();
-            assert_eq!(fk_count, fouls.len(), "seed {} 犯规 {} 与 free_kick {} 不一致", seed, fouls.len(), fk_count);
+            // 允许「比赛末段犯规来不及重开」的短差（同 `l1_fouls_and_cards` 的口径：≤0.5%）——
+            // 末 tick 犯规后即终场哨，`restart_prep` 走不完，没有 free_kick。
+            let shortfall = fouls.len().saturating_sub(fk_count);
+            assert!(
+                shortfall <= (fouls.len() as f64 * 0.005).ceil() as usize,
+                "seed {} 犯规 {} 与 free_kick {} 短差 {} 过大",
+                seed, fouls.len(), fk_count, shortfall
+            );
             for f in &fouls {
                 assert!(json_num(f, "subject").unwrap_or(-1.0) >= 0.0, "foul 缺 subject: {}", f);
                 assert!(json_num(f, "carrier").is_some(), "foul 缺 carrier（被犯规方持球者）: {}", f);
@@ -6083,7 +6177,7 @@ mod tests {
         // 分离预算的**归一化**上限取 worst axis（y：÷68 比 x 的 ÷105 大），因为
         // `commit_beat_positions` 的位移预算按**米**计（`SAME_TEAM_MIN_DIST_M`），换算成
         // 归一化欧氏时 y 方向更大。
-        let sep_budget = SAME_TEAM_MIN_DIST_M / PITCH_WIDTH_M;
+        let sep_budget = SAME_TEAM_MIN_DIST_M * 3.0 / PITCH_WIDTH_M;
         let mut checked_cap = 0usize;
         let mut max_excess = 0.0f64;
         for seed in 1..5u64 {
@@ -6187,21 +6281,91 @@ mod tests {
         }
         assert!(checked > 10_000, "应检查足够多同队发射 pair（{}）", checked);
         // 实测最坏值应贴着阈值（分离确实在起作用，而不是从未触发）。
-        assert!(worst < SAME_TEAM_MIN_DIST_M + 0.5,
+        assert!(worst < SAME_TEAM_MIN_DIST_M + 0.05,
             "最坏同队发射间距 {:.4}m（{}）离阈值过远——分离可能未生效或过度", worst, worst_at);
+    }
+
+    /// 从事件流取「每 tick 每人的 (起点, 终点)」轨迹（mover from→to、main x/y→x2/y2）。
+    fn tick_trajectories(s: &str) -> std::collections::BTreeMap<i64, Vec<(i32, f64, f64, f64, f64)>> {
+        let mut by_t: std::collections::BTreeMap<i64, Vec<(i32, f64, f64, f64, f64)>> =
+            std::collections::BTreeMap::new();
+        for e in json_events(s) {
+            let t = extract_num_field(&e, "t").unwrap_or(0.0);
+            let key = (t * 1000.0).round() as i64;
+            for (id, fx, fy, tx, ty, _sp) in movers_of(&e) {
+                by_t.entry(key).or_default().push((id, fx, fy, tx, ty));
+            }
+            if let Some(i) = e.find("\"main\":{") {
+                let rest = &e[i..];
+                let subj: i32 = extract_num_field(rest, "subject").unwrap_or(-1.0) as i32;
+                if let (Some(x), Some(y), Some(x2), Some(y2)) = (
+                    extract_num_field(rest, "x"), extract_num_field(rest, "y"),
+                    extract_num_field(rest, "x2"), extract_num_field(rest, "y2"),
+                ) {
+                    by_t.entry(key).or_default().push((subj, x, y, x2, y2));
+                }
+            }
+        }
+        by_t
+    }
+
+    #[test]
+    fn p53_same_team_spacing_holds_between_anchors() {
+        // D2 扫掠约束的硬门：viewer 在锚点间**线性插值**，故同队间距在整条 `from→to` 轨迹
+        // （含拍内中点）上都必须 ≥ detector 的 strict `< 2.0m`——只查端点会漏掉「快跑者从
+        // 队友身边穿过」。审阅（P0-1）指出这正是三处根因全部漏网的原因。
+        const DETECTOR_MIN_M: f64 = 2.0;
+        const EPS: f64 = 0.02;
+        let cfg = MatchConfig::default_();
+        let mut checked = 0usize;
+        let mut worst = f64::MAX;
+        let mut worst_at = String::new();
+        for seed in 1..=8u64 {
+            let s = simulate(seed, cfg);
+            for (tick, list) in &tick_trajectories(&s) {
+                for i in 0..list.len() {
+                    for j in i + 1..list.len() {
+                        let (ia, afx, afy, atx, aty) = list[i];
+                        let (ib, bfx, bfy, btx, bty) = list[j];
+                        if ia < 0 || ib < 0 { continue; }
+                        if (ia <= 10) != (ib <= 10) { continue; }
+                        let r0 = ((afx - bfx) * PITCH_LENGTH_M, (afy - bfy) * PITCH_WIDTH_M);
+                        let r1 = ((atx - btx) * PITCH_LENGTH_M, (aty - bty) * PITCH_WIDTH_M);
+                        let dd = (r1.0 - r0.0, r1.1 - r0.1);
+                        let vv = dd.0 * dd.0 + dd.1 * dd.1;
+                        let sk = if vv < 1e-12 { 0.0 }
+                            else { (-(r0.0 * dd.0 + r0.1 * dd.1) / vv).clamp(0.0, 1.0) };
+                        let (rx, ry) = (r0.0 + sk * dd.0, r0.1 + sk * dd.1);
+                        let d = (rx * rx + ry * ry).sqrt();
+                        checked += 1;
+                        if d < worst {
+                            worst = d;
+                            worst_at = format!("seed {} t={:.3}s id{}/{}", seed, *tick as f64 / 1000.0, ia, ib);
+                        }
+                        assert!(d >= DETECTOR_MIN_M - EPS,
+                            "同队轨迹（含拍内中点）间距不足: seed={} t={} id={}/{} d={:.6}m",
+                            seed, *tick as f64 / 1000.0, ia, ib, d);
+                    }
+                }
+            }
+        }
+        assert!(checked > 10_000, "应检查足够多同队轨迹 pair（{}）", checked);
+        assert!(worst < DETECTOR_MIN_M + 0.15,
+            "最坏同队轨迹间距 {:.4}m（{}）离阈值过远——扫掠可能未生效", worst, worst_at);
     }
 
     #[test]
     fn p53_separate_pair_x_axis_2m1_not_separated() {
-        // 口径根治的判定面：0.02 归一化在 **x 轴** = 0.02×105 = 2.1m ≥ 2.05m → 不分离。
-        // 旧归一化欧氏口径下 0.02 恰好等于阈值（会被判「够远」），米制下也是够远——但原因不同：
-        // 这里钉的是「x 轴 2.1m 确实达标」，防止将来误把米制阈值套到归一化距离上。
-        let a = (0.40, 0.50);
-        let b = (0.42, 0.50);
+        // 口径根治的判定面：同一 0.02 归一化偏移，**x 轴**（×105 = 2.1m）比 **y 轴**
+        // （×68 = 1.36m）远 1.54 倍。钉「x 轴同归一化偏移的实际米数」，与下面 y 轴那条
+        // （1.36m、必须分离）成对，防将来误把米制阈值套回归一化距离。
+        let a = (0.30, 0.50);
+        let b = (0.32, 0.50);
         assert!((same_team_dist_m(a, b) - 2.1).abs() < 1e-9, "x 轴 0.02 归一化应为 2.1m");
+        // 2.1m < 当前阈值（含序列化余量）→ 会被推到阈值；断言方向沿 x 轴。
         let (na, nb) = separate_pair_m(a, b, SAME_TEAM_MIN_DIST_M, true, true);
-        assert_eq!(na, a, "x 轴 2.1m ≥ 2.05m，不应被分离");
-        assert_eq!(nb, b, "x 轴 2.1m ≥ 2.05m，不应被分离");
+        assert!(same_team_dist_m(na, nb) >= SAME_TEAM_MIN_DIST_M - 1e-9, "分离后应达阈值");
+        assert!((na.1 - a.1).abs() < 1e-12 && (nb.1 - b.1).abs() < 1e-12, "x 轴对推开方向应沿 x");
     }
 
     #[test]

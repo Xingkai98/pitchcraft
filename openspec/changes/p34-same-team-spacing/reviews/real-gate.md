@@ -2,28 +2,19 @@
 
 design D3 第 3 项：跑真实 diagnosis，`player_overlap` finding 应归零。
 
-## 怎么跑（可复现命令）
+## 怎么跑（**脚本已入库**，可复现）
 
-真实 diagnosis 的审计输入由 viewer 采集管线产出（`protocol.parseEventStream → Game →
-observation.captureObservation → buildAuditInput`），detector 在 `tools/detectors.mjs`。
-项目默认采集窗口 ±5s（`observation.js`）。
-
-**整场扫描**（比真实窗口更严，用来看残留分布）：
+`tools/spacing-sweep.mjs`——把真实采集窗口（±5s）**滑过整场**（每 2.5s 一窗），用真实采集
+管线（`protocol.parseEventStream → Game → observation.captureObservation → buildAuditInput`）
+产出 audit_input 再跑 `tools/detectors.mjs` 的 `player_overlap`。比 P26 的稀疏 fixture 密得多
+（后者只在 6–7 个手工挑的窗口采样，会漏掉大量时刻——P34 审阅 P0-1 的教训）。
 
 ```bash
 # 仓库根，先有 viewer/engine.wasm（下方命令重建）
-node /tmp/p34-measure.mjs viewer/engine.wasm 42 1 2 3 4 5
+node tools/spacing-sweep.mjs          # 默认 seed 42 1 2 3 7（各 2157 窗）
+node tools/spacing-sweep.mjs 42 1 2   # 指定 seed
+# 退出码：任一 finding 即 1（可作 CI 门）
 ```
-
-**真实门（7 个观测窗口，与 P26 fixture 同口径）**：
-
-```bash
-node /tmp/p34-window-gate.mjs
-```
-
-（脚本见 `/tmp/p34-window-gate.mjs`、`/tmp/p34-measure.mjs`；本质是用
-`captureObservation` 在 6 个真实重开窗口 + 死球窗口上采 audit_input，跑
-`detectPlayerOverlap`。）
 
 WASM 重建：
 
@@ -32,22 +23,33 @@ WASM 重建：
   && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)
 ```
 
-## 结果
+Rust 侧同口硬门：`engine/src/lib.rs` 的
+`p53_same_team_spacing_ge_2m`（端点）与 `p53_same_team_spacing_holds_between_anchors`（整条
+轨迹含拍内中点）。
 
-| 阶段 | 整场 findings（seed 42/1/2） | 7 窗口 findings（seed 42/1/2/3/4/5） |
-|---|---|---|
-| 改前（HEAD 基线） | 24 / — / — | 8 + 5 + 14 + 3 + 1 + 6 = 37 |
-| P34 端点分离（无扫掠） | 17 / 11 / 24 | 35 |
-| P34 端点 + 拍内扫掠（终版） | 0 / 0 / 2 | **0** |
+## 结果（终版）
 
-终版：**7 观测窗口全零**（4 个 seed 完全干净，2 个 seed 亦零）；整场扫描残余 1–2 条，
-均为 0.5s 采样落在 [2.00, 2.08) 边缘的舍入误差（`SAME_TEAM_MIN_DIST_M` 已含 0.08m
-序列化余量，2.00–2.08 之间的采样值即余量内的合法结果）。
+| 口径 | 结果 |
+|---|---|
+| 真实采集窗口（7 窗 × 6 seed） | **全零** |
+| 整场滑窗（每 seed 2157 窗 × 5 seed） | **全零** |
+| Rust 端点门 `p53_same_team_spacing_ge_2m`（10 seed 整场） | 绿 |
+| Rust 拍内中点门 `p53_same_team_spacing_holds_between_anchors`（8 seed） | 绿 |
 
-## 残留与已知边界
+修复历程（对应审阅 review-paseo.md）：初版只在 6–7 个手挑窗口验证、误报归零；扩到整场
+滑窗后暴露三条根因（loose 追逐者预写起点污染扫掠输入、carrier 扫掠豁免过宽、抢断结算点
+未分离），逐条修复（见 `fix-round-1.md`）。
 
-- **拍内扫掠侧向推移有上限**（`SAME_TEAM_SWEPT_PUSH_CAP_M` = 本拍步长）：两名同队球员
-  本拍轨迹近乎对穿时，侧向推不动，本拍不修正、留给下一拍。这是刻意的「最小必要推移」，
-  不把球员横甩。
-- **carrier 在射门推进 / 起脚窗口豁免扫掠侧推**：避免射门几何系统性漂移（实测豁免前
-  禁区内进球占比 0.699，破 L3 参考带 [0.72,0.92]；豁免后 0.777）。端点分离仍覆盖 carrier。
+## 关键参数与取舍
+
+- `SAME_TEAM_MIN_DIST_M = 2.2`：端点阈值。含 JSON 4 位小数序列化 + 0.5s 采样插值的余量。
+- 拍内扫掠阈值 `= 阈值 − 0.06`；侧推上限 `= 阈值 × 3`（近对穿的侧推需数倍阈值才收敛）。
+- **carrier 在拍内侧推中只承担 `SWEPT_LIGHT_SHARE`（0.12）**，队友吸收其余：carrier 在射门
+  推进/起脚窗口刻意奔向球门，对半分摊会把禁区内进球占比从 0.758 压到 0.693、破 L3 参考带
+  [0.72,0.92]；完全豁免又会让对穿的中点越界残留。0.12 两边都过（L3 实测 0.775）。
+- 拍内中点门限取 detector 的 `2.0m`（不是端点阈值 2.2）——只保证不跌破 detector 阈值。
+
+## 已知边界（非阻断）
+
+- 拍内扫掠的侧推上限（`阈值 × 3`）：两名同队球员本拍轨迹近乎**对穿**且需要超过该上限的侧移
+  时，本拍不修正、留给下一拍。终版实测该情形未在 5 seed × 2157 窗中出现。

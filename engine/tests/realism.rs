@@ -773,7 +773,10 @@ fn l1_tackle_dilution_and_slot_mix() {
     let max_single = stats.iter().map(|s| s.n_corner_kick).max().unwrap_or(0);
     // 单场硬上界兜数量级漂移（非 spec 逐场断言）。P31 重标定：实测均值降至 2.00，
     // 单场上界同步收紧到 8（旧 18 是槽位时代 3.71 均值下的界）。
-    assert!(max_single <= 8, "单场角球 {} 超硬上界 8（数量级漂移）", max_single);
+    // P34 再标定：同队间距分离改变 RNG 流与落点/出界分布，200 场实测均值 2.15/场，
+    // 单场峰值触及 9（界外球/扑出越线的长尾），上界放宽到 12——仍守住「不塌缩到 0 /
+    // 不爆炸」的数量级护栏（旧槽位时代峰值 18）。
+    assert!(max_single <= 12, "单场角球 {} 超硬上界 12（数量级漂移）", max_single);
 
     // **P31 D2 承重守卫**：界外球是「pass_risk 调制出界通道」的**直接产物**（边线侧出界
     // → 界外球），删槽位后其唯一来源。实测 200 场 9.54/场；把 `open_play_out_probability`
@@ -1049,11 +1052,11 @@ fn l2_cross_event_invariants() {
 ///
 /// P34 再更新：同队米制间距分离（#53）改变 mover/main 终点与部分事件字段，再次改写
 /// RNG 消费序列，原钉死 seed 又失效。按当前引擎重新扫描（1..=3000）取「红牌 + 进球」的
-/// seed：20 / 59 / 94 / 109。（扫掠中发现 loose 球滚动未 clamp 场内的潜在越界，
-/// 同 P34 一并修复；最终 tie-off 后重扫。）
+/// seed：18 / 59 / 94 / 95。（扫掠中发现 loose 球滚动未 clamp 场内的潜在越界，
+/// 同 P34 一并修复；同队间距阈值与分离算法定稿后重扫。）
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [20u64, 59, 94, 109] {
+    for seed in [18u64, 59, 94, 95] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
