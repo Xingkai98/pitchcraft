@@ -477,6 +477,11 @@ test('sent-off player is excluded from the rendered players list (no ghost)', ()
   assert.ok(g.players.some((p) => p.id === 15), '红牌之前 15 应在可见列表');
   g.seekTo(20);
   assert.ok(!g.players.some((p) => p.id === 15), '红牌之后 15 不得出现在可见列表（幽灵排除）');
+  // 边界钉死：红牌**当刻**（t == offAt）仍应可见（该时刻他还在场上；口径同
+  // `derive-audit-features` 的 `t > offAt` 才跳过采样）。
+  const g2 = new Game(events, lineup, 'continuous');
+  g2.seekTo(10);
+  assert.ok(g2.players.some((p) => p.id === 15), '红牌当刻（t==offAt）15 仍应可见');
   assert.ok(g.players.some((p) => p.id === 5), '未罚下球员应仍在可见列表');
   // 内部全量列表仍保留该球员（保证时间线插值一致性）。
   assert.ok(g._players.some((p) => p.id === 15), '_players（全量）仍含 15');

@@ -11,7 +11,7 @@ design D3 第 3 项：跑真实 diagnosis，`player_overlap` finding 应归零�
 
 ```bash
 # 仓库根，先有 viewer/engine.wasm（下方命令重建）
-node tools/spacing-sweep.mjs          # 默认 seed 42 1 2 3 7（各 2157 窗）
+node tools/spacing-sweep.mjs          # 默认 seed 42 1 2 3 7 59（各 2157 窗）
 node tools/spacing-sweep.mjs 42 1 2   # 指定 seed
 # 退出码：任一 finding 即 1（可作 CI 门）
 ```
@@ -52,4 +52,4 @@ Rust 侧同口硬门：`engine/src/lib.rs` 的
 ## 已知边界（非阻断）
 
 - 拍内扫掠的侧推上限（`阈值 × 3`）：两名同队球员本拍轨迹近乎**对穿**且需要超过该上限的侧移
-  时，本拍不修正、留给下一拍。终版实测该情形未在 5 seed × 2157 窗中出现。
+  时，本拍不修正、留给下一拍。终版实测该情形未在默认 seed 集 + fresh seed 中出现。
