@@ -32,7 +32,7 @@ Rust 侧同口硬门：`engine/src/lib.rs` 的
 | 口径 | 结果 |
 |---|---|
 | 真实采集窗口（7 窗 × 6 seed） | **全零** |
-| 整场滑窗（每 seed 2157 窗 × 5 seed） | **全零** |
+| 整场滑窗 `tools/spacing-sweep.mjs`（每 seed 2157 窗） | **全零**（默认集 `42 1 2 3 7 59` + 12 个 fresh seed + 全部 9 个含红牌 seed）|
 | Rust 端点门 `p53_same_team_spacing_ge_2m`（10 seed 整场） | 绿 |
 | Rust 拍内中点门 `p53_same_team_spacing_holds_between_anchors`（8 seed） | 绿 |
 
