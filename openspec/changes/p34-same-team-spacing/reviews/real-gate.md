@@ -31,14 +31,14 @@ Rust 侧同口硬门：`engine/src/lib.rs` 的
 
 | 口径 | 结果 |
 |---|---|
-| 真实采集窗口（7 窗 × 6 seed） | **全零** |
+| 真实采集窗口（每 seed 的 6 个真实重开窗口 + 死球窗口；seed 42 1 2 3 4 5） | **全零** |
 | 整场滑窗 `tools/spacing-sweep.mjs`（每 seed 2157 窗） | **全零**（默认集 `42 1 2 3 7 59 18 94` + fresh seed 批 `5 17 29 41 53 67 71 83 97 101 127 149`）|
 | Rust 端点门 `p53_same_team_spacing_ge_2m`（10 seed 整场） | 绿 |
 | Rust 拍内中点门 `p53_same_team_spacing_holds_between_anchors`（8 seed） | 绿 |
 
 修复历程（对应审阅 review-paseo.md）：初版只在 6–7 个手挑窗口验证、误报归零；扩到整场
 滑窗后暴露三条根因（loose 追逐者预写起点污染扫掠输入、carrier 扫掠豁免过宽、抢断结算点
-未分离），逐条修复（见 `fix-round-1.md`）。
+未分离），逐条修复（见 `review-response.md`）。
 
 ## 关键参数与取舍
 
