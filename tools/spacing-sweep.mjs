@@ -9,7 +9,7 @@
 // 用法（仓库根，需先构建 viewer/engine.wasm）：
 //   (cd engine && cargo build --target wasm32-unknown-unknown --release \
 //     && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)
-//   node tools/spacing-sweep.mjs            # 默认 seed 42 1 2 3 7 59
+//   node tools/spacing-sweep.mjs            # 默认 seed 42 1 2 3 7 59 18 94
 //   node tools/spacing-sweep.mjs 42 1 2     # 指定 seed
 //
 // 退出码：任一 seed 出现 finding 即 1（可作 CI 门；默认 seed 集下当前应为 0）。
@@ -44,11 +44,12 @@ try {
 const DUR = 5400; // 90 分钟
 const STEP = 2.5; // 采样步长（秒）：±5s 窗 = 10s 宽 → 4x 重叠，密到不会漏掉短暂重叠
 // 默认 seed 集：含 P34 审阅 R2 命中的 `59`（当年默认集 `42 1 2 3 7` 全零，漏掉了它——
-// 那次残留的根因是「罚下球员幽灵」，已在 viewer 侧修复；`59` 是默认集中**唯一**含红牌
-// （2 张：15@78、8@3835）的 seed，是幽灵路径的常态覆盖）。
+// 那次残留的根因是「罚下球员幽灵」，已在 viewer 侧修复）。红牌 seed 取 `59`（2 张）+
+// `18` + `94`（各 1 张）——单点覆盖太脆（审阅 R3/R4 NIT），三个 seed 的幽灵路径互为兜底。
+// 1..200 内共 12 个含红牌 seed：18 33 59 78 85 94 95 113 121 145 186 190。
 const seeds = process.argv.slice(2).length
   ? process.argv.slice(2).map(Number)
-  : [42, 1, 2, 3, 7, 59];
+  : [42, 1, 2, 3, 7, 59, 18, 94];
 
 const { instance } = await WebAssembly.instantiate(wasmBytes, {});
 const wasm = instance.exports;

@@ -11,7 +11,7 @@ design D3 第 3 项：跑真实 diagnosis，`player_overlap` finding 应归零�
 
 ```bash
 # 仓库根，先有 viewer/engine.wasm（下方命令重建）
-node tools/spacing-sweep.mjs          # 默认 seed 42 1 2 3 7 59（各 2157 窗）
+node tools/spacing-sweep.mjs          # 默认 seed 42 1 2 3 7 59 18 94（各 2157 窗）
 node tools/spacing-sweep.mjs 42 1 2   # 指定 seed
 # 退出码：任一 finding 即 1（可作 CI 门）
 ```
@@ -32,7 +32,7 @@ Rust 侧同口硬门：`engine/src/lib.rs` 的
 | 口径 | 结果 |
 |---|---|
 | 真实采集窗口（7 窗 × 6 seed） | **全零** |
-| 整场滑窗 `tools/spacing-sweep.mjs`（每 seed 2157 窗） | **全零**（默认集 `42 1 2 3 7 59` + 12 个 fresh seed + 全部 9 个含红牌 seed）|
+| 整场滑窗 `tools/spacing-sweep.mjs`（每 seed 2157 窗） | **全零**（默认集 `42 1 2 3 7 59 18 94` + fresh seed 批 `5 17 29 41 53 67 71 83 97 101 127 149`）|
 | Rust 端点门 `p53_same_team_spacing_ge_2m`（10 seed 整场） | 绿 |
 | Rust 拍内中点门 `p53_same_team_spacing_holds_between_anchors`（8 seed） | 绿 |
 
@@ -45,8 +45,10 @@ Rust 侧同口硬门：`engine/src/lib.rs` 的
 - `SAME_TEAM_MIN_DIST_M = 2.2`：端点阈值。含 JSON 4 位小数序列化 + 0.5s 采样插值的余量。
 - 拍内扫掠阈值 `= 阈值 − 0.06`；侧推上限 `= 阈值 × 3`（近对穿的侧推需数倍阈值才收敛）。
 - **carrier 在拍内侧推中只承担 `SWEPT_LIGHT_SHARE`（0.12）**，队友吸收其余：carrier 在射门
-  推进/起脚窗口刻意奔向球门，对半分摊会把禁区内进球占比从 0.758 压到 0.693、破 L3 参考带
-  [0.72,0.92]；完全豁免又会让对穿的中点越界残留。0.12 两边都过（L3 实测 0.775）。
+  推进/起脚窗口刻意奔向球门，取小份额以尽量少改其几何。**口径更正**（第 3/4 轮审阅实测）：
+  0.0 / 0.12 / 0.5 三者在 Rust 门、真实滑窗、L3（禁区占比 0.770/0.775/0.773，带
+  [0.72,0.92]）上**都无差异**——0.12 是保守取向，不是被任何门钉死的承重常量。
+  （原文曾断言「0.5 破 L3 / 0 残留中点越界」，该断言实测复现不出，已更正。）
 - 拍内中点门限取 detector 的 `2.0m`（不是端点阈值 2.2）——只保证不跌破 detector 阈值。
 
 ## 已知边界（非阻断）
