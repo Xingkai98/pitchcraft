@@ -1046,9 +1046,14 @@ fn l2_cross_event_invariants() {
 /// P31 再更新：删槽位 + 涌现频率（出界走 pass_risk 调制通道 + liveness 四处接入）再次改写
 /// RNG 消费序列，原钉死 seed 又失效。按当前引擎重新扫描（1..=3000）取「红牌 + 进球」的
 /// seed：23 / 48 / 52 / 120。（审阅修复接入点③时序 bug 后又改一次流，重扫。）
+///
+/// P34 再更新：同队米制间距分离（#53）改变 mover/main 终点与部分事件字段，再次改写
+/// RNG 消费序列，原钉死 seed 又失效。按当前引擎重新扫描（1..=3000）取「红牌 + 进球」的
+/// seed：20 / 59 / 94 / 109。（扫掠中发现 loose 球滚动未 clamp 场内的潜在越界，
+/// 同 P34 一并修复；最终 tie-off 后重扫。）
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [23u64, 48, 52, 120] {
+    for seed in [20u64, 59, 94, 109] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1078,7 +1083,11 @@ fn l2_sent_off_kickoff_seeds() {
 // 调制通道 + liveness guard 四处接入 → 事件流再变，v5 与 v1/v2/v3/v4 逐 seed 都不同。
 // v1/v2/v3/v4 保留不覆盖，作历史对照。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 5）落 v5；需要对比旧版本时读旧目录。
+// P34 D4：v6 = 同队米制间距分离起（`tests/golden-v6/`）。统一分离提交把 mover/main 终点
+// 与部分事件字段（接球点/门将扑救点/开球落点等）按 `SAME_TEAM_MIN_DIST_M` 米制分离 →
+// 事件流再变，v6 与 v1..v5 逐 seed 都不同。v1..v5 保留不覆盖，作历史对照。
+//
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 6）落 v6；需要对比旧版本时读旧目录。
 
 /// 模型版本 → golden 基线目录名。
 fn golden_dir(model_version: u32) -> &'static str {
@@ -1088,6 +1097,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         3 => "tests/golden-v3",
         4 => "tests/golden-v4",
         5 => "tests/golden-v5",
+        6 => "tests/golden-v6",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1249,7 +1259,7 @@ fn gm_canary_seeds() {
     }
 }
 
-/// P29 D4 / P31 D5 硬验收：旧 golden 基线（v1..v4）**保留不覆盖**，且当前引擎与它们**确实不同**。
+/// P29 D4 / P31 D5 / P34 D4 硬验收：旧 golden 基线（v1..v5）**保留不覆盖**，且当前引擎与它们**确实不同**。
 ///
 /// 2B 改变可观测行为（射门由 hazard 涌现 + 起脚窗口可被抢断），因此：
 /// - v1/v2 目录必须仍然存在且自洽（可读、字段非负）——不得被重基线覆盖（D4「v1/v2 保留」）；
@@ -1265,10 +1275,13 @@ fn gm_legacy_baselines_preserved_and_differs() {
         let gold_v2 = read_golden(2, seed);
         let gold_v3 = read_golden(3, seed);
         let gold_v4 = read_golden(4, seed);
-        // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）——P31 D5「v1..v4 保留不覆盖」。
+        let gold_v5 = read_golden(5, seed);
+        // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）——P31 D5「v1..v4 保留不覆盖」+
+        //    P34 D4「v1..v5 保留不覆盖」。
         assert!(
-            gold_v1.n_events > 0 && gold_v2.n_events > 0 && gold_v3.n_events > 0 && gold_v4.n_events > 0,
-            "seed {} 旧基线读取异常（v1..v4 应都存在且非空）",
+            gold_v1.n_events > 0 && gold_v2.n_events > 0 && gold_v3.n_events > 0
+                && gold_v4.n_events > 0 && gold_v5.n_events > 0,
+            "seed {} 旧基线读取异常（v1..v5 应都存在且非空）",
             seed
         );
         // 2. P27 历史对：v1 与 v2 计数一致、只有出界字段值不同（旧对自洽，非本 change 引入）
@@ -1280,11 +1293,11 @@ fn gm_legacy_baselines_preserved_and_differs() {
         );
         assert_eq!(gold_v1.n_out_goal_line, gold_v2.n_out_goal_line, "seed {} v1/v2 出底线计数", seed);
         assert_eq!(gold_v1.n_out_sideline, gold_v2.n_out_sideline, "seed {} v1/v2 出边线计数", seed);
-        // 3. 当前（v5）必须与四个旧基线都不同——P31 真的改了行为（否则本 change 名不副实）。
-        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3), ("v4", &gold_v4)] {
+        // 3. 当前（v6）必须与五个旧基线都不同——P34 真的改了行为（否则本 change 名不副实）。
+        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3), ("v4", &gold_v4), ("v5", &gold_v5)] {
             assert!(
                 g.stream_hash != st.stream_hash,
-                "seed {}：当前流哈希与 {} 相同——P31 应改变可观测行为（删槽位/涌现频率未生效？）",
+                "seed {}：当前流哈希与 {} 相同——P34 应改变可观测行为（同队米制分离未生效？）",
                 seed, lv
             );
         }
@@ -1297,6 +1310,11 @@ fn gm_legacy_baselines_preserved_and_differs() {
         assert!(
             gold_v3.stream_hash != gold_v4.stream_hash,
             "seed {}：v4 与 v3 流哈希相同——P30 行为改变未落到基线",
+            seed
+        );
+        assert!(
+            gold_v4.stream_hash != gold_v5.stream_hash,
+            "seed {}：v5 与 v4 流哈希相同——P31 行为改变未落到基线",
             seed
         );
         if gold_v1.n_out_goal_line + gold_v1.n_out_sideline > 0 {
