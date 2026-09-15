@@ -55,13 +55,13 @@ const GOLDEN_SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
 ///
 /// 因此这条 L1 门的定位是**「主场优势消失 / 反向」的粗粒度回归护栏**，不是「证明 ratio ≥ 1.08」：
 /// 机制若整体失效（ratio → 1.0 或 < 1.0，对应 `CLINICAL_GOAL_PP_HOME` 失效 / 符号错），
-/// 任一 ±200 场窗口都会立刻报警。精确效应校准与「机制测试 / 统计门」分层重构见 issue #63
-/// （本 change 范围外）。
+/// 任一 ±200 场窗口都会立刻报警。精确效应校准与「机制测试 / 统计门」分层重构已由 issue #63
+/// 落地为三层：机制层 `home_advantage_channel_semantics`（系数方向）+ 本短窗口方向门（`gh > ga`）
+/// + 长期报告 `l3_home_away_goal_calibration`（H/A 点估计 + CI）。
 ///
 /// **预注册纪律**：`SEEDS_HA_START`/`SEEDS_HA` 一经冻结即不得因「当前跑不过」而调整——那样
 /// 会把这条门退化成「守护某组特定 seed 的历史结果」。本窗口取 `SEEDS_L1_START`(=401，P13 时
 /// 已预注册)+600 场，仅因它是既有的、与主客优势无关的既定起点延长，而非按结果挑选。
-/// 若将来要改阈值/窗口，必须走 issue #63 的分层重构，不得在本处就地放宽。
 const SEEDS_HA_START: u64 = 401;
 const SEEDS_HA: u32 = 600;
 
@@ -819,14 +819,14 @@ fn l1_pass_completion_rate() {
     );
 }
 
-/// L1：主客进球不对称（pilot 3 home-advantage）。口径：200 场聚合主/客进球分桶
+/// L1：主客进球不对称（pilot 3 home-advantage）。口径：600 场聚合主/客进球分桶
 /// （n_goal_home/n_goal_away，= shot[result=goal] 射手队归属，与比分同源）。
 /// 真实参考（research/l3-gap-analysis.md §五，Kopacak）：主 1.53 / 客 1.22，主客比 ~1.25。
 /// 引擎在 L3 体积压缩缺口下总进球 ~0.9-1.1/场（本任务不做 B 档体积扩展，只做**主客比例**），
-/// 单场 0-1 球居多、主客各 ~0.4-0.6/场 → 200 场 n_goal_home≈110、n_goal_away≈90，比率统计误差大。
-/// 断言设计（稳而不假绿）：
-///   - 主队进球 ≥ 客队进球 × 1.08（比率下界，蕴含"主队进球>客队"方向性——对应真实主队胜率/
-///     进球更高；H/A≈1.25 时差 ~20 球可被 200 场检测，1.08 余量约 4.5pp）；
+/// 单场 0-1 球居多、主客各 ~0.4-0.6/场 → 比率统计误差大（600 场 ratio 95% CI 半宽 ~0.10）。
+/// 断言设计（#63 三层重构后 = 短窗口方向 sanity，非精细 ratio 下界）：
+///   - 主队进球 > 客队进球（严格方向——抓「主场优势消失/反向」，不再设 1.08 精细下界；
+///     精确 ratio 校准交给 `l3_home_away_goal_calibration` report-only）；
 ///   - 主队进球/场 ∈ [0.38, 0.75]（体积只允许轻微浮动，防总量暴涨/崩塌）；
 ///   - 客队进球/场 ≥ 0.30（主场优势不得机械压低客队——优势来自主队更强，客队不背压）。
 #[test]
@@ -845,12 +845,13 @@ fn l1_home_away_goal_asymmetry() {
         "主队进球/场 {:.3} ∉ [0.38,0.75]",
         gh_pm
     );
-    // **这是「主场优势消失/反向」的粗粒度回归护栏，不是「用 600 场精确证明 ratio ≥ 1.08」。**
-    // 引擎真实效应 ~1.11，与 1.08 阈值仅差 ~3pp——要可靠分辨二者需数万场，600 场只降低确定性
-    // 巧合、不构成精细效应证明（详见 `SEEDS_HA` 常量注释与 issue #63）。阈值维持 1.08 **不放宽**。
+    // **这是「主场优势消失/反向」的短窗口方向 sanity，不是「用 600 场精确证明 ratio ≥ 1.08」。**
+    // 引擎真实效应 ~1.11，与 1.08 仅差 ~3pp——600 场的 ratio 95% CI 半宽 ~0.10，可靠分辨二者需
+    // 数万场（详见 `SEEDS_HA` 常量注释与 issue #63）。故只断言严格方向 `gh > ga`（不设 1.08 精细
+    // 下界），精确 ratio 校准交给 `l3_home_away_goal_calibration`（report-only）。
     assert!(
-        gh as f64 > ga as f64 * 1.08,
-        "主客进球不对称不足：主 {:.2}/场 vs 客 {:.2}/场（真实主 1.53/客 1.22 比 ~1.25；任务目标主队>客队）",
+        gh as f64 > ga as f64,
+        "主客进球方向反向：主 {:.2}/场 ≤ 客 {:.2}/场（主场优势应使主队进球系统性多于客队）",
         gh_pm, ga_pm
     );
     assert!(
@@ -859,6 +860,36 @@ fn l1_home_away_goal_asymmetry() {
         ga_pm
     );
     println!("[home-adv] 主 {:.3}/场 客 {:.3}/场 合计 {:.3} H/A={:.3}", gh_pm, ga_pm, (gh + ga) as f64 / n, gh as f64 / ga.max(1) as f64);
+}
+
+/// L1 长期校准（#63 三层重构第 3 层，report-only，不设硬门）：输出主客进球 H/A 点估计 +
+/// log-scale 95% 置信区间，供人工校准。复用 `ha_stats()`（SEEDS_HA=600 预注册冻结窗口）。
+///
+/// 统计方法（codex 推荐）：主客进球近似独立 Poisson，`log(H/A)` 的近似正态区间
+/// `log_ratio ± 1.96·sqrt(1/H + 1/A)`，CI_ratio = exp(CI_log)。仅 println，无 ratio 断言——
+/// 600 场的 CI 半宽 ~0.10，无法可靠分辨 1.08 vs 1.11（真实效应 ~1.11），把抽样噪声转成硬门会
+/// 误报引擎回归。真要稳定估计 3pp 差异需数万场，另开任务；本测试只做「可重复的校准观察报告」。
+#[test]
+#[ignore]
+fn l3_home_away_goal_calibration() {
+    let stats = ha_stats();
+    let n = SEEDS_HA as f64;
+    let gh: usize = stats.iter().map(|s| s.n_goal_home).sum();
+    let ga: usize = stats.iter().map(|s| s.n_goal_away).sum();
+    // 零样本保护（避免 log(0)/除零）——不是主场优势 gate，只保证报告可算。
+    if gh == 0 || ga == 0 {
+        eprintln!("[home-adv calibration] 零样本：home={} away={}，无法计算 ratio", gh, ga);
+        return;
+    }
+    let ratio = gh as f64 / ga as f64;
+    let log_ratio = ratio.ln();
+    let se_log = (1.0 / gh as f64 + 1.0 / ga as f64).sqrt();
+    let ci_lo = (log_ratio - 1.96 * se_log).exp();
+    let ci_hi = (log_ratio + 1.96 * se_log).exp();
+    println!(
+        "[home-adv calibration] matches={} home_goals={} away_goals={} H/A={:.3} log(H/A)={:.3} 95% CI=[{:.3}, {:.3}]",
+        n as u64, gh, ga, ratio, log_ratio, ci_lo, ci_hi
+    );
 }
 
 /// L1：犯规 / 纪律牌（本轮试点）。口径：foul 事件计数（一次犯规=一条 foul 事件，含无牌犯规），
