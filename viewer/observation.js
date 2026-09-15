@@ -231,6 +231,11 @@ export function buildAuditInput({ game, bundle, config }) {
   const m = metersFor(config);
   return deriveAuditInput({
     events: bundle?.events ?? [],
+    // 全量事件流（非当前窗口）：audit 的「罚下球员」推导（`derive-audit-features` 的
+    // `sentOffTimes`）需要**整场**的 foul/card 历史——窗口内通常看不到那次红牌，
+    // 只凭 `bundle.events` 会把早已离场的球员当有效位置采样（幽灵）。引擎的 `game.events`
+    // 是整场事件（`Game` 构造时传入），window 裁剪只作用于 `bundle.events`。
+    allEvents: game?.events ?? bundle?.events ?? [],
     timeline: game?.timeline ?? [],
     lineup: game?.lineup ?? [],
     pitch: { length: m.length, width: m.width },

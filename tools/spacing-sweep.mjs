@@ -9,7 +9,7 @@
 // 用法（仓库根，需先构建 viewer/engine.wasm）：
 //   (cd engine && cargo build --target wasm32-unknown-unknown --release \
 //     && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)
-//   node tools/spacing-sweep.mjs            # 默认 seed 42 1 2 3 7
+//   node tools/spacing-sweep.mjs            # 默认 seed 42 1 2 3 7 59 11
 //   node tools/spacing-sweep.mjs 42 1 2     # 指定 seed
 //
 // 退出码：任一 seed 出现 finding 即 1（可作 CI 门；默认 seed 集下当前应为 0）。
@@ -43,7 +43,11 @@ try {
 
 const DUR = 5400; // 90 分钟
 const STEP = 2.5; // 采样步长（秒）：±5s 窗 = 10s 宽 → 4x 重叠，密到不会漏掉短暂重叠
-const seeds = process.argv.slice(2).length ? process.argv.slice(2).map(Number) : [42, 1, 2, 3, 7];
+// 默认 seed 集：含 P34 审阅 R2 命中的 `59`（当年默认集 `42 1 2 3 7` 全零，漏掉了它——
+// 那次残留的根因是「罚下球员幽灵」，已在 viewer 侧修复）。再加含红牌的 `11` 作常态覆盖。
+const seeds = process.argv.slice(2).length
+  ? process.argv.slice(2).map(Number)
+  : [42, 1, 2, 3, 7, 59, 11];
 
 const { instance } = await WebAssembly.instantiate(wasmBytes, {});
 const wasm = instance.exports;

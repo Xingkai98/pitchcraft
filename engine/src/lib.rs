@@ -615,10 +615,17 @@ fn same_team_ok_m(a: (f64, f64), b: (f64, f64)) -> bool {
     same_team_dist_m(a, b) >= SAME_TEAM_MIN_DIST_M - SAME_TEAM_EPS
 }
 
-/// 拍内扫掠阈值 = `SAME_TEAM_MIN_DIST_M` − 6cm（= 2.02m）：只修正**真正会逼近 detector
-/// 阈值**（strict `<2.0m`）的轨迹内凹。留 2cm 余量吸收 JSON 4 位小数的序列化舍入；
-/// 2.02m 以上的轻微内凹对 detector 无害、不介入（最小扰动原则——多轮扫掠的推移是
-/// 累积的，介入越少、对比赛动态扰动越小）。
+/// 拍内扫掠阈值 = `SAME_TEAM_MIN_DIST_M` − 6cm（= 2.14m）：只修正**真正会逼近 detector
+/// 阈值**（strict `<2.0m`）的轨迹内凹；更小的内凹对 detector 无害、不介入（最小扰动原则
+/// ——多轮扫掠的推移是累积的，介入越少、对比赛动态扰动越小）。
+///
+/// **三个阈值/余量总账**（防将来只改一处）：
+/// - `SAME_TEAM_MIN_DIST_M = 2.2m`：端点分离目标，含 **0.2m 余量**（吸收 JSON `round3`
+///   4 位小数序列化 + 0.5s 采样插值的双重舍入）。
+/// - `SAME_TEAM_SWEPT_MIN_M = 2.14m`：拍内轨迹约束目标 = 端点阈值 − 0.06m（拍内中点由
+///   viewer 插值产生、不经序列化，余量需求小于端点）。
+/// - detector 真实门 `strict < 2.0m`：两者共同对它有 ≥0.14m 裕度。
+/// 三者**不是叠加**关系：端点门守「发射坐标」、扫掠门守「拍内中点」，各自独立留余量。
 const SAME_TEAM_SWEPT_MIN_M: f64 = SAME_TEAM_MIN_DIST_M - 0.06;
 
 /// carrier（或其它需保护几何的球员）在拍内侧推中的**分摊比例**：只承担这一小份，队友
@@ -4554,16 +4561,21 @@ fn separate_target_point(st: &MatchState, id: i32, target: (f64, f64)) -> (f64, 
     separate_target_points(st, &[(id, target)])[0].1
 }
 
-/// 多点版 `separate_target_point`：一次提交**同一拍**的多个事件指定终点（抢断的
-/// `subject_end` / `carrier_end` 等）。返回与输入同序的分离后终点。
+/// 多点版 `separate_target_point`：一次提交**同一拍**的多个事件指定终点（如抢断的
+/// `subject_end` / `carrier_end`）。返回与输入同序的分离后终点。
 ///
 /// 每个点须与**本方其他球员**（含未参与本事件的队友）的当前位置米制间距 ≥ 阈值；同时
-/// 各点**互相之间**的距离不得缩小（抢断 def↔victim 的跨队结算间距是既有约定，
+/// 各点**互相之间**的距离不得缩小（跨队结算间距是既有约定，如抢断的 def↔victim，
 /// `tackle_stream_participants_not_overlapping` 硬门）。
 ///
 /// 实现：逐点独立分离——把该点推离其**本方队友**，其余指定点按其当前值参与并冻结。若这次
 /// 推移让该点与任一**其他指定点**的互距缩小，则**撤销本次推移**（保留原值）。这样互距只
 /// 增不减；极端情况下宁可残留同队重叠，也不压缩跨队结算间距。
+///
+/// **当前调用形态**：现有调用点（传球接球点 / 门将扑救点 / 松散球拾取 / 角球 battle /
+/// 开球落点）都只提交**单点**（`separate_target_point` 包一层）。多点分支是为「一格里
+/// 同时确定多个事件指定终点」预留的（如未来把抢断的 `subject_end`+`carrier_end` 一起提交），
+/// 单点调用时互距检查是空集、行为等价于「把该点推离队友」。零 RNG、确定性。
 fn separate_target_points(
     st: &MatchState, targets: &[(i32, (f64, f64))],
 ) -> Vec<(i32, (f64, f64))> {
@@ -9927,6 +9939,7 @@ mod tests {
 
 
 }
+
 
 
 
