@@ -23,6 +23,29 @@ TBD - created by archiving change p0-event-to-pitch. Update Purpose after archiv
 - **GIVEN** 一条出界 pass 事件
 - **THEN** 事件含 `result="out"`、`out_side`（goal_line/sideline）、`out_pos`（真实越界坐标）；`x2/y2` 为场内投影点（∈[0,1]）
 
+### Requirement: beat 节拍事件字段
+
+beat 节拍事件 SHALL 描述一个 tick（1s）内所有在移动球员的并行动作，顶层不携带 subject/x/y（主体与位置嵌套在 main/movers/ball 内）。beat SHALL 携带：`movers`（并行跑位数组，增量——只含移动球员，`{id, from_x, from_y, to_x, to_y, speed, action}`）；持球者带球/控球时携带 `main`（`{type:'dribble', subject, x, y, x2, y2, speed, touch_freq}`，球轨迹由 main 驱动）；无持球者（抢断弹开等）时携带 `ball`（`{x, y, x2, y2, speed, loose:true}`，球由 beat.ball 驱动）。beat SHALL NOT 同时携带 main 与 ball（任意开放比赛时刻球有唯一驱动者）。
+
+#### Scenario: 节拍含并行跑位
+- **GIVEN** 一个 tick 时刻
+- **WHEN** 引擎产出一条 beat 事件
+- **THEN** 携带 `movers`（只含移动球员，静止球员不在其中）；持球者不出现在 movers（其移动只由 main 表达）
+
+#### Scenario: 持球者带球由 main 表达
+- **GIVEN** 持球者在带球/控球（无高亮事件）
+- **WHEN** 引擎产出一条 beat 事件
+- **THEN** 携带 `main`（球轨迹 x/y→x2/y2 + speed 驱动）；每个持球 tick 都发 main（含零位移控球）
+
+#### Scenario: 松散球由 ball 表达
+- **GIVEN** 无持球者（抢断弹开等）
+- **WHEN** 引擎产出一条 beat 事件
+- **THEN** 携带 `ball`（`loose:true`，含滚动轨迹），球由 beat.ball 驱动
+
+#### Scenario: main 与 ball 互斥
+- **WHEN** 引擎产出一条 beat 事件
+- **THEN** 不同时含 main 与 ball（唯一驱动者）
+
 ### Requirement: pass 拦截字段（interceptor）
 
 拦截 pass（`result=intercepted`）SHALL 携带 `interceptor`（断球方球员 id），画面层据此演绎"球被防守方截走"。引擎产出一条有向 pass 事件时，`result` SHALL 为 `success` / `intercepted` / `lost` / `out` / `contested` 之一（`out` = 出界；`contested` = 落点是争抢点的发球/门球，非出界）。
@@ -45,11 +68,15 @@ TBD - created by archiving change p0-event-to-pitch. Update Purpose after archiv
 
 ### Requirement: 事件类型枚举
 
-事件流 SHALL 支持第一版 8 类事件：kickoff、whistle、pass、dribble、shot、tackle、interception、substitution，另加 foul（犯规/纪律牌）。goal 不设独立类型，由 shot 的 result=goal 表达。
+事件流 SHALL 支持以下事件类型（非 demo 模式）：lineup（初始站位）、kickoff、whistle、pass、shot、tackle、foul（犯规/纪律牌）、beat（固定 tick 节拍）。goal 不设独立类型，由 shot 的 result=goal 表达；传球拦截由 pass `result=intercepted` 表达（不设独立 interception 事件）。demo_mode SHALL 保持 v1 事件驱动（含 dribble）。
 
 #### Scenario: 枚举覆盖核心动作
 - **WHEN** 画面层遇到事件流中的事件
-- **THEN** 能按 type 识别为 kickoff/whistle/pass/dribble/shot/tackle/interception/substitution/foul 之一
+- **THEN** 能按 type 识别为 lineup/kickoff/whistle/pass/shot/tackle/foul/beat 之一（demo_mode 另含 dribble）
+
+#### Scenario: 拦截由 pass result 表达
+- **WHEN** 一次传球被对方断下
+- **THEN** 事件为 pass 且 result=intercepted、携带 interceptor；不产生独立的 interception 事件
 
 #### Scenario: foul 事件字段
 - **WHEN** 引擎产出一条 foul 事件
