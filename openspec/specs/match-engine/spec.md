@@ -33,15 +33,15 @@ Rust 引擎 SHALL 是纯逻辑库，不假设有文件系统/命令行——数�
 
 ### Requirement: 产出最小比赛事件流
 
-引擎 SHALL 能产出一场最小比赛的事件流，至少包含 kickoff、pass、dribble、shot、whistle 五类事件。
+引擎 SHALL 能产出一场最小比赛的事件流：以 lineup（初始站位）+ kickoff 开始、以 whistle 结束，中间为固定 tick 的 beat 节拍流（含 main 带球 + movers 跑位）与叠加其上的高亮事件（pass/shot/tackle/foul）。非 demo 模式不产顶层 dribble/off_ball_run/interception 事件（带球由 beat.main 表达、无球跑位由 beat.movers 表达、拦截由 pass result=intercepted 表达）；demo_mode SHALL 保持 v1 事件驱动（含 dribble）。
 
 #### Scenario: 最小比赛
 - **WHEN** 引擎被要求模拟一场最小比赛
-- **THEN** 输出事件流从 kickoff 开始，以 whistle 结束，中间包含传球、带球、射门事件
+- **THEN** 输出事件流以 lineup + kickoff 开始，以 whistle 结束，中间包含 beat 节拍与 pass/shot/tackle 高亮事件
 
 ### Requirement: 事件含演绎参数
 
-引擎 SHALL 在 pass/dribble/shot 事件中输出演绎参数：pass 含球速与提前量（speed、lead），dribble 含带球速度与触球频率（speed、touch_freq），shot 含球速（speed）。
+引擎 SHALL 在 pass/shot 事件与 beat.main 中输出演绎参数：pass 含球速与提前量（speed、lead），beat.main 含带球速度与触球频率（speed、touch_freq），shot 含球速（speed）。
 
 #### Scenario: 传球带演绎参数
 - **WHEN** 引擎产出一条 pass 事件
