@@ -32,7 +32,7 @@
 - [x] P5.2 `npx openspec validate --all --strict` 全绿
 - [x] P5.3 `cargo test` + `verify.sh` 全绿（含 realism L1）
 - [x] P5.4 跑真实 diagnosis，`player_overlap` finding 归零（若 0.5s 插值中点仍越界 → 回引擎调 solver，不忽略）
-- [ ] P5.5 独立零记忆 subagent 审阅闭环（发现问题→修复→再审至无遗留）
+- [x] P5.5 独立零记忆 subagent 审阅闭环（发现问题→修复→再审至无遗留）
 
 ## 关联
 
