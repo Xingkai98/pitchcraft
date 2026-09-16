@@ -456,3 +456,33 @@ test('P7 跳过模式循环：fast → skip → off → fast', () => {
   assert.equal(g.cycleSkipMode(), 'fast');
   assert.equal(g.isSkipEnabled(), true);
 });
+
+test('sent-off player is excluded from the rendered players list (no ghost)', () => {
+  // P34 审阅 R3-P2-3：引擎在红牌后不再发射该球员锚点（spec：罚下球员不得进 movers），
+  // 但时间线会保持其最后锚点——`game.players` 必须过滤罚下球员，否则他会永远杵在原地
+  // 被画出来（幽灵）。
+  const lineup = [
+    { id: 0, team: 'home', x: 0.02, y: 0.5 },
+    { id: 5, team: 'home', x: 0.5, y: 0.5 },
+    { id: 15, team: 'away', x: 0.6, y: 0.5 },
+  ];
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup },
+    { t: 0, type: 'kickoff', subject: 5, x: 0.5, y: 0.5 },
+    { t: 10, type: 'foul', subject: 15, x: 0.6, y: 0.5, card: 'red' },
+    { t: 12, type: 'beat', movers: [{ id: 5, from_x: 0.5, from_y: 0.5, to_x: 0.55, to_y: 0.5, speed: 4, action: 'run' }] },
+  ];
+  const g = new Game(events, lineup, 'continuous');
+  g.seekTo(6);
+  assert.ok(g.players.some((p) => p.id === 15), '红牌之前 15 应在可见列表');
+  g.seekTo(20);
+  assert.ok(!g.players.some((p) => p.id === 15), '红牌之后 15 不得出现在可见列表（幽灵排除）');
+  // 边界钉死：红牌**当刻**（t == offAt）仍应可见（该时刻他还在场上；口径同
+  // `derive-audit-features` 的 `t > offAt` 才跳过采样）。
+  const g2 = new Game(events, lineup, 'continuous');
+  g2.seekTo(10);
+  assert.ok(g2.players.some((p) => p.id === 15), '红牌当刻（t==offAt）15 仍应可见');
+  assert.ok(g.players.some((p) => p.id === 5), '未罚下球员应仍在可见列表');
+  // 内部全量列表仍保留该球员（保证时间线插值一致性）。
+  assert.ok(g._players.some((p) => p.id === 15), '_players（全量）仍含 15');
+});

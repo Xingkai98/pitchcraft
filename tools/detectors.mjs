@@ -36,9 +36,9 @@ export const DEFAULT_AUDIT_PROFILE = {
     calibrated: true,
   },
   player_overlap: {
-    // 同队两球员的最小站位间距（米）。真人比赛同队间距通常 ≥2m（issue #35）；引擎当前
-    // repulsion（REPULSION_MIN_DIST=1.36m + 盲区）会把同队球员贴到 0.1m 级，引擎侧间距
-    // 约束归 #53。detector 只按严格 `<` 判定（恰等于阈值不算重叠）。
+    // 同队两球员的最小站位间距（米）。真人比赛同队间距通常 ≥2m（issue #35）。
+    // 引擎侧已由 #53 施加米制间距约束（`SAME_TEAM_MIN_DIST_M` = 2.2m，含序列化与采样
+    // 余量），本 detector 的 finding 应归零。detector 只按严格 `<` 判定（恰等于阈值不算重叠）。
     min_distance: 2.0,
     // P21 D4 的显式标定声明：只知道阈值（真实比赛常识），不知道**告警率**的真实区间，
     // 故标未标定——聚合层不因超 band 升级 realism_failure，保持 D3 的 realism_warning

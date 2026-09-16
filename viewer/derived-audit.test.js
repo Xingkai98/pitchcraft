@@ -426,3 +426,34 @@ test('derive layer produces moved_toward_ball:true when a player closes on the b
     'derive layer must set moved_toward_ball:true for a player closing on the ball'
   );
 });
+
+test('sent-off player is not sampled as a ghost after the red card', () => {
+  // P34 审阅 R2 反例（seed 59）：引擎在红牌后**不再发射该球员的任何锚点**（spec：罚下
+  // 球员不得进 movers / 不得持球）。但 viewer 的时间线会保持其最后锚点——若不显式排除，
+  // 该球员会以「幽灵」停在场上：既被画出来，又被 audit 采样为有效位置，让队友「从他身边
+  // 跑过」被 detector 判成同队重叠（实测 100% 的此类残留都来自罚下球员，最恶劣 0.87m）。
+  //
+  // 本用例：away 15 在 t=10 吃红牌（此后无锚点），away 12 在 t=20 沿其身旁跑过。
+  // 断言罚下时刻之后的快照里**没有 id 15**。
+  const soEvents = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineups },
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 10, type: 'foul', subject: 15, x: 0.52, y: 0.75, card: 'red' },
+    // 15 罚下后引擎不再给它锚点；12 从 (0.60,0.20) 跑到 (0.52,0.74)——终点距 15 的
+    // 最后位置 (0.52,0.75) 仅 ~0.68m（若 15 被当幽灵采样 → 同队重叠）。
+    { t: 20, type: 'beat', movers: [{ id: 12, from_x: 0.60, from_y: 0.20, to_x: 0.52, to_y: 0.74, speed: 4, action: 'run' }] },
+  ];
+  const game = new Game(soEvents, lineups, 'continuous');
+  game.seekTo(25);
+  const bundle = captureObservation({
+    game, statement: '', selectedEntities: [], window: { before: 10, after: 10 },
+    seed: 42, config: MATCH_CONFIG, sourceRevision: 'abc123', opts: deterministic(),
+  });
+  const snaps15 = bundle.audit_input.players['15'] ?? [];
+  assert.equal(
+    snaps15.filter((s) => s.t > 10).length, 0,
+    'id 15 在红牌（t=10）之后不得有任何采样快照（幽灵排除）'
+  );
+  // 队友 12 仍被正常采样（对照组：不是「整段都没采」）。
+  assert.ok((bundle.audit_input.players['12'] ?? []).length > 0, '未罚下球员应照常采样');
+});

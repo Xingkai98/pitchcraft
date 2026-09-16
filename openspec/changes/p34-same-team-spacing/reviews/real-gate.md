@@ -1,0 +1,57 @@
+# P5.4 真实门（detector）验收记录
+
+design D3 第 3 项：跑真实 diagnosis，`player_overlap` finding 应归零。
+
+## 怎么跑（**脚本已入库**，可复现）
+
+`tools/spacing-sweep.mjs`——把真实采集窗口（±5s）**滑过整场**（每 2.5s 一窗），用真实采集
+管线（`protocol.parseEventStream → Game → observation.captureObservation → buildAuditInput`）
+产出 audit_input 再跑 `tools/detectors.mjs` 的 `player_overlap`。比 P26 的稀疏 fixture 密得多
+（后者只在 6–7 个手工挑的窗口采样，会漏掉大量时刻——P34 审阅 P0-1 的教训）。
+
+```bash
+# 仓库根，先有 viewer/engine.wasm（下方命令重建）
+node tools/spacing-sweep.mjs          # 默认 seed 42 1 2 3 7 59 18 94（各 2157 窗）
+node tools/spacing-sweep.mjs 42 1 2   # 指定 seed
+# 退出码：任一 finding 即 1（可作 CI 门）
+```
+
+WASM 重建：
+
+```bash
+(cd engine && cargo build --target wasm32-unknown-unknown --release \
+  && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)
+```
+
+Rust 侧同口硬门：`engine/src/lib.rs` 的
+`p53_same_team_spacing_ge_2m`（端点）与 `p53_same_team_spacing_holds_between_anchors`（整条
+轨迹含拍内中点）。
+
+## 结果（终版）
+
+| 口径 | 结果 |
+|---|---|
+| 真实采集 fixture（`tools/fixtures/real-audit-input.json`，**P27 时代冻结快照**）| ⚠️ **不作为本 change 的门**：该文件是 `_provenance` 自述的「SNAPSHOT，字段值在生成时冻结」，仍是**旧引擎**的输出（含 1 条 `corner 4,5@0.434m`）。它的用途是 detector 字段**形状**契约，不是间距门；不重新生成（生成器硬编码 `SEED=42`，且 P34 已改事件流，重生成会连带改形状契约与 golden 签名——超出本 change 范围）。**本 change 的真实门是下面的整场滑窗。** |
+| 整场滑窗 `tools/spacing-sweep.mjs`（每 seed 2157 窗） | **全零**（默认集 `42 1 2 3 7 59 18 94` + fresh seed 批 `5 17 29 41 53 67 71 83 97 101 127 149`）|
+| Rust 端点门 `p53_same_team_spacing_ge_2m`（10 seed 整场） | 绿 |
+| Rust 拍内中点门 `p53_same_team_spacing_holds_between_anchors`（8 seed） | 绿 |
+
+修复历程（对应审阅 review-paseo.md）：初版只在 6–7 个手挑窗口验证、误报归零；扩到整场
+滑窗后暴露三条根因（loose 追逐者预写起点污染扫掠输入、carrier 扫掠豁免过宽、抢断结算点
+未分离），逐条修复（见 `review-response.md`）。
+
+## 关键参数与取舍
+
+- `SAME_TEAM_MIN_DIST_M = 2.2`：端点阈值。含 JSON 4 位小数序列化 + 0.5s 采样插值的余量。
+- 拍内扫掠阈值 `= 阈值 − 0.06`；侧推上限 `= 阈值 × 3`（近对穿的侧推需数倍阈值才收敛）。
+- **carrier 在拍内侧推中只承担 `SWEPT_LIGHT_SHARE`（0.12）**，队友吸收其余：carrier 在射门
+  推进/起脚窗口刻意奔向球门，取小份额以尽量少改其几何。**口径更正**（第 3/4 轮审阅实测）：
+  0.0 / 0.12 / 0.5 三者在 Rust 门、真实滑窗、L3（禁区占比 0.770/0.775/0.773，带
+  [0.72,0.92]）上**都无差异**——0.12 是保守取向，不是被任何门钉死的承重常量。
+  （原文曾断言「0.5 破 L3 / 0 残留中点越界」，该断言实测复现不出，已更正。）
+- 拍内中点门限取 detector 的 `2.0m`（不是端点阈值 2.2）——只保证不跌破 detector 阈值。
+
+## 已知边界（非阻断）
+
+- 拍内扫掠的侧推上限（`阈值 × 3`）：两名同队球员本拍轨迹近乎**对穿**且需要超过该上限的侧移
+  时，本拍不修正、留给下一拍。终版实测该情形未在默认 seed 集 + fresh seed 中出现。

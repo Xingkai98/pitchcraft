@@ -36,6 +36,22 @@ function teamOf(id, lineupMap) {
   return null;
 }
 
+// 罚下球员及其离场时刻。引擎 `apply_card` **把二黄升级也记为 `card:"red"`**（"二黄变红：
+// 罚下，事件按红牌展示"），故 `foul` 事件的 `card:"red"` 是罚下的**唯一**对外信号；黄牌
+// （`card:"yellow"`）不产生罚下，无需跟踪。罚下后该球员**不再出现在任何事件**（spec：
+// 不得成为持球者/追逐者/抢断者/传球目标/开球者，也不得进 movers）——引擎侧已无位置语义。
+// 但 viewer 的时间线会**保持其最后锚点**，若不显式排除，该球员会以「幽灵」形式停在场上：
+// 既被画出来，又被 audit 采样为有效位置（P34 审阅 R2 的残留全部来自此类幽灵：跑动队友
+// 擦过静止幽灵 → detector 报同队重叠）。返回 Map<id, t>（首次罚下时刻）。
+function sentOffTimes(events = []) {
+  const out = new Map();
+  for (const e of events ?? []) {
+    if (!e || e.type !== 'foul' || e.card !== 'red' || typeof e.subject !== 'number') continue;
+    if (!out.has(e.subject)) out.set(e.subject, e.t);
+  }
+  return out;
+}
+
 // 锚点时间线 → 按实体分组的插值列表（球一组、每球员一组）。锚点已按 t 排序。
 function anchorLists(timeline) {
   const ball = [];
@@ -299,6 +315,7 @@ function derivePlayerSnapshots({
   transitionTimes,
   ballMovingAt,
   acts,
+  sentOff = new Map(),
 }) {
   const players = {};
   const lo = matchTime - win.before;
@@ -313,8 +330,10 @@ function derivePlayerSnapshots({
 
   for (const id of playerIds) {
     if (typeof id !== 'number') continue;
+    const offAt = sentOff.get(id); // 罚下时刻（该时刻之后不再有位置语义）
     const snaps = [];
     for (let t = lo; t <= hi + 1e-9; t = round3(t + step)) {
+      if (offAt !== undefined && t > offAt) continue; // 已离场：不采样（幽灵排除）
       const pos = interpolateAnchors(anchors.players.get(id), t);
       if (!pos) continue;
       const ball = interpolateAnchors(anchors.ball, t);
@@ -381,6 +400,7 @@ function derivePlayerSnapshots({
 // 主入口：归一化事件 + 锚点时间线 + lineup → 米制 audit_input（事件 + 球员快照）。
 export function deriveAuditInput({
   events = [],
+  allEvents = null,
   timeline = [],
   lineup = [],
   pitch = { length: 105, width: 68 },
@@ -397,6 +417,8 @@ export function deriveAuditInput({
   const ballMovingAt = makeBallMovingAt(anchors.ball, pitch);
   const transitionTimes = possessionTransitionTimes(events, lineupMap);
   const acts = onBallActors(events, pitch, defaults);
+  // 罚下推导用**整场**事件（`allEvents`），窗口事件（`events`）通常看不到红牌那一刻。
+  const sentOff = sentOffTimes(allEvents ?? events);
 
   const meterEvents = (events ?? []).map((e, i) => {
     if (!e || typeof e !== 'object') return { t: i, type: 'unknown', index: i };
@@ -430,6 +452,7 @@ export function deriveAuditInput({
     transitionTimes,
     ballMovingAt,
     acts,
+    sentOff,
   });
 
   return {

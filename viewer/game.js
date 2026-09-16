@@ -18,13 +18,27 @@ export class Game {
     this.lineup = lineup; // 初始站位 [{id, team, x, y}]
     this.mode = mode === 'clip' ? 'clip' : 'continuous';
     // 当前每帧状态：球员位置（含初始站位）+ 球位置
-    this.players = (lineup || []).map((p) => ({ id: p.id, team: p.team, x: p.x, y: p.y }));
+    // 全量球员（位置由 `_updateFromTimeline` 每帧插值维护）；对外 `players` getter 会过滤
+    // 罚下球员（渲染 / `viewer_snapshot` 都不应看到幽灵）。
+    this._players = (lineup || []).map((p) => ({ id: p.id, team: p.team, x: p.x, y: p.y }));
     this.ball = { x: 0.5, y: 0.5 };
     // 播放控制
     this.playing = false; // 默认不自动播放
     this.speedIndex = 0; // 0 -> 1x, 1 -> 2x, 2 -> 4x
     this.playTime = 0; // 当前播放的比赛秒
     this.timeline = buildTimeline(events, this.mode); // 锚点时间线（continuous 启用 carry-beat 丢弃）
+    // 罚下集合（红牌 / 二黄升级）。引擎 `apply_card` 把二黄升级也记为 `card:"red"`，故
+    // `foul` 的 `card:"red"` 是罚下的唯一对外信号。罚下后引擎不再发射该球员的任何锚点
+    // （spec：不得进 movers / 不得持球），但时间线会**保持其最后锚点**——若不在渲染层
+    // 排除，红牌球员会以「幽灵」永远杵在场上（P34 审阅 R3-P2-3；同 `derive-audit-features`
+    // 的 `sentOffTimes`，两处口径一致）。
+    // id → 罚下时刻（该时刻之后才离场；时刻之前仍在场上，须正常渲染）。
+    this.sentOffAt = new Map();
+    for (const e of events) {
+      if (e && e.type === 'foul' && e.card === 'red' && typeof e.subject === 'number') {
+        if (!this.sentOffAt.has(e.subject)) this.sentOffAt.set(e.subject, e.t);
+      }
+    }
     this._buildAnchorIndex(); // 按实体分组的时间索引（P3.5：~2900 事件数万锚点，线性扫描会卡）
     this._clipIndex = 0; // clip 模式：当前选中事件索引
     // 每个事件的结束时间：该事件最后一个锚点的 t + 余量，作为独立片段时长（clip 用）
@@ -46,7 +60,7 @@ export class Game {
     // 初始化到第一个事件的初始状态
     this._initToEvent(0);
     this._prevPlayerPos = new Map(); // 调试：球员上一帧位置快照
-    for (const p of this.players) {
+    for (const p of this._players) {
       this._prevPlayerPos.set(p.id, { x: p.x, y: p.y });
     }
     this._lastLoggedEventIdx = -1; // 调试：上次日志的事件索引
@@ -151,6 +165,18 @@ export class Game {
   }
 
   // 初始化/切换到某事件的初始状态：playTime = 事件 t，球员/球回到该事件起点锚点
+  // 可见球员（渲染 / snapshot 用）：排除已罚下者——引擎罚下后不再发射其锚点、时间线却会
+  // 保持最后锚点，若不排除会永远画一个静止「幽灵」（P34 审阅 R3-P2-3；口径同
+  // `derive-audit-features` 的 `sentOffTimes`）。
+  get players() {
+    if (this.sentOffAt.size === 0) return this._players;
+    const t = this.playTime;
+    return this._players.filter((p) => {
+      const offAt = this.sentOffAt.get(p.id);
+      return offAt === undefined || t <= offAt;
+    });
+  }
+
   _initToEvent(index) {
     if (index < 0 || index >= this.events.length) return false;
     this._clipIndex = index;
@@ -238,7 +264,7 @@ export class Game {
     }
     if (d.logMovingPlayers) {
       const moving = [];
-      for (const p of this.players) {
+      for (const p of this._players) {
         const prev = this._prevPlayerPos.get(p.id);
         const dx = p.x - prev.x;
         const dy = p.y - prev.y;
@@ -332,8 +358,8 @@ export class Game {
     const t = this.playTime;
     // 球：取最近的两个 ball 锚点插值
     this.ball = this._interpolateAnchors('ball', t) || this.ball;
-    // 球员：逐球员取最近锚点插值
-    for (const p of this.players) {
+    // 球员：逐球员取最近锚点插值（对**全量**球员做，罚下球员虽不渲染也保持内部一致）
+    for (const p of this._players) {
       const pos = this._interpolateAnchors('player', t, p.id);
       if (pos) {
         p.x = pos.x;
