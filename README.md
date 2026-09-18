@@ -92,7 +92,7 @@ pass/fail**。唯一有断言的是指标单测（保证"量出来的数是对�
 **一个关键发现**：Metrica 的纵深（25.94m）**更接近 SkillCorner 的全点值（25.82m）而非其真检测值（18.31m）**——
 说明「外推点 / 每帧有效人数」带来的差（~7.5m）**大于数据集之间的差**。**口径选择比数据源更重要。**
 
-口径变更（P37 用户拍板，`openspec/changes/p37-skillcorner-corpus/` D2/D4/D5）：
+口径变更（P37 用户拍板，`openspec/changes/archive/2026-09-18-p37-skillcorner-corpus/` D2/D4/D5）：
 - **纵深估计量 `trim1` → `q10–q90`**（线性插值，R type-7）。原因：`trim1` 是顺序统计量，
   值依赖参与人数 n；跳过外推点后 SkillCorner 每帧人数浮动（0–10），与恒 10 人的 Metrica/引擎
   **不是同一个估计量**。实测机械 n 效应占口径差 trim1 3.09m(45%) → q10–q90 **1.37m(24%)**。
@@ -100,7 +100,7 @@ pass/fail**。唯一有断言的是指标单测（保证"量出来的数是对�
 - **外推点默认跳过**（与「缺失不参与」同口径），全点口径并列作对照。
 - 窗口步长沿用 **900s**（139 窗，与 P36 窗口定义可比）。
 
-两条 P36 教训（`openspec/changes/p36-match-benchmark/design.md` D3/D4）：
+两条 P36 教训（`openspec/changes/archive/2026-09-18-p36-match-benchmark/design.md` D3/D4）：
 ① 弹性"引擎是真实的 2.6 倍"是分桶口径产物——换一个同样合理的口径信号就消失；
 ② 纵深估计量必须在**两侧都做注入实验**。
 

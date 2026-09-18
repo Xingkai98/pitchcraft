@@ -171,13 +171,21 @@
       half-split 结果）；数字以基线文件为**唯一来源**
 - [x] P4.3 `openspec validate --all --strict` 通过
 - [x] P4.4 代码审阅闭环（独立 subagent，直到无遗留问题；报告落 `reviews/impl-review*.md`）
-- [ ] P4.5 **合入**：merge origin/main 进分支 → push → PR → CI 绿 → merge
+- [x] P4.5 **合入**：merge origin/main 进分支 → push → PR → CI 绿 → merge
       —— **合入动作之前**必须先完成：跟踪 issue #78 的 comment + close、
       `openspec/changes/` 归档或留存确认、本地 main 快进。合入后 agent 会话即终止。
+      → PR **#82** 合入（merge commit `2d36056`），issue #78 已 close；
+      归档由主 session 在同一批处理（P35/P36/P37 三者按依赖序一起归档——
+      单独归档 P37 会让它依赖的 P36 requirements 悬空）。
 
 ## 后续（不在本 change 范围）
 
+> 归档注记（2026-09-18）：三条均**仍开放**，本 change 只交付了它们的判据与样本。
+
 - [ ] **校准目标定档**：样本到位后，用本 change 的判据定"引擎纵深 +57% 该压到多少"
       ——这是 issue #78 解锁的下一步，需独立立项
+      ⚠️ "+57%" 是 **P36 的 `trim1` 口径**下的数；本 change 换 `q10–q90` 后引擎与真实的
+      差距量级不同（见基线）——定目标时须用**本 change 口径**的数字，别引 P36 的旧值。
 - [ ] ratchet 门/区间验收门：样本够了，区间才有意义（P36 已留接口）
+      —— 本 change 的交叉验证仍**只是报告项**；升格为门的三条前置条件见 design D7。
 - [ ] 引擎侧样本特征化（不受真实样本限制，可并行）
