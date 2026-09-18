@@ -164,8 +164,35 @@ test('基线：转换器输入指纹与当前实现一致（审阅 P3-3 的陈�
   const b = load();
   assert.ok(b.metricsModule.converters, '基线须记录转换器指纹');
   const current = converterFingerprints();
+  // **两侧都比**（审阅复审 P3-②）：只遍历 current 的键，则「转换器被改名/删除」不会告警
+  // （current 少一个键、基线多一个键，循环仍绿）。故先断言键集相同，再逐键比哈希。
+  assert.deepEqual(
+    Object.keys(b.metricsModule.converters).sort(),
+    Object.keys(current).sort(),
+    '基线记录的转换器集合应恰为当前全部转换器（改名/删除也会被这条抓到）',
+  );
   for (const [file, hash] of Object.entries(current)) {
     assert.equal(b.metricsModule.converters[file], hash,
       `${file} 已变更而基线未重生成 —— 跑 node tools/benchmark-baseline.mjs`);
   }
+});
+
+test('基线：时间缺口声明与逐场实测一致（审阅复审 P3-③ 的守护）', { skip: !HAVE_BASELINE && SKIP_REASON }, () => {
+  // timeGaps 声明是**动态计算**的（timeGapDeclaration），但此前无测试守护——硬编码回
+  // 旧文案也不会红。这里从逐场实测独立复算，与声明里的数字比对。
+  const b = load();
+  const ds = b.datasets[b.primaryDataset];
+  const gaps = ds.games.map((g) => g.meta.timeGaps).filter(Boolean);
+  const totalGap = gaps.reduce((a, g) => a + (g.totalSec || 0), 0);
+  const seam = ds.games.reduce((a, g) => a + ((g.meta.timeAxis && g.meta.timeAxis.seamGapSec) || 0), 0);
+  const span = ds.games.reduce((a, g) => a + (g.meta.endSec || 0), 0);
+  const pct = (100 * totalGap / span).toFixed(1);
+  // 声明里必须出现实测的总时长与占比（数字来自实测，不是写死的）
+  assert.match(b.declarations.timeGaps, new RegExp(`${totalGap.toFixed(0)}s`),
+    '声明应含实测的无观测总时长');
+  assert.match(b.declarations.timeGaps, new RegExp(`${pct}%`), '声明应含实测占比');
+  assert.match(b.declarations.timeGaps, /接缝/, '声明应给出接缝间隙的归因');
+  assert.match(b.declarations.timeGaps, new RegExp(`${seam.toFixed(1)}s`), '声明应含实测接缝合计');
+  // 反证：若把声明硬编码回"接缝贡献 0"，上面 seam 的断言会红（seam 实测 > 0）
+  assert.ok(seam > 0, 'SkillCorner 20 场接缝合计应 > 0（否则测不出"接缝贡献 0"的回归）');
 });
