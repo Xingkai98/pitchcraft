@@ -213,8 +213,17 @@ export function assignSkillcornerIds(rosterTeam, frames, isHome, homeSides) {
   outfield.sort((a, b) => depth.get(a) - depth.get(b));
   outfield.forEach((id, i) => slotOf.set(id, isHome ? 1 + i : 9 - i));
 
-  // 逐帧：主力在场 → 其槽位；缺席槽位 → 在场替补顶上；门将槽始终给在场门将。
-  const frameIds = frames.map((f, i) => {
+  // 逐帧槽位映射：主力在场 → 其槽位；缺席槽位 → 在场替补顶上；门将槽始终给在场门将。
+  //
+  // ⚠️ **按帧对象现算，不预计算成与 `frames` 平行的数组**（这是修过的 bug）：
+  // 早先版本返回 `frameIds: frames.map(...)`，调用方用 `frameIds[k]` 按下标配——
+  // 但转换器在 `--from/--to` 裁剪时，keyframes 的下标锚在**裁剪后窗口**上，而
+  // assignSkillcornerIds 是在**全量帧**上跑的，两套下标会错位（相位不同时 keyframes
+  // 甚至不是 fullKeyframes 的子集）。后果实测：换人后某帧少一名球员（21 而非 22）。
+  // 现算则对任何帧都给正确的映射，与下标无关。
+  // 需要全量上下文的只有 main/subs/slotOf/depth（首发、替补、槽位顺序）——那些仍由
+  // 传入的 `frames`（全量）决定，与被转换的窗口无关。
+  const slotMapFor = (f) => {
     const onPitch = new Set(f.players.map((p) => p.player_id));
     const m = new Map();
     const gkOn = gks.find((id) => onPitch.has(id));
@@ -233,9 +242,9 @@ export function assignSkillcornerIds(rosterTeam, frames, isHome, homeSides) {
       if (si < subsOn.length) { m.set(subsOn[si], slot); si += 1; filled.add(slot); }
     }
     return m;
-  });
+  };
 
-  return { frameIds, slotOf, toId, mainGk, main: [...main], subs, depth, gks };
+  return { slotMapFor, slotOf, toId, mainGk, main: [...main], subs, depth, gks };
 }
 
 // ── 主转换 ──────────────────────────────────────────────────────────────
@@ -299,11 +308,12 @@ export function convertSkillcorner(matchJson, trackingText, opts = {}) {
   let offPitchPoints = 0;
   const outOfRange = { x: 0, y: 0 };
 
-  const frames = keyframes.map((f, k) => {
+  const frames = keyframes.map((f) => {
     const players = new Array(22).fill(null);
     const place = (teamRoster, ids) => {
+      const slotMap = ids.slotMapFor(f); // 按帧现算，与下标无关（见 slotMapFor 注释）
       for (const p of f.players) {
-        const slot = ids.frameIds[k].get(p.player_id);
+        const slot = slotMap.get(p.player_id);
         if (slot == null) continue;
         const norm = normalize(p.x, p.y, f.period);
         // 外推标记：**只有 is_detected===true 才当真观测**；false/null/缺省一律按外推处理
@@ -396,8 +406,8 @@ export function convertSkillcorner(matchJson, trackingText, opts = {}) {
         sourceHomeTeamSide: homeSides,
         keeperSideCheck: orientationCheck,
       },
-      // 逐场球场尺寸（104/105/106 三种，不得硬编码）。指标换算恒用 105×68，
-      // 由此引入 ≤1% 的线性偏差，基线 declaration 里显式声明（design D4）。
+      // 逐场球场尺寸（104/105/106 三种，不得硬编码）。指标层按**同一逐场尺寸**换算回米制
+      // （design D4 修订后；早先"统一按 105×68"会引入按场地尺寸系统性分组的偏置）。
       pitchMeters: { length: L, width: W },
       timeAxis: {
         stitch: 'P2 += (max(P1.clock) - min(P2.clock))——压缩中场休息为一个点，与引擎 5400s 同构',
@@ -426,7 +436,7 @@ export function convertSkillcorner(matchJson, trackingText, opts = {}) {
       },
       notes: [
         '半场时钟回跳已在 timeAxis 里拼接成单调轴（design D3）；拼接处与转播间隙造成的缺口如实记录，不插值',
-        '球场尺寸逐场记录于 pitchMeters；指标换算统一按 105×68，偏差 ≤1%（design D4）',
+        '球场尺寸逐场记录于 pitchMeters；指标层按同一逐场尺寸换算回米制（design D4 修订后）',
       ],
     },
     frames,
@@ -439,9 +449,9 @@ export function checkKeeperSides(keyframes, homeIds, awayIds, normalize) {
   const meanX = (ids, slot) => {
     let sum = 0;
     let n = 0;
-    for (let k = 0; k < keyframes.length; k += 1) {
-      const f = keyframes[k];
-      const gkId = [...ids.frameIds[k].entries()].find(([, s]) => s === slot)?.[0];
+    for (const f of keyframes) {
+      const slotMap = ids.slotMapFor(f); // 按帧现算（与下标无关）
+      const gkId = [...slotMap.entries()].find(([, s]) => s === slot)?.[0];
       if (gkId == null) continue;
       const raw = f.players.find((p) => p.player_id === gkId);
       if (!raw || raw.x == null) continue;

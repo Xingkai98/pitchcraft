@@ -338,6 +338,56 @@ test('tracking 是 LFS 指针时 CLI 报错而非产出空帧', async () => {
   assert.equal(isLfsPointerFile(p), false);
 });
 
+// ── 边界：时间窗裁剪 + 换人（下标对齐的回归守护）─────────────────────────
+
+// 造一场「换人在奇数帧」的比赛：n<11 上 id 100..110，n>=11 上 110 下、111 上。
+// 花名册 12 人/队（多一个替补）。位置随帧号变（x = -50 + n*0.2 + j），便于发现错位。
+function synthWithSub(n = 30) {
+  const roster = (tid, base) => Array.from({ length: 12 }, (_, i) => ({
+    id: base + i, team_id: tid,
+    player_role: i === 0 ? { name: 'Goalkeeper', position_group: 'Other' } : { name: 'Center Back', position_group: 'Defender' },
+  }));
+  const match = {
+    id: 1, home_team: { id: 1 }, away_team: { id: 2 }, pitch_length: 105, pitch_width: 68,
+    home_team_side: ['left_to_right', 'left_to_right'], players: [...roster(1, 100), ...roster(2, 200)],
+  };
+  const mk = (i) => {
+    const ss = (i * 0.1).toFixed(2).padStart(5, '0');
+    const on = i < 11 ? [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110]
+      : [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 111];
+    const away = [200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 210];
+    const player_data = [
+      ...on.map((id, j) => ({ player_id: id, x: -50 + i * 0.2 + j, y: 0, is_detected: true })),
+      ...away.map((id, j) => ({ player_id: id, x: 50 - i * 0.2 - j, y: 0, is_detected: true })),
+    ];
+    return JSON.stringify({ frame: i, timestamp: `00:00:${ss}`, period: 1, ball_data: { x: 0, y: 0, z: 0, is_detected: true }, player_data });
+  };
+  return { match, text: Array.from({ length: n }, (_, i) => mk(i)).join('\n') };
+}
+
+test('换人：每帧恒 22 人（替补顶上被换下的槽位）', () => {
+  const { match, text } = synthWithSub();
+  const out = convertSkillcorner(match, text, { keyframeHz: 5 });
+  for (const f of out.frames) {
+    assert.equal(f.players.filter(Boolean).length, 22, `t=${f.t} 应有 22 人`);
+  }
+});
+
+test('换人 + 时间窗裁剪：下标错位回归守护（曾少一名球员）', () => {
+  // 回归：早先 `frameIds[k]` 的下标锚在「裁剪后窗口」，而槽位映射是在「全量帧」上算的——
+  // 两者相位不同时 keyframes 甚至不是 fullKeyframes 的子集。后果：换人后某帧少一人
+  // （实测 21 而非 22）。这里用**裁剪起点不在 stride 边界**（from=0.05）复现该场景。
+  const { match, text } = synthWithSub();
+  for (const opts of [{ keyframeHz: 5 }, { keyframeHz: 5, from: 0.05, to: 3 }, { keyframeHz: 5, from: 0.15, to: 2.95 }]) {
+    const out = convertSkillcorner(match, text, opts);
+    const bad = out.frames.filter((f) => f.players.filter(Boolean).length !== 22);
+    assert.equal(bad.length, 0, `${JSON.stringify(opts)} 出现 ${bad.length} 个非 22 人帧（下标错位）`);
+    assert.ok(out.frames.length > 0);
+    // 朝向自检也须通过（它同样依赖槽位映射）
+    assert.equal(out.meta.orientationDetected.keeperSideCheck.ok, true);
+  }
+});
+
 // ── 边界：时间窗裁剪 ────────────────────────────────────────────────────
 
 test('--from/--to 裁剪只影响输出范围，不影响朝向判定', () => {
