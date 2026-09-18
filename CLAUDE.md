@@ -65,30 +65,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 viewer 可切到「真实比赛（对照）」：公开 tracking 数据 → 帧序列 → 复用同一 `renderFrame` 播放。
 调参时用它做参照，不再只能靠语言描述。**这条通路绕过引擎与演绎层**，是参照物，不是引擎的一部分。
 
-- 生成：`node tools/fetch-tracking-data.mjs`，再 `node tools/convert-tracking-to-frames.mjs`
+- 生成：`node tools/fetch-tracking-data.mjs`（Metrica），再 `node tools/convert-tracking-to-frames.mjs`
+- **SkillCorner（P37，20 场 / MIT）**：`node tools/fetch-tracking-data.mjs --dataset skillcorner-opendata`
+  （tracking 是 Git LFS 指针，实体走 `media.githubusercontent.com/media/.../**master**/...`——
+  分支是 master 不是 main；并发 6 路可续），再 `node tools/convert-skillcorner-to-frames.mjs --match <id>_match.json --out ...`
 - 数据与转换产物都在 `.gitignore`（`viewer/data/`、`.scratch/tracking-data/`），不入库
 - 原理 / 坐标对齐 / 已知坑：`.scratch/notes/real-match-reference.md`
 - 改 `tracking-player.js` 或转换器后，跑 `viewer/tracking-player.test.js` +
   `viewer/tracking-e2e.test.js`（真实数据的像素级验收，缺数据时自动跳过）
 
-### 6. 比赛标尺（P36：真实比赛 vs 引擎的可比指标）
+### 6. 比赛标尺（P36 立尺 → P37 扩样本：真实比赛 vs 引擎的可比指标）
 
 真实比赛与引擎比赛**共用同一份指标实现**（`viewer/match-metrics.js`），输出可直接对比的
 队形/空间指标。调参判据（"散不散"）由此从形容词变成数字。
 
-- 跑：`node tools/benchmark-compare.mjs`（报告期：只输出数字与对比，**不产生 pass/fail**——
-  2 场样本导出的范围不足以当验收判据；唯一断言在指标单测）
+- 跑：`node tools/benchmark-compare.mjs`（报告期：只输出数字与对比，**不产生 pass/fail**；
+  唯一断言在指标单测）。**两套数据集分别报告**（Metrica 2 场 / SkillCorner 20 场），
+  附跨数据集可比性检查
+- 交叉验证：`node tools/benchmark-crossvalidation.mjs`（half-split + LOO）。⚠️ **是报告项、
+  不是门**——min/max 包含门的通过率与样本量无关（N=20 约 0.25），正常数据下也常"红"；
+  升格为门须先刻画门的零分布（design D7）。verify.sh 里只打印、不阻塞
 - 基线：`viewer/data/benchmark-baseline.json`（**入库**，是 `viewer/data/*` 的 gitignore 例外；
-  其余真实数据仍不入库）。重生成：fetch → convert → 构建 wasm → `node tools/benchmark-baseline.mjs`
+  其余真实数据仍不入库）。重生成：fetch → convert（含 20 场 SkillCorner）→ 构建 wasm →
+  `node tools/benchmark-baseline.mjs`
 - 口径写死在 `viewer/match-metrics.js` 头部注释与 spec：剔除门将 / 瞬时队形逐帧算再均值 /
-  `trim1` 纵深 / 米制 / 控球代理（离球最近者，**代理**非真实持球权）/ 采样 0.2s /
-  球相关主口径只用原始球帧。**改口径必须重生成基线**（基线记录指标模块 sha256，
+  **`q10–q90` 纵深**（P37 用户拍板 β：trim1 是顺序统计量、值依赖人数 n，跳过外推点后两侧
+  人数不同 → 不是同一估计量）/ **逐场球场尺寸**（104/105/106 不折算）/ 控球代理（离球最近者，
+  **代理**非真实持球权）/ 采样 0.2s / 球相关主口径只用原始球帧 / **外推点默认跳过**
+  （全点口径并列作对照）。**改口径必须重生成基线**（基线记录指标模块 sha256，
   不匹配时对比工具报"陈旧"并拒绝对照）
-- 改 `match-metrics.js` 后跑：`viewer/match-metrics.test.js`（口径守护：剔除门将用极端
-  位置断言、trim1 两侧都注入）+ `tools/benchmark-compare.test.mjs`
+- 改 `match-metrics.js` 后跑：`viewer/match-metrics.test.js`（口径守护：剔除门将用极端位置断言、
+  q10–q90 插值规则精确值、外推默认跳过 + **反证条**）+ `tools/benchmark-compare.test.mjs` +
+  `tools/benchmark-baseline.test.mjs` + `tools/benchmark-crossvalidation.test.mjs`
 - 标尺是测量工具：**零引擎改动**。指标能否当门由实测分布是否分离决定（design D3），
   弹性是口径敏感量、不作校准目标（design D4）
-- 设计与审阅：`openspec/changes/p36-match-benchmark/`（design D1–D6 + 两轮审阅）
+- 设计与审阅：`openspec/changes/p36-match-benchmark/`（P36 立尺 D1–D6 + 两轮审阅）、
+  `openspec/changes/p37-skillcorner-corpus/`（P37 扩样本 D1–D8 + 独立审阅 P1×5）
 
 ### 7. 参考的研究报告
 
