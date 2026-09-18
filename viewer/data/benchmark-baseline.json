@@ -5,7 +5,7 @@
   "primaryDataset": "skillcorner",
   "metricsModule": {
     "path": "viewer/match-metrics.js",
-    "sha256": "5ebec87e6a6820c01d59b140aba2af5ce49ee78d43647b1ed1bf87fa94f1747b",
+    "sha256": "5fc00e9e7a1e47a5faf1775254acc6b36d95eb7b310eec89c0cc904818c86272",
     "convention": "q10–q90 线性插值分位跨度（R type-7；P37 换口径，见 match-metrics.js 头注释）",
     "aggregation": "per-frame instantaneous shape → mean over frames; frames with <7 outfield players dropped",
     "pitchMeters": "per-game（逐场尺寸，P37 D4）；缺省 [105,68]",
