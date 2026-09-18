@@ -16,6 +16,10 @@ node_modules/
 
 # 真实比赛对照数据（由 tools/convert-tracking-to-frames.mjs 从公开数据集生成；
 # 源数据 60MB+/场、转换产物 18MB/场，不入库。生成方式见 .scratch/notes/real-match-reference.md）
-viewer/data/
+# 例外：P36 比赛标尺的基线摘要（数百字节，tools/benchmark-baseline.mjs 生成）必须入库——
+# 它是「真实观测范围」的冻结记录，不入库则对比工具无从对照。
+# 用 `data/*` 而非 `data/`：目录整体排除后 git 不会进目录，文件级 `!` 例外无法生效。
+viewer/data/*
+!viewer/data/benchmark-baseline.json
 # 公开 tracking 数据集的本地副本（下载脚本落这里）
 .scratch/tracking-data/

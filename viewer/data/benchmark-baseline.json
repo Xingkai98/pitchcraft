@@ -1,0 +1,385 @@
+{
+  "kind": "p36-match-benchmark-baseline",
+  "schemaVersion": 1,
+  "generatedBy": "tools/benchmark-baseline.mjs",
+  "metricsModule": {
+    "path": "viewer/match-metrics.js",
+    "sha256": "0a6ef660a473c0aff9da6aff0b9f00e319f12ba9931b18f899dd4507165fc20d",
+    "convention": "trim1 depth (drop deepest+highest, span of remaining 8); keepers excluded (id 0/21)",
+    "aggregation": "per-frame instantaneous shape → mean over frames; frames with <7 outfield players dropped",
+    "pitchMeters": [
+      105,
+      68
+    ],
+    "sampleIntervalSec": 0.2,
+    "minOutfieldPlayers": 7,
+    "keeperIds": [
+      0,
+      21
+    ]
+  },
+  "windows": {
+    "sizeSec": 300,
+    "stepSec": 900,
+    "real": {
+      "nWindows": 13,
+      "nGames": 2,
+      "perGame": [
+        {
+          "game": "real-game-1",
+          "meta": {
+            "source": "metrica-sports/sample-data",
+            "format": "metrica-3csv",
+            "hz": 25,
+            "keyframeHz": 5,
+            "frameCount": 29002,
+            "startSec": 0.04,
+            "endSec": 5800.24
+          },
+          "windows": [
+            {
+              "startSec": 0.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 900.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 1800.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 2700.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 3600.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 4500.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 5400.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.04,
+            "uncoveredSec": 100.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "real-game-2",
+          "meta": {
+            "source": "metrica-sports/sample-data",
+            "format": "metrica-3csv",
+            "hz": 25,
+            "keyframeHz": 5,
+            "frameCount": 28232,
+            "startSec": 0.04,
+            "endSec": 5646.24
+          },
+          "windows": [
+            {
+              "startSec": 0.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 900.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 1800.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 2700.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 3600.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            },
+            {
+              "startSec": 4500.04,
+              "durationSec": 300,
+              "frameCount": 1500
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 4800.04,
+            "uncoveredSec": 846.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": {
+            "startSec": 5400.04,
+            "durationSec": 246.2,
+            "reason": "不足 300s 的残窗，不入统计"
+          }
+        }
+      ]
+    },
+    "engine": {
+      "nWindows": 30,
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123
+      ],
+      "durationSec": 5400,
+      "windowsPerSeed": 6,
+      "note": "5 种子 × 6 窗；同一种子内的窗口不独立（同一次模拟），引用时勿当作 30 个独立样本"
+    }
+  },
+  "real": {
+    "perMetric": {
+      "hd": {
+        "avg": 25.214240800000006,
+        "min": 16.157859900000016,
+        "max": 29.569486100000038,
+        "n": 13
+      },
+      "ad": {
+        "avg": 26.151281853846157,
+        "min": 20.175402099999996,
+        "max": 29.586379900000004,
+        "n": 13
+      },
+      "spread": {
+        "avg": 15.236805963646637,
+        "min": 10.747985807741331,
+        "max": 17.153388788221324,
+        "n": 13
+      },
+      "gap": {
+        "avg": 8.323166302431666,
+        "min": 6.803545743561095,
+        "max": 10.542476607325892,
+        "n": 13
+      },
+      "width": {
+        "avg": 39.580609737435914,
+        "min": 28.174677546666672,
+        "max": 46.77525293333335,
+        "n": 13
+      },
+      "ballDist": {
+        "avg": 18.357294263710838,
+        "min": 16.624405626232143,
+        "max": 20.378468694115718,
+        "n": 13
+      },
+      "ballDistAllFrames": {
+        "avg": 18.92344709398753,
+        "min": 15.799017729244918,
+        "max": 21.775658259438224,
+        "n": 13
+      },
+      "possessionHome": {
+        "avg": 0.5060763191411293,
+        "min": 0.3206793206793207,
+        "max": 0.791889007470651,
+        "n": 13
+      },
+      "ballDistFrames": {
+        "avg": 913.1538461538462,
+        "min": 226,
+        "max": 1248,
+        "n": 13
+      },
+      "possessionFrames": {
+        "avg": 913.1538461538462,
+        "min": 226,
+        "max": 1248,
+        "n": 13
+      },
+      "frameCount": {
+        "avg": 1500,
+        "min": 1500,
+        "max": 1500,
+        "n": 13
+      }
+    },
+    "elasticity": {
+      "convention": "rawBallFramesOnly（球相关口径：只用原始观测球帧）",
+      "half": {
+        "avgDelta": 3.229185438122017,
+        "min": -1.322320423796981,
+        "max": 6.994721348519633,
+        "n": 13
+      },
+      "centroid": {
+        "avgDelta": -2.2748295452186507,
+        "min": -6.355459968248649,
+        "max": 1.5374289418129337,
+        "n": 13
+      }
+    }
+  },
+  "engine": {
+    "perMetric": {
+      "hd": {
+        "avg": 39.55660604329831,
+        "min": 32.14489045911429,
+        "max": 47.5868057640834,
+        "n": 30
+      },
+      "ad": {
+        "avg": 38.85473786049204,
+        "min": 29.217926475434627,
+        "max": 46.06779774478909,
+        "n": 30
+      },
+      "spread": {
+        "avg": 19.97975086474046,
+        "min": 17.862024614789306,
+        "max": 23.24012063311787,
+        "n": 30
+      },
+      "gap": {
+        "avg": 15.107840327211186,
+        "min": 11.717365345534388,
+        "max": 18.00514651535305,
+        "n": 30
+      },
+      "width": {
+        "avg": 32.45034562183502,
+        "min": 30.34789902658242,
+        "max": 34.439809298323716,
+        "n": 30
+      },
+      "ballDist": {
+        "avg": 20.312904035675995,
+        "min": 16.33466740339436,
+        "max": 24.096071033472505,
+        "n": 30
+      },
+      "ballDistAllFrames": {
+        "avg": 20.312904035675995,
+        "min": 16.33466740339436,
+        "max": 24.096071033472505,
+        "n": 30
+      },
+      "possessionHome": {
+        "avg": 0.48431111111111125,
+        "min": 0.404,
+        "max": 0.6513333333333333,
+        "n": 30
+      },
+      "ballDistFrames": {
+        "avg": 1500,
+        "min": 1500,
+        "max": 1500,
+        "n": 30
+      },
+      "possessionFrames": {
+        "avg": 1500,
+        "min": 1500,
+        "max": 1500,
+        "n": 30
+      },
+      "frameCount": {
+        "avg": 1500,
+        "min": 1500,
+        "max": 1500,
+        "n": 30
+      }
+    },
+    "elasticity": {
+      "half": {
+        "avgDelta": 13.156378739866701,
+        "min": 3.9929793299514174,
+        "max": 25.36345874081187,
+        "n": 30
+      },
+      "centroid": {
+        "avgDelta": 2.6256224352389834,
+        "min": -7.9112577542932385,
+        "max": 13.179327798541152,
+        "n": 30
+      }
+    },
+    "perSeed": [
+      {
+        "seed": 42,
+        "hd": 42.74757268656075,
+        "ad": 38.861236248520136,
+        "spread": 20.947093271927216,
+        "gap": 13.942521931350619,
+        "width": 31.99777998330327
+      },
+      {
+        "seed": 1,
+        "hd": 41.02205806028615,
+        "ad": 41.44818153292813,
+        "spread": 20.50736835178564,
+        "gap": 14.008337540638616,
+        "width": 32.548752789754396
+      },
+      {
+        "seed": 7,
+        "hd": 39.06744587394377,
+        "ad": 38.56248973432685,
+        "spread": 20.01490082570533,
+        "gap": 15.413860083663588,
+        "width": 32.72056039519097
+      },
+      {
+        "seed": 99,
+        "hd": 38.33560208346959,
+        "ad": 36.782827277682536,
+        "spread": 19.54903859864863,
+        "gap": 16.000634814254127,
+        "width": 32.205151703541
+      },
+      {
+        "seed": 123,
+        "hd": 36.610351512231304,
+        "ad": 38.618954509002556,
+        "spread": 18.880353275635496,
+        "gap": 16.17384726614899,
+        "width": 32.77948323738543
+      }
+    ]
+  },
+  "declarations": {
+    "rangeMeaning": "本基线是 2 场真实比赛（real-game-1.json、real-game-2.json）的 13 个 300s 窗口的观测范围，不是\"真实足球的分布\"。区间自身不确定性大（bootstrap CI 宽度 ≈ 区间宽度），只可用于报警与量差距，不可作为验收判据。",
+    "notCovered": [
+      "联赛/球队风格/球队实力未知（Metrica 匿名样本）",
+      "比分状态未知（数据无比分，无法按追分/领先分桶）",
+      "换人前后、天气、场地条件未分层",
+      "仅 2 场，且采样为中段 5 分钟切片（步长 900s），非连续时段"
+    ],
+    "controlProxy": "控球相位 = 离球最近者所属队（代理，非真实持球权）",
+    "ballFrames": "球相关指标主口径只用原始观测球帧；全帧对照见 perMetric.ballDistAllFrames"
+  },
+  "regenerate": {
+    "steps": [
+      "node tools/fetch-tracking-data.mjs",
+      "node tools/convert-tracking-to-frames.mjs --in .scratch/tracking-data/sample-data/data/Sample_Game_1 --out viewer/data/real-game-1.json",
+      "node tools/convert-tracking-to-frames.mjs --in .scratch/tracking-data/sample-data/data/Sample_Game_2 --out viewer/data/real-game-2.json",
+      "(cd engine && cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)",
+      "node tools/benchmark-baseline.mjs"
+    ],
+    "note": "原始数据与转换产物不入库（.gitignore）；换用更多真实比赛时：把转换产物放进 viewer/data/ 并重跑本脚本"
+  }
+}
