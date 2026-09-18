@@ -71,7 +71,26 @@ viewer 可切到「真实比赛（对照）」：公开 tracking 数据 → 帧�
 - 改 `tracking-player.js` 或转换器后，跑 `viewer/tracking-player.test.js` +
   `viewer/tracking-e2e.test.js`（真实数据的像素级验收，缺数据时自动跳过）
 
-### 6. 参考的研究报告
+### 6. 比赛标尺（P36：真实比赛 vs 引擎的可比指标）
+
+真实比赛与引擎比赛**共用同一份指标实现**（`viewer/match-metrics.js`），输出可直接对比的
+队形/空间指标。调参判据（"散不散"）由此从形容词变成数字。
+
+- 跑：`node tools/benchmark-compare.mjs`（报告期：只输出数字与对比，**不产生 pass/fail**——
+  2 场样本导出的范围不足以当验收判据；唯一断言在指标单测）
+- 基线：`viewer/data/benchmark-baseline.json`（**入库**，是 `viewer/data/*` 的 gitignore 例外；
+  其余真实数据仍不入库）。重生成：fetch → convert → 构建 wasm → `node tools/benchmark-baseline.mjs`
+- 口径写死在 `viewer/match-metrics.js` 头部注释与 spec：剔除门将 / 瞬时队形逐帧算再均值 /
+  `trim1` 纵深 / 米制 / 控球代理（离球最近者，**代理**非真实持球权）/ 采样 0.2s /
+  球相关主口径只用原始球帧。**改口径必须重生成基线**（基线记录指标模块 sha256，
+  不匹配时对比工具报"陈旧"并拒绝对照）
+- 改 `match-metrics.js` 后跑：`viewer/match-metrics.test.js`（口径守护：剔除门将用极端
+  位置断言、trim1 两侧都注入）+ `tools/benchmark-compare.test.mjs`
+- 标尺是测量工具：**零引擎改动**。指标能否当门由实测分布是否分离决定（design D3），
+  弹性是口径敏感量、不作校准目标（design D4）
+- 设计与审阅：`openspec/changes/p36-match-benchmark/`（design D1–D6 + 两轮审阅）
+
+### 7. 参考的研究报告
 
 - `research/2026-08-04-football-manager-match-engine/report.md`：FM 引擎原理 + 开源项目方法 + Bygfoot 视觉
 - 演绎剧本（带球踢-追、传球传跑配合）：`.scratch/notes/interpretation-scripts.md`

@@ -33,9 +33,21 @@ cd viewer && node probe9-convention-scan.mjs
 | `probe8-crossvalidation-and-shape.mjs` | **留一交叉验证**（区间门证伪的关键证据） |
 | `probe9-convention-scan.mjs` | **估计量约定扫描**（floor 索引不对称的发现） |
 | `probe10-round2.mjs` | 第二轮复审（5400s 采样安全性等） |
+| `probe11-balldist-formula.mjs` | **实现期复核**：重心到球候选口径试算（对齐设计 18.7/20.3 溯源） |
+| `probe12-spread-pairing-bug.mjs` | **实现期复核**：紧凑度 x/y 配对错位的量化（真 bug 的发现与影响面） |
+| `probe13-xval-recheck.mjs` | **实现期复核**：留一交叉验证在修正后的重算 |
 | `generate-baseline-numbers.mjs` | 生成 `baseline-numbers.json`（最终口径 × 最终采样） |
+
+## 实现期发现（2026-09-18，见 probe12）
+
+实现期在 `generate-baseline-numbers.mjs` 里发现一个真 bug：紧凑度（spread）把**排序后的 x
+与未排序的 y 按下标配对**（`xs.sort()` 后 `xs.map((x,i)=>hypot(x-cx, ys[i]-cy))`），
+应为同一球员的 (x,y) 配对。实测偏差：真实 15.298→15.237、引擎 19.834→19.980（≤0.2m，
+分离结论不变）。**实现按正确配对**（`viewer/match-metrics.js`），基线已重生成
+（`viewer/data/benchmark-baseline.json`），design D3 数字已同步更新。
+`generate-baseline-numbers.mjs` 保持原样（历史证据），勿据此核数字——以基线 JSON 为准。
 
 ## 注意
 
-这些是**审阅期的一次性探针**，不是项目代码——风格与项目测试不同（直接打印数字，
+这些是**审阅期/实现期的一次性探针**，不是项目代码——风格与项目测试不同（直接打印数字，
 无断言）。正式实现是 P1 的 `viewer/match-metrics.js` + 单测。
