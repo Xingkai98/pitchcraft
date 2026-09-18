@@ -42,6 +42,26 @@ function spreadXs(step) {
   return Array.from({ length: 10 }, (_, i) => 0.2 + i * step);
 }
 
+// 从**米制**坐标构造帧（指标公式的手算断言用；x/y 应落在 [0,105]×[0,68] 内）。
+// homeMeters/awayMeters 各 10 个 {x,y}，按下标对应 id 1-10 / 11-20。
+function makeMetersFrame(homeMeters, awayMeters = null) {
+  const players = new Array(22).fill(null);
+  players[0] = { id: 0, x: 0.02, y: 0.5 };
+  players[21] = { id: 21, x: 0.98, y: 0.5 };
+  homeMeters.forEach((p, i) => {
+    players[1 + i] = { id: 1 + i, x: p.x / PITCH_LENGTH_M, y: p.y / PITCH_WIDTH_M };
+  });
+  (awayMeters || spreadXs(0.02).map((x) => ({ x: x * PITCH_LENGTH_M, y: 34 }))).forEach((p, i) => {
+    players[11 + i] = { id: 11 + i, x: p.x / PITCH_LENGTH_M, y: p.y / PITCH_WIDTH_M };
+  });
+  return { t: 0, players, ball: null, ballFill: null };
+}
+
+// (dx, dy) 相对重心的偏移表：每个 hypot 都是整数（5×8 个 + 10×2 个，均值 = 6），
+// dx/dy 各自求和为 0（重心不动）。列表顺序**刻意不按 dx 排序**——配对 bug
+// （排序后的 x 配原序 y）在这个输入上会给出不同值，见「紧凑度配对」守护测试。
+const SPREAD_DELTAS = [[3, 4], [-3, -4], [4, -3], [-4, 3], [0, 5], [0, -5], [5, 0], [-5, 0], [6, 8], [-6, -8]];
+
 // ── P1.4 已知输入 → 已知输出 ─────────────────────────────────────────────
 
 test('米制换算：归一化坐标 ×105/×68（已知输入的纵深与宽度精确可算）', () => {
@@ -71,6 +91,36 @@ test('重心间距 = 两队重心的欧氏距离（米）', () => {
   assert.ok(Math.abs(m.gap - 21) < 1e-9);
 });
 
+test('重心间距 = 欧氏距离而非 Manhattan（y 不同时两公式数值不同——公式守护）', () => {
+  // 主队重心 (50, 30)、客队重心 (74, 62)：dx=24, dy=32 → hypot = 40（3-4-5 的 8 倍）；
+  // Manhattan 会是 24+32 = 56。若断言只在 y 相同的输入上做，两公式恒等、对换公式免疫。
+  const home = SPREAD_DELTAS.map(([dx, dy]) => ({ x: 50 + dx, y: 30 + dy }));
+  const away = SPREAD_DELTAS.map(([dx, dy]) => ({ x: 74 + dx * 0.5, y: 62 + dy * 0.5 }));
+  const m = frameMetrics(makeMetersFrame(home, away));
+  assert.ok(Math.abs(m.home.cx - 50) < 1e-9);
+  assert.ok(Math.abs(m.home.cy - 30) < 1e-9);
+  assert.ok(Math.abs(m.away.cx - 74) < 1e-9);
+  assert.ok(Math.abs(m.away.cy - 62) < 1e-9);
+  assert.ok(Math.abs(m.gap - 40) < 1e-9);
+  const manhattan = Math.abs(m.home.cx - m.away.cx) + Math.abs(m.home.cy - m.away.cy);
+  assert.ok(Math.abs(manhattan - 56) < 1e-9); // 反证：两公式在此输入上可区分
+});
+
+test('紧凑度按同一球员的 (x,y) 配对（历史 bug 守护：排序 x 配原序 y 会给出不同值）', () => {
+  // 实现期真实发生过并修掉的 bug（probes/README「实现期发现」）：spread 曾把**排序后的 x**
+  // 与**未排序的 y** 按下标配对。旧断言让全队 y 相同且 x 已按序 → 配错与正确恒等，对 bug
+  // 免疫；这里用 dx 乱序 + y 各异 的输入，让错误配对必然给出不同数值。
+  const home = SPREAD_DELTAS.map(([dx, dy]) => ({ x: 50 + dx, y: 30 + dy }));
+  const s = teamShape(makeMetersFrame(home), 'home');
+  // 正确配对：每个 (dx,dy) 的 hypot ∈ {5×8, 10×2} → 均值 (40+20)/10 = 6
+  assert.ok(Math.abs(s.spread - 6) < 1e-9);
+  // 反证：错误配对（排序 x 配原序 y）给出 ≈5.929，差 0.071 —— 输入对配错有区分度
+  const xsSorted = SPREAD_DELTAS.map(([dx]) => dx).sort((a, b) => a - b);
+  const ysInOrder = SPREAD_DELTAS.map(([, dy]) => dy);
+  const scrambled = xsSorted.reduce((a, x, i) => a + Math.hypot(x, ysInOrder[i]), 0) / xsSorted.length;
+  assert.ok(Math.abs(scrambled - 6) > 0.05, `错误配对应给出不同值（实际 ${scrambled}）`);
+});
+
 test('重心到球距离：主队重心到球的米制距离', () => {
   // 球在 (0.5, 0.5) → 米制 (52.5, 34)；主队重心 (30.45, 34) → 距离 22.05m
   const f = makeFrame({ homeXs: spreadXs(0.02), ball: [0.5, 0.5] });
@@ -89,6 +139,29 @@ test('均值聚合：窗口值 = 各帧指标的算术平均（不是中位/最�
   const w = windowMetrics(frames);
   assert.ok(Math.abs(w.hd - 14.7) < 1e-9);
   assert.equal(w.frameCount, 3);
+});
+
+test('窗口聚合接线：hd 取主队、ad 取客队（两侧纵深不同时不可互换）', () => {
+  // 主队 14.7（步长 0.02）、客队 22.05（步长 0.03）：互换接线会立刻被这两条断言打红
+  const frames = [
+    makeFrame({ t: 0, homeXs: spreadXs(0.02), awayXs: spreadXs(0.03) }),
+    makeFrame({ t: 0.2, homeXs: spreadXs(0.02), awayXs: spreadXs(0.03) }),
+  ];
+  const w = windowMetrics(frames);
+  assert.ok(Math.abs(w.hd - 14.7) < 1e-9);
+  assert.ok(Math.abs(w.ad - 22.05) < 1e-9);
+});
+
+test('控球代理聚合取值：possessionHome = 主队最近帧占比（不只计数）', () => {
+  // 客队整体 +0.5（0.7–0.88）；球 0.305 → 主队最近；球 0.9 → 客队最近。
+  const away = spreadXs(0.02).map((x) => x + 0.5);
+  const nearHome = makeFrame({ t: 0, homeXs: spreadXs(0.02), awayXs: away, ball: [0.305, 0.5] });
+  const nearAway = makeFrame({ t: 0.2, homeXs: spreadXs(0.02), awayXs: away, ball: [0.9, 0.5] });
+  const w = windowMetrics([nearHome, nearAway, nearAway]);
+  assert.equal(w.possessionFrames, 3);
+  assert.ok(Math.abs(w.possessionHome - 1 / 3) < 1e-9);
+  const w2 = windowMetrics([nearHome, nearHome, nearAway]);
+  assert.ok(Math.abs(w2.possessionHome - 2 / 3) < 1e-9);
 });
 
 test('分布摘要：summarizeValues 的 avg/min/max/n', () => {
@@ -197,9 +270,21 @@ test('口径·控球代理：离球最近者所属队（含门将参与判定）
   f.ball = [0.9, 0.5]; // 客队 id16 恰在 x=0.9 → 0m
   assert.equal(possessionProxy(f), 'away');
   assert.equal(possessionProxy(makeFrame()), null);
-  // 门将参与最近者判定：球贴主队门线（id0 在 0.02）时记主队
+  // 门将参与最近者判定：构造「只有门将严格最近、且剔除门将后最近者会是客队」的帧——
+  // 主队非门将整体压到 x=0.6、客队整体在 x=0.05、主队门将贴门线 x=0.02、球在 x=0.021。
+  // 含门将 → 门将 0.105m 最近（主队）；若剔除门将 → 最近者变成客队 id11（3.045m）→ 结论反转。
   const nearKeeper = makeFrame({ ball: [0.021, 0.5] });
+  for (let id = 1; id <= 10; id += 1) { nearKeeper.players[id].x = 0.6; nearKeeper.players[id].y = 0.4 + (id - 1) * 0.02; }
+  for (let id = 11; id <= 20; id += 1) { nearKeeper.players[id].x = 0.05; nearKeeper.players[id].y = 0.4 + (id - 11) * 0.02; }
   assert.equal(possessionProxy(nearKeeper), 'home');
+  // 反证：剔除门将（id 0/21）后最近者属于客队 —— 该输入对「漏掉门将」的变异有区分度
+  let nearestNonKeeper = null;
+  for (const p of nearKeeper.players) {
+    if (!p || p.id === 0 || p.id === 21) continue;
+    const d = Math.hypot((p.x - 0.021) * PITCH_LENGTH_M, (p.y - 0.5) * PITCH_WIDTH_M);
+    if (!nearestNonKeeper || d < nearestNonKeeper.d) nearestNonKeeper = { d, id: p.id };
+  }
+  assert.ok(nearestNonKeeper.id >= 11 && nearestNonKeeper.d > 3);
 });
 
 test('口径·采样间隔 0.2s：sampleEngineFrames 按固定步长 seekTo，帧时刻精确', () => {
@@ -281,18 +366,42 @@ test('fromTrackingFrame：数组下标即 id，ballFill 透传', () => {
   assert.equal(isRawBallFrame(filled), false);
 });
 
-test('cutWindows：只取完整窗；不足 minFrames 的短窗丢弃', () => {
-  // 帧序列 t=0..5646（5Hz，i/5 精确）→ 与真实 game2 相同时长：6 个满窗，尾部 246s 残窗丢弃
+test('cutWindows：只取完整窗（尾部残窗由循环边界排除，非 minFrames）', () => {
+  // 帧序列 t=0..5646（5Hz，i/5 精确）→ 与真实 game2 相同时长：6 个满窗。
+  // 尾部 246s 残窗是被循环边界 s + sizeSec <= T + 1 排除的——它根本进不了循环，
+  // 与 minFrames 门槛无关（1232 帧的残窗远高于 100 的门槛）。
   const frames = [];
   for (let i = 0; i * 0.2 <= 5646 + 1e-9; i += 1) frames.push({ t: i / 5 });
   const ws = cutWindows(frames);
   assert.equal(ws.length, 6);
   assert.deepEqual(ws.map((w) => w[0].t), [0, 900, 1800, 2700, 3600, 4500]);
   for (const w of ws) assert.equal(w.length, 1500);
-  // 更长时长（game1 类）→ 7 窗；整窗恰好贴边不丢（T=5700 时 s=5400 窗保留）
+  // 更长时长（game1 类）→ 7 窗
   const long = [];
   for (let i = 0; i / 5 <= 5700 + 1e-9; i += 1) long.push({ t: i / 5 });
   assert.equal(cutWindows(long).length, 7);
+});
+
+test('cutWindows：贴边容差 T+1（T 略小于窗右界时整窗仍保留）', () => {
+  // 采样相位差让最后一帧的 t 比窗右界小一丁点（如 T=5699.999 而窗右界 5700）：
+  // 容差 +1 必须让 [5400, 5700) 这一整窗保留下来（丢它 = 少一个样本且静默）。
+  const frames = [];
+  for (let i = 0; i / 5 <= 5699.999 + 1e-9; i += 1) frames.push({ t: i / 5 });
+  const ws = cutWindows(frames);
+  assert.equal(ws.length, 7);
+  assert.equal(ws[ws.length - 1][0].t, 5400);
+});
+
+test('cutWindows：minFrames 安全网——数据缺口导致的短窗被丢弃', () => {
+  // 构造「窗起点可切但帧大量缺失」：t=0..3000 里只有 s=0 窗是满的，
+  // s=900 与 s=1800 窗内各只放 50 帧（<100 门槛）→ 被丢弃；s=2700 窗满 → 保留。
+  const frames = [];
+  for (let i = 0; i / 5 < 300; i += 1) frames.push({ t: i / 5 });          // [0,300) 满窗 1500 帧
+  for (let i = 0; i < 50; i += 1) frames.push({ t: 900 + i / 5 });         // [900,1200) 仅 50 帧
+  for (let i = 0; i < 50; i += 1) frames.push({ t: 1800 + i / 5 });        // [1800,2100) 仅 50 帧
+  for (let i = 0; i / 5 < 300; i += 1) frames.push({ t: 2700 + i / 5 });   // [2700,3000) 满窗
+  const ws = cutWindows(frames);
+  assert.deepEqual(ws.map((w) => w[0].t), [0, 2700]);
 });
 
 test('sampleEngineFrames：帧数由 round(end/step) 决定，不因浮点累加抖动', () => {

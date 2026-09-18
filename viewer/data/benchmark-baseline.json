@@ -4,7 +4,7 @@
   "generatedBy": "tools/benchmark-baseline.mjs",
   "metricsModule": {
     "path": "viewer/match-metrics.js",
-    "sha256": "3b9c627dcffcbcf66a78401bf3b1e013f665df039504a0b2b6557eb2cca66617",
+    "sha256": "0a6ef660a473c0aff9da6aff0b9f00e319f12ba9931b18f899dd4507165fc20d",
     "convention": "trim1 depth (drop deepest+highest, span of remaining 8); keepers excluded (id 0/21)",
     "aggregation": "per-frame instantaneous shape → mean over frames; frames with <7 outfield players dropped",
     "pitchMeters": [

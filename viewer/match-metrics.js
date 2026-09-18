@@ -103,9 +103,12 @@ export function sampleEngineFrames(game, { stepSec = SAMPLE_INTERVAL_SEC } = {})
 }
 
 // 切 300s 窗（步长 900s）：只取**完整窗**——起止都落在可观测时间内的窗。
-// `T + 1` 的容差是为帧时间戳的浮点/采样相位差留的（300s 整窗在 T=5400 时正好贴边）。
-// minFrames 是安全网：源数据有缺口时，远短于 300s 的窗不进统计（真实侧 game2 尾部的
-// 246s 残窗就由此排除，design 要求如实记录它的存在——基线元数据里有它的时长）。
+// `T + 1` 的容差是为帧时间戳的浮点/采样相位差留的（300s 整窗在 T 略小于窗右界时仍算完整）。
+// 两条排除机制分工不同（勿混）：
+//   - 尾部残窗（game2 的 246s）由**循环边界** `s + sizeSec <= T + 1` 排除——窗起点必须在
+//     可观测时间内且整窗放得下，残窗根本进不了循环。基线元数据如实记录其时长（design 要求）。
+//   - minFrames 是**数据缺口**的安全网（某窗起点可切但源数据缺帧，帧数远少于 300s×5Hz）——
+//     当前真实数据上从未触发，纯防御。
 export function cutWindows(frames, {
   sizeSec = WINDOW_SIZE_SEC, stepSec = WINDOW_STEP_SEC, minFrames = 100,
 } = {}) {

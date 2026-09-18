@@ -182,6 +182,37 @@ test('loadBaseline：哈希匹配 → ok（正常加载）', () => {
   assert.equal(loadBaseline(p).ok, true);
 });
 
+test('loadBaseline：基线损坏/结构缺失 → reason=invalid（跳过而非异常，退出码 0 路径）', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'p36-baseline-'));
+  const p = join(dir, 'baseline.json');
+  // 半截 JSON：JSON.parse 抛错 → 必须被捕获成 invalid，而不是把 verify.sh 打红
+  writeFileSync(p, '{ this is not json');
+  const r1 = loadBaseline(p);
+  assert.equal(r1.ok, false);
+  assert.equal(r1.reason, 'invalid');
+  assert.match(r1.message, /重生成/);
+  // 合法 JSON 但结构缺失（无 real/engine.perMetric）
+  writeFileSync(p, JSON.stringify({ kind: 'x' }));
+  const r2 = loadBaseline(p);
+  assert.equal(r2.ok, false);
+  assert.equal(r2.reason, 'invalid');
+});
+
+test('main：基线损坏 → 打印跳过提示、退出码 0（不把套件打红）', async () => {
+  const dir = mkdtempSync(join(tmpdir(), 'p36-baseline-'));
+  const p = join(dir, 'baseline.json');
+  writeFileSync(p, '{ broken');
+  const logs = [];
+  const orig = console.log;
+  console.log = (msg) => logs.push(String(msg));
+  try {
+    assert.equal(await main({ baselinePath: p }), 0);
+  } finally {
+    console.log = orig;
+  }
+  assert.match(logs.join('\n'), /跳过（基线损坏）/);
+});
+
 // ── main：基线缺失时跳过而非失败（退出码 0） ───────────────────────────
 
 test('main：基线缺失 → 打印跳过提示、退出码 0（套件不失败，spec scenario）', async () => {

@@ -48,7 +48,27 @@ export function loadBaseline(path = DEFAULT_BASELINE_PATH, { metricsPath } = {})
         + '  生成方式：node tools/benchmark-baseline.mjs（需先 fetch/convert + 构建 engine.wasm，见脚本头部注释）',
     };
   }
-  const baseline = JSON.parse(readFileSync(path, 'utf8'));
+  // 损坏/半截 JSON 与结构缺失都走 invalid 跳过路径（与 missing/stale 同为退出 0）——
+  // 否则 JSON.parse 异常或 undefined.perMetric 会在 verify.sh（set -e）里把套件整体打红。
+  let baseline;
+  try {
+    baseline = JSON.parse(readFileSync(path, 'utf8'));
+  } catch (err) {
+    return {
+      ok: false,
+      reason: 'invalid',
+      message: `基线损坏（JSON 解析失败）：${path}\n  ${err.message}\n  重生成：node tools/benchmark-baseline.mjs`,
+    };
+  }
+  if (!baseline || typeof baseline !== 'object'
+    || !baseline.real || !baseline.real.perMetric
+    || !baseline.engine || !baseline.engine.perMetric) {
+    return {
+      ok: false,
+      reason: 'invalid',
+      message: `基线结构不完整（缺 real/engine.perMetric）：${path}\n  重生成：node tools/benchmark-baseline.mjs`,
+    };
+  }
   const currentHash = metricsPath ? hashMetricsModule(metricsPath) : hashMetricsModule();
   const recorded = baseline.metricsModule && baseline.metricsModule.sha256;
   if (recorded && recorded !== currentHash) {
@@ -171,7 +191,8 @@ export function renderReport(cmp) {
 export async function main({ baselinePath = DEFAULT_BASELINE_PATH } = {}) {
   const loaded = loadBaseline(baselinePath);
   if (!loaded.ok) {
-    console.log(`P36 标尺：跳过（${loaded.reason === 'missing' ? '基线缺失' : '基线陈旧'}）\n${loaded.message}`);
+    const label = { missing: '基线缺失', stale: '基线陈旧', invalid: '基线损坏' }[loaded.reason] || loaded.reason;
+    console.log(`P36 标尺：跳过（${label}）\n${loaded.message}`);
     return 0;
   }
   const wasmLoad = await loadEngineWasm();
