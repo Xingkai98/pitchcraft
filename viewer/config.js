@@ -42,7 +42,8 @@ export const config = {
 
   // 演绎节奏（所有时长单位：真实秒）
   interpretation: {
-    // 带球：踢-追周期（人球解耦，非人球平移）
+    // 带球：连续推进（人球解耦——球始终领先人 separation，非人球平移；不再拆"踢-追"周期）
+    // 下方 touchDuration/chaseDuration/windupDuration 为旧踢-追参数，当前实现未读取（改之无效果）
     dribble: {
       touchDuration: 0.30, // 球被踢出，向前滚的时长
       chaseDuration: 0.35, // 人追上球的时长

@@ -308,10 +308,36 @@ export class Game {
     return null;
   }
 
+  // 高亮事件在时间轴上的有效窗口终点。
+  // pass/shot 的 beat 在**同 tick 之后**（会遮蔽 currentEventIndex），tackle 的 beat 在同 tick
+  // **之前**（不遮蔽），foul **不产 beat**（无锚点 → _eventEnds 回落 e.t，窗口零长度）——
+  // foul 的语义窗口是纪律牌显示时长，故显式延长，避免抑制在犯规笛响瞬间失效。
+  _highlightEnd(i) {
+    const e = this.events[i];
+    const end = this._eventEnds[i] ?? e.t;
+    if (e.type === 'foul') return Math.max(end, e.t + config.interpretation.foul.cardShowDuration);
+    return end;
+  }
+
+  // 当前覆盖 playTime 的高亮事件索引（无则 -1）。
+  // 必须按「事件窗口 [t, _highlightEnd] 覆盖 playTime」回溯查找，而非直接取 currentEventIndex()
+  // （后者对 pass/shot 恒落在同 tick 的 beat 上 → 参与者集恒为空；实测 98% 高亮帧）。
+  _activeHighlightIndex() {
+    const t = this.playTime;
+    for (let i = this.events.length - 1; i >= 0; i--) {
+      const e = this.events[i];
+      if (e.t > t + 1e-6) continue;
+      if (e.t < t - 12.5) break; // 高亮演绎理论上限 ≈12.5s（球场对角 125.1m ÷ pass 最低速 10 m/s = 12.5096s；实测最长 5.5s）；_eventEnds 非单调，不能按 end 提前退出
+      if (e.type !== 'pass' && e.type !== 'shot' && e.type !== 'tackle' && e.type !== 'foul') continue;
+      if (this._highlightEnd(i) >= t - 1e-6) return i;
+    }
+    return -1;
+  }
+
   // 当前高亮事件的参与者（pass 传球者/接球者、shot 射手/门将、tackle 双方）——micro-motion 抑制用
   // （spec：高亮参与者不微动；即使静止（传球者摆腿/门将待命）也抑制）
   currentHighlightParticipants() {
-    const idx = this.currentEventIndex();
+    const idx = this._activeHighlightIndex();
     const e = this.events[idx];
     if (!e) return [];
     if (e.type === 'pass') return [e.from, e.to].filter((x) => x !== undefined && x !== null);

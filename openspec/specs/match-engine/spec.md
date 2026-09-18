@@ -408,7 +408,6 @@ liveness guard SHALL 为**三层递进**的非事件型护栏：以 `ticks_since
 - **WHEN** 加入拦截记账后运行 golden canary seed
 - **THEN** 事件流哈希与 `engine/tests/golden-v5` 完全一致（记账只写内部 tally，不进事件流、不调 RNG）
 
-
 ### Requirement: 同队球员间距（≥2m）
 
 引擎 SHALL 使同队两球员在引擎发射的任意位置采样点（lineup 初始站位、mover 终点 `to_x/to_y`、main 终点 `x2/y2`、以及模拟状态位置 `st.pos`）上的**米制**间距 ≥ 2m（阈值常量 `SAME_TEAM_MIN_DIST_M` = 2.2m，含 JSON 4 位小数序列化与 0.5s 采样插值的安全余量）。间距 SHALL 用真实米制几何计算（x 方向 × 105、y 方向 × 68），SHALL NOT 用归一化欧氏距离（归一化圆在 105×68 球场上 x 方向 2.1m、y 方向仅 1.36m）。分离 SHALL 覆盖 carrier、门将、特殊站位（角球包抄 / close_down / chase / anticipate）与 dead_zone 停者；由事件直接指定的终点（传球接球点 / 门将扑救点 / 抢断结算点 / 开球落点 / 松散球拾取点）SHALL 在写入状态前经同一分离。分离 SHALL 为纯函数：零额外 RNG、固定遍历顺序、不改变事件类型/频率的判定逻辑。拍内插值中点 SHALL 由 viewer 侧 `player_overlap` detector 观测（不在引擎预计算每段中点推开）。
@@ -448,3 +447,160 @@ liveness guard SHALL 为**三层递进**的非事件型护栏：以 `ticks_since
 #### Scenario: 状态与事件一致
 - **GIVEN** 任一 tick 结束
 - **THEN** 每名未罚下球员的 `st.pos` SHALL 等于其最近一次发射位置（`last_emitted`），不得出现状态与 viewer 所见错位
+
+### Requirement: 射门打偏走门球（goal kick）
+
+引擎 SHALL 在射门打偏（off_target）后走门球重开：球到对方守门员脚下（瞬移），对方门将开大脚到中场，落点进入松散球（双方可争），拾取后恢复开放比赛。
+
+#### Scenario: 打偏后球到对方门将
+- **GIVEN** 一次射门 result=off_target
+- **THEN** 球位置 = 对方门将位置（瞬移，不做滚动动画）；possession 切到对方（门将 = 对方门将 id）
+
+#### Scenario: 门将开大脚到中场
+- **GIVEN** 门球阶段开始
+- **THEN** 对方门将从**其当前位置**（门线附近，球已瞬移过去、门将不动）开大脚：高亮事件（起点 = 门将当前位置，终点 = 中场落点，高速长球 ~16-20 m/s，带球高度 h 0.5-0.8），无明确接球者（落点是争抢点）
+
+#### Scenario: 中场松散球双方可争
+- **GIVEN** 门将开大脚球到达中场落点
+- **THEN** 落点进入松散球（`nearest_any` 双方外场都可争）→ 最近者拾取 → 恢复 main → 开放比赛。**落地当 tick 若最近者已在拾取半径内则直接拾取（不产 `loose:true` 的 beat）**；否则先产 `beat.ball loose:true` 再拾取。另：门球飞行期双方各 1 名最近外场会预判跑向落点（`action=chase`）
+
+#### Scenario: 门球不触发 transition
+- **WHEN** 门球发生（球权易主）
+- **THEN** 不触发 transition 窗口（首批保持简单；开大脚的高球权转换后续再定）
+
+### Requirement: 进球后球直接回中圈
+
+引擎 SHALL 在进球确认后让球直接回中圈（不做"从门内滚回中圈"过渡），随后按现有死球流程开球。
+
+#### Scenario: 进球球直接回中圈
+- **GIVEN** 一次射门 result=goal（球越过门线进网）
+- **THEN** 进球确认后球位置直接设为中圈（死球→kickoff 瞬移例外）；开球者（被进球方前锋）走向中圈开球（现有流程保留）
+
+### Requirement: 出界判定与重开类型
+
+引擎 SHALL 判定球出界并按类型触发重开：**射门打偏 → 门球**（由 `p6-goal-kick-and-restart` 建立）；传球出边线 → 界外球（对方）；传球出底线 → 门球（对方门将）或角球（对方），按**越过的是哪条底线**区分；**防方头球解围出底线/出边线 → 角球/界外球（进攻方）**；射门被扑出底线 → 角球（进攻方）。出界走新高亮结局（PassOutOfPlay/CornerAward），事件的**场内投影坐标 `x2/y2` 钳制在 [0,1]**（真实越界值另存 `out_pos`，可越界），事件带 detail 表达出界类型。**出界触发由受 `pass_risk` 调制的涌现通道决定（P31：`open_play_out_probability(pass_risk)`，非固定百分比）**——重开球（角球发球/界外球掷球/门球开大脚）落点恒在界内、不走出界通道。
+
+#### Scenario: 传球出边线 → 界外球
+- **GIVEN** 一次普通传球（source=NormalPass）的落点出边线（y<0 或 y>1，由 `open_play_out_probability(pass_risk)` 通道判定）
+- **THEN** 高亮结局 PassOutOfPlay（detail=`out_sideline`），pass 事件 to=None（无接球者），坐标钳制 [0,1]；对方掷界外球
+
+#### Scenario: 传球出底线 → 按底线归属重开
+- **GIVEN** 一次普通传球（source=NormalPass）的落点出底线（x<0 或 x>1）
+- **THEN** 高亮结局 PassOutOfPlay（detail=`out_goal_line`），pass 事件 to=None；重开按 `out_restart_for` 判定——**传球方越的是对方底线 → 门球（对方门将）；越的是己方底线 → 角球（对方）**（`own_goal_line` 区分；简化不做触碰归属）
+
+#### Scenario: 解围出底线 → 角球
+- **GIVEN** 防方头球解围（pass detail=clearance）落点出底线（source=Clearance）
+- **THEN** 高亮结局 PassOutOfPlay（detail=`out_goal_line`），pass 事件 to=None；**角球重开（进攻方发角球）**——解围最后触碰方明确是防守方，不走门球
+
+#### Scenario: 解围出边线 → 界外球
+- **GIVEN** 防方头球解围落点出边线（source=Clearance）
+- **THEN** 高亮结局 PassOutOfPlay（detail=`out_sideline`），pass 事件 to=None；**界外球（进攻方掷）**
+
+#### Scenario: 射门被扑出底线 → 角球
+- **GIVEN** 一次射门被扑出（save-rebound）且**越线（`corner_roll < 90`，即 ~90% 触发；越线点 = 原射门终点 `x2/y2` 的门线前一点，场内 x≈0.02/0.98）**（home 攻 x>1 / away 攻 x<0）
+- **THEN** 高亮结局 CornerAward → 角球重开（进攻方从角旗区开球）；**角旗侧由该越线点所在半场确定（仅引擎内部），事件字段坐标一律钳制 [0,1]**
+
+### Requirement: 角球机制
+
+引擎 SHALL 支持角球：从角旗区开长角球到禁区（pass 高亮 + 高度 h）→ 落点松散球 + 攻防双追逐 → 争抢结果（攻方基线 55/45，P33 起叠加**主场偏移**——攻方为主队 58 / 客队 52，围绕 55/45 对称）→ 攻方头球射门（55%）/摆渡（30%）/拿球（15%）、防方头球解围（70%）/解围出底线（20%，再角球）/解围出边线（10%，界外球）。
+
+#### Scenario: 长角球发球
+- **GIVEN** 一次角球
+- **THEN** 从角旗区（**按出底线点 x/y 就近取角**：x>0.5 → 右角 x=1，x≤0.5 → 左角 x=0；y≥0.5 → y=1，y<0.5 → y=0）开长角球，pass 事件 detail=`corner`、to=None、h>0，落点禁区附近（**落点在发球高亮时刻选定**，pass 高亮）；**发球准备期发球者（攻方离角旗最近外场球员）走向角旗（RestartPrep，球停在角旗），到角旗后发球**
+
+#### Scenario: 角球站位
+- **GIVEN** 角球发球准备期（RestartPrep，球在角旗）
+- **THEN** **全队**外场球员的目标位置改由 `corner_setup_target` 决定（角球准备期 `formation_target` 被覆盖，不参与）：攻方全队压入禁区**贴门线一侧**、防方全队退入本方禁区**前沿一侧**（同函数；两者 y 均按 id 确定性分散在 0.2-0.8）；发球者单独走向角旗区
+
+#### Scenario: 禁区双追逐争抢
+- **GIVEN** 角球落点松散球（battle 标记）
+- **THEN** 攻防各 1 名追逐（攻方 chaser=LooseBall.chaser、防方 chaser=battle 元组，**loose 启动时固定**）向落点追逐；**攻方 chaser 达到落点拾取半径时掷胜者**（攻方得球概率 55/45）；败者就地停；**防方胜时防方 chaser 移动到位（到落点）**
+
+#### Scenario: 攻方头球射门
+- **GIVEN** 攻方赢得角球争抢
+- **THEN** 以概率分支（55/30/15）：头球射门（subject=攻方 chaser，shot 高亮 detail=header、h=0，起点=争抢点、方向=球门，result=goal 15%/saved 30%/off_target 55%，对齐禁区内桶）/ 头球摆渡（subject=攻方 chaser，pass 给队友，无 detail、h=0）/ 拿球组织（main 恢复，carrier=攻方 chaser）
+
+#### Scenario: 防方头球解围
+- **GIVEN** 防方赢得角球争抢（防方 chaser 已移动到位）
+- **THEN** 防方 chaser（carrier）就地以概率分支（70/20/10）：头球解围（subject=防方 chaser，pass 顶出禁区 detail=clearance、h=0 → 松散球**重新争（普通松散球，非 battle）**）/ 解围出底线（PassOutOfPlay source=Clearance → 再角球）/ 解围出边线（PassOutOfPlay source=Clearance → 界外球，进攻方掷）
+
+### Requirement: 界外球机制
+
+引擎 SHALL 支持界外球：传球出边线后**对方**（防方解围出边线后**进攻方**）从边线掷向附近队友（pass 高亮，短传无高度 h=0）。掷球者 = 接球方离出界点最近的**外场球员（非门将）**。
+
+#### Scenario: 界外球掷球
+- **GIVEN** 一次界外球
+- **THEN** 接球方离出界点最近**非门将外场球员**（掷球者）**先走向出界点（边线，RestartPrep 准备期，球停在出界点）**，到点后从边线出界点掷向附近队友（pass 高亮，短传无高度 h=0，to=附近队友，receiver_x/y=接球队友当前位置）
+
+### Requirement: 头球复用高亮
+
+头球 SHALL 复用 shot/pass 高亮，不新增事件类型：头球射门 = shot 带 detail=`header`；头球解围/摆渡 = pass。
+
+#### Scenario: 头球射门带 header
+- **GIVEN** 一次头球射门
+- **THEN** shot 事件 detail=`header`（viewer 据此演绎头球）
+
+#### Scenario: 头球解围为 pass
+- **GIVEN** 一次头球解围
+- **THEN** pass 事件顶出禁区（无高度 h=0），落点松散球重新争
+
+#### Scenario: 头球摆渡为 pass
+- **GIVEN** 攻方赢得角球争抢后头球摆渡给队友
+- **THEN** pass 事件无 detail、h=0（低空头球，球不放大）
+
+### Requirement: 球相关队形目标
+
+引擎 SHALL 为每名球员计算目标位置 = 角色站位基准 + 队形偏移（随球位置、控球阶段、球侧变化），使球队呈现整体伸缩/平移而非独立人偶回位。
+
+#### Scenario: 防线随球前压/回撤
+- **GIVEN** 球推进到前场
+- **THEN** 防守方后卫线（防线 = 每队离己方门线最近的 4 名外场球员，**按 default_lineup 基准站位定静态身份，非逐 tick 动态重选**，不含门将）目标位置随球前压（push up）：目标 = `clamp01(clamp(base + shift + press + push, base, ball)).clamp(0.04, 0.9)`（末段为 P7 的"不顶门线/不进小禁区"钳制）沿己方进攻方向——home 攻左→右取 `min(球位, …)`、away 攻右→左取 `max(球位, …)`，**且不下穿角色基准 `base`**；球回撤时防线回收（drop back）；门将不参与防线前压（仅回位到门线）。**注意**：球位于该防线基准之后（球 x < base.x）时以 `base` 为准，此时目标可在球之前（地板优先于"不得越过球"）
+
+#### Scenario: 全队随球侧平移
+- **GIVEN** 球在球场左半
+- **THEN** 外场球员目标位置向左偏移（ball-side shift，连续映射 shift ∝ ball_x−0.5，非二分切换），保持球侧紧凑；纵向同向随球压缩（y 偏移 = (ball_y−0.5)×`SIDE_SHIFT_FACTOR`×0.6）；门将除外（不参与球侧平移，仅回位到门线）
+
+#### Scenario: 控球阶段压上
+- **GIVEN** 己方处于 attack phase
+- **THEN** 全队目标位置前压（不含门将）；己方处于 defend phase 时回收（压上由 phase 驱动，不绑定瞬时持球状态——松散球期间 attack 方仍前压）
+
+#### Scenario: 防橡皮筋
+- **WHEN** 每 tick 更新目标
+- **THEN** 移动受速度上限约束；位移小于静区阈值时不移动（静区绑定单一常量 `DEAD_ZONE_METERS`——P4 起的同一个门、非新引入；P7 由 0.5m 放大到 **2.0m**，到位后目标微变不追，避免球门旁来回小幅摆动）；目标点间距约束（repulsion，作用域 = 同队内部，在队形/close_down 目标后施加最小间距修正；**最小间距 = `SAME_TEAM_MIN_DIST_M` = 2.2m，米制**——P34（#53）起判定与推开都走米制（`same_team_dist_m` + `separate_pair_m`），与 detector `player_overlap` 口径一致；旧归一化欧氏口径在 105×68 球场上 y 方向只保证 1.36m。间距 < 阈值的同队球员对沿连线推开至阈值，确定性迭代 ≤3 次；carrier 不参与 repulsion——其位置由 main 带球轨迹决定），避免两圆点重叠；运算顺序：先 dead-zone 判定，后 approach-rate cap 限幅
+
+### Requirement: 控球阶段与攻防转换
+
+引擎 SHALL 维护每队**基础 phase（attack/defend）+ transition 叠加窗口（transition_active 布尔）**；球权易主（抢断成功 / 射门被扑住（save-caught）——`TransitionSource` 的仅有两个来源）时触发固定 `TRANSITION_TICKS = 4` 的 transition 窗口：**窗口内该 tick 只产 main + movers、不走机会评估（因此不掷新高亮）**；新进攻方全队前压（经 `formation_target` 的 `press` 在窗口内放大 2× 经 movers 表达），新防守方回撤并就近收缩。
+
+#### Scenario: 抢断成功触发反击
+- **GIVEN** 一次抢断成功（球权易主）
+- **THEN** 触发 transition（固定 `TRANSITION_TICKS = 4`）：tackle 高亮起点 tick 即武装 transition（tackle 高亮时长 1 tick 覆盖 [T, T+1)）；松散球自 t_end=T+1 产生，窗口内该 tick 只产 `beat.ball` + movers、不走机会评估；**实测拾取恒发生在 T+4**（`LOOSE_MAX_TICKS = 2` 只封顶球的滚动、不封顶追逐，追逐者每 tick 走 `RUN_SPEED_MS`；拾取 tick 顶部窗口已被清除）——故 tackle 路径下**不存在"新持球者在窗口内前插"这一可见行为**（`carrier_move` 的反击前插分支只对窗口内持球者生效，而该路径下窗口内无持球者）；新进攻方队形前压（`formation_target` 的 `press` 窗口内放大 2×，经 movers 表达），新防守方整体回撤并**就近 2 名外场防守者收缩（close_down，执行者 = 距目标最近且非 carrier 的 2 名，确定性平局按 id 小者；目标 = 球位——tackle 源恒取 `st.ball_pos`，即松散球位置；收缩不进入拾取半径；原持球方"回位" = 不参与拾取竞争（不追球抢球），但按 close_down 向目标侧收缩/压迫，非静止不动）**
+
+#### Scenario: 射门被扑救触发反击
+- **GIVEN** 一次射门被门将扑住（save-caught，球权易主）
+- **THEN** save 高亮终点 tick 后的**首个整数 tick 边界**武装 transition（门将扑住时刻可非整数，取整到下一整数 tick）：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后回到正常开放比赛的机会评估（自然 deadline，钳制 [3,12] tick，门将另有 `GK_DEADLINE_BONUS_TICKS` 放宽）；门将持球走出球档，直接掷 pass 高亮出球**）；新防守方整体回撤 + **就近 2 名外场防守者 close_down（执行者 = 距目标最近的 2 名外场球员，排除门将 / carrier / 罚下者，确定性平局按 id 小者；save-caught 源的目标 = `attacking_forward`——新进攻方中最靠其进攻方向球门的球员，即门前/禁区前沿的对方球员；收缩不进入拾取半径）**，transition 窗口从武装 tick 起算
+
+#### Scenario: 射门扑出反弹不触发 transition
+- **GIVEN** 一次射门被门将扑出（save-rebound）
+- **THEN** 不触发 transition——进入普通松散球（P4 D11，**双方可争**，追逐者 = 距球最近者），拾取后 phase 按球权刷新（原进攻方补射拾取 → 继续 attack；防守方拾取 → 回 defend）
+
+#### Scenario: 松散球期间 phase 按易主后归属
+- **GIVEN** 球权易主后的松散球阶段（无人持球，新持球者尚未拾取）
+- **THEN** 两队基础 phase 按易主后归属：新进攻方（抢断方/扑救方）为 attack、原持球方为 defend（transition_active 叠加），transition 窗口不因松散球中断；新持球者拾取后按球权刷新（save-rebound 未易主则沿用易主前归属，拾取后按实际拾取方刷新）
+
+#### Scenario: transition 期间不掷新高亮
+- **GIVEN** transition 进行中
+- **THEN** transition 期间**不开启行动机会**（该 tick 只产 main + movers，不走机会评估），因此不再掷新高亮（保证反击窗口完整可见）；**窗口结束后恢复正常机会评估**（自然 deadline 驱动，无独立 hold 计数）；球权易主 → 新 carrier 的机会在其持球段起始处重新起算
+
+#### Scenario: transition 窗口结束
+- **GIVEN** transition 窗口（4 tick）结束后
+- **THEN** 每队回到 attack/defend 阶段（按球位置/持球方），队形目标恢复正常
+
+### Requirement: 队形与阶段转换确定性
+
+引擎 SHALL 保持种子确定性：同 seed 同 config → 同事件流（队形目标、阶段转换、movers 一致）。
+
+#### Scenario: 阶段确定性
+- **WHEN** 同 seed 两次模拟
+- **THEN** 可观测代理一致：以**反击段 movers 方向（新进攻方前压 / 新防守方回撤 + close_down 收缩）为区分性代理**（窗口内无新高亮单独不具区分度——正常持球段也长时间无高亮），队形目标导致的位置更新完全一致（phase 本身不发射，通过可观测事件流断言）
+
