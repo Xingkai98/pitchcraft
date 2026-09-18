@@ -47,12 +47,12 @@
 - **THEN** pass/shot 事件 h=0（球不放大，明确无高度）
 
 #### Scenario: h 缺失向后兼容
-- **GIVEN** 一次 pass/shot 不带 h（旧事件流）
+- **GIVEN** 一次 pass/shot 不带 h（旧事件流，或**普通射门**——`emit_shot_highlight` 恒不带 h）
 - **THEN** viewer 按飞行时长/距离默认插值（不回归）
 
 ### Requirement: 角球发球 detail
 
-角球发球 SHALL 以 pass 事件 detail=`corner` 表达（viewer 据此识别角球发球，不靠起点推断）。**detail 校验按事件类型限定**（pass 校验 out_sideline/out_goal_line/corner/clearance、shot 校验 header），不校验 whistle/kickoff 等既有 detail。
+角球发球 SHALL 以 pass 事件 detail=`corner` 表达（viewer 据此识别角球发球，不靠起点推断）。**detail 校验按事件类型限定**（pass 校验 out_sideline/out_goal_line/corner/clearance/throw_in/free_kick、shot 校验 header），不校验 whistle/kickoff 等既有 detail。
 
 #### Scenario: 角球发球带 corner
 - **GIVEN** 一次角球发球
@@ -60,8 +60,8 @@
 
 ### Requirement: 重开准备期球锚点
 
-角球/界外球发球准备期（RestartPrep）SHALL 产 beat 事件表达球停在固定点等待发球：beat.ball = 静止锚点（x==x2 且 y==y2，loose=true），坐标=角旗区/出界点；movers 含发球者/掷球者走向固定点的走位。发球高亮起点=同一固定点，viewer 连续播放无球瞬移。
+角球/界外球发球准备期（RestartPrep，**指判定 tick 之后的每个准备 tick**——判定 tick 本身不产 beat，见 match-engine 的 beat 间隔不变量）SHALL 产 beat 事件表达球停在固定点等待发球：beat.ball = 静止锚点（x==x2 且 y==y2，loose=true），坐标=角旗区/出界点；movers 含发球者/掷球者走向固定点的走位（**发球者已在固定点、其余球员均在静区内时该拍 movers 可为空**——dead-zone 吞掉位移 < 2m 的走位）。发球高亮起点=同一固定点，viewer 连续播放无球瞬移。
 
 #### Scenario: 准备期球停固定点
-- **GIVEN** 一次角球/界外球发球准备期
+- **GIVEN** 一次角球/界外球发球准备期（判定 tick 之后的准备 tick）
 - **THEN** beat.ball 静止在角旗区/出界点（x==x2、y==y2），发球者/掷球者 mover 走向固定点；发球 pass 起点=同一固定点
