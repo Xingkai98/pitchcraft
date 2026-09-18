@@ -54,7 +54,7 @@
       ① 弹性 2.6× 是口径产物（不作目标）；② 估计量的选择要两侧都注入验证（floor 索引的教训）
       —— 数字以 `viewer/data/benchmark-baseline.json`（实现期重生成）为唯一来源；
       design D3 已同步更新（含实现期发现的探针 x/y 配对 bug 修正说明）
-- [ ] P3.3 `openspec validate --all --strict` 通过
+- [x] P3.3 `openspec validate --all --strict` 通过（15/15：含 change/p36-match-benchmark）
 - [ ] P3.4 代码审阅闭环（独立 subagent，直到无遗留问题）
 
 ## 后续（不在本 change 范围，但有优先级关系）
