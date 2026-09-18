@@ -546,6 +546,52 @@ test('口径·windowMetrics 并列输出两口径（primary 跳过 / allPoints �
   assert.notDeepEqual(primary, allPoints);
 });
 
+test('口径·控球代理也跳过外推点【反证条】（审阅发现的未守护项）', () => {
+  // 构造：距球**最近**的球员是外推点、次近的是真检测且属于**另一队**。
+  // 默认口径（跳过外推）→ 最近者 = 次近的真检测球员 → 客队；
+  // 若采信外推 → 最近者 = 外推的点 → 主队。两口径**结论相反**，故对变异有区分度。
+  const f = makeFrame({ ball: [0.5, 0.5] });
+  // 主队一人贴球（x=0.51），但标为外推；其余主队甩远
+  for (let id = 1; id <= 10; id += 1) f.players[id] = { id, x: 0.05, y: 0.5 };
+  f.players[1] = { id: 1, x: 0.51, y: 0.5, extrapolated: true };
+  // 客队一人次近（x=0.6），真检测
+  for (let id = 11; id <= 20; id += 1) f.players[id] = { id, x: 0.95, y: 0.5 };
+  f.players[11] = { id: 11, x: 0.6, y: 0.5 };
+  // 默认口径：跳过外推 → 最近 = 客队 id11
+  assert.equal(possessionProxy(f), 'away', '默认应跳过外推点，最近者为客队');
+  // 全点口径：采信外推 → 最近 = 主队 id1（贴球）
+  assert.equal(possessionProxy(f, { includeExtrapolated: true }), 'home', '采信外推则主队最近');
+  // 反证：两口径必须给出**不同**结论（若实现忽略了 includeExtrapolated，这条会红）
+  assert.notEqual(possessionProxy(f), possessionProxy(f, { includeExtrapolated: true }));
+});
+
+test('口径·逐场尺寸全链路贯通【反证条】（frameMetrics/windowMetrics 都按帧上尺寸换算）', () => {
+  // 同一组**归一化**坐标，在 105m 与 104m 场地上应给出不同的米制纵深。
+  // 反证：若哪一环漏掉 pitchMeters（退回硬编码 105），两场的米制纵深会**相同** → 测试红。
+  const xs = spreadXs(0.02);
+  const mkFrame = (pm) => {
+    const f = makeFrame({ homeXs: xs, ball: [0.5, 0.5] });
+    if (pm) f.pitchMeters = pm;
+    return f;
+  };
+  const d105 = frameMetrics(mkFrame([105, 68])).home.depth;
+  const d104 = frameMetrics(mkFrame([104, 68])).home.depth;
+  assert.ok(Math.abs(d105 - d104) > 0.1, '不同尺寸应给出不同米制纵深（否则没按逐场换算）');
+  assert.ok(d104 < d105, '104m 场地的米制纵深应更小');
+  assert.ok(Math.abs(d105 / d104 - 105 / 104) < 1e-9, '比例应恰为 105/104');
+
+  // windowMetrics：帧上带 pitchMeters 时须自动采用（不传 opts）
+  const w105 = windowMetrics([mkFrame([105, 68])]).primary;
+  const w104 = windowMetrics([mkFrame([104, 68])]).primary;
+  assert.ok(Math.abs(w105.hd - w104.hd) > 0.1, 'windowMetrics 须从帧上取尺寸');
+  assert.ok(Math.abs(w105.hd / w104.hd - 105 / 104) < 1e-9);
+
+  // 引擎侧帧不带 pitchMeters → 退回缺省 105（P36 行为不变）
+  const engineLike = makeFrame({ homeXs: xs, ball: [0.5, 0.5] });
+  assert.ok(Math.abs(frameMetrics(engineLike).home.depth - d105) < 1e-9,
+    '不带尺寸的帧应退回 105×68（引擎侧口径不变）');
+});
+
 test('口径·fromTrackingFrame 透传外推标记（坐标第三位=1）', () => {
   const raw = { t: 1, players: new Array(22).fill(null), ball: [0.5, 0.5] };
   raw.players[3] = [0.4, 0.5]; // 真检测（2 元素）

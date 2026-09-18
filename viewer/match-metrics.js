@@ -239,8 +239,10 @@ export function teamShape(frame, team, opts = {}) {
 // 默认跳过外推点（P37 D2）——采信外推点会把这个代理建立在推断值上。
 export function possessionProxy(frame, opts = {}) {
   if (!frame || !frame.ball || !Array.isArray(frame.players)) return null;
-  const { includeExtrapolated = false, pitchMeters } = opts;
-  const [L, W] = pitchMeters || [PITCH_LENGTH_M, PITCH_WIDTH_M];
+  const includeExtrapolated = opts.includeExtrapolated === true;
+  // 逐场尺寸：显式传入优先，否则从帧上取（与 frameMetrics 同一恢复规则，
+  // 避免"从帧上算队形用逐场尺寸、算控球却用缺省"的隐性分叉）。
+  const [L, W] = opts.pitchMeters || framePitchMeters(frame);
   const [bx, by] = [frame.ball[0] * L, frame.ball[1] * W];
   let best = null;
   for (const p of frame.players) {
