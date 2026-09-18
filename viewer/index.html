@@ -35,6 +35,30 @@
       flex-wrap: wrap;
       justify-content: center;
     }
+    /* 数据源切换：引擎比赛 ↔ 真实比赛对照 */
+    #data-source {
+      margin-top: 4px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      justify-content: center;
+      font-size: 0.82rem;
+    }
+    #data-source label { color: #bbb; font-size: 0.78rem; }
+    #data-source select {
+      background: #222; color: #eee; border: 1px solid #555; border-radius: 4px; padding: 3px 6px;
+    }
+    #tracking-select-wrap[hidden] { display: none; }
+    #tracking-meta {
+      margin-top: 4px;
+      font-size: 0.74rem;
+      color: #9bd2ff;
+      font-family: monospace;
+      min-height: 1.1em;
+    }
+    button:disabled { opacity: 0.45; cursor: default; }
+    button:disabled:hover { background: #3498db; }
     button {
       background: #3498db;
       border: none;
@@ -402,6 +426,21 @@
     <button id="tab-problems" class="view-tab">问题</button>
   </div>
   <div id="match-view">
+  <div id="data-source">
+    <label for="source-select">数据源</label>
+    <select id="source-select">
+      <option value="engine">我们引擎的比赛</option>
+      <option value="tracking">真实比赛（对照）</option>
+    </select>
+    <span id="tracking-select-wrap" hidden>
+      <label for="tracking-select">对照场次</label>
+      <select id="tracking-select">
+        <option value="metrica-game1">Metrica Sample Game 1</option>
+        <option value="metrica-game2">Metrica Sample Game 2</option>
+      </select>
+    </span>
+  </div>
+  <div id="tracking-meta"></div>
   <div id="score">0 - 0</div>
   <div id="canvas-wrap"><canvas id="pitch" width="700" height="450"></canvas></div>
   <div id="progress-wrap">
@@ -495,6 +534,6 @@
   </div>
 
   <!-- 版本号强制刷新 JS 模块缓存：改代码后改这里或清浏览器缓存 -->
-  <script type="module" src="./app.js?v=20260916-1"></script>
+  <script type="module" src="./app.js?v=20260918-11"></script>
 </body>
 </html>

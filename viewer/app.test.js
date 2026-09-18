@@ -603,3 +603,450 @@ test('P20 确认 UI：提交成功后 confirmed 卡片立即显示锚点（不�
   assert.match(text, /#55/, 'POST 返回的锚点应立即可见（复核 N8），而非显示「未锚定具体事件」');
   assert.doesNotMatch(text, /未锚定具体事件/, '不应短暂显示未锚定');
 });
+
+// ── 真实比赛对照：数据源切换的 DOM 行为 ──────────────────────────────────────
+// 驱动真实 app.js 的 #source-select / #tracking-select 监听器，断言它写进 DOM 的状态。
+// 删掉 app.js 里的数据源接线，这些用例即红。
+
+// 造一份最小的 tracking 帧序列（2 帧、22 人齐），供 fetch 桩返回。
+function fakeTrackingJson(endTime = 0.2) {
+  const players = (u) => Array.from({ length: 22 }, (_, id) => [0.1 + u * 0.2, id <= 10 ? 0.3 : 0.7]);
+  // 两帧，时长可配（默认 0.2s；需要观察进度变化的用例传更大的值）
+  return JSON.stringify({
+    meta: { keyframeHz: 5, frames: 2, startTime: 0, endTime, coverage: { playerCellsFilledPct: 100, ballMissingPct: 0 } },
+    frames: [
+      { t: 0, players: players(0), ball: [0.5, 0.5] },
+      { t: endTime, players: players(1), ball: [0.6, 0.5] },
+    ],
+  });
+}
+
+// 让 fetch 对 tracking 数据返回给定内容，其余请求照旧走断网桩。
+function serveTracking(h) {
+  const body = fakeTrackingJson();
+  h.fetch.setHandler(async (call) => {
+    if (/real-game-\d+\.json/.test(call.url)) {
+      return { ok: true, status: 200, text: async () => body };
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+}
+
+test('切到真实比赛：加载数据、禁用事件导航、显示数据质量信息', async () => {
+  serveTracking(h);
+  await h.importApp();
+  // 初始在上引擎数据源，事件导航可用
+  assert.equal(h.$('btn-next-event').disabled, false, '引擎数据源下事件导航应可用');
+  assert.equal(h.$('tracking-select-wrap').hidden, true, '初始不显示场次选择');
+
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  h.driveFrame(0); // 比分/进度在帧循环里更新，需驱动一帧
+
+  assert.equal(h.$('btn-next-event').disabled, true, '真实比赛无事件流，导航应禁用');
+  assert.equal(h.$('event-id-input').disabled, true);
+  // 状态栏与 meta 条反映真实数据
+  assert.match(h.$('tracking-meta').textContent, /5Hz/, '应显示采样率');
+  assert.match(h.$('tracking-meta').textContent, /球缺失 0%/, '应如实显示球缺失率');
+  assert.equal(h.$('score').textContent, '真实比赛（对照）');
+});
+
+test('切回引擎比赛：恢复事件导航与计分板', async () => {
+  serveTracking(h);
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+
+  h.$('source-select').value = 'engine';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+
+  assert.equal(h.$('btn-next-event').disabled, false, '切回引擎后事件导航应恢复');
+  assert.notEqual(h.$('score').textContent, '真实比赛（对照）', '计分板应还原');
+  assert.equal(h.$('tracking-select-wrap').hidden, true);
+});
+
+test('真实比赛数据缺失：报错后回到引擎数据源，导航不被卡死', async () => {
+  // 不 serve tracking → fetch 桩抛错 → loadTracking 失败
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+
+  // 回退到引擎数据源：下拉框复位、场次选择收起、事件导航保持可用
+  assert.equal(h.$('source-select').value, 'engine', '加载失败应把下拉框拨回引擎');
+  assert.equal(h.$('tracking-select-wrap').hidden, true);
+  assert.equal(h.$('btn-next-event').disabled, false, '失败后事件导航不能被卡在禁用态');
+  assert.match(h.$('status').textContent, /错误|加载失败/, '应给出可读的错误提示');
+});
+
+test('真实比赛播放：播放按钮真的推进时间，进度条与状态栏跟随', async () => {
+  const body = fakeTrackingJson(60); // 60s 时长，够看出时间前进
+  h.fetch.setHandler(async (call) => {
+    if (/real-game-\d+\.json/.test(call.url)) return { ok: true, status: 200, text: async () => body };
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  h.driveFrame(0);
+
+  // 进度条分母是 tracking 自己的时长，而非引擎比赛的 5 分钟（formatMatchClock 是 mm:ss）
+  assert.notEqual(h.$('progress-time').textContent, '00:00 / 05:00', '不应沿用引擎比赛时长');
+  assert.match(h.$('progress-time').textContent, /^00:00 \/ 01:00$/);
+
+  // 断言「播放真的推进了 tracking 的时间」，而不是只匹配按钮文案——
+  // 只匹配文案的话，播放按钮没接到 tracking 上（仍作用于引擎 game）也会绿。
+  const before = h.$('progress-time').textContent;
+  await h.click('btn-toggle');
+  // 逐帧推进若干秒（每帧 dt 上限 0.1s，与 Game.step 的钳制一致）
+  let ts = 100;
+  for (let i = 0; i < 60; i += 1) { ts += 100; h.driveFrame(ts); }
+  assert.notEqual(h.$('progress-time').textContent, before, '播放后进度/时间必须变化');
+  assert.match(h.$('progress-time').textContent, /^00:0[1-9] \/ 01:00$/, 'playTime 应已前进若干秒');
+  assert.match(h.$('status').textContent, /真实比赛 00:0[1-9]/);
+});
+
+test('进度条拖动映射到 tracking 时间轴（startTime≠0 时也对）', async () => {
+  // 逆映射必须与 getProgress 对称：startTime + pct × (endTime - startTime)。
+  // 曾写成 pct × matchEnd——对 startTime≈0 的整场数据碰巧对，对裁剪数据会把 50% 拖成 0。
+  const body = JSON.stringify({
+    meta: { keyframeHz: 5, frames: 2, startTime: 300, endTime: 400, coverage: {} },
+    frames: [
+      { t: 300, players: Array.from({ length: 22 }, () => [0.5, 0.5]), ball: [0.5, 0.5] },
+      { t: 400, players: Array.from({ length: 22 }, () => [0.5, 0.5]), ball: [0.5, 0.5] },
+    ],
+  });
+  h.fetch.setHandler(async (call) => {
+    if (/real-game-\d+\.json/.test(call.url)) return { ok: true, status: 200, text: async () => body };
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  h.driveFrame(0);
+
+  // 拖到 50%：应落在时间轴中点（350s），而非被钳回 startTime
+  h.$('progress-bar').value = '50';
+  h.$('progress-bar').dispatchEvent(new h.window.Event('input'));
+  await h.flush();
+  assert.match(h.$('status').textContent, /05:50/, '50% 应映射到 350s（05:50），而不是 300s');
+});
+
+test('加载途中切回引擎：慢加载落地后四态一致，事件导航不被卡死', async () => {
+  // 回归背景（X1）：切到真实比赛（18MB 加载中）→ 在完成前切回引擎。若不作废在途请求，
+  // 慢加载落地后会把 activeSource 掰回 tracking（控件与画面错位）；若只作废、不让调用方
+  // 知道，await 之后的 setEventNavEnabled(false) 仍会执行，用户被卡在"引擎 + 导航变灰"。
+  // 这里断言「数据源 / 信息条 / 计分板 / 事件导航」四态一致。
+  const body = fakeTrackingJson();
+  let releaseSlow;
+  const slow = new Promise((r) => { releaseSlow = r; });
+  h.fetch.setHandler(async (call) => {
+    if (/real-game-\d+\.json/.test(call.url)) {
+      await slow; // 挂住加载，模拟慢网络
+      return { ok: true, status: 200, text: async () => body };
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  await h.importApp();
+
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush(); // 加载已发起、仍挂起
+
+  // 加载完成前切回引擎
+  h.$('source-select').value = 'engine';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+
+  // 放行慢加载：它此时已作废，不得改动任何状态
+  releaseSlow();
+  await h.flush();
+  h.driveFrame(0);
+
+  assert.equal(h.$('source-select').value, 'engine', '应停留在引擎数据源');
+  assert.equal(h.$('tracking-meta').textContent, '', '信息条应清空（不能显示真实比赛）');
+  assert.notEqual(h.$('score').textContent, '真实比赛（对照）', '计分板不能显示真实比赛');
+  assert.equal(h.$('btn-next-event').disabled, false, '事件导航不能被卡在禁用态');
+  // 状态栏由帧循环按当前数据源写；引擎模式下是"比赛 MM:SS"（不是"真实比赛 …"）
+  assert.doesNotMatch(h.$('status').textContent, /真实比赛/, '状态栏不能显示真实比赛');
+});
+
+test('加载途中选回当前场：慢的旧请求不得覆盖', async () => {
+  // 回归背景（X2，与 F1/F3/X1 同族的第三条路径）：tracking 播放 game1 时选 game2（加载中），
+  // 又选回 game1 → 命中"已是这一场"的早退分支。该分支曾是唯一 return 早于 ++loadSeq 的路径，
+  // 不作废在途请求 → game2 慢加载落地后把画面掰成 game2（下拉框 game1、信息条 game2）。
+  const body = fakeTrackingJson();
+  let releaseSlow;
+  const slow = new Promise((r) => { releaseSlow = r; });
+  h.fetch.setHandler(async (call) => {
+    if (/real-game-1\.json/.test(call.url)) return { ok: true, status: 200, text: async () => body };
+    if (/real-game-2\.json/.test(call.url)) {
+      await slow; // game2 慢：挂住
+      return { ok: true, status: 200, text: async () => body };
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  await h.importApp();
+  // 先加载 game1 并停在 tracking 模式
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  assert.match(h.$('tracking-meta').textContent, /Sample Game 1/);
+
+  // 选 game2（慢，挂起），再选回 game1（命中早退）
+  h.$('tracking-select').value = 'metrica-game2';
+  h.$('tracking-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  h.$('tracking-select').value = 'metrica-game1';
+  h.$('tracking-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+
+  // 放行 game2 的慢请求：它已被作废，不得覆盖
+  releaseSlow();
+  await h.flush();
+  assert.match(h.$('tracking-meta').textContent, /Sample Game 1/,
+    '信息条必须仍是 game1（慢的旧请求不得覆盖）');
+  assert.equal(h.$('tracking-select').value, 'metrica-game1', '下拉框应仍是 game1');
+});
+
+// ── 数据源状态机的穷举交错（同一族竞态已出过 4 个变体：F1/F3/X1/X2）─────────
+// 与其逐个追，不如把所有「慢加载在途时能做什么」的组合都跑一遍，断言四态自洽。
+// 不变式（tracking 模式）：meta 非空、导航禁用、下拉框指向的场次与信息条一致；
+// （engine 模式）：meta 空、计分板非"真实比赛"、导航可用。
+
+// 场景执行器：可配"哪一场慢/哪一场失败/是否预加载 g1"，跑完断言四态自洽。
+async function raceScenario({ slowGame = null, failGame = null, act }) {
+  const body = fakeTrackingJson(60);
+  let releaseSlow = () => {};
+  const slow = new Promise((r) => { releaseSlow = r; });
+  h.fetch.setHandler(async (call) => {
+    const m = /real-game-(\d)\.json/.exec(call.url);
+    if (!m) throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+    if (m[1] === failGame) throw new Error('模拟加载失败');
+    if (m[1] === slowGame) await slow;
+    return { ok: true, status: 200, text: async () => body };
+  });
+  await h.importApp();
+  await act({ releaseSlow, flush: h.flush });
+  h.driveFrame(0);
+  const s = {
+    src: h.$('source-select').value,
+    meta: h.$('tracking-meta').textContent,
+    score: h.$('score').textContent,
+    navDis: h.$('btn-next-event').disabled,
+    sel: h.$('tracking-select').value,
+  };
+  const errs = [];
+  if (s.src === 'engine') {
+    if (s.meta !== '') errs.push('engine 模式 meta 应空');
+    if (s.score === '真实比赛（对照）') errs.push('engine 模式计分板不应是真实比赛');
+    if (s.navDis) errs.push('engine 模式导航应可用');
+  } else {
+    if (s.meta === '') errs.push('tracking 模式 meta 不应空');
+    if (!s.navDis) errs.push('tracking 模式导航应禁用');
+    // 下拉框指向的场次必须与信息条一致（此前注释声称检查、代码却没写，
+    // 正是这个盲区让"首次加载在途改选"那类场景逃逸）
+    const want = s.sel === 'metrica-game1' ? 'Sample Game 1' : 'Sample Game 2';
+    if (!s.meta.includes(want)) errs.push(`下拉框=${s.sel} 与信息条不一致：${s.meta}`);
+  }
+  return { s, errs };
+}
+
+const setSel = (id, v) => {
+  h.$(id).value = v;
+  h.$(id).dispatchEvent(new h.window.Event('change'));
+};
+
+test('竞态交错矩阵：慢加载在途的每个后续动作组合，四态都自洽', async () => {
+  // 每个场景用独立 harness 跑一遍，覆盖两类起点：
+  //   A 类「g1 已加载完」——在 tracking 模式播放 g1 时选 g2（慢）再做后续动作；
+  //   B 类「首次加载在途」——刚切到 tracking（g1 慢），尚未提交时改选 g2。
+  // 后者是矩阵此前的盲区（所有场景都从 A 类起步）。
+  const scenarios = [
+    // ── B 类：首次加载在途 ─────────────────────────────────────────────
+    ['首次 g1 在途 → 改选 g2（快，提交）', { slowGame: '1' }, async (releaseSlow, flush) => {
+      setSel('source-select', 'tracking'); await flush(); // g1 发起、挂起
+      setSel('tracking-select', 'metrica-game2'); await flush(); // g2 立即提交
+      releaseSlow(); await flush(); // 迟到的 g1 已作废，不得覆盖
+    }],
+    ['首次 g1 在途 → 改选 g2（失败）→ 放行 g1', { slowGame: '1', failGame: '2' }, async (releaseSlow, flush) => {
+      setSel('source-select', 'tracking'); await flush();
+      setSel('tracking-select', 'metrica-game2'); await flush(); // g2 失败
+      releaseSlow(); await flush(); // g1 已被 g2 作废，也不得落地
+    }],
+    // ── A 类：g1 已加载完 ──────────────────────────────────────────────
+    ['g1 在播，g2 在途 → 切回引擎', { slowGame: '2', preload: 'g1' }, async (releaseSlow, flush) => {
+      setSel('tracking-select', 'metrica-game2'); await flush();
+      setSel('source-select', 'engine'); await flush();
+      releaseSlow(); await flush();
+    }],
+    ['g1 在播，g2 在途 → 选回当前场 g1', { slowGame: '2', preload: 'g1' }, async (releaseSlow, flush) => {
+      setSel('tracking-select', 'metrica-game2'); await flush();
+      setSel('tracking-select', 'metrica-game1'); await flush();
+      releaseSlow(); await flush();
+    }],
+    ['g1 在播，g2 在途 → 切引擎 → 放行 → 再切 tracking', { slowGame: '2', preload: 'g1' }, async (releaseSlow, flush) => {
+      setSel('tracking-select', 'metrica-game2'); await flush();
+      setSel('source-select', 'engine'); await flush();
+      releaseSlow(); await flush();
+      setSel('source-select', 'tracking'); await flush();
+    }],
+    ['g1 在播，g2 在途 → 切引擎 → 放行 → 再选 g2', { slowGame: '2', preload: 'g1' }, async (releaseSlow, flush) => {
+      setSel('tracking-select', 'metrica-game2'); await flush();
+      setSel('source-select', 'engine'); await flush();
+      releaseSlow(); await flush();
+      setSel('source-select', 'tracking'); await flush();
+      setSel('tracking-select', 'metrica-game2'); await flush();
+    }],
+    ['g1 在播，g2 在途 → 直接改选 g1 再改选 g2', { slowGame: '2', preload: 'g1' }, async (releaseSlow, flush) => {
+      setSel('tracking-select', 'metrica-game2'); await flush();
+      setSel('tracking-select', 'metrica-game1'); await flush();
+      setSel('tracking-select', 'metrica-game2'); await flush();
+      releaseSlow(); await flush();
+    }],
+  ];
+  const failures = [];
+  for (const [name, opts, act] of scenarios) {
+    h.close();
+    h = createAppHarness();
+    const { s, errs } = await raceScenario({
+      ...opts,
+      act: async ({ releaseSlow, flush }) => {
+        // A 类起点：先把 g1 加载好并停在 tracking
+        if (opts.preload) { setSel('source-select', 'tracking'); await flush(); }
+        await act(releaseSlow, flush);
+      },
+    });
+    if (errs.length) failures.push(`${name}\n    状态=${JSON.stringify(s)}\n    ${errs.join('; ')}`);
+  }
+  assert.deepEqual(failures, [], `交错场景应全部自洽，实际：\n${failures.join('\n')}`);
+});
+
+test('真实比赛模式下事件导航处理器不生效（即使按钮被解除禁用）', async () => {
+  // 用例不能只断言按钮 disabled——那只证明属性被设了，没证明处理器本身有守卫。
+  // 这里绕开 disabled 直接派发点击，断言 notice 里没有"已跳转"。
+  // （status 每帧被 tracking 覆写、指示器也有自己的守卫，两者都不是有效观测点。）
+  serveTracking(h);
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  h.driveFrame(0);
+
+  h.$('btn-next-event').disabled = false;
+  h.$('btn-next-event').click();
+  await h.flush();
+  assert.doesNotMatch(h.$('notice').textContent, /已跳转/, 'tracking 模式下不应执行事件跳转');
+
+  h.$('notice').textContent = '';
+  h.document.dispatchEvent(new h.window.Event('keydown', { key: 'ArrowRight', bubbles: true }));
+  await h.flush();
+  assert.doesNotMatch(h.$('notice').textContent, /已跳转/, 'tracking 模式下方向键不应执行事件跳转');
+});
+
+test('真实比赛模式下采集被拒绝（不采到隐藏的引擎状态）', async () => {
+  // 回归背景（审阅 P2-G）：采集读的是隐藏的引擎 game（冻结在切换时刻），
+  // 在 tracking 模式下点采集会采到"引擎的那一刻"而不是用户正看的真实比赛。
+  serveTracking(h);
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+
+  h.statement = '在真实比赛模式下采集';
+  await h.click('btn-capture');
+  assert.match(h.$('obs-status').textContent, /failed/, 'tracking 模式下采集应被拒绝');
+  assert.match(h.$('obs-status').textContent, /真实比赛模式/, '应说明原因与出路');
+  assert.deepEqual(h.entryStatements(), [], '不应产生任何观察条目');
+});
+
+// ── 审阅发现的三处状态机缺陷（回归护栏） ──────────────────────────────────
+
+// F1：加载失败时下拉框必须拨回**真正加载成功的那场**。
+// 曾用 `trackingSelect.value` 当"旧值"回滚——change 触发时浏览器已把它改成新值，
+// 回滚是空操作，结果下拉框停在没加载进来的场次上（画面/信息条/下拉框三处不一致）。
+test('加载失败：下拉框拨回上次成功加载的场次（不是停在失败的那场）', async () => {
+  const body = fakeTrackingJson();
+  h.fetch.setHandler(async (call) => {
+    // game1 成功；game2 失败
+    if (/real-game-1\.json/.test(call.url)) return { ok: true, status: 200, text: async () => body };
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  // 切到会失败的 game2
+  h.$('tracking-select').value = 'metrica-game2';
+  h.$('tracking-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  assert.equal(h.$('tracking-select').value, 'metrica-game1',
+    '失败后下拉框应显示仍在使用的那场，而不是失败的 game2');
+});
+
+// F2：坏数据不能进缓存，否则之后每次切到该场都从缓存抛出、只能刷新页面。
+// 关键：要**重选同一场**（game1），才能区分"缓存里有坏数据"和"重新 fetch"。
+test('加载失败：坏数据不进缓存，重选同一场会重新尝试', async () => {
+  let attempts = 0;
+  h.fetch.setHandler(async (call) => {
+    if (/real-game-1\.json/.test(call.url)) {
+      attempts += 1;
+      // 第一次返回坏 JSON，之后返回好的
+      return { ok: true, status: 200, text: async () => (attempts === 1 ? '{坏 JSON' : fakeTrackingJson()) };
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  await h.importApp();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  assert.equal(attempts, 1, '首次应发起请求并失败');
+
+  // 切走再切回**同一场**：若坏数据被缓存，这里不会重新 fetch
+  h.$('source-select').value = 'engine';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  assert.equal(attempts, 2, '坏数据不应被缓存——重选同一场应重新尝试加载');
+  // 第二次拿到好数据，应加载成功
+  assert.equal(h.$('btn-next-event').disabled, true, '重试成功后应进入真实比赛模式');
+});
+
+// F3：慢请求竞态——先发出的请求后到达，不能覆盖用户后来选的场次。
+test('竞态：慢的旧请求不覆盖新选中的场次', async () => {
+  const body = fakeTrackingJson();
+  let releaseSlow;
+  const slow = new Promise((r) => { releaseSlow = r; });
+  h.fetch.setHandler(async (call) => {
+    if (/real-game-1\.json/.test(call.url)) {
+      await slow; // game1 慢：挂住，等我们放行
+      return { ok: true, status: 200, text: async () => body };
+    }
+    if (/real-game-2\.json/.test(call.url)) {
+      return { ok: true, status: 200, text: async () => body };
+    }
+    throw new Error(`DOM harness: fetch 被禁用（${call.method} ${call.url}）`);
+  });
+  await h.importApp();
+  // 发起 game1（慢），不等它完成
+  h.$('source-select').value = 'tracking';
+  h.$('source-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  // 立刻切到 game2（快）
+  h.$('tracking-select').value = 'metrica-game2';
+  h.$('tracking-select').dispatchEvent(new h.window.Event('change'));
+  await h.flush();
+  // 放行慢请求：它此时已经过期，不得覆盖 game2
+  releaseSlow();
+  await h.flush();
+  assert.equal(h.$('tracking-select').value, 'metrica-game2', '下拉框应仍是 game2');
+  assert.match(h.$('tracking-meta').textContent, /Sample Game 2/,
+    '信息条必须是 game2（过期响应不得覆盖）');
+});
