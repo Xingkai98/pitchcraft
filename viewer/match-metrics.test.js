@@ -586,6 +586,17 @@ test('口径·逐场尺寸全链路贯通【反证条】（frameMetrics/windowMe
   assert.ok(Math.abs(w105.hd - w104.hd) > 0.1, 'windowMetrics 须从帧上取尺寸');
   assert.ok(Math.abs(w105.hd / w104.hd - 105 / 104) < 1e-9);
 
+  // **ballDist 也走逐场尺寸**（审阅 M12：`frameMetric` 的球距用 `framePitchMeters(eff)` 取尺寸，
+  // 若那一环退回缺省 105，depth 仍对（它走 opts.pitchMeters 分支）但 ballDist 会静默错。
+  // 只断言 depth 会让这条路径无守护——故这里单独锁 ballDist。）
+  const b105 = frameMetrics(mkFrame([105, 68])).ballDist;
+  const b104 = frameMetrics(mkFrame([104, 68])).ballDist;
+  assert.ok(Math.abs(b105 - b104) > 1e-9, `ballDist 也应随逐场尺寸变（105=${b105} 104=${b104}）`);
+  assert.ok(Math.abs(b105 / b104 - 105 / 104) < 1e-9, 'ballDist 的 105/104 比应恰为 105/104');
+  const wb105 = windowMetrics([mkFrame([105, 68])]).primary.ballDist;
+  const wb104 = windowMetrics([mkFrame([104, 68])]).primary.ballDist;
+  assert.ok(Math.abs(wb105 / wb104 - 105 / 104) < 1e-9, '窗口聚合的 ballDist 也须按逐场尺寸');
+
   // 引擎侧帧不带 pitchMeters → 退回缺省 105（P36 行为不变）
   const engineLike = makeFrame({ homeXs: xs, ball: [0.5, 0.5] });
   assert.ok(Math.abs(frameMetrics(engineLike).home.depth - d105) < 1e-9,
