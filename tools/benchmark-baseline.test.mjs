@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashMetricsModule } from './benchmark-baseline.mjs';
+import { hashMetricsModule, realGameWindows } from './benchmark-baseline.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE_PATH = join(ROOT, 'viewer', 'data', 'benchmark-baseline.json');
@@ -132,4 +132,28 @@ test('基线：弹性两种口径都记录（口径敏感性披露）', { skip: 
     assert.ok(ds.elasticity.half && ds.elasticity.centroid, '两种分桶都要有');
   }
   assert.ok(b.engine.elasticity.half && b.engine.elasticity.centroid);
+});
+
+test('基线生成按逐场尺寸换算【反证条】（审阅发现的未守护路径）', () => {
+  // 反证：若 realGameWindows 丢弃 meta.pitchMeters（退回硬编码 105），104m 与 105m 的
+  // 米制纵深会**相同** → 这条红。用合成数据（不依赖 gitignored 的真实帧序列）。
+  const mk = (pm) => {
+    const frames = [];
+    for (let i = 0; i < 1510; i += 1) {
+      const players = new Array(22).fill(null);
+      players[0] = [0.05, 0.5];
+      for (let j = 1; j <= 10; j += 1) players[j] = [0.2 + j * 0.02, 0.5];
+      players[21] = [0.95, 0.5];
+      for (let j = 11; j <= 20; j += 1) players[j] = [0.6 + j * 0.01, 0.5];
+      frames.push({ t: i * 0.2, players, ball: [0.5, 0.5] });
+    }
+    return { meta: { keyframeHz: 5, source: 'synthetic', pitchMeters: pm ? { length: pm[0], width: pm[1] } : undefined }, frames };
+  };
+  const a = realGameWindows(mk([105, 68]), 'a');
+  const b = realGameWindows(mk([104, 68]), 'b');
+  assert.deepEqual(a.pitchMeters, [105, 68]);
+  assert.deepEqual(b.pitchMeters, [104, 68], '逐场尺寸须记入基线');
+  const ratio = a.metrics[0].hd / b.metrics[0].hd;
+  assert.ok(Math.abs(ratio - 105 / 104) < 1e-9,
+    `105m/104m 纵深比应恰为 105/104（实际 ${ratio}）——不等说明没按逐场尺寸换算`);
 });
