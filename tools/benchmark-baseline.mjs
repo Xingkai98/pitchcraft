@@ -98,6 +98,12 @@ export function realGameWindows(data, gameName) {
       frameCount: w.length,
       okPrimary: primary ? primary.frameCount : 0, // 主口径可用帧（外推过滤 + 人数阈值之后）
       okAllPoints: allPoints ? allPoints.frameCount : 0,
+      // 逐窗指标值（主口径）：交叉验证（P37 P3）需要窗口级的值，只有摘要无法做。
+      // 只存采用指标 + 报告项，控制体积（基线体积实测见 design D8）。
+      windowMetrics: primary ? {
+        hd: round2(primary.hd), ad: round2(primary.ad), spread: round2(primary.spread),
+        gap: round2(primary.gap), width: round2(primary.width), ballDist: round2(primary.ballDist),
+      } : null,
     });
     metrics.push(primary);
     metricsAll.push(allPoints);
@@ -149,6 +155,7 @@ export function realGameWindows(data, gameName) {
 }
 
 const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
+const round2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
 const elasticitySummary = (deltas) => (deltas.length
   ? { avgDelta: avg(deltas), min: Math.min(...deltas), max: Math.max(...deltas), n: deltas.length }
   : null);

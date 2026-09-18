@@ -71,49 +71,105 @@
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 27.61,
+                "ad": 27.35,
+                "spread": 14.53,
+                "gap": 8.35,
+                "width": 33.29,
+                "ballDist": 17.66
+              }
             },
             {
               "startSec": 900.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 25.88,
+                "ad": 26.72,
+                "spread": 15.26,
+                "gap": 8.41,
+                "width": 39.58,
+                "ballDist": 16.66
+              }
             },
             {
               "startSec": 1800.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 27.9,
+                "ad": 27.78,
+                "spread": 16.36,
+                "gap": 7.16,
+                "width": 42.43,
+                "ballDist": 18.3
+              }
             },
             {
               "startSec": 2700.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.57,
+                "ad": 26.49,
+                "spread": 15.63,
+                "gap": 8.33,
+                "width": 40.16,
+                "ballDist": 18.48
+              }
             },
             {
               "startSec": 3600.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 25.05,
+                "ad": 30.25,
+                "spread": 14,
+                "gap": 10.54,
+                "width": 34.31,
+                "ballDist": 19.67
+              }
             },
             {
               "startSec": 4500.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.47,
+                "ad": 28.02,
+                "spread": 15.73,
+                "gap": 7.26,
+                "width": 43.07,
+                "ballDist": 20.38
+              }
             },
             {
               "startSec": 5400.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.83,
+                "ad": 28.25,
+                "spread": 17.15,
+                "gap": 6.8,
+                "width": 46.78,
+                "ballDist": 20.15
+              }
             }
           ],
           "tail": {
@@ -146,42 +202,90 @@
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 27.33,
+                "ad": 25.88,
+                "spread": 16.35,
+                "gap": 7.73,
+                "width": 43.95,
+                "ballDist": 18.36
+              }
             },
             {
               "startSec": 900.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 25.43,
+                "ad": 24.43,
+                "spread": 15.79,
+                "gap": 7.57,
+                "width": 42.78,
+                "ballDist": 18.14
+              }
             },
             {
               "startSec": 1800.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.45,
+                "ad": 27.89,
+                "spread": 15.6,
+                "gap": 8.02,
+                "width": 40.47,
+                "ballDist": 17.51
+              }
             },
             {
               "startSec": 2700.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 30.19,
+                "ad": 28.7,
+                "spread": 15.31,
+                "gap": 10.05,
+                "width": 35.47,
+                "ballDist": 20.01
+              }
             },
             {
               "startSec": 3600.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 24.73,
+                "ad": 25.04,
+                "spread": 15.61,
+                "gap": 7.84,
+                "width": 44.09,
+                "ballDist": 16.7
+              }
             },
             {
               "startSec": 4500.04,
               "nominalSec": 300,
               "frameCount": 1500,
               "okPrimary": 1500,
-              "okAllPoints": 1500
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 16.76,
+                "ad": 21.53,
+                "spread": 10.75,
+                "gap": 10.13,
+                "width": 28.17,
+                "ballDist": 16.62
+              }
             }
           ],
           "tail": {
@@ -398,49 +502,105 @@
               "nominalSec": 300,
               "frameCount": 1326,
               "okPrimary": 236,
-              "okAllPoints": 1326
+              "okAllPoints": 1326,
+              "windowMetrics": {
+                "hd": 19.21,
+                "ad": 21.38,
+                "spread": 12.43,
+                "gap": 6.56,
+                "width": 32.04,
+                "ballDist": 16.56
+              }
             },
             {
               "startSec": 900,
               "nominalSec": 300,
               "frameCount": 1178,
               "okPrimary": 376,
-              "okAllPoints": 1178
+              "okAllPoints": 1178,
+              "windowMetrics": {
+                "hd": 19.05,
+                "ad": 19.34,
+                "spread": 14.38,
+                "gap": 4.42,
+                "width": 42.53,
+                "ballDist": 18.57
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 995,
               "okPrimary": 552,
-              "okAllPoints": 995
+              "okAllPoints": 995,
+              "windowMetrics": {
+                "hd": 18.49,
+                "ad": 19.44,
+                "spread": 13.08,
+                "gap": 4.67,
+                "width": 37.27,
+                "ballDist": 14.44
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 995,
               "okPrimary": 536,
-              "okAllPoints": 995
+              "okAllPoints": 995,
+              "windowMetrics": {
+                "hd": 18.52,
+                "ad": 18.6,
+                "spread": 12.05,
+                "gap": 4.85,
+                "width": 32.71,
+                "ballDist": 15.36
+              }
             },
             {
               "startSec": 3611.3,
               "nominalSec": 300,
               "frameCount": 1150,
               "okPrimary": 419,
-              "okAllPoints": 1150
+              "okAllPoints": 1150,
+              "windowMetrics": {
+                "hd": 13.82,
+                "ad": 17.08,
+                "spread": 10.46,
+                "gap": 3.93,
+                "width": 30.1,
+                "ballDist": 15.68
+              }
             },
             {
               "startSec": 4504.4,
               "nominalSec": 300,
               "frameCount": 1126,
               "okPrimary": 459,
-              "okAllPoints": 1126
+              "okAllPoints": 1126,
+              "windowMetrics": {
+                "hd": 16.49,
+                "ad": 17.3,
+                "spread": 11.72,
+                "gap": 4.81,
+                "width": 36.2,
+                "ballDist": 14.16
+              }
             },
             {
               "startSec": 5400,
               "nominalSec": 300,
               "frameCount": 1056,
               "okPrimary": 455,
-              "okAllPoints": 1056
+              "okAllPoints": 1056,
+              "windowMetrics": {
+                "hd": 18.77,
+                "ad": 18.04,
+                "spread": 13.47,
+                "gap": 5.28,
+                "width": 39.92,
+                "ballDist": 15.23
+              }
             }
           ],
           "tail": {
@@ -477,49 +637,105 @@
               "nominalSec": 300,
               "frameCount": 1437,
               "okPrimary": 781,
-              "okAllPoints": 1437
+              "okAllPoints": 1437,
+              "windowMetrics": {
+                "hd": 17.67,
+                "ad": 19.86,
+                "spread": 11.83,
+                "gap": 5.72,
+                "width": 31.36,
+                "ballDist": 14.43
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1212,
               "okPrimary": 446,
-              "okAllPoints": 1212
+              "okAllPoints": 1212,
+              "windowMetrics": {
+                "hd": 19.31,
+                "ad": 18.05,
+                "spread": 14.35,
+                "gap": 5.01,
+                "width": 40.74,
+                "ballDist": 13.27
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 1314,
               "okPrimary": 633,
-              "okAllPoints": 1314
+              "okAllPoints": 1314,
+              "windowMetrics": {
+                "hd": 18.25,
+                "ad": 16.5,
+                "spread": 14.6,
+                "gap": 4.35,
+                "width": 42.34,
+                "ballDist": 13.55
+              }
             },
             {
               "startSec": 2700.1,
               "nominalSec": 300,
               "frameCount": 1418,
               "okPrimary": 811,
-              "okAllPoints": 1418
+              "okAllPoints": 1418,
+              "windowMetrics": {
+                "hd": 17.37,
+                "ad": 17.25,
+                "spread": 13.24,
+                "gap": 5.16,
+                "width": 36.58,
+                "ballDist": 15.68
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 766,
               "okPrimary": 319,
-              "okAllPoints": 766
+              "okAllPoints": 766,
+              "windowMetrics": {
+                "hd": 18.6,
+                "ad": 15.35,
+                "spread": 14.53,
+                "gap": 4.24,
+                "width": 41.67,
+                "ballDist": 14.82
+              }
             },
             {
               "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 841,
               "okPrimary": 460,
-              "okAllPoints": 841
+              "okAllPoints": 841,
+              "windowMetrics": {
+                "hd": 15.26,
+                "ad": 12.5,
+                "spread": 12.59,
+                "gap": 4.06,
+                "width": 37.08,
+                "ballDist": 13.31
+              }
             },
             {
               "startSec": 5468.8,
               "nominalSec": 300,
               "frameCount": 690,
               "okPrimary": 262,
-              "okAllPoints": 690
+              "okAllPoints": 690,
+              "windowMetrics": {
+                "hd": 13.84,
+                "ad": 17.44,
+                "spread": 11.27,
+                "gap": 8.32,
+                "width": 34.47,
+                "ballDist": 14.77
+              }
             }
           ],
           "tail": {
@@ -556,49 +772,105 @@
               "nominalSec": 300,
               "frameCount": 1174,
               "okPrimary": 605,
-              "okAllPoints": 1174
+              "okAllPoints": 1174,
+              "windowMetrics": {
+                "hd": 18.3,
+                "ad": 16.47,
+                "spread": 13.93,
+                "gap": 5.47,
+                "width": 38.5,
+                "ballDist": 16.79
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1129,
               "okPrimary": 586,
-              "okAllPoints": 1129
+              "okAllPoints": 1129,
+              "windowMetrics": {
+                "hd": 18.48,
+                "ad": 17.82,
+                "spread": 13.72,
+                "gap": 5.44,
+                "width": 39.46,
+                "ballDist": 12.98
+              }
             },
             {
               "startSec": 1800.1,
               "nominalSec": 300,
               "frameCount": 935,
               "okPrimary": 384,
-              "okAllPoints": 935
+              "okAllPoints": 935,
+              "windowMetrics": {
+                "hd": 19.77,
+                "ad": 20.03,
+                "spread": 14.54,
+                "gap": 5.91,
+                "width": 40.28,
+                "ballDist": 14.32
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 1124,
               "okPrimary": 446,
-              "okAllPoints": 1124
+              "okAllPoints": 1124,
+              "windowMetrics": {
+                "hd": 15.31,
+                "ad": 16.45,
+                "spread": 11.66,
+                "gap": 4.64,
+                "width": 34.71,
+                "ballDist": 15.32
+              }
             },
             {
               "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 956,
               "okPrimary": 274,
-              "okAllPoints": 956
+              "okAllPoints": 956,
+              "windowMetrics": {
+                "hd": 19.75,
+                "ad": 19.41,
+                "spread": 14.27,
+                "gap": 4.77,
+                "width": 40.07,
+                "ballDist": 13.95
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 1147,
               "okPrimary": 512,
-              "okAllPoints": 1147
+              "okAllPoints": 1147,
+              "windowMetrics": {
+                "hd": 12.52,
+                "ad": 17.25,
+                "spread": 10.58,
+                "gap": 5.33,
+                "width": 31.46,
+                "ballDist": 17.25
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1042,
               "okPrimary": 345,
-              "okAllPoints": 1042
+              "okAllPoints": 1042,
+              "windowMetrics": {
+                "hd": 17.23,
+                "ad": 21.07,
+                "spread": 11.98,
+                "gap": 5.61,
+                "width": 34.43,
+                "ballDist": 13.8
+              }
             }
           ],
           "tail": {
@@ -635,49 +907,105 @@
               "nominalSec": 300,
               "frameCount": 1406,
               "okPrimary": 389,
-              "okAllPoints": 1406
+              "okAllPoints": 1406,
+              "windowMetrics": {
+                "hd": 17.72,
+                "ad": 18.22,
+                "spread": 11.44,
+                "gap": 6.22,
+                "width": 31.19,
+                "ballDist": 13.73
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1153,
               "okPrimary": 346,
-              "okAllPoints": 1153
+              "okAllPoints": 1153,
+              "windowMetrics": {
+                "hd": 19.43,
+                "ad": 16.26,
+                "spread": 12.15,
+                "gap": 5.24,
+                "width": 33.3,
+                "ballDist": 9.81
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 639,
               "okPrimary": 118,
-              "okAllPoints": 639
+              "okAllPoints": 639,
+              "windowMetrics": {
+                "hd": 20.23,
+                "ad": 19.78,
+                "spread": 12.15,
+                "gap": 5.54,
+                "width": 30.65,
+                "ballDist": 13.55
+              }
             },
             {
               "startSec": 2700.1,
               "nominalSec": 300,
               "frameCount": 1259,
               "okPrimary": 413,
-              "okAllPoints": 1259
+              "okAllPoints": 1259,
+              "windowMetrics": {
+                "hd": 19.72,
+                "ad": 18.83,
+                "spread": 11.61,
+                "gap": 5.08,
+                "width": 29.51,
+                "ballDist": 12.69
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 1208,
               "okPrimary": 473,
-              "okAllPoints": 1208
+              "okAllPoints": 1208,
+              "windowMetrics": {
+                "hd": 21.29,
+                "ad": 19.26,
+                "spread": 14.33,
+                "gap": 4.57,
+                "width": 42.13,
+                "ballDist": 13.44
+              }
             },
             {
               "startSec": 4575.3,
               "nominalSec": 300,
               "frameCount": 962,
               "okPrimary": 540,
-              "okAllPoints": 962
+              "okAllPoints": 962,
+              "windowMetrics": {
+                "hd": 21.07,
+                "ad": 18.68,
+                "spread": 15.37,
+                "gap": 6.4,
+                "width": 43.34,
+                "ballDist": 15.2
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1097,
               "okPrimary": 603,
-              "okAllPoints": 1097
+              "okAllPoints": 1097,
+              "windowMetrics": {
+                "hd": 17.57,
+                "ad": 14.56,
+                "spread": 12.88,
+                "gap": 4.15,
+                "width": 37.91,
+                "ballDist": 15.4
+              }
             }
           ],
           "tail": {
@@ -714,49 +1042,105 @@
               "nominalSec": 300,
               "frameCount": 1178,
               "okPrimary": 740,
-              "okAllPoints": 1178
+              "okAllPoints": 1178,
+              "windowMetrics": {
+                "hd": 23.95,
+                "ad": 22.73,
+                "spread": 14.7,
+                "gap": 7.99,
+                "width": 39.6,
+                "ballDist": 17.23
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1070,
               "okPrimary": 647,
-              "okAllPoints": 1070
+              "okAllPoints": 1070,
+              "windowMetrics": {
+                "hd": 22.56,
+                "ad": 20.96,
+                "spread": 14.75,
+                "gap": 6.85,
+                "width": 42.86,
+                "ballDist": 15.68
+              }
             },
             {
               "startSec": 1861.5,
               "nominalSec": 300,
               "frameCount": 1069,
               "okPrimary": 761,
-              "okAllPoints": 1069
+              "okAllPoints": 1069,
+              "windowMetrics": {
+                "hd": 19.67,
+                "ad": 20.68,
+                "spread": 13.94,
+                "gap": 7.35,
+                "width": 40.91,
+                "ballDist": 15.54
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 1177,
               "okPrimary": 647,
-              "okAllPoints": 1177
+              "okAllPoints": 1177,
+              "windowMetrics": {
+                "hd": 22.07,
+                "ad": 20.95,
+                "spread": 13.51,
+                "gap": 7.07,
+                "width": 37.79,
+                "ballDist": 14.98
+              }
             },
             {
               "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 1097,
               "okPrimary": 445,
-              "okAllPoints": 1097
+              "okAllPoints": 1097,
+              "windowMetrics": {
+                "hd": 24.04,
+                "ad": 20.97,
+                "spread": 15.69,
+                "gap": 6.64,
+                "width": 42.32,
+                "ballDist": 15.72
+              }
             },
             {
               "startSec": 4502.1,
               "nominalSec": 300,
               "frameCount": 1008,
               "okPrimary": 331,
-              "okAllPoints": 1008
+              "okAllPoints": 1008,
+              "windowMetrics": {
+                "hd": 22.59,
+                "ad": 30.86,
+                "spread": 14.69,
+                "gap": 7.1,
+                "width": 38.73,
+                "ballDist": 21.81
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1147,
               "okPrimary": 529,
-              "okAllPoints": 1147
+              "okAllPoints": 1147,
+              "windowMetrics": {
+                "hd": 18.84,
+                "ad": 23.07,
+                "spread": 11.83,
+                "gap": 6.26,
+                "width": 32.03,
+                "ballDist": 17.22
+              }
             }
           ],
           "tail": {
@@ -793,49 +1177,105 @@
               "nominalSec": 300,
               "frameCount": 1370,
               "okPrimary": 732,
-              "okAllPoints": 1370
+              "okAllPoints": 1370,
+              "windowMetrics": {
+                "hd": 19.38,
+                "ad": 22.6,
+                "spread": 13.27,
+                "gap": 5.9,
+                "width": 38.69,
+                "ballDist": 20.15
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1445,
               "okPrimary": 1060,
-              "okAllPoints": 1445
+              "okAllPoints": 1445,
+              "windowMetrics": {
+                "hd": 18.55,
+                "ad": 22.93,
+                "spread": 14.02,
+                "gap": 5.61,
+                "width": 39.61,
+                "ballDist": 18.5
+              }
             },
             {
               "startSec": 1801.4,
               "nominalSec": 300,
               "frameCount": 724,
               "okPrimary": 403,
-              "okAllPoints": 724
+              "okAllPoints": 724,
+              "windowMetrics": {
+                "hd": 19.29,
+                "ad": 24.27,
+                "spread": 14.52,
+                "gap": 4.76,
+                "width": 41.21,
+                "ballDist": 18
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 1257,
               "okPrimary": 709,
-              "okAllPoints": 1257
+              "okAllPoints": 1257,
+              "windowMetrics": {
+                "hd": 19.52,
+                "ad": 23.18,
+                "spread": 13.56,
+                "gap": 5.93,
+                "width": 37.33,
+                "ballDist": 18
+              }
             },
             {
               "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 872,
               "okPrimary": 351,
-              "okAllPoints": 872
+              "okAllPoints": 872,
+              "windowMetrics": {
+                "hd": 22.95,
+                "ad": 19.17,
+                "spread": 15.58,
+                "gap": 5.63,
+                "width": 46.42,
+                "ballDist": 16.99
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 902,
               "okPrimary": 372,
-              "okAllPoints": 902
+              "okAllPoints": 902,
+              "windowMetrics": {
+                "hd": 21.99,
+                "ad": 24.2,
+                "spread": 14.12,
+                "gap": 6.41,
+                "width": 36.7,
+                "ballDist": 14.21
+              }
             },
             {
               "startSec": 5412.9,
               "nominalSec": 300,
               "frameCount": 1239,
               "okPrimary": 820,
-              "okAllPoints": 1239
+              "okAllPoints": 1239,
+              "windowMetrics": {
+                "hd": 16.72,
+                "ad": 19.37,
+                "spread": 12.24,
+                "gap": 4.91,
+                "width": 34.79,
+                "ballDist": 19.02
+              }
             }
           ],
           "tail": {
@@ -872,49 +1312,105 @@
               "nominalSec": 300,
               "frameCount": 1254,
               "okPrimary": 464,
-              "okAllPoints": 1254
+              "okAllPoints": 1254,
+              "windowMetrics": {
+                "hd": 19.38,
+                "ad": 18.59,
+                "spread": 12.32,
+                "gap": 4.56,
+                "width": 36.28,
+                "ballDist": 11.12
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1118,
               "okPrimary": 506,
-              "okAllPoints": 1118
+              "okAllPoints": 1118,
+              "windowMetrics": {
+                "hd": 15.44,
+                "ad": 19.4,
+                "spread": 11.18,
+                "gap": 5.04,
+                "width": 33.97,
+                "ballDist": 16.71
+              }
             },
             {
               "startSec": 1800.1,
               "nominalSec": 300,
               "frameCount": 1094,
               "okPrimary": 485,
-              "okAllPoints": 1094
+              "okAllPoints": 1094,
+              "windowMetrics": {
+                "hd": 21.94,
+                "ad": 19.17,
+                "spread": 15.38,
+                "gap": 5.55,
+                "width": 44.96,
+                "ballDist": 15.27
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 1405,
               "okPrimary": 625,
-              "okAllPoints": 1405
+              "okAllPoints": 1405,
+              "windowMetrics": {
+                "hd": 19.1,
+                "ad": 17.99,
+                "spread": 13.65,
+                "gap": 4.59,
+                "width": 39.32,
+                "ballDist": 14.11
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 893,
               "okPrimary": 385,
-              "okAllPoints": 893
+              "okAllPoints": 893,
+              "windowMetrics": {
+                "hd": 14.36,
+                "ad": 14.96,
+                "spread": 11.59,
+                "gap": 3.87,
+                "width": 34.03,
+                "ballDist": 16.87
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 1114,
               "okPrimary": 540,
-              "okAllPoints": 1114
+              "okAllPoints": 1114,
+              "windowMetrics": {
+                "hd": 18.63,
+                "ad": 21.79,
+                "spread": 12.36,
+                "gap": 4.78,
+                "width": 34.53,
+                "ballDist": 13.72
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1138,
               "okPrimary": 626,
-              "okAllPoints": 1138
+              "okAllPoints": 1138,
+              "windowMetrics": {
+                "hd": 15.5,
+                "ad": 15.05,
+                "spread": 11.13,
+                "gap": 5.16,
+                "width": 33.45,
+                "ballDist": 16.09
+              }
             }
           ],
           "tail": {
@@ -951,49 +1447,105 @@
               "nominalSec": 300,
               "frameCount": 1439,
               "okPrimary": 908,
-              "okAllPoints": 1439
+              "okAllPoints": 1439,
+              "windowMetrics": {
+                "hd": 21.2,
+                "ad": 21.04,
+                "spread": 14.48,
+                "gap": 5.23,
+                "width": 41.82,
+                "ballDist": 15.78
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1128,
               "okPrimary": 482,
-              "okAllPoints": 1128
+              "okAllPoints": 1128,
+              "windowMetrics": {
+                "hd": 18.21,
+                "ad": 21.37,
+                "spread": 12.4,
+                "gap": 6.02,
+                "width": 36.22,
+                "ballDist": 15.84
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 1206,
               "okPrimary": 495,
-              "okAllPoints": 1206
+              "okAllPoints": 1206,
+              "windowMetrics": {
+                "hd": 19.47,
+                "ad": 18.32,
+                "spread": 13.01,
+                "gap": 5.42,
+                "width": 34.54,
+                "ballDist": 13.56
+              }
             },
             {
               "startSec": 2700.1,
               "nominalSec": 300,
               "frameCount": 1247,
               "okPrimary": 662,
-              "okAllPoints": 1247
+              "okAllPoints": 1247,
+              "windowMetrics": {
+                "hd": 19.06,
+                "ad": 21.57,
+                "spread": 11.75,
+                "gap": 5.77,
+                "width": 31.64,
+                "ballDist": 16.75
+              }
             },
             {
               "startSec": 3635,
               "nominalSec": 300,
               "frameCount": 1052,
               "okPrimary": 406,
-              "okAllPoints": 1052
+              "okAllPoints": 1052,
+              "windowMetrics": {
+                "hd": 19.13,
+                "ad": 22.04,
+                "spread": 11.77,
+                "gap": 6.26,
+                "width": 30.38,
+                "ballDist": 18.8
+              }
             },
             {
               "startSec": 4503.3,
               "nominalSec": 300,
               "frameCount": 804,
               "okPrimary": 398,
-              "okAllPoints": 804
+              "okAllPoints": 804,
+              "windowMetrics": {
+                "hd": 20.51,
+                "ad": 19.44,
+                "spread": 14.6,
+                "gap": 6.5,
+                "width": 40.38,
+                "ballDist": 16.33
+              }
             },
             {
               "startSec": 5406.3,
               "nominalSec": 300,
               "frameCount": 963,
               "okPrimary": 506,
-              "okAllPoints": 963
+              "okAllPoints": 963,
+              "windowMetrics": {
+                "hd": 17.24,
+                "ad": 16.6,
+                "spread": 11.92,
+                "gap": 5.87,
+                "width": 33.3,
+                "ballDist": 17
+              }
             }
           ],
           "tail": {
@@ -1030,49 +1582,105 @@
               "nominalSec": 300,
               "frameCount": 1395,
               "okPrimary": 961,
-              "okAllPoints": 1395
+              "okAllPoints": 1395,
+              "windowMetrics": {
+                "hd": 19.4,
+                "ad": 17.42,
+                "spread": 12.91,
+                "gap": 4.89,
+                "width": 36.94,
+                "ballDist": 12.57
+              }
             },
             {
               "startSec": 900,
               "nominalSec": 300,
               "frameCount": 1328,
               "okPrimary": 771,
-              "okAllPoints": 1328
+              "okAllPoints": 1328,
+              "windowMetrics": {
+                "hd": 19.56,
+                "ad": 21.07,
+                "spread": 13.13,
+                "gap": 4.59,
+                "width": 37.89,
+                "ballDist": 12.96
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 1273,
               "okPrimary": 832,
-              "okAllPoints": 1273
+              "okAllPoints": 1273,
+              "windowMetrics": {
+                "hd": 18.91,
+                "ad": 20.09,
+                "spread": 11.73,
+                "gap": 4.31,
+                "width": 30.66,
+                "ballDist": 14.1
+              }
             },
             {
               "startSec": 2700.1,
               "nominalSec": 300,
               "frameCount": 988,
               "okPrimary": 567,
-              "okAllPoints": 988
+              "okAllPoints": 988,
+              "windowMetrics": {
+                "hd": 17.2,
+                "ad": 16.2,
+                "spread": 12.81,
+                "gap": 6.32,
+                "width": 37.37,
+                "ballDist": 13.54
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 1186,
               "okPrimary": 669,
-              "okAllPoints": 1186
+              "okAllPoints": 1186,
+              "windowMetrics": {
+                "hd": 19.41,
+                "ad": 18.63,
+                "spread": 14.33,
+                "gap": 4.94,
+                "width": 40.83,
+                "ballDist": 15.51
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 855,
               "okPrimary": 548,
-              "okAllPoints": 855
+              "okAllPoints": 855,
+              "windowMetrics": {
+                "hd": 16.82,
+                "ad": 19.02,
+                "spread": 12.32,
+                "gap": 5.14,
+                "width": 35.69,
+                "ballDist": 15.7
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1077,
               "okPrimary": 400,
-              "okAllPoints": 1077
+              "okAllPoints": 1077,
+              "windowMetrics": {
+                "hd": 16.41,
+                "ad": 18.55,
+                "spread": 11.79,
+                "gap": 5.61,
+                "width": 31.87,
+                "ballDist": 14.87
+              }
             }
           ],
           "tail": {
@@ -1109,49 +1717,105 @@
               "nominalSec": 300,
               "frameCount": 1394,
               "okPrimary": 675,
-              "okAllPoints": 1394
+              "okAllPoints": 1394,
+              "windowMetrics": {
+                "hd": 15.98,
+                "ad": 15.73,
+                "spread": 11.86,
+                "gap": 4.49,
+                "width": 31.71,
+                "ballDist": 13.8
+              }
             },
             {
               "startSec": 901.9,
               "nominalSec": 300,
               "frameCount": 812,
               "okPrimary": 378,
-              "okAllPoints": 812
+              "okAllPoints": 812,
+              "windowMetrics": {
+                "hd": 17.59,
+                "ad": 18.27,
+                "spread": 11.58,
+                "gap": 6.12,
+                "width": 32.32,
+                "ballDist": 13.15
+              }
             },
             {
               "startSec": 1800.1,
               "nominalSec": 300,
               "frameCount": 1108,
               "okPrimary": 528,
-              "okAllPoints": 1108
+              "okAllPoints": 1108,
+              "windowMetrics": {
+                "hd": 19.95,
+                "ad": 19.93,
+                "spread": 14.42,
+                "gap": 5.07,
+                "width": 40.57,
+                "ballDist": 12.6
+              }
             },
             {
               "startSec": 2702.3,
               "nominalSec": 300,
               "frameCount": 1489,
               "okPrimary": 580,
-              "okAllPoints": 1489
+              "okAllPoints": 1489,
+              "windowMetrics": {
+                "hd": 19.42,
+                "ad": 19.03,
+                "spread": 14.38,
+                "gap": 5.93,
+                "width": 40.82,
+                "ballDist": 13.92
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 1144,
               "okPrimary": 338,
-              "okAllPoints": 1144
+              "okAllPoints": 1144,
+              "windowMetrics": {
+                "hd": 17.48,
+                "ad": 18.32,
+                "spread": 11.23,
+                "gap": 4.37,
+                "width": 28.6,
+                "ballDist": 13.16
+              }
             },
             {
               "startSec": 4503.6,
               "nominalSec": 300,
               "frameCount": 746,
               "okPrimary": 343,
-              "okAllPoints": 746
+              "okAllPoints": 746,
+              "windowMetrics": {
+                "hd": 20.23,
+                "ad": 19.75,
+                "spread": 13.94,
+                "gap": 5.05,
+                "width": 39.17,
+                "ballDist": 18.2
+              }
             },
             {
               "startSec": 5400,
               "nominalSec": 300,
               "frameCount": 972,
               "okPrimary": 485,
-              "okAllPoints": 972
+              "okAllPoints": 972,
+              "windowMetrics": {
+                "hd": 16.4,
+                "ad": 16.63,
+                "spread": 11.74,
+                "gap": 4.07,
+                "width": 32.83,
+                "ballDist": 17.41
+              }
             }
           ],
           "tail": {
@@ -1188,49 +1852,105 @@
               "nominalSec": 300,
               "frameCount": 1238,
               "okPrimary": 793,
-              "okAllPoints": 1238
+              "okAllPoints": 1238,
+              "windowMetrics": {
+                "hd": 20.04,
+                "ad": 19.72,
+                "spread": 14.22,
+                "gap": 6.08,
+                "width": 40.05,
+                "ballDist": 17.94
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 911,
               "okPrimary": 638,
-              "okAllPoints": 911
+              "okAllPoints": 911,
+              "windowMetrics": {
+                "hd": 20.45,
+                "ad": 16.96,
+                "spread": 15.51,
+                "gap": 4.97,
+                "width": 44.39,
+                "ballDist": 16.13
+              }
             },
             {
               "startSec": 1821.4,
               "nominalSec": 300,
               "frameCount": 908,
               "okPrimary": 531,
-              "okAllPoints": 908
+              "okAllPoints": 908,
+              "windowMetrics": {
+                "hd": 21.28,
+                "ad": 21.96,
+                "spread": 15.65,
+                "gap": 6.33,
+                "width": 43.87,
+                "ballDist": 17.62
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 1231,
               "okPrimary": 827,
-              "okAllPoints": 1231
+              "okAllPoints": 1231,
+              "windowMetrics": {
+                "hd": 20.47,
+                "ad": 22.06,
+                "spread": 13.81,
+                "gap": 5.52,
+                "width": 37.97,
+                "ballDist": 16.13
+              }
             },
             {
               "startSec": 3618.9,
               "nominalSec": 300,
               "frameCount": 924,
               "okPrimary": 500,
-              "okAllPoints": 924
+              "okAllPoints": 924,
+              "windowMetrics": {
+                "hd": 18.83,
+                "ad": 16.18,
+                "spread": 14.64,
+                "gap": 4.43,
+                "width": 41.45,
+                "ballDist": 14.13
+              }
             },
             {
               "startSec": 4518.4,
               "nominalSec": 300,
               "frameCount": 965,
               "okPrimary": 376,
-              "okAllPoints": 965
+              "okAllPoints": 965,
+              "windowMetrics": {
+                "hd": 13.49,
+                "ad": 17.16,
+                "spread": 10.69,
+                "gap": 4.6,
+                "width": 30.43,
+                "ballDist": 16.98
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1358,
               "okPrimary": 555,
-              "okAllPoints": 1358
+              "okAllPoints": 1358,
+              "windowMetrics": {
+                "hd": 19.65,
+                "ad": 21.34,
+                "spread": 12.66,
+                "gap": 4.98,
+                "width": 33.7,
+                "ballDist": 18.08
+              }
             }
           ],
           "tail": {
@@ -1267,49 +1987,105 @@
               "nominalSec": 300,
               "frameCount": 1418,
               "okPrimary": 296,
-              "okAllPoints": 1418
+              "okAllPoints": 1418,
+              "windowMetrics": {
+                "hd": 17.21,
+                "ad": 17.34,
+                "spread": 12.13,
+                "gap": 5.24,
+                "width": 36.04,
+                "ballDist": 12.33
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 890,
               "okPrimary": 113,
-              "okAllPoints": 890
+              "okAllPoints": 890,
+              "windowMetrics": {
+                "hd": 15.32,
+                "ad": 18.39,
+                "spread": 11.04,
+                "gap": 5.81,
+                "width": 29.6,
+                "ballDist": 24.47
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 1252,
               "okPrimary": 438,
-              "okAllPoints": 1252
+              "okAllPoints": 1252,
+              "windowMetrics": {
+                "hd": 18.15,
+                "ad": 15.24,
+                "spread": 14.21,
+                "gap": 4.45,
+                "width": 40.97,
+                "ballDist": 13.81
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 1265,
               "okPrimary": 515,
-              "okAllPoints": 1265
+              "okAllPoints": 1265,
+              "windowMetrics": {
+                "hd": 18.68,
+                "ad": 19.31,
+                "spread": 13.49,
+                "gap": 4.52,
+                "width": 37.54,
+                "ballDist": 17.09
+              }
             },
             {
               "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 970,
               "okPrimary": 325,
-              "okAllPoints": 970
+              "okAllPoints": 970,
+              "windowMetrics": {
+                "hd": 21.33,
+                "ad": 15.84,
+                "spread": 13.9,
+                "gap": 4.86,
+                "width": 43.46,
+                "ballDist": 14.4
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 1038,
               "okPrimary": 427,
-              "okAllPoints": 1038
+              "okAllPoints": 1038,
+              "windowMetrics": {
+                "hd": 19.62,
+                "ad": 17.56,
+                "spread": 12.6,
+                "gap": 5.13,
+                "width": 33.52,
+                "ballDist": 12.75
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 981,
               "okPrimary": 300,
-              "okAllPoints": 981
+              "okAllPoints": 981,
+              "windowMetrics": {
+                "hd": 18.61,
+                "ad": 18.26,
+                "spread": 12.91,
+                "gap": 4.78,
+                "width": 34.89,
+                "ballDist": 14.56
+              }
             }
           ],
           "tail": {
@@ -1346,49 +2122,105 @@
               "nominalSec": 300,
               "frameCount": 1428,
               "okPrimary": 492,
-              "okAllPoints": 1428
+              "okAllPoints": 1428,
+              "windowMetrics": {
+                "hd": 19.23,
+                "ad": 19.12,
+                "spread": 12.99,
+                "gap": 4.98,
+                "width": 35.53,
+                "ballDist": 13.93
+              }
             },
             {
               "startSec": 972.6,
               "nominalSec": 300,
               "frameCount": 1101,
               "okPrimary": 382,
-              "okAllPoints": 1101
+              "okAllPoints": 1101,
+              "windowMetrics": {
+                "hd": 18.33,
+                "ad": 15.56,
+                "spread": 12.25,
+                "gap": 4.51,
+                "width": 33.51,
+                "ballDist": 12.7
+              }
             },
             {
               "startSec": 1800.1,
               "nominalSec": 300,
               "frameCount": 1126,
               "okPrimary": 381,
-              "okAllPoints": 1126
+              "okAllPoints": 1126,
+              "windowMetrics": {
+                "hd": 21.11,
+                "ad": 21.1,
+                "spread": 12.77,
+                "gap": 3.95,
+                "width": 34.97,
+                "ballDist": 13.29
+              }
             },
             {
               "startSec": 2707.7,
               "nominalSec": 300,
               "frameCount": 976,
               "okPrimary": 368,
-              "okAllPoints": 976
+              "okAllPoints": 976,
+              "windowMetrics": {
+                "hd": 15.94,
+                "ad": 20.13,
+                "spread": 11.82,
+                "gap": 5.57,
+                "width": 34.85,
+                "ballDist": 13.97
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 1130,
               "okPrimary": 285,
-              "okAllPoints": 1130
+              "okAllPoints": 1130,
+              "windowMetrics": {
+                "hd": 19.22,
+                "ad": 15.45,
+                "spread": 13.63,
+                "gap": 5.59,
+                "width": 40.98,
+                "ballDist": 13.83
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 1339,
               "okPrimary": 517,
-              "okAllPoints": 1339
+              "okAllPoints": 1339,
+              "windowMetrics": {
+                "hd": 14.77,
+                "ad": 17.1,
+                "spread": 11.05,
+                "gap": 4.53,
+                "width": 33.31,
+                "ballDist": 15.09
+              }
             },
             {
               "startSec": 5408.1,
               "nominalSec": 300,
               "frameCount": 909,
               "okPrimary": 350,
-              "okAllPoints": 909
+              "okAllPoints": 909,
+              "windowMetrics": {
+                "hd": 18.03,
+                "ad": 18.11,
+                "spread": 12.28,
+                "gap": 6.66,
+                "width": 36.14,
+                "ballDist": 13.08
+              }
             }
           ],
           "tail": {
@@ -1425,49 +2257,105 @@
               "nominalSec": 300,
               "frameCount": 1278,
               "okPrimary": 619,
-              "okAllPoints": 1278
+              "okAllPoints": 1278,
+              "windowMetrics": {
+                "hd": 20.07,
+                "ad": 21.03,
+                "spread": 13.93,
+                "gap": 6.12,
+                "width": 39.37,
+                "ballDist": 17.05
+              }
             },
             {
               "startSec": 900,
               "nominalSec": 300,
               "frameCount": 1455,
               "okPrimary": 821,
-              "okAllPoints": 1455
+              "okAllPoints": 1455,
+              "windowMetrics": {
+                "hd": 23.14,
+                "ad": 16.6,
+                "spread": 15.95,
+                "gap": 6.56,
+                "width": 45.67,
+                "ballDist": 14.49
+              }
             },
             {
               "startSec": 1813.5,
               "nominalSec": 300,
               "frameCount": 1329,
               "okPrimary": 404,
-              "okAllPoints": 1329
+              "okAllPoints": 1329,
+              "windowMetrics": {
+                "hd": 19.73,
+                "ad": 18.34,
+                "spread": 14.56,
+                "gap": 5.4,
+                "width": 40.92,
+                "ballDist": 16.04
+              }
             },
             {
               "startSec": 2727.4,
               "nominalSec": 300,
               "frameCount": 1189,
               "okPrimary": 414,
-              "okAllPoints": 1189
+              "okAllPoints": 1189,
+              "windowMetrics": {
+                "hd": 18.84,
+                "ad": 18.86,
+                "spread": 12.31,
+                "gap": 5.25,
+                "width": 32.72,
+                "ballDist": 15.13
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 1008,
               "okPrimary": 553,
-              "okAllPoints": 1008
+              "okAllPoints": 1008,
+              "windowMetrics": {
+                "hd": 16.29,
+                "ad": 19.05,
+                "spread": 11.79,
+                "gap": 5.62,
+                "width": 31.76,
+                "ballDist": 14.5
+              }
             },
             {
               "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 884,
               "okPrimary": 330,
-              "okAllPoints": 884
+              "okAllPoints": 884,
+              "windowMetrics": {
+                "hd": 19.18,
+                "ad": 13.88,
+                "spread": 12.63,
+                "gap": 5.49,
+                "width": 37.54,
+                "ballDist": 12.81
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 967,
               "okPrimary": 538,
-              "okAllPoints": 967
+              "okAllPoints": 967,
+              "windowMetrics": {
+                "hd": 18.3,
+                "ad": 16.84,
+                "spread": 12.66,
+                "gap": 5.06,
+                "width": 35.87,
+                "ballDist": 16.66
+              }
             }
           ],
           "tail": {
@@ -1504,49 +2392,105 @@
               "nominalSec": 300,
               "frameCount": 1227,
               "okPrimary": 537,
-              "okAllPoints": 1227
+              "okAllPoints": 1227,
+              "windowMetrics": {
+                "hd": 20.59,
+                "ad": 19,
+                "spread": 13.12,
+                "gap": 6.06,
+                "width": 34.05,
+                "ballDist": 14.84
+              }
             },
             {
               "startSec": 900,
               "nominalSec": 300,
               "frameCount": 1341,
               "okPrimary": 382,
-              "okAllPoints": 1341
+              "okAllPoints": 1341,
+              "windowMetrics": {
+                "hd": 16.3,
+                "ad": 15.32,
+                "spread": 11.68,
+                "gap": 5.49,
+                "width": 32.9,
+                "ballDist": 14.21
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 1393,
               "okPrimary": 537,
-              "okAllPoints": 1393
+              "okAllPoints": 1393,
+              "windowMetrics": {
+                "hd": 19.9,
+                "ad": 18.01,
+                "spread": 14.26,
+                "gap": 5.03,
+                "width": 40.6,
+                "ballDist": 15.6
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 730,
               "okPrimary": 306,
-              "okAllPoints": 730
+              "okAllPoints": 730,
+              "windowMetrics": {
+                "hd": 18.57,
+                "ad": 16.51,
+                "spread": 13.78,
+                "gap": 5.75,
+                "width": 41.16,
+                "ballDist": 12.05
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 1299,
               "okPrimary": 463,
-              "okAllPoints": 1299
+              "okAllPoints": 1299,
+              "windowMetrics": {
+                "hd": 18.22,
+                "ad": 15.38,
+                "spread": 14.64,
+                "gap": 4.57,
+                "width": 42.83,
+                "ballDist": 13.92
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 647,
               "okPrimary": 130,
-              "okAllPoints": 647
+              "okAllPoints": 647,
+              "windowMetrics": {
+                "hd": 22.16,
+                "ad": 25.02,
+                "spread": 13.91,
+                "gap": 5.97,
+                "width": 36.51,
+                "ballDist": 15.15
+              }
             },
             {
               "startSec": 5426.6,
               "nominalSec": 300,
               "frameCount": 1123,
               "okPrimary": 565,
-              "okAllPoints": 1123
+              "okAllPoints": 1123,
+              "windowMetrics": {
+                "hd": 14.83,
+                "ad": 17.98,
+                "spread": 9.7,
+                "gap": 4.91,
+                "width": 25.17,
+                "ballDist": 12.89
+              }
             }
           ],
           "tail": {
@@ -1583,49 +2527,105 @@
               "nominalSec": 300,
               "frameCount": 1121,
               "okPrimary": 251,
-              "okAllPoints": 1121
+              "okAllPoints": 1121,
+              "windowMetrics": {
+                "hd": 15.23,
+                "ad": 16.2,
+                "spread": 10.61,
+                "gap": 4.75,
+                "width": 28.72,
+                "ballDist": 10.97
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1250,
               "okPrimary": 319,
-              "okAllPoints": 1250
+              "okAllPoints": 1250,
+              "windowMetrics": {
+                "hd": 16.35,
+                "ad": 16.31,
+                "spread": 10.36,
+                "gap": 4.33,
+                "width": 27.51,
+                "ballDist": 10.88
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 737,
               "okPrimary": 339,
-              "okAllPoints": 737
+              "okAllPoints": 737,
+              "windowMetrics": {
+                "hd": 11.55,
+                "ad": 12.93,
+                "spread": 10.34,
+                "gap": 3.22,
+                "width": 32.06,
+                "ballDist": 11.64
+              }
             },
             {
               "startSec": 2700.1,
               "nominalSec": 300,
               "frameCount": 874,
               "okPrimary": 311,
-              "okAllPoints": 874
+              "okAllPoints": 874,
+              "windowMetrics": {
+                "hd": 16.21,
+                "ad": 14.36,
+                "spread": 12.35,
+                "gap": 4.54,
+                "width": 37.88,
+                "ballDist": 12.5
+              }
             },
             {
               "startSec": 3686.8,
               "nominalSec": 300,
               "frameCount": 961,
               "okPrimary": 209,
-              "okAllPoints": 961
+              "okAllPoints": 961,
+              "windowMetrics": {
+                "hd": 13.74,
+                "ad": 13.2,
+                "spread": 11.54,
+                "gap": 4.35,
+                "width": 35.3,
+                "ballDist": 12.57
+              }
             },
             {
               "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 1076,
               "okPrimary": 271,
-              "okAllPoints": 1076
+              "okAllPoints": 1076,
+              "windowMetrics": {
+                "hd": 15.74,
+                "ad": 16.44,
+                "spread": 12.03,
+                "gap": 6.05,
+                "width": 35.95,
+                "ballDist": 12.42
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1033,
               "okPrimary": 231,
-              "okAllPoints": 1033
+              "okAllPoints": 1033,
+              "windowMetrics": {
+                "hd": 16.8,
+                "ad": 14.06,
+                "spread": 12.6,
+                "gap": 3.56,
+                "width": 39.33,
+                "ballDist": 14.01
+              }
             }
           ],
           "tail": {
@@ -1662,42 +2662,90 @@
               "nominalSec": 300,
               "frameCount": 1124,
               "okPrimary": 650,
-              "okAllPoints": 1124
+              "okAllPoints": 1124,
+              "windowMetrics": {
+                "hd": 19.87,
+                "ad": 16.46,
+                "spread": 13.67,
+                "gap": 5.62,
+                "width": 41.25,
+                "ballDist": 18.17
+              }
             },
             {
               "startSec": 900.1,
               "nominalSec": 300,
               "frameCount": 1009,
               "okPrimary": 403,
-              "okAllPoints": 1009
+              "okAllPoints": 1009,
+              "windowMetrics": {
+                "hd": 14.75,
+                "ad": 15.75,
+                "spread": 10.61,
+                "gap": 4.51,
+                "width": 29.63,
+                "ballDist": 16.73
+              }
             },
             {
               "startSec": 1800,
               "nominalSec": 300,
               "frameCount": 1146,
               "okPrimary": 282,
-              "okAllPoints": 1146
+              "okAllPoints": 1146,
+              "windowMetrics": {
+                "hd": 17.87,
+                "ad": 20.8,
+                "spread": 12.11,
+                "gap": 5.24,
+                "width": 33.69,
+                "ballDist": 16.56
+              }
             },
             {
               "startSec": 2700.1,
               "nominalSec": 300,
               "frameCount": 1298,
               "okPrimary": 506,
-              "okAllPoints": 1298
+              "okAllPoints": 1298,
+              "windowMetrics": {
+                "hd": 17.91,
+                "ad": 18.73,
+                "spread": 11.79,
+                "gap": 6.04,
+                "width": 33.63,
+                "ballDist": 16.33
+              }
             },
             {
               "startSec": 3611.9,
               "nominalSec": 300,
               "frameCount": 1052,
               "okPrimary": 238,
-              "okAllPoints": 1052
+              "okAllPoints": 1052,
+              "windowMetrics": {
+                "hd": 16.2,
+                "ad": 16.86,
+                "spread": 10.91,
+                "gap": 5.14,
+                "width": 29.36,
+                "ballDist": 13.54
+              }
             },
             {
               "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 1204,
               "okPrimary": 485,
-              "okAllPoints": 1204
+              "okAllPoints": 1204,
+              "windowMetrics": {
+                "hd": 19.3,
+                "ad": 17.7,
+                "spread": 11.98,
+                "gap": 4.84,
+                "width": 31.39,
+                "ballDist": 10.87
+              }
             }
           ],
           "tail": {
@@ -1738,49 +2786,105 @@
               "nominalSec": 300,
               "frameCount": 1421,
               "okPrimary": 548,
-              "okAllPoints": 1421
+              "okAllPoints": 1421,
+              "windowMetrics": {
+                "hd": 18.82,
+                "ad": 19.96,
+                "spread": 12.7,
+                "gap": 5.17,
+                "width": 34.9,
+                "ballDist": 15.07
+              }
             },
             {
               "startSec": 900,
               "nominalSec": 300,
               "frameCount": 1156,
               "okPrimary": 591,
-              "okAllPoints": 1156
+              "okAllPoints": 1156,
+              "windowMetrics": {
+                "hd": 20.78,
+                "ad": 19.88,
+                "spread": 13.28,
+                "gap": 5.53,
+                "width": 36.02,
+                "ballDist": 15.33
+              }
             },
             {
               "startSec": 1806.2,
               "nominalSec": 300,
               "frameCount": 1259,
               "okPrimary": 489,
-              "okAllPoints": 1259
+              "okAllPoints": 1259,
+              "windowMetrics": {
+                "hd": 17.8,
+                "ad": 18.42,
+                "spread": 12.12,
+                "gap": 5.07,
+                "width": 33.65,
+                "ballDist": 16.39
+              }
             },
             {
               "startSec": 2700,
               "nominalSec": 300,
               "frameCount": 1382,
               "okPrimary": 390,
-              "okAllPoints": 1382
+              "okAllPoints": 1382,
+              "windowMetrics": {
+                "hd": 17.6,
+                "ad": 17.15,
+                "spread": 11.26,
+                "gap": 6.07,
+                "width": 30.73,
+                "ballDist": 12.96
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 1286,
               "okPrimary": 367,
-              "okAllPoints": 1286
+              "okAllPoints": 1286,
+              "windowMetrics": {
+                "hd": 17.18,
+                "ad": 17.29,
+                "spread": 11.32,
+                "gap": 3.95,
+                "width": 30.27,
+                "ballDist": 15.78
+              }
             },
             {
               "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 1277,
               "okPrimary": 566,
-              "okAllPoints": 1277
+              "okAllPoints": 1277,
+              "windowMetrics": {
+                "hd": 17.53,
+                "ad": 21.44,
+                "spread": 12.34,
+                "gap": 5.36,
+                "width": 34.86,
+                "ballDist": 18.08
+              }
             },
             {
               "startSec": 5400,
               "nominalSec": 300,
               "frameCount": 1144,
               "okPrimary": 401,
-              "okAllPoints": 1144
+              "okAllPoints": 1144,
+              "windowMetrics": {
+                "hd": 19.69,
+                "ad": 18.24,
+                "spread": 12.55,
+                "gap": 4.35,
+                "width": 33.4,
+                "ballDist": 10.41
+              }
             }
           ],
           "tail": {
@@ -1817,49 +2921,105 @@
               "nominalSec": 300,
               "frameCount": 1042,
               "okPrimary": 468,
-              "okAllPoints": 1042
+              "okAllPoints": 1042,
+              "windowMetrics": {
+                "hd": 19.34,
+                "ad": 20.65,
+                "spread": 11.6,
+                "gap": 5.16,
+                "width": 29.38,
+                "ballDist": 13.18
+              }
             },
             {
               "startSec": 900,
               "nominalSec": 300,
               "frameCount": 753,
               "okPrimary": 308,
-              "okAllPoints": 753
+              "okAllPoints": 753,
+              "windowMetrics": {
+                "hd": 15.56,
+                "ad": 15.38,
+                "spread": 10.67,
+                "gap": 3.37,
+                "width": 29.88,
+                "ballDist": 12.62
+              }
             },
             {
               "startSec": 1800.1,
               "nominalSec": 300,
               "frameCount": 791,
               "okPrimary": 170,
-              "okAllPoints": 791
+              "okAllPoints": 791,
+              "windowMetrics": {
+                "hd": 17.38,
+                "ad": 20.71,
+                "spread": 12.48,
+                "gap": 5.7,
+                "width": 32.37,
+                "ballDist": 16.99
+              }
             },
             {
               "startSec": 2703,
               "nominalSec": 300,
               "frameCount": 957,
               "okPrimary": 251,
-              "okAllPoints": 957
+              "okAllPoints": 957,
+              "windowMetrics": {
+                "hd": 16.77,
+                "ad": 15.9,
+                "spread": 11.25,
+                "gap": 4.36,
+                "width": 31.55,
+                "ballDist": 14.35
+              }
             },
             {
               "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 1101,
               "okPrimary": 290,
-              "okAllPoints": 1101
+              "okAllPoints": 1101,
+              "windowMetrics": {
+                "hd": 15.65,
+                "ad": 16.78,
+                "spread": 11.45,
+                "gap": 4.14,
+                "width": 34.55,
+                "ballDist": 16.85
+              }
             },
             {
               "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 1184,
               "okPrimary": 231,
-              "okAllPoints": 1184
+              "okAllPoints": 1184,
+              "windowMetrics": {
+                "hd": 15.75,
+                "ad": 18.52,
+                "spread": 11.24,
+                "gap": 4,
+                "width": 32.1,
+                "ballDist": 13.01
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1057,
               "okPrimary": 207,
-              "okAllPoints": 1057
+              "okAllPoints": 1057,
+              "windowMetrics": {
+                "hd": 15.34,
+                "ad": 13.3,
+                "spread": 10.54,
+                "gap": 4.5,
+                "width": 30.91,
+                "ballDist": 11.89
+              }
             }
           ],
           "tail": {
@@ -1896,49 +3056,105 @@
               "nominalSec": 300,
               "frameCount": 1282,
               "okPrimary": 446,
-              "okAllPoints": 1282
+              "okAllPoints": 1282,
+              "windowMetrics": {
+                "hd": 18.96,
+                "ad": 17.69,
+                "spread": 12.32,
+                "gap": 5.38,
+                "width": 36.09,
+                "ballDist": 11.08
+              }
             },
             {
               "startSec": 900,
               "nominalSec": 300,
               "frameCount": 1067,
               "okPrimary": 309,
-              "okAllPoints": 1067
+              "okAllPoints": 1067,
+              "windowMetrics": {
+                "hd": 17.97,
+                "ad": 17.86,
+                "spread": 12.85,
+                "gap": 4.34,
+                "width": 38.73,
+                "ballDist": 17.96
+              }
             },
             {
               "startSec": 1830.2,
               "nominalSec": 300,
               "frameCount": 1072,
               "okPrimary": 458,
-              "okAllPoints": 1072
+              "okAllPoints": 1072,
+              "windowMetrics": {
+                "hd": 19.76,
+                "ad": 19.89,
+                "spread": 12.78,
+                "gap": 5.1,
+                "width": 35.18,
+                "ballDist": 15.59
+              }
             },
             {
               "startSec": 2700.1,
               "nominalSec": 300,
               "frameCount": 1315,
               "okPrimary": 378,
-              "okAllPoints": 1315
+              "okAllPoints": 1315,
+              "windowMetrics": {
+                "hd": 18.2,
+                "ad": 17.41,
+                "spread": 12.8,
+                "gap": 6.04,
+                "width": 35.64,
+                "ballDist": 14.26
+              }
             },
             {
               "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 853,
               "okPrimary": 275,
-              "okAllPoints": 853
+              "okAllPoints": 853,
+              "windowMetrics": {
+                "hd": 16.51,
+                "ad": 18.8,
+                "spread": 11.5,
+                "gap": 4.49,
+                "width": 31.81,
+                "ballDist": 15.23
+              }
             },
             {
               "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 1010,
               "okPrimary": 158,
-              "okAllPoints": 1010
+              "okAllPoints": 1010,
+              "windowMetrics": {
+                "hd": 18.69,
+                "ad": 15.96,
+                "spread": 13.36,
+                "gap": 5.57,
+                "width": 37.05,
+                "ballDist": 15.52
+              }
             },
             {
               "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1237,
               "okPrimary": 289,
-              "okAllPoints": 1237
+              "okAllPoints": 1237,
+              "windowMetrics": {
+                "hd": 15.59,
+                "ad": 14.23,
+                "spread": 11.41,
+                "gap": 4.35,
+                "width": 32.43,
+                "ballDist": 12.44
+              }
             }
           ],
           "tail": {
