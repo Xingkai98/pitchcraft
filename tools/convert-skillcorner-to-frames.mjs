@@ -381,6 +381,10 @@ export function convertSkillcorner(matchJson, trackingText, opts = {}) {
       source: 'SkillCorner/opendata',
       format: 'skillcorner-jsonl',
       game: String(matchJson.id),
+      // 场次状态原样透传（实测 20 场里 1953632 是 not_started、其余 closed）。
+      // 基线**不按它过滤**（tracking 数据完整），但须逐场记录 + 声明理由——
+      // 不静默纳入（对齐 P36「未覆盖维度须显式声明」，P37 审阅 P3-4）。
+      status: matchJson.status ?? null,
       hz,
       keyframeHz,
       frames: frames.length,

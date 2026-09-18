@@ -65,7 +65,8 @@ export async function sampleSeedWindows(wasm, seed, { createGame } = {}) {
   const game = makeGame(simulateStream(wasm, seed));
   const frames = sampleEngineFrames(game);
   const windows = cutWindows(frames);
-  const metrics = windows.map((w) => windowMetrics(w));
+  // 引擎帧无外推标记、球场恒 105×68，故 primary === allPoints；取 primary。
+  const metrics = windows.map((w) => windowMetrics(w).primary);
   const elasticities = {
     half: windows.map((w) => elasticity(w, { divider: 'half' })).filter(Boolean),
     centroid: windows.map((w) => elasticity(w, { divider: 'centroid' })).filter(Boolean),

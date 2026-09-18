@@ -26,12 +26,12 @@ export const DEFAULT_BASELINE_PATH = join(ROOT, 'viewer', 'data', 'benchmark-bas
 
 // 三项采用指标（设计 D3：实测分布分离）与报告项（重叠/口径敏感，仅报告）
 export const ADOPTED_METRICS = [
-  ['hd', '主队纵深(trim1)'],
+  ['hd', '主队纵深(q10-q90)'],
   ['spread', '紧凑度(到重心)'],
   ['gap', '两队重心间距'],
 ];
 export const REPORT_METRICS = [
-  ['ad', '客队纵深(trim1)'],
+  ['ad', '客队纵深'],
   ['width', '宽度(主队)'],
   ['ballDist', '重心到球(原始球帧)'],
   ['ballDistAllFrames', '重心到球(全帧对照)'],
@@ -60,13 +60,15 @@ export function loadBaseline(path = DEFAULT_BASELINE_PATH, { metricsPath } = {})
       message: `基线损坏（JSON 解析失败）：${path}\n  ${err.message}\n  重生成：node tools/benchmark-baseline.mjs`,
     };
   }
-  if (!baseline || typeof baseline !== 'object'
-    || !baseline.real || !baseline.real.perMetric
+  // P37 起是多数据集结构（datasets{} + primaryDataset）。旧结构（real.perMetric）不再接受——
+  // 口径已变（trim1→q10-q90、逐场尺寸、外推过滤），旧基线本就不可比，直接判 invalid 重生成。
+  if (!baseline || typeof baseline !== 'object' || !baseline.datasets
+    || !baseline.datasets[baseline.primaryDataset] || !baseline.datasets[baseline.primaryDataset].perMetric
     || !baseline.engine || !baseline.engine.perMetric) {
     return {
       ok: false,
       reason: 'invalid',
-      message: `基线结构不完整（缺 real/engine.perMetric）：${path}\n  重生成：node tools/benchmark-baseline.mjs`,
+      message: `基线结构不完整或为旧版（需 datasets{}+primaryDataset+engine.perMetric）：${path}\n  重生成：node tools/benchmark-baseline.mjs`,
     };
   }
   const currentHash = metricsPath ? hashMetricsModule(metricsPath) : hashMetricsModule();
@@ -120,31 +122,46 @@ export function driftVsFrozen(engineSummary, frozenSummary) {
 }
 
 // 结构化对比结果（纯函数：给定基线 + 引擎当前统计 → 报告对象；渲染与它解耦，便于单测）。
+// P37：**逐数据集**给出引擎 vs 真实（D6 分别报告）；主数据集附冻结漂移与全点对照。
 export function buildComparison(baseline, engineStats) {
-  const adopted = ADOPTED_METRICS.map(([key, name]) => ({
-    key,
-    name,
-    comparison: compareMetric(engineStats.perMetric[key], baseline.real.perMetric[key]),
-    drift: driftVsFrozen(engineStats.perMetric[key], baseline.engine.perMetric[key]),
-  }));
-  const reported = REPORT_METRICS.map(([key, name]) => ({
-    key,
-    name,
-    comparison: compareMetric(engineStats.perMetric[key], baseline.real.perMetric[key]),
-  }));
-  const elasticity = ['half', 'centroid'].map((k) => ({
-    divider: k,
-    label: k === 'half' ? '球在哪个半场' : '球相对本队重心前后',
-    real: baseline.real.elasticity[k],
-    engine: engineStats.elasticity[k],
-  }));
+  const perDataset = Object.entries(baseline.datasets).map(([key, ds]) => {
+    const isPrimary = key === baseline.primaryDataset;
+    return {
+      key,
+      label: ds.label,
+      nGames: ds.nGames,
+      nWindows: ds.nWindows,
+      framesPerWindow: ds.framesPerWindow,
+      adopted: ADOPTED_METRICS.map(([k, name]) => ({
+        key: k,
+        name,
+        comparison: compareMetric(engineStats.perMetric[k], ds.perMetric[k]),
+        // 冻结漂移只对主数据集有意义（引擎基线是全局的）
+        drift: isPrimary ? driftVsFrozen(engineStats.perMetric[k], baseline.engine.perMetric[k]) : null,
+        // 全点口径对照（P37 D2）：展示外推过滤的影响量级
+        allPoints: ds.perMetricAllPoints ? compareMetric(engineStats.perMetric[k], ds.perMetricAllPoints[k]) : null,
+      })),
+      reported: REPORT_METRICS.map(([k, name]) => ({
+        key: k,
+        name,
+        comparison: compareMetric(engineStats.perMetric[k], ds.perMetric[k]),
+        allPoints: ds.perMetricAllPoints ? compareMetric(engineStats.perMetric[k], ds.perMetricAllPoints[k]) : null,
+      })),
+      elasticity: ['half', 'centroid'].map((k) => ({
+        divider: k,
+        label: k === 'half' ? '球在哪个半场' : '球相对本队重心前后',
+        real: ds.elasticity[k],
+        engine: engineStats.elasticity[k],
+      })),
+    };
+  });
   return {
-    adopted,
-    reported,
-    elasticity,
+    primaryDataset: baseline.primaryDataset,
+    perDataset,
+    crossDataset: baseline.crossDataset || null,
     possessionProxyNote: '控球相位来自"离球最近者所属队"这一代理，不等于真实持球权',
-    sampleNote: `真实基线 = ${baseline.windows.real.nGames} 场 / ${baseline.windows.real.nWindows} 个满窗；`
-      + `引擎 = ${(engineStats.seeds || BENCHMARK_SEEDS).length} 种子 × ${baseline.windows.engine.windowsPerSeed} 窗（${ENGINE_DURATION_SEC}s @ ${SAMPLE_INTERVAL_SEC}s 采样）`,
+    sampleNote: perDataset.map((d) => `${d.label} ${d.nGames} 场/${d.nWindows} 窗`).join('；')
+      + `；引擎 ${(engineStats.seeds || BENCHMARK_SEEDS).length} 种子 × ${baseline.windows.engine.windowsPerSeed} 窗（${ENGINE_DURATION_SEC}s @ ${SAMPLE_INTERVAL_SEC}s 采样）`,
   };
 }
 
@@ -153,33 +170,50 @@ const dirLabel = { above: '高于真实观测范围', below: '低于真实观测
 
 export function renderReport(cmp) {
   const L = [];
-  L.push('=== P36 比赛标尺（报告期：只输出数字与对比，不判定符合性） ===');
+  L.push('=== P37 比赛标尺（报告期：只输出数字与对比，不判定符合性） ===');
   L.push('');
   L.push(`窗口 ${WINDOW_SIZE_SEC}s / 步长 ${WINDOW_STEP_SEC}s | 采样 ${SAMPLE_INTERVAL_SEC}s | ${cmp.sampleNote}`);
-  L.push('');
-  L.push('[三项采用指标] 引擎 vs 真实（"观测范围"= 本基线 min–max，非"真实足球的分布"）');
-  for (const { name, comparison: c, drift } of cmp.adopted) {
-    if (!c) { L.push(`  ${name}：缺数据`); continue; }
-    const margin = c.marginM != null ? `，余量 ${fmtN(c.marginM)}m` : '';
-    const driftStr = drift ? `　| 冻结基线 ${fmtN(drift.frozenAvg)}（漂移 ${drift.deltaPct >= 0 ? '+' : ''}${fmtN(drift.deltaPct, 1)}%）` : '';
-    L.push(`  ${name.padEnd(16)} 引擎 ${fmtN(c.engine.avg)} [${fmtN(c.engine.min)}–${fmtN(c.engine.max)}]`
-      + `　真实 ${fmtN(c.real.avg)} [${fmtN(c.real.min)}–${fmtN(c.real.max)}]`
-      + `　${dirLabel[c.direction]}（均值 ${c.deltaPct >= 0 ? '+' : ''}${fmtN(c.deltaPct, 1)}%）${margin}${driftStr}`);
+  L.push('口径：纵深 = q10–q90（P37）；主口径跳过外推点，[全点对照] 为采信外推点。');
+  for (const ds of cmp.perDataset) {
+    const primary = ds.key === cmp.primaryDataset;
+    L.push('');
+    L.push(`【${ds.label}】${ds.nGames} 场 / ${ds.nWindows} 窗${primary ? '（主数据集）' : ''}`
+      + `　主口径每窗有效帧 中位 ${ds.framesPerWindow.primary.median} [${ds.framesPerWindow.primary.min}–${ds.framesPerWindow.primary.max}]`);
+    L.push('[三项采用指标] 引擎 vs 真实（"观测范围"= 基线 min–max，非"真实足球的分布"）');
+    for (const { name, comparison: c, drift, allPoints } of ds.adopted) {
+      if (!c) { L.push(`  ${name}：缺数据`); continue; }
+      const margin = c.marginM != null ? `，余量 ${fmtN(c.marginM)}m` : '';
+      const driftStr = drift ? `　| 冻结基线 ${fmtN(drift.frozenAvg)}（漂移 ${drift.deltaPct >= 0 ? '+' : ''}${fmtN(drift.deltaPct, 1)}%）` : '';
+      const apStr = allPoints && allPoints.real ? `　[全点对照 真实 ${fmtN(allPoints.real.avg)} [${fmtN(allPoints.real.min)}–${fmtN(allPoints.real.max)}]]` : '';
+      L.push(`  ${name.padEnd(16)} 引擎 ${fmtN(c.engine.avg)} [${fmtN(c.engine.min)}–${fmtN(c.engine.max)}]`
+        + `　真实 ${fmtN(c.real.avg)} [${fmtN(c.real.min)}–${fmtN(c.real.max)}]`
+        + `　${dirLabel[c.direction]}（均值 ${c.deltaPct >= 0 ? '+' : ''}${fmtN(c.deltaPct, 1)}%）${margin}${driftStr}${apStr}`);
+    }
+    L.push('[报告项]（不作校准目标、不进断言）');
+    for (const { name, comparison: c } of ds.reported) {
+      if (!c) { L.push(`  ${name}：缺数据`); continue; }
+      L.push(`  ${name.padEnd(16)} 引擎 ${fmtN(c.engine.avg)} [${fmtN(c.engine.min)}–${fmtN(c.engine.max)}]`
+        + `　真实 ${fmtN(c.real.avg)} [${fmtN(c.real.min)}–${fmtN(c.real.max)}]`
+        + `　${dirLabel[c.direction]}（均值 ${c.deltaPct >= 0 ? '+' : ''}${fmtN(c.deltaPct, 1)}%）`);
+    }
+    L.push('[口径敏感性：弹性]（纵深随球位置的变化；数值随分桶口径变化 → 不作校准目标）');
+    for (const e of ds.elasticity) {
+      const r = e.real ? `${fmtN(e.real.avgDelta)} [${fmtN(e.real.min)}–${fmtN(e.real.max)}]` : '—';
+      const g = e.engine ? `${fmtN(e.engine.avgDelta)} [${fmtN(e.engine.min)}–${fmtN(e.engine.max)}]` : '—';
+      L.push(`  ${e.label.padEnd(14)} 真实 Δ ${r}　引擎 Δ ${g}`);
+    }
   }
-  L.push('');
-  L.push('[报告项]（不作校准目标、不进断言）');
-  for (const { name, comparison: c } of cmp.reported) {
-    if (!c) { L.push(`  ${name}：缺数据`); continue; }
-    L.push(`  ${name.padEnd(16)} 引擎 ${fmtN(c.engine.avg)} [${fmtN(c.engine.min)}–${fmtN(c.engine.max)}]`
-      + `　真实 ${fmtN(c.real.avg)} [${fmtN(c.real.min)}–${fmtN(c.real.max)}]`
-      + `　${dirLabel[c.direction]}（均值 ${c.deltaPct >= 0 ? '+' : ''}${fmtN(c.deltaPct, 1)}%）`);
-  }
-  L.push('');
-  L.push('[口径敏感性：弹性]（纵深随球位置的变化；数值随分桶口径变化 → 不作校准目标）');
-  for (const e of cmp.elasticity) {
-    const r = e.real ? `${fmtN(e.real.avgDelta)} [${fmtN(e.real.min)}–${fmtN(e.real.max)}]` : '—';
-    const g = e.engine ? `${fmtN(e.engine.avgDelta)} [${fmtN(e.engine.min)}–${fmtN(e.engine.max)}]` : '—';
-    L.push(`  ${e.label.padEnd(14)} 真实 Δ ${r}　引擎 Δ ${g}`);
+  // 跨数据集可比性（P37 D6）：显式检查，不留给读者自己看
+  if (cmp.crossDataset && cmp.crossDataset.metricaVsSkillcorner) {
+    L.push('');
+    L.push('[跨数据集可比性] Metrica 的范围是否落在 SkillCorner 范围内（P37 D6）');
+    for (const [k, v] of Object.entries(cmp.crossDataset.metricaVsSkillcorner)) {
+      if (!v) { L.push(`  ${k}：缺数据`); continue; }
+      const verdict = v.aInsideB ? 'Metrica ⊆ SkillCorner' : (v.bInsideA ? 'SkillCorner ⊆ Metrica'
+        : (v.overlap ? '重叠但互不包含' : `不重叠（相隔 ${fmtN(v.gapM)}m）`));
+      L.push(`  ${k.padEnd(16)} Metrica [${fmtN(v.aRange[0])}–${fmtN(v.aRange[1])}]　SkillCorner [${fmtN(v.bRange[0])}–${fmtN(v.bRange[1])}]　${verdict}`);
+    }
+    L.push('  注：两套数据集的采集方式与有效人数不同（P37 design D6/D2），"不落"本身是发现、不是错误。');
   }
   L.push('');
   L.push(`注：${cmp.possessionProxyNote}。`);
