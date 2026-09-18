@@ -56,7 +56,14 @@
       —— 数字以 `viewer/data/benchmark-baseline.json`（实现期重生成）为唯一来源；
       design D3 已同步更新（含实现期发现的探针 x/y 配对 bug 修正说明）
 - [x] P3.3 `openspec validate --all --strict` 通过（15/15：含 change/p36-match-benchmark）
-- [ ] P3.4 代码审阅闭环（独立 subagent，直到无遗留问题）
+- [x] P3.4 代码审阅闭环（独立 subagent，直到无遗留问题）
+      - 第一轮（`reviews/impl-review.md`，区间 1a7834a..32f0f7e）：**需修**——
+        P1×2（README 旧区间值；紧凑度 x/y 配对 bug 无回归守护）+ P2×7（接线取值断言、
+        空转门将断言、minFrames 注释陈义、T+1 容差、基线哨兵、invalid 路径、审阅记录对齐）
+      - 修复：commit 6b00a0d（含变异自证：7 条盲区变异全部变红）
+      - 第二轮（`reviews/impl-review-round2.md`，区间 1a7834a..6b00a0d）：**通过**——
+        7 条复变异全红且非同义反复（手算复核）；修复未引入新问题；仅 1 条 P2 注释笔误
+        （id11→id16，已修 3e2fcf5）
 
 ## 后续（不在本 change 范围，但有优先级关系）
 

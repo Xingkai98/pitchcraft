@@ -272,7 +272,8 @@ test('口径·控球代理：离球最近者所属队（含门将参与判定）
   assert.equal(possessionProxy(makeFrame()), null);
   // 门将参与最近者判定：构造「只有门将严格最近、且剔除门将后最近者会是客队」的帧——
   // 主队非门将整体压到 x=0.6、客队整体在 x=0.05、主队门将贴门线 x=0.02、球在 x=0.021。
-  // 含门将 → 门将 0.105m 最近（主队）；若剔除门将 → 最近者变成客队 id11（3.045m）→ 结论反转。
+  // 含门将 → 门将 0.105m 最近（主队）；若剔除门将 → 最近者变成客队 id16（3.045m，
+  // 其 y=0.5 与球同排）→ 结论反转。
   const nearKeeper = makeFrame({ ball: [0.021, 0.5] });
   for (let id = 1; id <= 10; id += 1) { nearKeeper.players[id].x = 0.6; nearKeeper.players[id].y = 0.4 + (id - 1) * 0.02; }
   for (let id = 11; id <= 20; id += 1) { nearKeeper.players[id].x = 0.05; nearKeeper.players[id].y = 0.4 + (id - 11) * 0.02; }
