@@ -1,140 +1,29 @@
 {
-  "kind": "p36-match-benchmark-baseline",
-  "schemaVersion": 1,
+  "kind": "p37-multi-dataset-benchmark-baseline",
+  "schemaVersion": 2,
   "generatedBy": "tools/benchmark-baseline.mjs",
+  "primaryDataset": "skillcorner",
   "metricsModule": {
     "path": "viewer/match-metrics.js",
-    "sha256": "0a6ef660a473c0aff9da6aff0b9f00e319f12ba9931b18f899dd4507165fc20d",
-    "convention": "trim1 depth (drop deepest+highest, span of remaining 8); keepers excluded (id 0/21)",
+    "sha256": "5ebec87e6a6820c01d59b140aba2af5ce49ee78d43647b1ed1bf87fa94f1747b",
+    "convention": "q10–q90 线性插值分位跨度（R type-7；P37 换口径，见 match-metrics.js 头注释）",
     "aggregation": "per-frame instantaneous shape → mean over frames; frames with <7 outfield players dropped",
-    "pitchMeters": [
-      105,
-      68
-    ],
+    "pitchMeters": "per-game（逐场尺寸，P37 D4）；缺省 [105,68]",
     "sampleIntervalSec": 0.2,
     "minOutfieldPlayers": 7,
     "keeperIds": [
       0,
       21
-    ]
+    ],
+    "extrapolationPolicy": "主口径跳过源数据标 is_detected=false 的外推点（与「缺失不参与」同口径）；全点口径并列于 perMetricAllPoints"
   },
   "windows": {
     "sizeSec": 300,
     "stepSec": 900,
     "real": {
-      "nWindows": 13,
-      "nGames": 2,
-      "perGame": [
-        {
-          "game": "real-game-1",
-          "meta": {
-            "source": "metrica-sports/sample-data",
-            "format": "metrica-3csv",
-            "hz": 25,
-            "keyframeHz": 5,
-            "frameCount": 29002,
-            "startSec": 0.04,
-            "endSec": 5800.24
-          },
-          "windows": [
-            {
-              "startSec": 0.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 900.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 1800.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 2700.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 3600.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 4500.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 5400.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            }
-          ],
-          "tail": {
-            "lastWindowEndSec": 5700.04,
-            "uncoveredSec": 100.2,
-            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
-          },
-          "discardedPartialWindow": null
-        },
-        {
-          "game": "real-game-2",
-          "meta": {
-            "source": "metrica-sports/sample-data",
-            "format": "metrica-3csv",
-            "hz": 25,
-            "keyframeHz": 5,
-            "frameCount": 28232,
-            "startSec": 0.04,
-            "endSec": 5646.24
-          },
-          "windows": [
-            {
-              "startSec": 0.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 900.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 1800.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 2700.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 3600.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            },
-            {
-              "startSec": 4500.04,
-              "durationSec": 300,
-              "frameCount": 1500
-            }
-          ],
-          "tail": {
-            "lastWindowEndSec": 4800.04,
-            "uncoveredSec": 846.2,
-            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
-          },
-          "discardedPartialWindow": {
-            "startSec": 5400.04,
-            "durationSec": 246.2,
-            "reason": "不足 300s 的残窗，不入统计"
-          }
-        }
-      ]
+      "nWindows": 139,
+      "nGames": 20,
+      "dataset": "skillcorner"
     },
     "engine": {
       "nWindows": 30,
@@ -150,115 +39,2197 @@
       "note": "5 种子 × 6 窗；同一种子内的窗口不独立（同一次模拟），引用时勿当作 30 个独立样本"
     }
   },
-  "real": {
-    "perMetric": {
-      "hd": {
-        "avg": 25.214240800000006,
-        "min": 16.157859900000016,
-        "max": 29.569486100000038,
-        "n": 13
+  "datasets": {
+    "metrica": {
+      "label": "Metrica Sports sample-data",
+      "source": "https://github.com/metrica-sports/sample-data",
+      "license": "未声明正式许可；README 要求使用时注明来源并负责任使用（开发/研究用途）",
+      "collection": "25 Hz，人工标注/半自动；0-1 归一化坐标；球场恒 105×68",
+      "nGames": 2,
+      "nWindows": 13,
+      "games": [
+        {
+          "game": "real-game-1",
+          "status": null,
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "metrica-sports/sample-data",
+            "format": "metrica-3csv",
+            "hz": 25,
+            "keyframeHz": 5,
+            "frameCount": 29002,
+            "startSec": 0.04,
+            "endSec": 5800.24,
+            "timeGaps": null
+          },
+          "windows": [
+            {
+              "startSec": 0.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 900.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 1800.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 2700.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 3600.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 4500.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 5400.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.04,
+            "uncoveredSec": 100.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "real-game-2",
+          "status": null,
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "metrica-sports/sample-data",
+            "format": "metrica-3csv",
+            "hz": 25,
+            "keyframeHz": 5,
+            "frameCount": 28232,
+            "startSec": 0.04,
+            "endSec": 5646.24,
+            "timeGaps": null
+          },
+          "windows": [
+            {
+              "startSec": 0.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 900.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 1800.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 2700.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 3600.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            },
+            {
+              "startSec": 4500.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 4800.04,
+            "uncoveredSec": 846.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": {
+            "startSec": 5400.04,
+            "durationSec": 246.2,
+            "reason": "不足 300s 的残窗，不入统计"
+          }
+        }
+      ],
+      "framesPerWindow": {
+        "nominal": 1500,
+        "primary": {
+          "median": 1500,
+          "min": 1500,
+          "max": 1500
+        },
+        "allPoints": {
+          "median": 1500,
+          "min": 1500,
+          "max": 1500
+        }
       },
-      "ad": {
-        "avg": 26.151281853846157,
-        "min": 20.175402099999996,
-        "max": 29.586379900000004,
-        "n": 13
+      "perMetric": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 25.93902330923077,
+          "min": 16.758590449999986,
+          "max": 30.19213127000001,
+          "n": 13
+        },
+        "ad": {
+          "avg": 26.79333066307693,
+          "min": 21.525344049999987,
+          "max": 30.252763029999997,
+          "n": 13
+        },
+        "spread": {
+          "avg": 15.236805963646637,
+          "min": 10.747985807741331,
+          "max": 17.153388788221324,
+          "n": 13
+        },
+        "gap": {
+          "avg": 8.323166302431668,
+          "min": 6.803545743561096,
+          "max": 10.542476607325892,
+          "n": 13
+        },
+        "width": {
+          "avg": 39.580609737435914,
+          "min": 28.174677546666672,
+          "max": 46.77525293333335,
+          "n": 13
+        },
+        "ballDist": {
+          "avg": 18.357294263710838,
+          "min": 16.624405626232143,
+          "max": 20.378468694115718,
+          "n": 13
+        },
+        "ballDistAllFrames": {
+          "avg": 18.92344709398753,
+          "min": 15.799017729244918,
+          "max": 21.775658259438224,
+          "n": 13
+        },
+        "possessionHome": {
+          "avg": 0.5060763191411293,
+          "min": 0.3206793206793207,
+          "max": 0.791889007470651,
+          "n": 13
+        },
+        "ballDistFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "possessionFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "frameCount": {
+          "avg": 1500,
+          "min": 1500,
+          "max": 1500,
+          "n": 13
+        }
       },
-      "spread": {
-        "avg": 15.236805963646637,
-        "min": 10.747985807741331,
-        "max": 17.153388788221324,
-        "n": 13
+      "perMetricAllPoints": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 25.93902330923077,
+          "min": 16.758590449999986,
+          "max": 30.19213127000001,
+          "n": 13
+        },
+        "ad": {
+          "avg": 26.79333066307693,
+          "min": 21.525344049999987,
+          "max": 30.252763029999997,
+          "n": 13
+        },
+        "spread": {
+          "avg": 15.236805963646637,
+          "min": 10.747985807741331,
+          "max": 17.153388788221324,
+          "n": 13
+        },
+        "gap": {
+          "avg": 8.323166302431668,
+          "min": 6.803545743561096,
+          "max": 10.542476607325892,
+          "n": 13
+        },
+        "width": {
+          "avg": 39.580609737435914,
+          "min": 28.174677546666672,
+          "max": 46.77525293333335,
+          "n": 13
+        },
+        "ballDist": {
+          "avg": 18.357294263710838,
+          "min": 16.624405626232143,
+          "max": 20.378468694115718,
+          "n": 13
+        },
+        "ballDistAllFrames": {
+          "avg": 18.92344709398753,
+          "min": 15.799017729244918,
+          "max": 21.775658259438224,
+          "n": 13
+        },
+        "possessionHome": {
+          "avg": 0.5060763191411293,
+          "min": 0.3206793206793207,
+          "max": 0.791889007470651,
+          "n": 13
+        },
+        "ballDistFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "possessionFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "frameCount": {
+          "avg": 1500,
+          "min": 1500,
+          "max": 1500,
+          "n": 13
+        }
       },
-      "gap": {
-        "avg": 8.323166302431666,
-        "min": 6.803545743561095,
-        "max": 10.542476607325892,
-        "n": 13
-      },
-      "width": {
-        "avg": 39.580609737435914,
-        "min": 28.174677546666672,
-        "max": 46.77525293333335,
-        "n": 13
-      },
-      "ballDist": {
-        "avg": 18.357294263710838,
-        "min": 16.624405626232143,
-        "max": 20.378468694115718,
-        "n": 13
-      },
-      "ballDistAllFrames": {
-        "avg": 18.92344709398753,
-        "min": 15.799017729244918,
-        "max": 21.775658259438224,
-        "n": 13
-      },
-      "possessionHome": {
-        "avg": 0.5060763191411293,
-        "min": 0.3206793206793207,
-        "max": 0.791889007470651,
-        "n": 13
-      },
-      "ballDistFrames": {
-        "avg": 913.1538461538462,
-        "min": 226,
-        "max": 1248,
-        "n": 13
-      },
-      "possessionFrames": {
-        "avg": 913.1538461538462,
-        "min": 226,
-        "max": 1248,
-        "n": 13
-      },
-      "frameCount": {
-        "avg": 1500,
-        "min": 1500,
-        "max": 1500,
-        "n": 13
+      "elasticity": {
+        "convention": "rawBallFramesOnly（球相关口径：只用原始观测球帧；外推球位按 ballFill 标记排除）",
+        "half": {
+          "avgDelta": 3.1558457166056773,
+          "min": -1.3985483427755625,
+          "max": 7.001892633912259,
+          "n": 13
+        },
+        "centroid": {
+          "avgDelta": -2.3171573095839624,
+          "min": -6.358875117814193,
+          "max": 1.5409275856854556,
+          "n": 13
+        }
       }
     },
-    "elasticity": {
-      "convention": "rawBallFramesOnly（球相关口径：只用原始观测球帧）",
-      "half": {
-        "avgDelta": 3.229185438122017,
-        "min": -1.322320423796981,
-        "max": 6.994721348519633,
-        "n": 13
+    "skillcorner": {
+      "label": "SkillCorner opendata（澳超 2024/25）",
+      "source": "https://github.com/SkillCorner/opendata",
+      "license": "MIT（仓库根 LICENSE）",
+      "collection": "10 fps，广播 CV 重建；米制中心原点；球场 104/105/106 三种；点带 is_detected 外推标记",
+      "nGames": 20,
+      "nWindows": 139,
+      "games": [
+        {
+          "game": "skillcorner-1874553",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22122,
+            "startSec": 0,
+            "endSec": 6017,
+            "timeGaps": {
+              "count": 61,
+              "maxSec": 143.1,
+              "totalSec": 1605.1
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1326,
+              "okPrimary": 236,
+              "okAllPoints": 1326
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 1178,
+              "okPrimary": 376,
+              "okAllPoints": 1178
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 995,
+              "okPrimary": 552,
+              "okAllPoints": 995
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 995,
+              "okPrimary": 536,
+              "okAllPoints": 995
+            },
+            {
+              "startSec": 3611.3,
+              "nominalSec": 300,
+              "frameCount": 1150,
+              "okPrimary": 419,
+              "okAllPoints": 1150
+            },
+            {
+              "startSec": 4504.4,
+              "nominalSec": 300,
+              "frameCount": 1126,
+              "okPrimary": 459,
+              "okAllPoints": 1126
+            },
+            {
+              "startSec": 5400,
+              "nominalSec": 300,
+              "frameCount": 1056,
+              "okPrimary": 455,
+              "okAllPoints": 1056
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 317,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1886347",
+          "status": "closed",
+          "pitchMeters": [
+            104,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21729,
+            "startSec": 0,
+            "endSec": 5901.6,
+            "timeGaps": {
+              "count": 63,
+              "maxSec": 116.5,
+              "totalSec": 1568.7
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1437,
+              "okPrimary": 781,
+              "okAllPoints": 1437
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1212,
+              "okPrimary": 446,
+              "okAllPoints": 1212
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1314,
+              "okPrimary": 633,
+              "okAllPoints": 1314
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 1418,
+              "okPrimary": 811,
+              "okAllPoints": 1418
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 766,
+              "okPrimary": 319,
+              "okAllPoints": 766
+            },
+            {
+              "startSec": 4500.1,
+              "nominalSec": 300,
+              "frameCount": 841,
+              "okPrimary": 460,
+              "okAllPoints": 841
+            },
+            {
+              "startSec": 5468.8,
+              "nominalSec": 300,
+              "frameCount": 690,
+              "okPrimary": 262,
+              "okAllPoints": 690
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5768.799999999999,
+            "uncoveredSec": 132.8,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1899585",
+          "status": "closed",
+          "pitchMeters": [
+            104,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 20341,
+            "startSec": 0,
+            "endSec": 6032.4,
+            "timeGaps": {
+              "count": 71,
+              "maxSec": 129.6,
+              "totalSec": 1978.7
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1174,
+              "okPrimary": 605,
+              "okAllPoints": 1174
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1129,
+              "okPrimary": 586,
+              "okAllPoints": 1129
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 935,
+              "okPrimary": 384,
+              "okAllPoints": 935
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1124,
+              "okPrimary": 446,
+              "okAllPoints": 1124
+            },
+            {
+              "startSec": 3600.1,
+              "nominalSec": 300,
+              "frameCount": 956,
+              "okPrimary": 274,
+              "okAllPoints": 956
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 1147,
+              "okPrimary": 512,
+              "okAllPoints": 1147
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1042,
+              "okPrimary": 345,
+              "okAllPoints": 1042
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 332.3,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1925299",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 23971,
+            "startSec": 0,
+            "endSec": 6127.7,
+            "timeGaps": {
+              "count": 51,
+              "maxSec": 138,
+              "totalSec": 1344
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1406,
+              "okPrimary": 389,
+              "okAllPoints": 1406
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1153,
+              "okPrimary": 346,
+              "okAllPoints": 1153
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 639,
+              "okPrimary": 118,
+              "okAllPoints": 639
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 1259,
+              "okPrimary": 413,
+              "okAllPoints": 1259
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1208,
+              "okPrimary": 473,
+              "okAllPoints": 1208
+            },
+            {
+              "startSec": 4575.3,
+              "nominalSec": 300,
+              "frameCount": 962,
+              "okPrimary": 540,
+              "okAllPoints": 962
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1097,
+              "okPrimary": 603,
+              "okAllPoints": 1097
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 427.6,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1927964",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22380,
+            "startSec": 0,
+            "endSec": 5891.1,
+            "timeGaps": {
+              "count": 59,
+              "maxSec": 127.1,
+              "totalSec": 1427.2
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1178,
+              "okPrimary": 740,
+              "okAllPoints": 1178
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1070,
+              "okPrimary": 647,
+              "okAllPoints": 1070
+            },
+            {
+              "startSec": 1861.5,
+              "nominalSec": 300,
+              "frameCount": 1069,
+              "okPrimary": 761,
+              "okAllPoints": 1069
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1177,
+              "okPrimary": 647,
+              "okAllPoints": 1177
+            },
+            {
+              "startSec": 3600.1,
+              "nominalSec": 300,
+              "frameCount": 1097,
+              "okPrimary": 445,
+              "okAllPoints": 1097
+            },
+            {
+              "startSec": 4502.1,
+              "nominalSec": 300,
+              "frameCount": 1008,
+              "okPrimary": 331,
+              "okAllPoints": 1008
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1147,
+              "okPrimary": 529,
+              "okAllPoints": 1147
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 191,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1953632",
+          "status": "not_started",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21956,
+            "startSec": 0,
+            "endSec": 5920.2,
+            "timeGaps": {
+              "count": 69,
+              "maxSec": 141.6,
+              "totalSec": 1543.1
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1370,
+              "okPrimary": 732,
+              "okAllPoints": 1370
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1445,
+              "okPrimary": 1060,
+              "okAllPoints": 1445
+            },
+            {
+              "startSec": 1801.4,
+              "nominalSec": 300,
+              "frameCount": 724,
+              "okPrimary": 403,
+              "okAllPoints": 724
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1257,
+              "okPrimary": 709,
+              "okAllPoints": 1257
+            },
+            {
+              "startSec": 3600.1,
+              "nominalSec": 300,
+              "frameCount": 872,
+              "okPrimary": 351,
+              "okAllPoints": 872
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 902,
+              "okPrimary": 372,
+              "okAllPoints": 902
+            },
+            {
+              "startSec": 5412.9,
+              "nominalSec": 300,
+              "frameCount": 1239,
+              "okPrimary": 820,
+              "okAllPoints": 1239
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5712.9,
+            "uncoveredSec": 207.3,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1959846",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21370,
+            "startSec": 0,
+            "endSec": 5840.2,
+            "timeGaps": {
+              "count": 65,
+              "maxSec": 95.3,
+              "totalSec": 1579.5
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1254,
+              "okPrimary": 464,
+              "okAllPoints": 1254
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1118,
+              "okPrimary": 506,
+              "okAllPoints": 1118
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 1094,
+              "okPrimary": 485,
+              "okAllPoints": 1094
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1405,
+              "okPrimary": 625,
+              "okAllPoints": 1405
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 893,
+              "okPrimary": 385,
+              "okAllPoints": 893
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 1114,
+              "okPrimary": 540,
+              "okAllPoints": 1114
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1138,
+              "okPrimary": 626,
+              "okAllPoints": 1138
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 140.1,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1986691",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21538,
+            "startSec": 0,
+            "endSec": 5903.7,
+            "timeGaps": {
+              "count": 80,
+              "maxSec": 136.2,
+              "totalSec": 1612.4
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1439,
+              "okPrimary": 908,
+              "okAllPoints": 1439
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1128,
+              "okPrimary": 482,
+              "okAllPoints": 1128
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1206,
+              "okPrimary": 495,
+              "okAllPoints": 1206
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 1247,
+              "okPrimary": 662,
+              "okAllPoints": 1247
+            },
+            {
+              "startSec": 3635,
+              "nominalSec": 300,
+              "frameCount": 1052,
+              "okPrimary": 406,
+              "okAllPoints": 1052
+            },
+            {
+              "startSec": 4503.3,
+              "nominalSec": 300,
+              "frameCount": 804,
+              "okPrimary": 398,
+              "okAllPoints": 804
+            },
+            {
+              "startSec": 5406.3,
+              "nominalSec": 300,
+              "frameCount": 963,
+              "okPrimary": 506,
+              "okAllPoints": 963
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5706.299999999999,
+            "uncoveredSec": 197.4,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1996435",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21766,
+            "startSec": 0,
+            "endSec": 5759.8,
+            "timeGaps": {
+              "count": 69,
+              "maxSec": 85,
+              "totalSec": 1420.7
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1395,
+              "okPrimary": 961,
+              "okAllPoints": 1395
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 1328,
+              "okPrimary": 771,
+              "okAllPoints": 1328
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1273,
+              "okPrimary": 832,
+              "okAllPoints": 1273
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 988,
+              "okPrimary": 567,
+              "okAllPoints": 988
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1186,
+              "okPrimary": 669,
+              "okAllPoints": 1186
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 855,
+              "okPrimary": 548,
+              "okAllPoints": 855
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1077,
+              "okPrimary": 400,
+              "okAllPoints": 1077
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 59.7,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1996436",
+          "status": "closed",
+          "pitchMeters": [
+            104,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21533,
+            "startSec": 0,
+            "endSec": 5971.2,
+            "timeGaps": {
+              "count": 71,
+              "maxSec": 133.5,
+              "totalSec": 1679.1
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1394,
+              "okPrimary": 675,
+              "okAllPoints": 1394
+            },
+            {
+              "startSec": 901.9,
+              "nominalSec": 300,
+              "frameCount": 812,
+              "okPrimary": 378,
+              "okAllPoints": 812
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 1108,
+              "okPrimary": 528,
+              "okAllPoints": 1108
+            },
+            {
+              "startSec": 2702.3,
+              "nominalSec": 300,
+              "frameCount": 1489,
+              "okPrimary": 580,
+              "okAllPoints": 1489
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1144,
+              "okPrimary": 338,
+              "okAllPoints": 1144
+            },
+            {
+              "startSec": 4503.6,
+              "nominalSec": 300,
+              "frameCount": 746,
+              "okPrimary": 343,
+              "okAllPoints": 746
+            },
+            {
+              "startSec": 5400,
+              "nominalSec": 300,
+              "frameCount": 972,
+              "okPrimary": 485,
+              "okAllPoints": 972
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 271.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2006229",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22086,
+            "startSec": 0,
+            "endSec": 5924,
+            "timeGaps": {
+              "count": 61,
+              "maxSec": 197.5,
+              "totalSec": 1519.3
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1238,
+              "okPrimary": 793,
+              "okAllPoints": 1238
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 911,
+              "okPrimary": 638,
+              "okAllPoints": 911
+            },
+            {
+              "startSec": 1821.4,
+              "nominalSec": 300,
+              "frameCount": 908,
+              "okPrimary": 531,
+              "okAllPoints": 908
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1231,
+              "okPrimary": 827,
+              "okAllPoints": 1231
+            },
+            {
+              "startSec": 3618.9,
+              "nominalSec": 300,
+              "frameCount": 924,
+              "okPrimary": 500,
+              "okAllPoints": 924
+            },
+            {
+              "startSec": 4518.4,
+              "nominalSec": 300,
+              "frameCount": 965,
+              "okPrimary": 376,
+              "okAllPoints": 965
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1358,
+              "okPrimary": 555,
+              "okAllPoints": 1358
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 223.9,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2006363",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22174,
+            "startSec": 0,
+            "endSec": 5903.2,
+            "timeGaps": {
+              "count": 58,
+              "maxSec": 88.4,
+              "totalSec": 1480.3
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1418,
+              "okPrimary": 296,
+              "okAllPoints": 1418
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 890,
+              "okPrimary": 113,
+              "okAllPoints": 890
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1252,
+              "okPrimary": 438,
+              "okAllPoints": 1252
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1265,
+              "okPrimary": 515,
+              "okAllPoints": 1265
+            },
+            {
+              "startSec": 3600.1,
+              "nominalSec": 300,
+              "frameCount": 970,
+              "okPrimary": 325,
+              "okAllPoints": 970
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 1038,
+              "okPrimary": 427,
+              "okAllPoints": 1038
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 981,
+              "okPrimary": 300,
+              "okAllPoints": 981
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 203.1,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2007448",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22142,
+            "startSec": 0,
+            "endSec": 5791.1,
+            "timeGaps": {
+              "count": 63,
+              "maxSec": 83.9,
+              "totalSec": 1375.6
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1428,
+              "okPrimary": 492,
+              "okAllPoints": 1428
+            },
+            {
+              "startSec": 972.6,
+              "nominalSec": 300,
+              "frameCount": 1101,
+              "okPrimary": 382,
+              "okAllPoints": 1101
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 1126,
+              "okPrimary": 381,
+              "okAllPoints": 1126
+            },
+            {
+              "startSec": 2707.7,
+              "nominalSec": 300,
+              "frameCount": 976,
+              "okPrimary": 368,
+              "okAllPoints": 976
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1130,
+              "okPrimary": 285,
+              "okAllPoints": 1130
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 1339,
+              "okPrimary": 517,
+              "okAllPoints": 1339
+            },
+            {
+              "startSec": 5408.1,
+              "nominalSec": 300,
+              "frameCount": 909,
+              "okPrimary": 350,
+              "okAllPoints": 909
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5708.1,
+            "uncoveredSec": 83,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2007721",
+          "status": "closed",
+          "pitchMeters": [
+            104,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 23149,
+            "startSec": 0,
+            "endSec": 5747,
+            "timeGaps": {
+              "count": 54,
+              "maxSec": 67.8,
+              "totalSec": 1128.3
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1278,
+              "okPrimary": 619,
+              "okAllPoints": 1278
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 1455,
+              "okPrimary": 821,
+              "okAllPoints": 1455
+            },
+            {
+              "startSec": 1813.5,
+              "nominalSec": 300,
+              "frameCount": 1329,
+              "okPrimary": 404,
+              "okAllPoints": 1329
+            },
+            {
+              "startSec": 2727.4,
+              "nominalSec": 300,
+              "frameCount": 1189,
+              "okPrimary": 414,
+              "okAllPoints": 1189
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1008,
+              "okPrimary": 553,
+              "okAllPoints": 1008
+            },
+            {
+              "startSec": 4500.1,
+              "nominalSec": 300,
+              "frameCount": 884,
+              "okPrimary": 330,
+              "okAllPoints": 884
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 967,
+              "okPrimary": 538,
+              "okAllPoints": 967
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 46.9,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2010085",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22761,
+            "startSec": 0,
+            "endSec": 5896.8,
+            "timeGaps": {
+              "count": 49,
+              "maxSec": 170.8,
+              "totalSec": 1354.7
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1227,
+              "okPrimary": 537,
+              "okAllPoints": 1227
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 1341,
+              "okPrimary": 382,
+              "okAllPoints": 1341
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1393,
+              "okPrimary": 537,
+              "okAllPoints": 1393
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 730,
+              "okPrimary": 306,
+              "okAllPoints": 730
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1299,
+              "okPrimary": 463,
+              "okAllPoints": 1299
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 647,
+              "okPrimary": 130,
+              "okAllPoints": 647
+            },
+            {
+              "startSec": 5426.6,
+              "nominalSec": 300,
+              "frameCount": 1123,
+              "okPrimary": 565,
+              "okAllPoints": 1123
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5726.6,
+            "uncoveredSec": 170.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2011166",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 19508,
+            "startSec": 0,
+            "endSec": 5927.8,
+            "timeGaps": {
+              "count": 70,
+              "maxSec": 159.1,
+              "totalSec": 2040.5
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1121,
+              "okPrimary": 251,
+              "okAllPoints": 1121
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1250,
+              "okPrimary": 319,
+              "okAllPoints": 1250
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 737,
+              "okPrimary": 339,
+              "okAllPoints": 737
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 874,
+              "okPrimary": 311,
+              "okAllPoints": 874
+            },
+            {
+              "startSec": 3686.8,
+              "nominalSec": 300,
+              "frameCount": 961,
+              "okPrimary": 209,
+              "okAllPoints": 961
+            },
+            {
+              "startSec": 4500.1,
+              "nominalSec": 300,
+              "frameCount": 1076,
+              "okPrimary": 271,
+              "okAllPoints": 1076
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1033,
+              "okPrimary": 231,
+              "okAllPoints": 1033
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 227.7,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2013725",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22496,
+            "startSec": 0,
+            "endSec": 5674.8,
+            "timeGaps": {
+              "count": 69,
+              "maxSec": 89.8,
+              "totalSec": 1189.7
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1124,
+              "okPrimary": 650,
+              "okAllPoints": 1124
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1009,
+              "okPrimary": 403,
+              "okAllPoints": 1009
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1146,
+              "okPrimary": 282,
+              "okAllPoints": 1146
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 1298,
+              "okPrimary": 506,
+              "okAllPoints": 1298
+            },
+            {
+              "startSec": 3611.9,
+              "nominalSec": 300,
+              "frameCount": 1052,
+              "okPrimary": 238,
+              "okAllPoints": 1052
+            },
+            {
+              "startSec": 4500.1,
+              "nominalSec": 300,
+              "frameCount": 1204,
+              "okPrimary": 485,
+              "okAllPoints": 1204
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 4800.1,
+            "uncoveredSec": 874.7,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": {
+            "startSec": 5400.1,
+            "durationSec": 274.7,
+            "reason": "不足 300s 的残窗，不入统计"
+          }
+        },
+        {
+          "game": "skillcorner-2015213",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 24271,
+            "startSec": 0,
+            "endSec": 5989.7,
+            "timeGaps": {
+              "count": 61,
+              "maxSec": 69.1,
+              "totalSec": 1148
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1421,
+              "okPrimary": 548,
+              "okAllPoints": 1421
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 1156,
+              "okPrimary": 591,
+              "okAllPoints": 1156
+            },
+            {
+              "startSec": 1806.2,
+              "nominalSec": 300,
+              "frameCount": 1259,
+              "okPrimary": 489,
+              "okAllPoints": 1259
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1382,
+              "okPrimary": 390,
+              "okAllPoints": 1382
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1286,
+              "okPrimary": 367,
+              "okAllPoints": 1286
+            },
+            {
+              "startSec": 4500.1,
+              "nominalSec": 300,
+              "frameCount": 1277,
+              "okPrimary": 566,
+              "okAllPoints": 1277
+            },
+            {
+              "startSec": 5400,
+              "nominalSec": 300,
+              "frameCount": 1144,
+              "okPrimary": 401,
+              "okAllPoints": 1144
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 289.7,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2016236",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21942,
+            "startSec": 0,
+            "endSec": 5999.3,
+            "timeGaps": {
+              "count": 63,
+              "maxSec": 133.5,
+              "totalSec": 1623.8
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1042,
+              "okPrimary": 468,
+              "okAllPoints": 1042
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 753,
+              "okPrimary": 308,
+              "okAllPoints": 753
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 791,
+              "okPrimary": 170,
+              "okAllPoints": 791
+            },
+            {
+              "startSec": 2703,
+              "nominalSec": 300,
+              "frameCount": 957,
+              "okPrimary": 251,
+              "okAllPoints": 957
+            },
+            {
+              "startSec": 3600.1,
+              "nominalSec": 300,
+              "frameCount": 1101,
+              "okPrimary": 290,
+              "okAllPoints": 1101
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 1184,
+              "okPrimary": 231,
+              "okAllPoints": 1184
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1057,
+              "okPrimary": 207,
+              "okAllPoints": 1057
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 299.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2017461",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 20202,
+            "startSec": 0,
+            "endSec": 5843.5,
+            "timeGaps": {
+              "count": 73,
+              "maxSec": 142.6,
+              "totalSec": 1818
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1282,
+              "okPrimary": 446,
+              "okAllPoints": 1282
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 1067,
+              "okPrimary": 309,
+              "okAllPoints": 1067
+            },
+            {
+              "startSec": 1830.2,
+              "nominalSec": 300,
+              "frameCount": 1072,
+              "okPrimary": 458,
+              "okAllPoints": 1072
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 1315,
+              "okPrimary": 378,
+              "okAllPoints": 1315
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 853,
+              "okPrimary": 275,
+              "okAllPoints": 853
+            },
+            {
+              "startSec": 4500.1,
+              "nominalSec": 300,
+              "frameCount": 1010,
+              "okPrimary": 158,
+              "okAllPoints": 1010
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1237,
+              "okPrimary": 289,
+              "okAllPoints": 1237
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 143.4,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        }
+      ],
+      "framesPerWindow": {
+        "nominal": 1500,
+        "primary": {
+          "median": 455,
+          "min": 113,
+          "max": 1060
+        },
+        "allPoints": {
+          "median": 1124,
+          "min": 639,
+          "max": 1489
+        }
       },
-      "centroid": {
-        "avgDelta": -2.2748295452186507,
-        "min": -6.355459968248649,
-        "max": 1.5374289418129337,
-        "n": 13
+      "perMetric": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 18.326252733514405,
+          "min": 11.54674041297936,
+          "max": 24.03566741573033,
+          "n": 139
+        },
+        "ad": {
+          "avg": 18.454121307730308,
+          "min": 12.503591304347824,
+          "max": 30.86035951661632,
+          "n": 139
+        },
+        "spread": {
+          "avg": 12.767217368722221,
+          "min": 9.696624632752737,
+          "max": 15.94591856062825,
+          "n": 139
+        },
+        "gap": {
+          "avg": 5.241936267877447,
+          "min": 3.2150394012694927,
+          "max": 8.324163752909213,
+          "n": 139
+        },
+        "width": {
+          "avg": 36.00341202843246,
+          "min": 25.173716814159306,
+          "max": 46.4205698005698,
+          "n": 139
+        },
+        "ballDist": {
+          "avg": 14.966576269729192,
+          "min": 9.805185835618774,
+          "max": 24.472177362067633,
+          "n": 139
+        },
+        "ballDistAllFrames": {
+          "avg": 15.097886305581158,
+          "min": 10.280442719075355,
+          "max": 24.472177362067633,
+          "n": 139
+        },
+        "possessionHome": {
+          "avg": 0.48604850272641,
+          "min": 0.02654867256637168,
+          "max": 0.8099352051835853,
+          "n": 139
+        },
+        "ballDistFrames": {
+          "avg": 445.28057553956836,
+          "min": 103,
+          "max": 1055,
+          "n": 139
+        },
+        "possessionFrames": {
+          "avg": 445.28057553956836,
+          "min": 103,
+          "max": 1055,
+          "n": 139
+        },
+        "frameCount": {
+          "avg": 467.49640287769785,
+          "min": 113,
+          "max": 1060,
+          "n": 139
+        }
+      },
+      "perMetricAllPoints": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 25.81266797348382,
+          "min": 17.059683655536034,
+          "max": 31.13422247706418,
+          "n": 139
+        },
+        "ad": {
+          "avg": 25.61302866471559,
+          "min": 14.840906108597277,
+          "max": 33.385760912698366,
+          "n": 139
+        },
+        "spread": {
+          "avg": 14.781202753202994,
+          "min": 11.54940158032843,
+          "max": 18.15219030209795,
+          "n": 139
+        },
+        "gap": {
+          "avg": 6.876469741210283,
+          "min": 5.148322722836271,
+          "max": 10.568151052665801,
+          "n": 139
+        },
+        "width": {
+          "avg": 37.94166187270592,
+          "min": 29.52212435233164,
+          "max": 49.89050458715606,
+          "n": 139
+        },
+        "ballDist": {
+          "avg": 18.425925601333816,
+          "min": 15.043832787986046,
+          "max": 23.301318916526252,
+          "n": 139
+        },
+        "ballDistAllFrames": {
+          "avg": 19.17334794078286,
+          "min": 15.579650347692299,
+          "max": 23.64351276984755,
+          "n": 139
+        },
+        "possessionHome": {
+          "avg": 0.4867603758826136,
+          "min": 0.15915627996164908,
+          "max": 0.7730496453900709,
+          "n": 139
+        },
+        "ballDistFrames": {
+          "avg": 889.6762589928057,
+          "min": 494,
+          "max": 1335,
+          "n": 139
+        },
+        "possessionFrames": {
+          "avg": 889.6762589928057,
+          "min": 494,
+          "max": 1335,
+          "n": 139
+        },
+        "frameCount": {
+          "avg": 1112.7410071942445,
+          "min": 639,
+          "max": 1489,
+          "n": 139
+        }
+      },
+      "elasticity": {
+        "convention": "rawBallFramesOnly（球相关口径：只用原始观测球帧；外推球位按 ballFill 标记排除）",
+        "half": {
+          "avgDelta": 0.8161921544716034,
+          "min": -10.200428666588316,
+          "max": 8.256996590909083,
+          "n": 139
+        },
+        "centroid": {
+          "avgDelta": -1.125309777678128,
+          "min": -7.621803925798105,
+          "max": 4.738792036910475,
+          "n": 139
+        }
+      }
+    }
+  },
+  "crossDataset": {
+    "metricaVsSkillcorner": {
+      "hd": {
+        "aRange": [
+          16.758590449999986,
+          30.19213127000001
+        ],
+        "bRange": [
+          11.54674041297936,
+          24.03566741573033
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "ad": {
+        "aRange": [
+          21.525344049999987,
+          30.252763029999997
+        ],
+        "bRange": [
+          12.503591304347824,
+          30.86035951661632
+        ],
+        "aInsideB": true,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "spread": {
+        "aRange": [
+          10.747985807741331,
+          17.153388788221324
+        ],
+        "bRange": [
+          9.696624632752737,
+          15.94591856062825
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "gap": {
+        "aRange": [
+          6.803545743561096,
+          10.542476607325892
+        ],
+        "bRange": [
+          3.2150394012694927,
+          8.324163752909213
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "width": {
+        "aRange": [
+          28.174677546666672,
+          46.77525293333335
+        ],
+        "bRange": [
+          25.173716814159306,
+          46.4205698005698
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "ballDist": {
+        "aRange": [
+          16.624405626232143,
+          20.378468694115718
+        ],
+        "bRange": [
+          9.805185835618774,
+          24.472177362067633
+        ],
+        "aInsideB": true,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
       }
     }
   },
   "engine": {
     "perMetric": {
+      "skippedWindows": 0,
       "hd": {
-        "avg": 39.55660604329831,
-        "min": 32.14489045911429,
-        "max": 47.5868057640834,
+        "avg": 40.51638781962057,
+        "min": 33.22935441484398,
+        "max": 48.32461625406214,
         "n": 30
       },
       "ad": {
-        "avg": 38.85473786049204,
-        "min": 29.217926475434627,
-        "max": 46.06779774478909,
+        "avg": 39.768913120019825,
+        "min": 30.371210098932938,
+        "max": 46.724403259936565,
         "n": 30
       },
       "spread": {
-        "avg": 19.97975086474046,
+        "avg": 19.979750864740467,
         "min": 17.862024614789306,
         "max": 23.24012063311787,
         "n": 30
       },
       "gap": {
         "avg": 15.107840327211186,
-        "min": 11.717365345534388,
-        "max": 18.00514651535305,
+        "min": 11.717365345534386,
+        "max": 18.005146515353058,
         "n": 30
       },
       "width": {
@@ -270,13 +2241,13 @@
       "ballDist": {
         "avg": 20.312904035675995,
         "min": 16.33466740339436,
-        "max": 24.096071033472505,
+        "max": 24.0960710334725,
         "n": 30
       },
       "ballDistAllFrames": {
         "avg": 20.312904035675995,
         "min": 16.33466740339436,
-        "max": 24.096071033472505,
+        "max": 24.0960710334725,
         "n": 30
       },
       "possessionHome": {
@@ -306,55 +2277,55 @@
     },
     "elasticity": {
       "half": {
-        "avgDelta": 13.156378739866701,
-        "min": 3.9929793299514174,
-        "max": 25.36345874081187,
+        "avgDelta": 12.967769217131439,
+        "min": 4.039566600500898,
+        "max": 24.992759123969787,
         "n": 30
       },
       "centroid": {
-        "avgDelta": 2.6256224352389834,
-        "min": -7.9112577542932385,
-        "max": 13.179327798541152,
+        "avgDelta": 2.572119405977971,
+        "min": -7.773846693865842,
+        "max": 12.630382859893693,
         "n": 30
       }
     },
     "perSeed": [
       {
         "seed": 42,
-        "hd": 42.74757268656075,
-        "ad": 38.861236248520136,
-        "spread": 20.947093271927216,
+        "hd": 43.5944579580675,
+        "ad": 39.858184406699785,
+        "spread": 20.94709327192722,
         "gap": 13.942521931350619,
         "width": 31.99777998330327
       },
       {
         "seed": 1,
-        "hd": 41.02205806028615,
-        "ad": 41.44818153292813,
-        "spread": 20.50736835178564,
+        "hd": 41.925909906572436,
+        "ad": 42.24719301021969,
+        "spread": 20.507368351785644,
         "gap": 14.008337540638616,
         "width": 32.548752789754396
       },
       {
         "seed": 7,
-        "hd": 39.06744587394377,
-        "ad": 38.56248973432685,
-        "spread": 20.01490082570533,
+        "hd": 40.05526593046965,
+        "ad": 39.56031466917364,
+        "spread": 20.014900825705336,
         "gap": 15.413860083663588,
         "width": 32.72056039519097
       },
       {
         "seed": 99,
-        "hd": 38.33560208346959,
-        "ad": 36.782827277682536,
+        "hd": 39.384276138955975,
+        "ad": 37.686418540386775,
         "spread": 19.54903859864863,
         "gap": 16.000634814254127,
         "width": 32.205151703541
       },
       {
         "seed": 123,
-        "hd": 36.610351512231304,
-        "ad": 38.618954509002556,
+        "hd": 37.6220291640373,
+        "ad": 39.49245497361921,
         "spread": 18.880353275635496,
         "gap": 16.17384726614899,
         "width": 32.77948323738543
@@ -362,21 +2333,30 @@
     ]
   },
   "declarations": {
-    "rangeMeaning": "本基线是 2 场真实比赛（real-game-1.json、real-game-2.json）的 13 个 300s 窗口的观测范围，不是\"真实足球的分布\"。区间自身不确定性大（bootstrap CI 宽度 ≈ 区间宽度），只可用于报警与量差距，不可作为验收判据。",
+    "rangeMeaning": "本基线是真实比赛的观测范围，不是\"真实足球的分布\"。区间自身不确定性大（bootstrap CI 宽度 ≈ 区间宽度），只可用于报警与量差距，不可作为验收判据。",
+    "rangeWidthMechanisms": [
+      "① 样本增加暴露更多变异（P36 预期的那条）",
+      "② 每窗样本量下降导致窗口均值方差上升（SkillCorner 主口径每窗有效帧远少于 Metrica 的恒 1500）",
+      "③ 口径差异（P37 D2 的估计量与两侧外推/缺失处理不同）"
+    ],
     "notCovered": [
-      "联赛/球队风格/球队实力未知（Metrica 匿名样本）",
-      "比分状态未知（数据无比分，无法按追分/领先分桶）",
+      "联赛/球队风格/球队实力（Metrica 匿名；SkillCorner 已知澳超 2024/25，20 场）",
+      "比分状态未按追分/领先分桶",
       "换人前后、天气、场地条件未分层",
-      "仅 2 场，且采样为中段 5 分钟切片（步长 900s），非连续时段"
+      "窗口步长 900s：窗间是散点切片、非连续时段；同一场的相邻窗高度相关，独立样本数 = 场次数"
     ],
     "controlProxy": "控球相位 = 离球最近者所属队（代理，非真实持球权）",
-    "ballFrames": "球相关指标主口径只用原始观测球帧；全帧对照见 perMetric.ballDistAllFrames"
+    "ballFrames": "球相关指标主口径只用原始观测球帧；全帧对照见 perMetric.ballDistAllFrames",
+    "timeGaps": "拼接后仍有约 27% 无观测时段（回放/特写），全部来自源数据缺口、接缝贡献 0；不被插值，按实际帧取样",
+    "pitchSize": "逐场尺寸换算（P37 D4）：SkillCorner 有 104/105/106 三种场地，各按自己的尺寸归一化与换算，不折算到统一名义尺寸",
+    "crossValidation": "交叉验证（half-split / LOO）本阶段是**报告项、不是门**：min/max 包含门的通过率与样本量无关（N=20 时约 0.25），数据正常时也会频繁变红——升格为门须先刻画门的零分布（见 change design D7）"
   },
   "regenerate": {
     "steps": [
       "node tools/fetch-tracking-data.mjs",
       "node tools/convert-tracking-to-frames.mjs --in .scratch/tracking-data/sample-data/data/Sample_Game_1 --out viewer/data/real-game-1.json",
       "node tools/convert-tracking-to-frames.mjs --in .scratch/tracking-data/sample-data/data/Sample_Game_2 --out viewer/data/real-game-2.json",
+      "node tools/convert-skillcorner-to-frames.mjs --match <.../<id>_match.json> --out viewer/data/skillcorner-<id>.json（20 场）",
       "(cd engine && cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)",
       "node tools/benchmark-baseline.mjs"
     ],
