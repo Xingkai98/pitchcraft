@@ -41,7 +41,15 @@ const DOM_GLOBALS = ['document', 'window', 'location', 'localStorage', 'navigato
 // rAF：jsdom 默认不提供（需 pretendToBeVisual，那会真起 16ms 定时器空转）。app.js 末尾
 // `requestAnimationFrame(frame)` 起的渲染循环不在本 change 覆盖范围（design.md Non-Goals），
 // 故给 no-op：测试确定性、不空转、无残留定时器。想驱动单帧的测试可在 import 前替换。
-const noopRequestAnimationFrame = () => 0;
+// rAF 默认 no-op；但 rAF 驱动的状态更新（updateScore / updateProgress / 每帧重绘）只有在
+// 帧真的跑过之后才可见。harness 因此把 app.js 的帧回调存下来，测试可用 h.driveFrame(ts)
+// 同步驱动单帧——不需要真起定时器，也不破坏「测试确定性、不空转」的约定。
+// 只保留最新一个回调：app.js 的 frame() 每帧末尾重新 rAF 自己，链上永远只有一个待跑的。
+let pendingFrameCallback = null;
+const capturingRequestAnimationFrame = (cb) => {
+  pendingFrameCallback = cb;
+  return 1;
+};
 const noopCancelAnimationFrame = () => {};
 
 // fetch 桩默认行为：抛错。app.js 的 loadEngine 会 catch 掉并退回 mock 事件流
@@ -138,7 +146,7 @@ function installGlobals(dom, fetchImpl, engineStub = null) {
     const value = dom.window[key];
     put(key, typeof value === 'function' ? value.bind(dom.window) : value);
   }
-  put('requestAnimationFrame', noopRequestAnimationFrame);
+  put('requestAnimationFrame', capturingRequestAnimationFrame);
   put('cancelAnimationFrame', noopCancelAnimationFrame);
   // fetch 覆盖 Node 内置的：默认抛错 → mock 事件流路径（见 makeFetchStub）。
   put('fetch', fetchImpl);
@@ -229,6 +237,7 @@ export function createAppHarness({ url = 'http://localhost/', fakeEngine = false
     // app.js loadEngine 只在 response.ok 为真时继续；给个空体即可，内容不进 wasm 实例化。
     fetchStub.setHandler(async () => ({ ok: true, status: 200, arrayBuffer: async () => new ArrayBuffer(0) }));
   }
+  pendingFrameCallback = null; // 上一个 harness 的帧回调不跨用例（harness 串行使用）
   const uninstallGlobals = installGlobals(dom, fetchStub.fetchImpl, engineStub);
   const { document } = dom.window;
 
@@ -276,6 +285,20 @@ export function createAppHarness({ url = 'http://localhost/', fakeEngine = false
 
     /** 等 app.js 里的 async 处理函数跑完。 */
     flush: flushAsync,
+
+    /**
+     * 同步驱动一帧渲染循环（调用 app.js 的 frame(ts)）。rAF 本身是 no-op，所以
+     * 依赖「帧跑过」的状态（比分、进度条、每帧重绘）只有调这个之后才更新。
+     * @param {number} ts 时间戳（ms）。两次调用之间传更大的值即得到正的 dt。
+     */
+    driveFrame(ts = 0) {
+      const cb = pendingFrameCallback;
+      if (typeof cb !== 'function') {
+        throw new Error('没有待跑的帧回调——app.js 应已通过 requestAnimationFrame(frame) 注册');
+      }
+      pendingFrameCallback = null;
+      cb(ts);
+    },
 
     /** 假引擎收到的 simulate 调用（仅 fakeEngine: true 时非空）：{ seed, config }[]。 */
     engineCalls: engineStub ? engineStub.calls : [],

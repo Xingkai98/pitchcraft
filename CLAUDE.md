@@ -60,7 +60,18 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 - `engine.wasm` 已有 app.js 里的自动 cache-busting（`fetch ?v=${Date.now()}`），无需手动改。
 - 改 JS 但忘改版本号 = 用户刷新看到旧效果，视为遗漏（提交前检查）。
 
-### 5. 参考的研究报告
+### 5. 真实比赛对照数据（viewer 数据源切换）
+
+viewer 可切到「真实比赛（对照）」：公开 tracking 数据 → 帧序列 → 复用同一 `renderFrame` 播放。
+调参时用它做参照，不再只能靠语言描述。**这条通路绕过引擎与演绎层**，是参照物，不是引擎的一部分。
+
+- 生成：`node tools/fetch-tracking-data.mjs`，再 `node tools/convert-tracking-to-frames.mjs`
+- 数据与转换产物都在 `.gitignore`（`viewer/data/`、`.scratch/tracking-data/`），不入库
+- 原理 / 坐标对齐 / 已知坑：`.scratch/notes/real-match-reference.md`
+- 改 `tracking-player.js` 或转换器后，跑 `viewer/tracking-player.test.js` +
+  `viewer/tracking-e2e.test.js`（真实数据的像素级验收，缺数据时自动跳过）
+
+### 6. 参考的研究报告
 
 - `research/2026-08-04-football-manager-match-engine/report.md`：FM 引擎原理 + 开源项目方法 + Bygfoot 视觉
 - 演绎剧本（带球踢-追、传球传跑配合）：`.scratch/notes/interpretation-scripts.md`

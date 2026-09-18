@@ -24,10 +24,27 @@ P3 做完 = **完整播放的比赛画面**。规划见 `openspec/changes/p3-con
 
 ```
 engine/    Rust 事件引擎（零依赖，确定性种子 RNG）
-viewer/    JS 画面层（Canvas 圆点球场 + 事件演绎）
+viewer/    JS 画面层（Canvas 圆点球场 + 事件演绎 + 真实比赛对照播放）
+tools/     辅助脚本（真实比赛 tracking 的拉取与转换等）
 openspec/  OpenSpec 规格（change 记录）
 .scratch/  wayfinder 决策地图 + 设计文档（票据已迁移 GitHub issues）
 ```
+
+## 真实比赛对照
+
+viewer 可把**公开的真实比赛 tracking 数据**转成同一套 2D 圆点格式并排播放——调参时不再只能
+靠语言描述"感觉不对"。tracking 数据本身就是逐帧 22 人 + 球的位置，因此直接喂给同一个
+`renderFrame`，**绕过引擎与演绎层**（保留未加工的真实行为作参照）。
+
+```bash
+node tools/fetch-tracking-data.mjs              # 拉公开数据集（约 60MB，不入库）
+node tools/convert-tracking-to-frames.mjs \
+  --in .scratch/tracking-data/sample-data/data/Sample_Game_1 \
+  --out viewer/data/real-game-1.json --keyframe-hz 5
+cd viewer && python3 serve.py 8000              # 数据源选「真实比赛（对照）」
+```
+
+原理、坐标对齐（半场换边/朝向/门将识别）、数据质量处理见 `.scratch/notes/real-match-reference.md`。
 
 ## 决策票据
 

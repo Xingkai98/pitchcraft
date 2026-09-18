@@ -8,6 +8,7 @@
 import { config } from './config.js?v=20260913-1';
 import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260913-1';
 import { createGame } from './game.js?v=20260913-1';
+import { createTrackingPlayer } from './tracking-player.js?v=20260918-3';
 import { mockEventStream } from './mock-event-stream.js?v=20260913-1';
 import { resetMicroMotion } from './micro-motion.js?v=20260913-1';
 import { captureObservation, buildCliCommandTemplate, resolveObservationSelection, redactBundleForExport, resolveSubmitStatement, deriveDiagnosisEndpoint } from './observation.js?v=20260913-1';
@@ -138,6 +139,117 @@ let game = null;
 let renderer = null;
 let lastFrameTime = null;
 
+// ── 数据源：引擎比赛 / 真实比赛对照 ──────────────────────────────────────
+// game 与 tracking 互斥：同一时刻只有一个在播放，渲染循环按 activeSource 分派。
+// 真实比赛的帧序列由 tools/convert-tracking-to-frames.mjs 预生成（不进仓库，见 .gitignore）。
+let tracking = null;
+let activeSource = 'engine'; // 'engine' | 'tracking'
+const trackingMetaEl = document.getElementById('tracking-meta');
+const trackingSelectWrap = document.getElementById('tracking-select-wrap');
+const trackingSelect = document.getElementById('tracking-select');
+
+// 每场预生成的对照数据：key → { url, label }。url 相对 viewer/（由 serve.py 提供）。
+const TRACKING_SOURCES = {
+  'metrica-game1': { url: './data/real-game-1.json', label: '真实比赛 · Metrica Sample Game 1' },
+  'metrica-game2': { url: './data/real-game-2.json', label: '真实比赛 · Metrica Sample Game 2' },
+};
+
+// 切换到真实比赛数据源：加载对应帧序列，接管渲染循环的 update 分派。
+// 已加载过的帧序列按 key 缓存。一份 TrackingPlayer 含 18MB 帧数据 + 预计算的
+// lastKnown 表（见 tracking-player.js），来回切换数据源时重建既慢又浪费内存。
+// 缓存的是**原始 JSON 文本**——TrackingPlayer 带可变播放状态，不能直接复用实例。
+const trackingCache = new Map();
+let loadedTrackingKey = null; // 当前 tracking 数据源对应的 key（用来判断是否需要重新加载）
+// 请求序号：加载是异步的（18MB），用户可能在加载途中又切了场次。提交结果前比对序号，
+// 丢弃过期响应——否则先发出的慢请求后到达，会把刚选好的那场覆盖掉（下拉框与画面不一致）。
+let loadSeq = 0;
+
+// 返回 true 表示本次加载的结果**已提交**（activeSource 现为 'tracking'）；
+// 返回 false 表示这次请求已被作废（用户在加载途中切走/又选了别的场次），调用方
+// 不得据此改动任何 UI 状态——否则会给已经切回引擎的用户留下"导航被禁用"的死状态。
+async function loadTracking(key) {
+  const src = TRACKING_SOURCES[key];
+  if (!src) throw new Error(`未知的真实比赛数据源: ${key}`);
+  if (activeSource === 'tracking' && loadedTrackingKey === key) {
+    // 已经是这一场，不重复加载。但**必须同时作废在途的其它场次加载**：
+    // 场景是「选 game2（加载中）→ 又选回正在播的 game1」——用户已经明确选回 game1了，
+    // 若不 bump，game2 的慢请求落地时 seq 仍匹配，会把画面掰成 game2
+    // （下拉框 game1、信息条 game2）。这是最后一条 return 早于 ++loadSeq 的路径。
+    loadSeq += 1;
+    return true;
+  }
+  const seq = ++loadSeq;
+  statusEl.textContent = '加载真实比赛数据…';
+  let player;
+  try {
+    let text = trackingCache.get(key);
+    if (text === undefined) {
+      const res = await fetch(`${src.url}?v=${Date.now()}`);
+      if (!res.ok) {
+        throw new Error(`加载失败 ${res.status}：${src.url}（需先运行 tools/convert-tracking-to-frames.mjs 生成，见 .scratch/notes/real-match-reference.md）`);
+      }
+      text = await res.text();
+      // 先解析成功再入缓存：坏 JSON 会在 createTrackingPlayer 抛错，此时绝不能把坏文本
+      // 留在缓存里——否则之后每次切到这场都直接从缓存抛出，只能刷新页面才能恢复。
+      player = createTrackingPlayer(text);
+      trackingCache.set(key, text);
+    } else {
+      player = createTrackingPlayer(text);
+    }
+  } catch (err) {
+    // 已被更新的请求取代：吞掉过期请求的错误，别用它污染状态（新请求会自己报错）
+    if (seq !== loadSeq) return false;
+    throw err;
+  }
+  if (seq !== loadSeq) return false; // 解析期间又切了别场/切回引擎，不提交本次结果
+  tracking = player;
+  loadedTrackingKey = key;
+  activeSource = 'tracking';
+  lastFrameTime = null; // 切换数据源后 dt 不连续，重置
+  renderTrackingMeta(src.label);
+  statusEl.textContent = `真实比赛 · ${tracking.meta.frames ?? tracking.frames.length} 帧 @ ${tracking.meta.keyframeHz ?? '?'}Hz`;
+  updateEventIndicator(); // 切到 tracking 后指示器要写"无事件流"，否则残留引擎的"事件 N/M"
+  return true;
+}
+
+// 切换回引擎比赛
+function useEngineSource() {
+  // 作废任何在途的 tracking 加载：18MB 的请求可能还没落地，而用户已经切回引擎。
+  // 不 bump 的话，慢请求落地时 `seq === loadSeq` 仍成立 → 它会把 activeSource 掰回
+  // 'tracking'，造成「下拉框显示引擎、画面/信息条/计分板却是真实比赛」的错位。
+  loadSeq += 1;
+  activeSource = 'engine';
+  tracking = null;
+  loadedTrackingKey = null;
+  lastFrameTime = null;
+  if (trackingMetaEl) trackingMetaEl.textContent = '';
+  if (game) {
+    statusEl.textContent = `事件数: ${game.events.length} | WASM 引擎`;
+  }
+}
+
+// 真实比赛的信息条：来源、时长、数据质量（球员/球覆盖率如实展示，缺球是数据固有局限）
+function renderTrackingMeta(label) {
+  if (!trackingMetaEl) return;
+  const m = tracking.meta;
+  const c = m.coverage || {};
+  const parts = [label];
+  if (m.keyframeHz) parts.push(`${m.keyframeHz}Hz`);
+  if (m.startTime !== undefined) parts.push(`${formatMatchClock(m.startTime)}–${formatMatchClock(m.endTime)}`);
+  if (c.ballMissingPct !== undefined) parts.push(`球缺失 ${c.ballMissingPct}%`);
+  if (c.playerCellsFilledPct !== undefined) parts.push(`球员填充 ${c.playerCellsFilledPct}%`);
+  // 数据质量指标如实展示：这些是参照数据本身的局限，不是我们引入的，看的人需要知道。
+  // 「人数不足」尤其重要——源数据里被换下后无人顶上时场上会只剩 21 人，
+  // 不知情的人会把"少一个圆点"当成渲染 bug。
+  if (c.shortHandedPct !== undefined && c.shortHandedPct > 0) {
+    parts.push(`人数不足帧 ${c.shortHandedPct}%`);
+  }
+  if (c.duplicateCoordPct !== undefined && c.duplicateCoordPct > 0) {
+    parts.push(`坐标重叠 ${c.duplicateCoordPct}%`);
+  }
+  trackingMetaEl.textContent = parts.join(' | ');
+}
+
 // 加载 WASM 引擎（S2：fetch + instantiate）。返回 simulate 函数。
 async function loadEngine() {
   // cache-busting：加时间戳查询参数，避免浏览器缓存旧 wasm（改引擎后看不到新效果）
@@ -177,7 +289,19 @@ function frame(ts) {
   const dt = (ts - lastFrameTime) / 1000;
   lastFrameTime = ts;
 
-  if (game) {
+  if (activeSource === 'tracking' && tracking) {
+    // 真实比赛：直接插值渲染，无 micro-motion、无事件高亮、无纪律牌
+    // （这些是演绎层概念；参照物的价值恰恰在于它没有这些加工）
+    tracking.step(dt);
+    renderFrame(ctx, { players: tracking.players, ball: tracking.ballVisible ? tracking.ball : null }, canvas.width, canvas.height, {});
+    updateScore();
+    if (!_seeking) {
+      const fill = tracking.ballFilled;
+      const suffix = fill === null || fill === undefined ? '' : ' · 球位置为推断';
+      statusEl.textContent = `真实比赛 ${formatMatchClock(tracking.playTime)}${suffix}`;
+    }
+    updateProgress();
+  } else if (game) {
     game.step(dt);
     // 渲染当前状态（renderFrame 返回 imageData 供测试；这里仅用于绘制）
     // micro-motion（P5 S3）：传 playTime + 移动球员集合 + 持球者，静止球员小幅重心调整
@@ -216,8 +340,13 @@ function frame(ts) {
 
 // 更新进度条（整场进度）与时间显示。拖动时由 _seeking 抑制回写，避免拖动被打断。
 function updateProgress() {
-  if (!game) return;
   if (_seeking) return;
+  if (activeSource === 'tracking' && tracking) {
+    progressBar.value = String(tracking.getProgress() * 100);
+    progressTime.textContent = `${formatMatchClock(tracking.playTime)} / ${formatMatchClock(tracking.matchEnd)}`;
+    return;
+  }
+  if (!game) return;
   const pct = game.getProgress() * 100;
   progressBar.value = String(pct);
   progressTime.textContent = `${formatMatchClock(game.playTime)} / ${formatMatchClock(game.matchEnd)}`;
@@ -225,8 +354,18 @@ function updateProgress() {
 
 let _seeking = false;
 progressBar.addEventListener('input', () => {
-  if (!game) return;
   _seeking = true;
+  if (activeSource === 'tracking' && tracking) {
+    // 反向映射必须与 getProgress 一致：后者用 (t - startTime) / (endTime - startTime)。
+    // 曾写成 pct × matchEnd——对 startTime≈0 的整场数据碰巧对，但对裁剪数据
+    // （如 --from 300，startTime=300）会把 50% 拖成 0，进度条跳回开头。
+    const pct = progressBar.value / 100;
+    tracking.seekTo(tracking.startTime + pct * (tracking.matchEnd - tracking.startTime));
+    renderFrame(ctx, { players: tracking.players, ball: tracking.ballVisible ? tracking.ball : null }, canvas.width, canvas.height, {});
+    statusEl.textContent = `真实比赛 ${formatMatchClock(tracking.playTime)}（已暂停，拖动进度条）`;
+    return;
+  }
+  if (!game) return;
   const t = (progressBar.value / 100) * game.matchEnd;
   game.seekTo(t);
   resetMicroMotion(); // seek 后 micro-motion 相位不连续，从 fade 0 重新渐入（避免 snap）
@@ -261,6 +400,12 @@ function describeEvent(e, id) {
 
 function updateEventIndicator() {
   if (!game) return;
+  // tracking 数据源没有事件流，事件导航不适用（控件已禁用，这里也不写指示器）
+  if (activeSource === 'tracking') {
+    eventIndicator.textContent = '事件 -/-';
+    eventInfoEl.textContent = '真实比赛数据无事件流（对照模式）';
+    return;
+  }
   const idx = game.currentEventIndex();
   eventIndicator.textContent = `事件 ${idx + 1}/${game.eventCount}`;
   if (idx >= 0 && idx < game.events.length) {
@@ -284,6 +429,11 @@ function jumpToEventFromUI(index) {
 }
 
 function updateScore() {
+  // 真实比赛数据没有比分事件流；切回引擎时要把计分板还原（否则会一直停在「真实比赛」）
+  if (activeSource === 'tracking') {
+    scoreEl.textContent = '真实比赛（对照）';
+    return;
+  }
   let home = 0;
   let away = 0;
   // 只统计已播放时刻（e.t <= playTime）的进球，避免开赛就显示最终比分
@@ -342,8 +492,20 @@ async function init() {
   }
 }
 
-// 控制按钮
+// 控制按钮。tracking 数据源下播放/重播作用于 TrackingPlayer；事件导航仅对引擎比赛有意义
+// （tracking 没有事件流），所以在该模式下禁用。
+function setEventNavEnabled(on) {
+  for (const el of [btnPrevEvent, btnNextEvent, btnJumpEvent, eventIdInput]) {
+    if (el) el.disabled = !on;
+  }
+}
+
 btnToggle.addEventListener('click', () => {
+  if (activeSource === 'tracking' && tracking) {
+    tracking.togglePlay();
+    showNotice(tracking.playing ? '播放中' : '已暂停');
+    return;
+  }
   if (game) {
     game.togglePlay();
     showNotice(game.playing ? '播放中' : '已暂停');
@@ -374,6 +536,11 @@ btnSpeed.addEventListener('click', () => {
   }
 });
 btnReplay.addEventListener('click', () => {
+  if (activeSource === 'tracking' && tracking) {
+    tracking.replay();
+    showNotice('已重播');
+    return;
+  }
   if (game) {
     game.replayCurrent();
     resetMicroMotion(); // 重播 playTime 跳回 0，micro-motion 相位不连续，从 fade 0 重新渐入
@@ -382,26 +549,35 @@ btnReplay.addEventListener('click', () => {
   }
 });
 
-// 事件导航：上一个/下一个/按 id 跳转
+// 事件导航：上一个/下一个/按 id 跳转（仅引擎比赛；tracking 无事件流）
 btnPrevEvent.addEventListener('click', () => {
-  if (game) {
-    const cur = game.currentEventIndex();
-    jumpToEventFromUI(cur - 1);
-  }
+  if (activeSource === 'tracking' || !game) return;
+  const cur = game.currentEventIndex();
+  jumpToEventFromUI(cur - 1);
 });
 btnNextEvent.addEventListener('click', () => {
-  if (game) {
-    const cur = game.currentEventIndex();
-    jumpToEventFromUI(cur + 1);
-  }
+  if (activeSource === 'tracking' || !game) return;
+  const cur = game.currentEventIndex();
+  jumpToEventFromUI(cur + 1);
 });
 btnJumpEvent.addEventListener('click', () => {
+  if (activeSource === 'tracking') return;
   const id = parseInt(eventIdInput.value, 10);
   if (!Number.isNaN(id)) jumpToEventFromUI(id);
 });
 
 // 键盘：← → 切换动作，空格 播放/暂停
 document.addEventListener('keydown', (e) => {
+  if (activeSource === 'tracking') {
+    if (e.key === ' ') {
+      e.preventDefault();
+      if (tracking) {
+        tracking.togglePlay();
+        showNotice(tracking.playing ? '播放中' : '已暂停');
+      }
+    }
+    return;
+  }
   if (!game) return;
   if (e.key === 'ArrowLeft') {
     jumpToEventFromUI(game.currentEventIndex() - 1);
@@ -811,6 +987,12 @@ function captureCurrentObservation() {
     setObsStatus('failed', '比赛未就绪');
     return;
   }
+  // 真实比赛模式下画面由 tracking 驱动，而采集读的是隐藏的引擎 game（冻结在切换时刻）——
+  // 采到的会是"引擎的那一刻"而不是用户正看的真实比赛，误导。显式拒绝而不是静默采错。
+  if (activeSource === 'tracking') {
+    setObsStatus('failed', '真实比赛模式下不支持采集（切回「我们引擎的比赛」再试）');
+    return;
+  }
   game.playing = false; // 采集即暂停在当前时刻
   const { statement, selectedEntities, window } = readObservationInputs();
   lastBundle = captureObservation({
@@ -1130,6 +1312,12 @@ function restoreObservationList() {
 // 跳转到 finding 证据：优先 event_index，回退 match_time。
 function jumpToFinding(marker) {
   if (!game) return;
+  // 真实比赛模式下画面由 tracking 驱动，跳转引擎事件不会改变画面；但仍会改掉隐藏的
+  // 引擎 game 的播放位置（切回引擎时位置已变，用户不知道）。直接不响应。
+  if (activeSource === 'tracking') {
+    showNotice('真实比赛模式下无法跳转引擎事件（切回「我们引擎的比赛」再试）');
+    return;
+  }
   if (marker.event_index != null && game.jumpToEvent(marker.event_index)) {
     updateEventIndicator();
     showNotice(`已跳转到 finding 证据事件 #${marker.event_index}`);
@@ -1855,6 +2043,64 @@ problemFilterTriage.addEventListener('change', renderProblemList);
 problemFilterStatus.addEventListener('change', renderProblemList);
 problemRefreshBtn.addEventListener('click', refreshProblemList);
 problemImportBtn.addEventListener('click', importHistoryProblems);
+
+// 数据源选择：引擎比赛（默认）↔ 真实比赛对照。
+// 真实比赛数据由 tools/convert-tracking-to-frames.mjs 预生成到 viewer/data/（不进仓库）；
+// 文件不存在时给出可操作的提示而不是静默失败。
+const sourceSelect = document.getElementById('source-select');
+
+// 把三个 UI 状态**从 `activeSource` 推导**出来：source 下拉框、场次选择可见性、事件导航禁用。
+//
+// 为什么必须推导而不是就地写：这三个状态横跨两个处理器 + 异步提交点，任何一处漏写都会
+// 造成「控件指向 A、画面是 B」的错位。实测走过的弯路——在 source 处理器里 `await` **之前**
+// 乐观地写 `sourceSelect.value = 'tracking'`，结果加载被作废/失败时没人拨回来
+// （A：导航没禁用；B：下拉框停在真实比赛而画面是引擎）；而经由 trackingSelect 完成的提交
+// 又从不经过 source 处理器，导航永远不被禁用。收敛成一个函数后，所有出口调用同一段逻辑。
+function syncSourceUI() {
+  const onTracking = activeSource === 'tracking' && tracking !== null;
+  if (sourceSelect) sourceSelect.value = onTracking ? 'tracking' : 'engine';
+  if (trackingSelectWrap) trackingSelectWrap.hidden = !onTracking;
+  // 下拉框必须指向**真正在播的那一场**，不能停在用户选过但没加载进来的场次上
+  if (onTracking && loadedTrackingKey && trackingSelect) trackingSelect.value = loadedTrackingKey;
+  setEventNavEnabled(!onTracking);
+}
+
+// 一次数据源交互的统一收尾：无论成功、失败还是被作废，UI 都回到与实际状态一致。
+function finishSourceChange(err) {
+  if (err) {
+    showNotice(err.message);
+    statusEl.textContent = `错误: ${err.message}`;
+    console.error(err);
+  }
+  syncSourceUI();
+}
+
+if (sourceSelect) {
+  sourceSelect.addEventListener('change', async () => {
+    if (sourceSelect.value === 'engine') {
+      useEngineSource();
+      syncSourceUI();
+      if (game) renderFrame(ctx, { players: game.players, ball: game.ball }, canvas.width, canvas.height);
+      return;
+    }
+    try {
+      await loadTracking(trackingSelect.value);
+      finishSourceChange(null);
+    } catch (err) {
+      finishSourceChange(err);
+    }
+  });
+}
+if (trackingSelect) {
+  trackingSelect.addEventListener('change', async () => {
+    try {
+      await loadTracking(trackingSelect.value);
+      finishSourceChange(null);
+    } catch (err) {
+      finishSourceChange(err);
+    }
+  });
+}
 
 // 启动：先尝试 WASM，再 init
 tryLoadEngine().then(() => init());
