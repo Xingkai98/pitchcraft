@@ -135,6 +135,42 @@ test('stitchTimeline 把回跳的半场时钟拼成单调轴', () => {
   assert.equal(out[5].t, 100, 'P2 首帧与 P1 末帧重合（中场压缩为一个点，无缺口）');
 });
 
+test('stitchTimeline 优先用 match_periods 权威边界（P37 D3 修订 + 审阅 P2-1d）', () => {
+  // P1 末帧 100s、P2 首帧 2700s，但 match_periods 给出 P1 在 frame 100 结束、
+  // P2 在 frame 101 开始——用权威边界算的 shift 与观测极值**不同**时，须取权威值。
+  const frames = [
+    ...Array.from({ length: 5 }, (_, i) => ({ frame: i * 10, period: 1, clock: i * 25, players: [] })),
+    ...Array.from({ length: 5 }, (_, i) => ({ frame: 100 + i * 10, period: 2, clock: 2700 + i * 25, players: [] })),
+  ];
+  // P1 末帧（frame 40）时钟 100；P2 首帧（frame 100）时钟 2700 → 观测 shift = -2600
+  // 但权威边界说 P1 在 frame 60 结束（时钟不存在→退回）……改为边界帧都在：
+  const withBoundary = [
+    ...frames,
+    { frame: 50, period: 1, clock: 110, players: [] }, // P1 实际边界帧（时钟 110）
+    { frame: 105, period: 2, clock: 2705, players: [] }, // P2 实际边界（时钟 2705）
+  ];
+  const mp = [{ period: 1, end_frame: 50 }, { period: 2, start_frame: 105 }];
+  // 用全量 clock map（含被滤掉的空帧场景）
+  const clockByFrame = new Map(withBoundary.map((f) => [f.frame, f.clock]));
+  const r = stitchTimeline(withBoundary, { matchPeriods: mp, clockByFrame });
+  assert.equal(r.shiftSource, 'match_periods');
+  assert.equal(r.shift, 110 - 2705, 'shift = clock(P1边界) − clock(P2边界)');
+  // 观测极值法会给不同的值（证明两者确实有别、且我们用了权威的）
+  const observed = stitchTimeline(withBoundary);
+  assert.equal(observed.shiftSource, 'observed-extremes');
+  assert.notEqual(observed.shift, r.shift);
+});
+
+test('stitchTimeline 无 match_periods 时退回观测极值（退回路径可用）', () => {
+  const frames = [
+    ...Array.from({ length: 3 }, (_, i) => ({ frame: i, period: 1, clock: i * 10, players: [] })),
+    ...Array.from({ length: 3 }, (_, i) => ({ frame: 10 + i, period: 2, clock: 2700 + i * 10, players: [] })),
+  ];
+  const r = stitchTimeline(frames);
+  assert.equal(r.shiftSource, 'observed-extremes');
+  assert.equal(r.shift, 20 - 2700);
+});
+
 test('stitchTimeline 单半场不平移', () => {
   const frames = Array.from({ length: 3 }, (_, i) => ({ ...frameAt(i, 1, i * 10), clock: i * 10 }));
   const { shift, frames: out } = stitchTimeline(frames);

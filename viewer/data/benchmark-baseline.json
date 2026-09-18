@@ -489,11 +489,11 @@
             "keyframeHz": 5,
             "frameCount": 22122,
             "startSec": 0,
-            "endSec": 6017,
+            "endSec": 6024.1,
             "timeGaps": {
-              "count": 61,
+              "count": 62,
               "maxSec": 143.1,
-              "totalSec": 1605.1
+              "totalSec": 1612.3
             }
           },
           "windows": [
@@ -545,24 +545,24 @@
             {
               "startSec": 2700,
               "nominalSec": 300,
-              "frameCount": 995,
-              "okPrimary": 536,
-              "okAllPoints": 995,
+              "frameCount": 960,
+              "okPrimary": 516,
+              "okAllPoints": 960,
               "windowMetrics": {
-                "hd": 18.52,
-                "ad": 18.6,
-                "spread": 12.05,
-                "gap": 4.85,
-                "width": 32.71,
-                "ballDist": 15.36
+                "hd": 18.37,
+                "ad": 18.54,
+                "spread": 12.09,
+                "gap": 4.79,
+                "width": 33.12,
+                "ballDist": 15.65
               }
             },
             {
-              "startSec": 3611.3,
+              "startSec": 3600,
               "nominalSec": 300,
-              "frameCount": 1150,
+              "frameCount": 1151,
               "okPrimary": 419,
-              "okAllPoints": 1150,
+              "okAllPoints": 1151,
               "windowMetrics": {
                 "hd": 13.82,
                 "ad": 17.08,
@@ -573,11 +573,11 @@
               }
             },
             {
-              "startSec": 4504.4,
+              "startSec": 4511.5,
               "nominalSec": 300,
-              "frameCount": 1126,
+              "frameCount": 1100,
               "okPrimary": 459,
-              "okAllPoints": 1126,
+              "okAllPoints": 1100,
               "windowMetrics": {
                 "hd": 16.49,
                 "ad": 17.3,
@@ -588,24 +588,24 @@
               }
             },
             {
-              "startSec": 5400,
+              "startSec": 5400.1,
               "nominalSec": 300,
-              "frameCount": 1056,
-              "okPrimary": 455,
-              "okAllPoints": 1056,
+              "frameCount": 1091,
+              "okPrimary": 483,
+              "okAllPoints": 1091,
               "windowMetrics": {
-                "hd": 18.77,
-                "ad": 18.04,
-                "spread": 13.47,
-                "gap": 5.28,
-                "width": 39.92,
-                "ballDist": 15.23
+                "hd": 19.07,
+                "ad": 18.13,
+                "spread": 13.62,
+                "gap": 5.37,
+                "width": 39.8,
+                "ballDist": 15.07
               }
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700,
-            "uncoveredSec": 317,
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 324,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -624,7 +624,7 @@
             "keyframeHz": 5,
             "frameCount": 21729,
             "startSec": 0,
-            "endSec": 5901.6,
+            "endSec": 5901.7,
             "timeGaps": {
               "count": 63,
               "maxSec": 116.5,
@@ -693,7 +693,7 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 766,
               "okPrimary": 319,
@@ -708,22 +708,22 @@
               }
             },
             {
-              "startSec": 4500.1,
+              "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 841,
-              "okPrimary": 460,
+              "okPrimary": 461,
               "okAllPoints": 841,
               "windowMetrics": {
                 "hd": 15.26,
-                "ad": 12.5,
-                "spread": 12.59,
+                "ad": 12.53,
+                "spread": 12.6,
                 "gap": 4.06,
-                "width": 37.08,
-                "ballDist": 13.31
+                "width": 37.09,
+                "ballDist": 13.32
               }
             },
             {
-              "startSec": 5468.8,
+              "startSec": 5468.9,
               "nominalSec": 300,
               "frameCount": 690,
               "okPrimary": 262,
@@ -739,7 +739,7 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5768.799999999999,
+            "lastWindowEndSec": 5768.9,
             "uncoveredSec": 132.8,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
@@ -759,11 +759,11 @@
             "keyframeHz": 5,
             "frameCount": 20341,
             "startSec": 0,
-            "endSec": 6032.4,
+            "endSec": 6041.9,
             "timeGaps": {
-              "count": 71,
+              "count": 72,
               "maxSec": 129.6,
-              "totalSec": 1978.7
+              "totalSec": 1988.3
             }
           },
           "windows": [
@@ -815,67 +815,67 @@
             {
               "startSec": 2700,
               "nominalSec": 300,
-              "frameCount": 1124,
-              "okPrimary": 446,
-              "okAllPoints": 1124,
+              "frameCount": 1076,
+              "okPrimary": 406,
+              "okAllPoints": 1076,
               "windowMetrics": {
-                "hd": 15.31,
-                "ad": 16.45,
-                "spread": 11.66,
-                "gap": 4.64,
-                "width": 34.71,
-                "ballDist": 15.32
+                "hd": 14.89,
+                "ad": 16.22,
+                "spread": 11.27,
+                "gap": 4.74,
+                "width": 33.33,
+                "ballDist": 15.33
               }
             },
             {
-              "startSec": 3600.1,
+              "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 956,
-              "okPrimary": 274,
+              "okPrimary": 296,
               "okAllPoints": 956,
               "windowMetrics": {
-                "hd": 19.75,
-                "ad": 19.41,
-                "spread": 14.27,
-                "gap": 4.77,
-                "width": 40.07,
-                "ballDist": 13.95
+                "hd": 19.12,
+                "ad": 19.2,
+                "spread": 13.6,
+                "gap": 4.84,
+                "width": 37.7,
+                "ballDist": 13.31
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4509.3,
               "nominalSec": 300,
-              "frameCount": 1147,
-              "okPrimary": 512,
-              "okAllPoints": 1147,
+              "frameCount": 1100,
+              "okPrimary": 474,
+              "okAllPoints": 1100,
               "windowMetrics": {
-                "hd": 12.52,
-                "ad": 17.25,
-                "spread": 10.58,
-                "gap": 5.33,
-                "width": 31.46,
-                "ballDist": 17.25
+                "hd": 12.21,
+                "ad": 17,
+                "spread": 10.46,
+                "gap": 5.27,
+                "width": 31.29,
+                "ballDist": 17.51
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
               "frameCount": 1042,
-              "okPrimary": 345,
+              "okPrimary": 339,
               "okAllPoints": 1042,
               "windowMetrics": {
-                "hd": 17.23,
-                "ad": 21.07,
-                "spread": 11.98,
-                "gap": 5.61,
-                "width": 34.43,
-                "ballDist": 13.8
+                "hd": 17.19,
+                "ad": 21.01,
+                "spread": 12.01,
+                "gap": 5.6,
+                "width": 34.59,
+                "ballDist": 13.85
               }
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 332.3,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 341.9,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -894,7 +894,7 @@
             "keyframeHz": 5,
             "frameCount": 23971,
             "startSec": 0,
-            "endSec": 6127.7,
+            "endSec": 6127.8,
             "timeGaps": {
               "count": 51,
               "maxSec": 138,
@@ -963,11 +963,11 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
-              "frameCount": 1208,
+              "frameCount": 1207,
               "okPrimary": 473,
-              "okAllPoints": 1208,
+              "okAllPoints": 1207,
               "windowMetrics": {
                 "hd": 21.29,
                 "ad": 19.26,
@@ -978,11 +978,11 @@
               }
             },
             {
-              "startSec": 4575.3,
+              "startSec": 4575.4,
               "nominalSec": 300,
-              "frameCount": 962,
+              "frameCount": 961,
               "okPrimary": 540,
-              "okAllPoints": 962,
+              "okAllPoints": 961,
               "windowMetrics": {
                 "hd": 21.07,
                 "ad": 18.68,
@@ -993,7 +993,7 @@
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
               "frameCount": 1097,
               "okPrimary": 603,
@@ -1009,8 +1009,8 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 427.6,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 427.8,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -1029,11 +1029,11 @@
             "keyframeHz": 5,
             "frameCount": 22380,
             "startSec": 0,
-            "endSec": 5891.1,
+            "endSec": 5900,
             "timeGaps": {
-              "count": 59,
+              "count": 60,
               "maxSec": 127.1,
-              "totalSec": 1427.2
+              "totalSec": 1436.2
             }
           },
           "windows": [
@@ -1085,67 +1085,67 @@
             {
               "startSec": 2700,
               "nominalSec": 300,
-              "frameCount": 1177,
-              "okPrimary": 647,
-              "okAllPoints": 1177,
+              "frameCount": 1159,
+              "okPrimary": 630,
+              "okAllPoints": 1159,
               "windowMetrics": {
-                "hd": 22.07,
-                "ad": 20.95,
-                "spread": 13.51,
-                "gap": 7.07,
-                "width": 37.79,
-                "ballDist": 14.98
+                "hd": 21.66,
+                "ad": 20.67,
+                "spread": 13.36,
+                "gap": 7.05,
+                "width": 37.72,
+                "ballDist": 15.06
               }
             },
             {
-              "startSec": 3600.1,
+              "startSec": 3600,
               "nominalSec": 300,
-              "frameCount": 1097,
-              "okPrimary": 445,
-              "okAllPoints": 1097,
+              "frameCount": 1098,
+              "okPrimary": 406,
+              "okAllPoints": 1098,
               "windowMetrics": {
-                "hd": 24.04,
-                "ad": 20.97,
-                "spread": 15.69,
-                "gap": 6.64,
-                "width": 42.32,
-                "ballDist": 15.72
+                "hd": 22.91,
+                "ad": 20.78,
+                "spread": 15.45,
+                "gap": 6.33,
+                "width": 41.95,
+                "ballDist": 15.2
               }
             },
             {
-              "startSec": 4502.1,
+              "startSec": 4511,
               "nominalSec": 300,
-              "frameCount": 1008,
-              "okPrimary": 331,
-              "okAllPoints": 1008,
+              "frameCount": 963,
+              "okPrimary": 303,
+              "okAllPoints": 963,
               "windowMetrics": {
-                "hd": 22.59,
-                "ad": 30.86,
-                "spread": 14.69,
-                "gap": 7.1,
-                "width": 38.73,
-                "ballDist": 21.81
+                "hd": 22.99,
+                "ad": 31.58,
+                "spread": 14.87,
+                "gap": 7.27,
+                "width": 39.02,
+                "ballDist": 22.04
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 1147,
-              "okPrimary": 529,
-              "okAllPoints": 1147,
+              "frameCount": 1148,
+              "okPrimary": 516,
+              "okAllPoints": 1148,
               "windowMetrics": {
-                "hd": 18.84,
-                "ad": 23.07,
-                "spread": 11.83,
-                "gap": 6.26,
-                "width": 32.03,
-                "ballDist": 17.22
+                "hd": 19.1,
+                "ad": 23.39,
+                "spread": 11.92,
+                "gap": 6.34,
+                "width": 32.23,
+                "ballDist": 17.46
               }
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 191,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 200,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -1164,7 +1164,7 @@
             "keyframeHz": 5,
             "frameCount": 21956,
             "startSec": 0,
-            "endSec": 5920.2,
+            "endSec": 5920.3,
             "timeGaps": {
               "count": 69,
               "maxSec": 141.6,
@@ -1233,22 +1233,22 @@
               }
             },
             {
-              "startSec": 3600.1,
+              "startSec": 3600,
               "nominalSec": 300,
-              "frameCount": 872,
-              "okPrimary": 351,
-              "okAllPoints": 872,
+              "frameCount": 873,
+              "okPrimary": 352,
+              "okAllPoints": 873,
               "windowMetrics": {
-                "hd": 22.95,
-                "ad": 19.17,
-                "spread": 15.58,
-                "gap": 5.63,
-                "width": 46.42,
-                "ballDist": 16.99
+                "hd": 22.92,
+                "ad": 19.12,
+                "spread": 15.56,
+                "gap": 5.62,
+                "width": 46.38,
+                "ballDist": 16.94
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 902,
               "okPrimary": 372,
@@ -1263,23 +1263,23 @@
               }
             },
             {
-              "startSec": 5412.9,
+              "startSec": 5413,
               "nominalSec": 300,
-              "frameCount": 1239,
-              "okPrimary": 820,
-              "okAllPoints": 1239,
+              "frameCount": 1238,
+              "okPrimary": 819,
+              "okAllPoints": 1238,
               "windowMetrics": {
                 "hd": 16.72,
-                "ad": 19.37,
+                "ad": 19.36,
                 "spread": 12.24,
-                "gap": 4.91,
-                "width": 34.79,
-                "ballDist": 19.02
+                "gap": 4.9,
+                "width": 34.78,
+                "ballDist": 19.03
               }
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5712.9,
+            "lastWindowEndSec": 5713,
             "uncoveredSec": 207.3,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
@@ -1299,7 +1299,7 @@
             "keyframeHz": 5,
             "frameCount": 21370,
             "startSec": 0,
-            "endSec": 5840.2,
+            "endSec": 5840.3,
             "timeGaps": {
               "count": 65,
               "maxSec": 95.3,
@@ -1355,9 +1355,9 @@
             {
               "startSec": 2700,
               "nominalSec": 300,
-              "frameCount": 1405,
+              "frameCount": 1404,
               "okPrimary": 625,
-              "okAllPoints": 1405,
+              "okAllPoints": 1404,
               "windowMetrics": {
                 "hd": 19.1,
                 "ad": 17.99,
@@ -1368,22 +1368,22 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
-              "frameCount": 893,
-              "okPrimary": 385,
-              "okAllPoints": 893,
+              "frameCount": 892,
+              "okPrimary": 384,
+              "okAllPoints": 892,
               "windowMetrics": {
-                "hd": 14.36,
-                "ad": 14.96,
-                "spread": 11.59,
+                "hd": 14.34,
+                "ad": 14.93,
+                "spread": 11.58,
                 "gap": 3.87,
-                "width": 34.03,
-                "ballDist": 16.87
+                "width": 34.02,
+                "ballDist": 16.9
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 1114,
               "okPrimary": 540,
@@ -1398,24 +1398,24 @@
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
               "frameCount": 1138,
-              "okPrimary": 626,
+              "okPrimary": 627,
               "okAllPoints": 1138,
               "windowMetrics": {
                 "hd": 15.5,
                 "ad": 15.05,
                 "spread": 11.13,
-                "gap": 5.16,
-                "width": 33.45,
-                "ballDist": 16.09
+                "gap": 5.15,
+                "width": 33.44,
+                "ballDist": 16.07
               }
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 140.1,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 140.3,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -1434,7 +1434,7 @@
             "keyframeHz": 5,
             "frameCount": 21538,
             "startSec": 0,
-            "endSec": 5903.7,
+            "endSec": 5903.8,
             "timeGaps": {
               "count": 80,
               "maxSec": 136.2,
@@ -1503,7 +1503,7 @@
               }
             },
             {
-              "startSec": 3635,
+              "startSec": 3635.1,
               "nominalSec": 300,
               "frameCount": 1052,
               "okPrimary": 406,
@@ -1518,22 +1518,22 @@
               }
             },
             {
-              "startSec": 4503.3,
+              "startSec": 4503.4,
               "nominalSec": 300,
-              "frameCount": 804,
-              "okPrimary": 398,
-              "okAllPoints": 804,
+              "frameCount": 803,
+              "okPrimary": 397,
+              "okAllPoints": 803,
               "windowMetrics": {
-                "hd": 20.51,
-                "ad": 19.44,
-                "spread": 14.6,
-                "gap": 6.5,
-                "width": 40.38,
-                "ballDist": 16.33
+                "hd": 20.48,
+                "ad": 19.42,
+                "spread": 14.59,
+                "gap": 6.51,
+                "width": 40.33,
+                "ballDist": 16.31
               }
             },
             {
-              "startSec": 5406.3,
+              "startSec": 5406.4,
               "nominalSec": 300,
               "frameCount": 963,
               "okPrimary": 506,
@@ -1549,7 +1549,7 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5706.299999999999,
+            "lastWindowEndSec": 5706.4,
             "uncoveredSec": 197.4,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
@@ -1569,7 +1569,7 @@
             "keyframeHz": 5,
             "frameCount": 21766,
             "startSec": 0,
-            "endSec": 5759.8,
+            "endSec": 5759.9,
             "timeGaps": {
               "count": 69,
               "maxSec": 85,
@@ -1625,9 +1625,9 @@
             {
               "startSec": 2700.1,
               "nominalSec": 300,
-              "frameCount": 988,
+              "frameCount": 987,
               "okPrimary": 567,
-              "okAllPoints": 988,
+              "okAllPoints": 987,
               "windowMetrics": {
                 "hd": 17.2,
                 "ad": 16.2,
@@ -1638,7 +1638,7 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 1186,
               "okPrimary": 669,
@@ -1653,26 +1653,26 @@
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4500.1,
               "nominalSec": 300,
-              "frameCount": 855,
-              "okPrimary": 548,
-              "okAllPoints": 855,
+              "frameCount": 854,
+              "okPrimary": 547,
+              "okAllPoints": 854,
               "windowMetrics": {
-                "hd": 16.82,
-                "ad": 19.02,
+                "hd": 16.81,
+                "ad": 19.01,
                 "spread": 12.32,
                 "gap": 5.14,
-                "width": 35.69,
-                "ballDist": 15.7
+                "width": 35.7,
+                "ballDist": 15.72
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 1077,
+              "frameCount": 1078,
               "okPrimary": 400,
-              "okAllPoints": 1077,
+              "okAllPoints": 1078,
               "windowMetrics": {
                 "hd": 16.41,
                 "ad": 18.55,
@@ -1684,8 +1684,8 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 59.7,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 59.9,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -1704,11 +1704,11 @@
             "keyframeHz": 5,
             "frameCount": 21533,
             "startSec": 0,
-            "endSec": 5971.2,
+            "endSec": 6010.3,
             "timeGaps": {
-              "count": 71,
+              "count": 72,
               "maxSec": 133.5,
-              "totalSec": 1679.1
+              "totalSec": 1718.3
             }
           },
           "windows": [
@@ -1760,67 +1760,67 @@
             {
               "startSec": 2702.3,
               "nominalSec": 300,
-              "frameCount": 1489,
-              "okPrimary": 580,
-              "okAllPoints": 1489,
+              "frameCount": 1359,
+              "okPrimary": 457,
+              "okAllPoints": 1359,
               "windowMetrics": {
-                "hd": 19.42,
-                "ad": 19.03,
-                "spread": 14.38,
-                "gap": 5.93,
-                "width": 40.82,
-                "ballDist": 13.92
+                "hd": 18.69,
+                "ad": 18.74,
+                "spread": 13.62,
+                "gap": 5.45,
+                "width": 37.27,
+                "ballDist": 14.37
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
-              "frameCount": 1144,
-              "okPrimary": 338,
-              "okAllPoints": 1144,
+              "frameCount": 1136,
+              "okPrimary": 382,
+              "okAllPoints": 1136,
               "windowMetrics": {
-                "hd": 17.48,
-                "ad": 18.32,
-                "spread": 11.23,
-                "gap": 4.37,
-                "width": 28.6,
-                "ballDist": 13.16
+                "hd": 17.16,
+                "ad": 17.93,
+                "spread": 11.49,
+                "gap": 4.22,
+                "width": 30.22,
+                "ballDist": 14.13
               }
             },
             {
-              "startSec": 4503.6,
+              "startSec": 4500,
               "nominalSec": 300,
-              "frameCount": 746,
-              "okPrimary": 343,
-              "okAllPoints": 746,
+              "frameCount": 821,
+              "okPrimary": 382,
+              "okAllPoints": 821,
               "windowMetrics": {
-                "hd": 20.23,
-                "ad": 19.75,
-                "spread": 13.94,
-                "gap": 5.05,
-                "width": 39.17,
-                "ballDist": 18.2
+                "hd": 20.65,
+                "ad": 19.7,
+                "spread": 13.99,
+                "gap": 4.97,
+                "width": 38.74,
+                "ballDist": 17.7
               }
             },
             {
               "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 972,
-              "okPrimary": 485,
-              "okAllPoints": 972,
+              "frameCount": 1043,
+              "okPrimary": 507,
+              "okAllPoints": 1043,
               "windowMetrics": {
-                "hd": 16.4,
-                "ad": 16.63,
-                "spread": 11.74,
-                "gap": 4.07,
-                "width": 32.83,
-                "ballDist": 17.41
+                "hd": 16.63,
+                "ad": 16.97,
+                "spread": 12.03,
+                "gap": 4.22,
+                "width": 33.64,
+                "ballDist": 17.46
               }
             }
           ],
           "tail": {
             "lastWindowEndSec": 5700,
-            "uncoveredSec": 271.2,
+            "uncoveredSec": 310.3,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -1839,7 +1839,7 @@
             "keyframeHz": 5,
             "frameCount": 22086,
             "startSec": 0,
-            "endSec": 5924,
+            "endSec": 5924.1,
             "timeGaps": {
               "count": 61,
               "maxSec": 197.5,
@@ -1895,20 +1895,20 @@
             {
               "startSec": 2700,
               "nominalSec": 300,
-              "frameCount": 1231,
-              "okPrimary": 827,
-              "okAllPoints": 1231,
+              "frameCount": 1230,
+              "okPrimary": 826,
+              "okAllPoints": 1230,
               "windowMetrics": {
-                "hd": 20.47,
+                "hd": 20.48,
                 "ad": 22.06,
-                "spread": 13.81,
+                "spread": 13.82,
                 "gap": 5.52,
-                "width": 37.97,
+                "width": 37.98,
                 "ballDist": 16.13
               }
             },
             {
-              "startSec": 3618.9,
+              "startSec": 3619,
               "nominalSec": 300,
               "frameCount": 924,
               "okPrimary": 500,
@@ -1923,7 +1923,7 @@
               }
             },
             {
-              "startSec": 4518.4,
+              "startSec": 4518.5,
               "nominalSec": 300,
               "frameCount": 965,
               "okPrimary": 376,
@@ -1938,24 +1938,24 @@
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 1358,
-              "okPrimary": 555,
-              "okAllPoints": 1358,
+              "frameCount": 1359,
+              "okPrimary": 556,
+              "okAllPoints": 1359,
               "windowMetrics": {
-                "hd": 19.65,
-                "ad": 21.34,
+                "hd": 19.64,
+                "ad": 21.32,
                 "spread": 12.66,
                 "gap": 4.98,
                 "width": 33.7,
-                "ballDist": 18.08
+                "ballDist": 18.06
               }
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 223.9,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 224.1,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -1974,11 +1974,11 @@
             "keyframeHz": 5,
             "frameCount": 22174,
             "startSec": 0,
-            "endSec": 5903.2,
+            "endSec": 5904.3,
             "timeGaps": {
-              "count": 58,
+              "count": 59,
               "maxSec": 88.4,
-              "totalSec": 1480.3
+              "totalSec": 1481.5
             }
           },
           "windows": [
@@ -2030,9 +2030,9 @@
             {
               "startSec": 2700,
               "nominalSec": 300,
-              "frameCount": 1265,
+              "frameCount": 1260,
               "okPrimary": 515,
-              "okAllPoints": 1265,
+              "okAllPoints": 1260,
               "windowMetrics": {
                 "hd": 18.68,
                 "ad": 19.31,
@@ -2043,41 +2043,41 @@
               }
             },
             {
-              "startSec": 3600.1,
+              "startSec": 3600,
               "nominalSec": 300,
               "frameCount": 970,
-              "okPrimary": 325,
+              "okPrimary": 319,
               "okAllPoints": 970,
               "windowMetrics": {
-                "hd": 21.33,
-                "ad": 15.84,
-                "spread": 13.9,
-                "gap": 4.86,
-                "width": 43.46,
-                "ballDist": 14.4
+                "hd": 21.37,
+                "ad": 15.95,
+                "spread": 13.94,
+                "gap": 4.85,
+                "width": 43.71,
+                "ballDist": 14.37
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 1038,
-              "okPrimary": 427,
+              "okPrimary": 422,
               "okAllPoints": 1038,
               "windowMetrics": {
-                "hd": 19.62,
-                "ad": 17.56,
-                "spread": 12.6,
-                "gap": 5.13,
-                "width": 33.52,
-                "ballDist": 12.75
+                "hd": 19.65,
+                "ad": 17.54,
+                "spread": 12.59,
+                "gap": 5.14,
+                "width": 33.5,
+                "ballDist": 12.73
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 981,
+              "frameCount": 987,
               "okPrimary": 300,
-              "okAllPoints": 981,
+              "okAllPoints": 987,
               "windowMetrics": {
                 "hd": 18.61,
                 "ad": 18.26,
@@ -2089,8 +2089,8 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 203.1,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 204.3,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -2109,11 +2109,11 @@
             "keyframeHz": 5,
             "frameCount": 22142,
             "startSec": 0,
-            "endSec": 5791.1,
+            "endSec": 5804.5,
             "timeGaps": {
-              "count": 63,
+              "count": 64,
               "maxSec": 83.9,
-              "totalSec": 1375.6
+              "totalSec": 1389.1
             }
           },
           "windows": [
@@ -2165,9 +2165,9 @@
             {
               "startSec": 2707.7,
               "nominalSec": 300,
-              "frameCount": 976,
+              "frameCount": 958,
               "okPrimary": 368,
-              "okAllPoints": 976,
+              "okAllPoints": 958,
               "windowMetrics": {
                 "hd": 15.94,
                 "ad": 20.13,
@@ -2178,41 +2178,41 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3601,
               "nominalSec": 300,
-              "frameCount": 1130,
-              "okPrimary": 285,
-              "okAllPoints": 1130,
+              "frameCount": 1147,
+              "okPrimary": 300,
+              "okAllPoints": 1147,
               "windowMetrics": {
-                "hd": 19.22,
-                "ad": 15.45,
-                "spread": 13.63,
-                "gap": 5.59,
-                "width": 40.98,
-                "ballDist": 13.83
+                "hd": 18.45,
+                "ad": 15.36,
+                "spread": 13.17,
+                "gap": 5.45,
+                "width": 39.66,
+                "ballDist": 14.03
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4501,
               "nominalSec": 300,
-              "frameCount": 1339,
-              "okPrimary": 517,
-              "okAllPoints": 1339,
+              "frameCount": 1359,
+              "okPrimary": 532,
+              "okAllPoints": 1359,
               "windowMetrics": {
-                "hd": 14.77,
-                "ad": 17.1,
-                "spread": 11.05,
-                "gap": 4.53,
-                "width": 33.31,
-                "ballDist": 15.09
+                "hd": 15.4,
+                "ad": 17.04,
+                "spread": 11.37,
+                "gap": 4.31,
+                "width": 33.55,
+                "ballDist": 14.58
               }
             },
             {
-              "startSec": 5408.1,
+              "startSec": 5421.5,
               "nominalSec": 300,
-              "frameCount": 909,
+              "frameCount": 861,
               "okPrimary": 350,
-              "okAllPoints": 909,
+              "okAllPoints": 861,
               "windowMetrics": {
                 "hd": 18.03,
                 "ad": 18.11,
@@ -2224,7 +2224,7 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5708.1,
+            "lastWindowEndSec": 5721.5,
             "uncoveredSec": 83,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
@@ -2244,7 +2244,7 @@
             "keyframeHz": 5,
             "frameCount": 23149,
             "startSec": 0,
-            "endSec": 5747,
+            "endSec": 5747.1,
             "timeGaps": {
               "count": 54,
               "maxSec": 67.8,
@@ -2300,20 +2300,20 @@
             {
               "startSec": 2727.4,
               "nominalSec": 300,
-              "frameCount": 1189,
-              "okPrimary": 414,
-              "okAllPoints": 1189,
+              "frameCount": 1188,
+              "okPrimary": 413,
+              "okAllPoints": 1188,
               "windowMetrics": {
-                "hd": 18.84,
-                "ad": 18.86,
+                "hd": 18.86,
+                "ad": 18.88,
                 "spread": 12.31,
                 "gap": 5.25,
-                "width": 32.72,
-                "ballDist": 15.13
+                "width": 32.73,
+                "ballDist": 15.14
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 1008,
               "okPrimary": 553,
@@ -2328,7 +2328,7 @@
               }
             },
             {
-              "startSec": 4500.1,
+              "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 884,
               "okPrimary": 330,
@@ -2343,11 +2343,11 @@
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 967,
+              "frameCount": 968,
               "okPrimary": 538,
-              "okAllPoints": 967,
+              "okAllPoints": 968,
               "windowMetrics": {
                 "hd": 18.3,
                 "ad": 16.84,
@@ -2359,8 +2359,8 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 46.9,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 47.1,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -2379,7 +2379,7 @@
             "keyframeHz": 5,
             "frameCount": 22761,
             "startSec": 0,
-            "endSec": 5896.8,
+            "endSec": 5896.9,
             "timeGaps": {
               "count": 49,
               "maxSec": 170.8,
@@ -2448,22 +2448,22 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
-              "frameCount": 1299,
-              "okPrimary": 463,
-              "okAllPoints": 1299,
+              "frameCount": 1298,
+              "okPrimary": 462,
+              "okAllPoints": 1298,
               "windowMetrics": {
-                "hd": 18.22,
-                "ad": 15.38,
+                "hd": 18.21,
+                "ad": 15.37,
                 "spread": 14.64,
                 "gap": 4.57,
-                "width": 42.83,
+                "width": 42.81,
                 "ballDist": 13.92
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4500.1,
               "nominalSec": 300,
               "frameCount": 647,
               "okPrimary": 130,
@@ -2478,7 +2478,7 @@
               }
             },
             {
-              "startSec": 5426.6,
+              "startSec": 5426.7,
               "nominalSec": 300,
               "frameCount": 1123,
               "okPrimary": 565,
@@ -2494,7 +2494,7 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5726.6,
+            "lastWindowEndSec": 5726.7,
             "uncoveredSec": 170.2,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
@@ -2514,7 +2514,7 @@
             "keyframeHz": 5,
             "frameCount": 19508,
             "startSec": 0,
-            "endSec": 5927.8,
+            "endSec": 5927.9,
             "timeGaps": {
               "count": 70,
               "maxSec": 159.1,
@@ -2583,7 +2583,7 @@
               }
             },
             {
-              "startSec": 3686.8,
+              "startSec": 3686.9,
               "nominalSec": 300,
               "frameCount": 961,
               "okPrimary": 209,
@@ -2598,26 +2598,26 @@
               }
             },
             {
-              "startSec": 4500.1,
+              "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 1076,
-              "okPrimary": 271,
+              "okPrimary": 270,
               "okAllPoints": 1076,
               "windowMetrics": {
-                "hd": 15.74,
+                "hd": 15.72,
                 "ad": 16.44,
                 "spread": 12.03,
-                "gap": 6.05,
-                "width": 35.95,
-                "ballDist": 12.42
+                "gap": 6.07,
+                "width": 35.96,
+                "ballDist": 12.43
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 1033,
+              "frameCount": 1034,
               "okPrimary": 231,
-              "okAllPoints": 1033,
+              "okAllPoints": 1034,
               "windowMetrics": {
                 "hd": 16.8,
                 "ad": 14.06,
@@ -2629,8 +2629,8 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 227.7,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 227.9,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -2649,7 +2649,7 @@
             "keyframeHz": 5,
             "frameCount": 22496,
             "startSec": 0,
-            "endSec": 5674.8,
+            "endSec": 5674.9,
             "timeGaps": {
               "count": 69,
               "maxSec": 89.8,
@@ -2718,7 +2718,7 @@
               }
             },
             {
-              "startSec": 3611.9,
+              "startSec": 3612,
               "nominalSec": 300,
               "frameCount": 1052,
               "okPrimary": 238,
@@ -2733,7 +2733,7 @@
               }
             },
             {
-              "startSec": 4500.1,
+              "startSec": 4500,
               "nominalSec": 300,
               "frameCount": 1204,
               "okPrimary": 485,
@@ -2749,13 +2749,13 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 4800.1,
-            "uncoveredSec": 874.7,
+            "lastWindowEndSec": 4800,
+            "uncoveredSec": 874.9,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": {
-            "startSec": 5400.1,
-            "durationSec": 274.7,
+            "startSec": 5400,
+            "durationSec": 274.9,
             "reason": "不足 300s 的残窗，不入统计"
           }
         },
@@ -2773,7 +2773,7 @@
             "keyframeHz": 5,
             "frameCount": 24271,
             "startSec": 0,
-            "endSec": 5989.7,
+            "endSec": 5989.8,
             "timeGaps": {
               "count": 61,
               "maxSec": 69.1,
@@ -2829,9 +2829,9 @@
             {
               "startSec": 2700,
               "nominalSec": 300,
-              "frameCount": 1382,
+              "frameCount": 1381,
               "okPrimary": 390,
-              "okAllPoints": 1382,
+              "okAllPoints": 1381,
               "windowMetrics": {
                 "hd": 17.6,
                 "ad": 17.15,
@@ -2842,7 +2842,7 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
               "frameCount": 1286,
               "okPrimary": 367,
@@ -2857,11 +2857,11 @@
               }
             },
             {
-              "startSec": 4500.1,
+              "startSec": 4500,
               "nominalSec": 300,
-              "frameCount": 1277,
+              "frameCount": 1278,
               "okPrimary": 566,
-              "okAllPoints": 1277,
+              "okAllPoints": 1278,
               "windowMetrics": {
                 "hd": 17.53,
                 "ad": 21.44,
@@ -2872,7 +2872,7 @@
               }
             },
             {
-              "startSec": 5400,
+              "startSec": 5400.1,
               "nominalSec": 300,
               "frameCount": 1144,
               "okPrimary": 401,
@@ -2888,7 +2888,7 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700,
+            "lastWindowEndSec": 5700.1,
             "uncoveredSec": 289.7,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
@@ -2908,7 +2908,7 @@
             "keyframeHz": 5,
             "frameCount": 21942,
             "startSec": 0,
-            "endSec": 5999.3,
+            "endSec": 5999.4,
             "timeGaps": {
               "count": 63,
               "maxSec": 133.5,
@@ -2977,11 +2977,11 @@
               }
             },
             {
-              "startSec": 3600.1,
+              "startSec": 3600,
               "nominalSec": 300,
-              "frameCount": 1101,
+              "frameCount": 1102,
               "okPrimary": 290,
-              "okAllPoints": 1101,
+              "okAllPoints": 1102,
               "windowMetrics": {
                 "hd": 15.65,
                 "ad": 16.78,
@@ -2992,11 +2992,11 @@
               }
             },
             {
-              "startSec": 4500,
+              "startSec": 4500.1,
               "nominalSec": 300,
-              "frameCount": 1184,
+              "frameCount": 1183,
               "okPrimary": 231,
-              "okAllPoints": 1184,
+              "okAllPoints": 1183,
               "windowMetrics": {
                 "hd": 15.75,
                 "ad": 18.52,
@@ -3007,24 +3007,24 @@
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
               "frameCount": 1057,
-              "okPrimary": 207,
+              "okPrimary": 206,
               "okAllPoints": 1057,
               "windowMetrics": {
                 "hd": 15.34,
-                "ad": 13.3,
+                "ad": 13.31,
                 "spread": 10.54,
-                "gap": 4.5,
-                "width": 30.91,
+                "gap": 4.52,
+                "width": 30.93,
                 "ballDist": 11.89
               }
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 299.2,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 299.4,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -3043,7 +3043,7 @@
             "keyframeHz": 5,
             "frameCount": 20202,
             "startSec": 0,
-            "endSec": 5843.5,
+            "endSec": 5843.6,
             "timeGaps": {
               "count": 73,
               "maxSec": 142.6,
@@ -3112,11 +3112,11 @@
               }
             },
             {
-              "startSec": 3600,
+              "startSec": 3600.1,
               "nominalSec": 300,
-              "frameCount": 853,
+              "frameCount": 852,
               "okPrimary": 275,
-              "okAllPoints": 853,
+              "okAllPoints": 852,
               "windowMetrics": {
                 "hd": 16.51,
                 "ad": 18.8,
@@ -3127,26 +3127,26 @@
               }
             },
             {
-              "startSec": 4500.1,
+              "startSec": 4500,
               "nominalSec": 300,
-              "frameCount": 1010,
-              "okPrimary": 158,
-              "okAllPoints": 1010,
+              "frameCount": 1011,
+              "okPrimary": 159,
+              "okAllPoints": 1011,
               "windowMetrics": {
-                "hd": 18.69,
-                "ad": 15.96,
-                "spread": 13.36,
-                "gap": 5.57,
-                "width": 37.05,
+                "hd": 18.7,
+                "ad": 15.93,
+                "spread": 13.33,
+                "gap": 5.55,
+                "width": 36.9,
                 "ballDist": 15.52
               }
             },
             {
-              "startSec": 5400.1,
+              "startSec": 5400,
               "nominalSec": 300,
-              "frameCount": 1237,
+              "frameCount": 1238,
               "okPrimary": 289,
-              "okAllPoints": 1237,
+              "okAllPoints": 1238,
               "windowMetrics": {
                 "hd": 15.59,
                 "ad": 14.23,
@@ -3158,8 +3158,8 @@
             }
           ],
           "tail": {
-            "lastWindowEndSec": 5700.1,
-            "uncoveredSec": 143.4,
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 143.6,
             "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
           },
           "discardedPartialWindow": null
@@ -3168,80 +3168,80 @@
       "framesPerWindow": {
         "nominal": 1500,
         "primary": {
-          "median": 455,
+          "median": 457,
           "min": 113,
           "max": 1060
         },
         "allPoints": {
-          "median": 1124,
+          "median": 1121,
           "min": 639,
-          "max": 1489
+          "max": 1455
         }
       },
       "perMetric": {
         "skippedWindows": 0,
         "hd": {
-          "avg": 18.326252733514405,
+          "avg": 18.307066208744036,
           "min": 11.54674041297936,
-          "max": 24.03566741573033,
+          "max": 23.94672432432436,
           "n": 139
         },
         "ad": {
-          "avg": 18.454121307730308,
-          "min": 12.503591304347824,
-          "max": 30.86035951661632,
+          "avg": 18.448783008993612,
+          "min": 12.525991323210414,
+          "max": 31.575937293729393,
           "n": 139
         },
         "spread": {
-          "avg": 12.767217368722221,
+          "avg": 12.75730231728716,
           "min": 9.696624632752737,
           "max": 15.94591856062825,
           "n": 139
         },
         "gap": {
-          "avg": 5.241936267877447,
+          "avg": 5.235692208345751,
           "min": 3.2150394012694927,
           "max": 8.324163752909213,
           "n": 139
         },
         "width": {
-          "avg": 36.00341202843246,
+          "avg": 35.959739890170525,
           "min": 25.173716814159306,
-          "max": 46.4205698005698,
+          "max": 46.38142045454546,
           "n": 139
         },
         "ballDist": {
-          "avg": 14.966576269729192,
+          "avg": 14.970009054249589,
           "min": 9.805185835618774,
           "max": 24.472177362067633,
           "n": 139
         },
         "ballDistAllFrames": {
-          "avg": 15.097886305581158,
+          "avg": 15.101057141045167,
           "min": 10.280442719075355,
           "max": 24.472177362067633,
           "n": 139
         },
         "possessionHome": {
-          "avg": 0.48604850272641,
+          "avg": 0.48512715565964526,
           "min": 0.02654867256637168,
-          "max": 0.8099352051835853,
+          "max": 0.8116883116883117,
           "n": 139
         },
         "ballDistFrames": {
-          "avg": 445.28057553956836,
+          "avg": 444.2158273381295,
           "min": 103,
           "max": 1055,
           "n": 139
         },
         "possessionFrames": {
-          "avg": 445.28057553956836,
+          "avg": 444.2158273381295,
           "min": 103,
           "max": 1055,
           "n": 139
         },
         "frameCount": {
-          "avg": 467.49640287769785,
+          "avg": 466.3884892086331,
           "min": 113,
           "max": 1060,
           "n": 139
@@ -3250,82 +3250,82 @@
       "perMetricAllPoints": {
         "skippedWindows": 0,
         "hd": {
-          "avg": 25.81266797348382,
-          "min": 17.059683655536034,
-          "max": 31.13422247706418,
+          "avg": 25.821359391664494,
+          "min": 17.048332161687174,
+          "max": 31.122987399770867,
           "n": 139
         },
         "ad": {
-          "avg": 25.61302866471559,
-          "min": 14.840906108597277,
-          "max": 33.385760912698366,
+          "avg": 25.625418367766716,
+          "min": 14.832074660633477,
+          "max": 33.73674039460018,
           "n": 139
         },
         "spread": {
-          "avg": 14.781202753202994,
-          "min": 11.54940158032843,
-          "max": 18.15219030209795,
+          "avg": 14.783173294301198,
+          "min": 11.545893835813422,
+          "max": 18.145085034884602,
           "n": 139
         },
         "gap": {
-          "avg": 6.876469741210283,
-          "min": 5.148322722836271,
+          "avg": 6.879815331887147,
+          "min": 5.148093121392176,
           "max": 10.568151052665801,
           "n": 139
         },
         "width": {
-          "avg": 37.94166187270592,
+          "avg": 37.93254147467026,
           "min": 29.52212435233164,
-          "max": 49.89050458715606,
+          "max": 49.872898052691966,
           "n": 139
         },
         "ballDist": {
-          "avg": 18.425925601333816,
-          "min": 15.043832787986046,
+          "avg": 18.424717672742045,
+          "min": 15.045089760795905,
           "max": 23.301318916526252,
           "n": 139
         },
         "ballDistAllFrames": {
-          "avg": 19.17334794078286,
-          "min": 15.579650347692299,
-          "max": 23.64351276984755,
+          "avg": 19.163476298864868,
+          "min": 15.580636925188411,
+          "max": 23.748114975135127,
           "n": 139
         },
         "possessionHome": {
-          "avg": 0.4867603758826136,
-          "min": 0.15915627996164908,
-          "max": 0.7730496453900709,
+          "avg": 0.48622612865413123,
+          "min": 0.15930902111324377,
+          "max": 0.7737355811889973,
           "n": 139
         },
         "ballDistFrames": {
-          "avg": 889.6762589928057,
+          "avg": 888.3669064748201,
           "min": 494,
           "max": 1335,
           "n": 139
         },
         "possessionFrames": {
-          "avg": 889.6762589928057,
+          "avg": 888.3669064748201,
           "min": 494,
           "max": 1335,
           "n": 139
         },
         "frameCount": {
-          "avg": 1112.7410071942445,
+          "avg": 1111.2589928057555,
           "min": 639,
-          "max": 1489,
+          "max": 1455,
           "n": 139
         }
       },
       "elasticity": {
         "convention": "rawBallFramesOnly（球相关口径：只用原始观测球帧；外推球位按 ballFill 标记排除）",
         "half": {
-          "avgDelta": 0.8161921544716034,
+          "avgDelta": 0.866289993399557,
           "min": -10.200428666588316,
           "max": 8.256996590909083,
           "n": 139
         },
         "centroid": {
-          "avgDelta": -1.125309777678128,
+          "avgDelta": -1.0731902600405911,
           "min": -7.621803925798105,
           "max": 4.738792036910475,
           "n": 139
@@ -3342,7 +3342,7 @@
         ],
         "bRange": [
           11.54674041297936,
-          24.03566741573033
+          23.94672432432436
         ],
         "aInsideB": false,
         "bInsideA": false,
@@ -3355,8 +3355,8 @@
           30.252763029999997
         ],
         "bRange": [
-          12.503591304347824,
-          30.86035951661632
+          12.525991323210414,
+          31.575937293729393
         ],
         "aInsideB": true,
         "bInsideA": false,
@@ -3398,7 +3398,7 @@
         ],
         "bRange": [
           25.173716814159306,
-          46.4205698005698
+          46.38142045454546
         ],
         "aInsideB": false,
         "bInsideA": false,

@@ -72,7 +72,10 @@ function loadGame(scDir, matchPath) {
   const id = String(match.id);
   const trackingPath = join(scDir, 'tracking', `${id}_tracking_extrapolated.jsonl`);
   if (!existsSync(trackingPath)) return { id, skipped: 'tracking 实体缺失' };
-  const { frames, shift } = stitchTimeline(parseTrackingJsonl(readFileSync(trackingPath, 'utf8')));
+  // 与已交付转换器同源：传 matchPeriods + 全量 clock map（权威半场边界）
+  const clockByFrame = new Map();
+  const parsed = parseTrackingJsonl(readFileSync(trackingPath, 'utf8'), { clockOut: clockByFrame });
+  const { frames, shift } = stitchTimeline(parsed, { matchPeriods: match.match_periods, clockByFrame });
   const L = match.pitch_length;
   const W = match.pitch_width;
   const normalize = makeNormalizer(L, W, match.home_team_side);

@@ -55,7 +55,13 @@ export function parseClock(s) {
 
 // 读一场 tracking JSONL → 只保留**有球员数据**的帧（空帧没有观测，是转播间隙）。
 // 每帧带：frame（源帧号）、period、clock（比赛时钟秒）、players（22 条 player_data）、ball。
-export function parseTrackingJsonl(text) {
+//
+// `opts.clockOut`（可选 Map）：把**所有**帧（含被滤掉的空帧）的 frame→clock 收进去。
+// 权威半场边界（`match_periods[].end_frame/start_frame`）指向的帧常常正是**空帧**
+// （实测 1874553 的 frame 28990 有时钟 00:48:18.00 但无 player_data）——只从保留帧里
+// 查边界时钟会查不到、静默退回观测极值。故边界时钟要在这里全量收集。
+export function parseTrackingJsonl(text, opts = {}) {
+  const { clockOut = null } = opts;
   const frames = [];
   for (const line of text.split('\n')) {
     if (line.length === 0) continue;
@@ -65,12 +71,14 @@ export function parseTrackingJsonl(text) {
     } catch {
       continue; // 单行损坏不该废掉整场
     }
+    const clock = parseClock(d.timestamp);
+    if (clockOut && Number.isFinite(clock)) clockOut.set(d.frame, clock);
     const pd = d.player_data;
     if (!Array.isArray(pd) || pd.length === 0) continue;
     frames.push({
       frame: d.frame,
       period: d.period,
-      clock: parseClock(d.timestamp),
+      clock,
       players: pd,
       ball: d.ball_data || null,
     });
@@ -79,11 +87,22 @@ export function parseTrackingJsonl(text) {
 }
 
 // 把"比赛时钟"拼成单调时间轴（design D3）：
-//   P2 的时间戳整体 +shift，`shift = max(P1.clock) − min(P2.clock)`，使交界处不回跳。
-//   中场休息被**压缩为一个点**——与引擎侧 5400s 不含中场死时间的语义保持同构
-//   （design D3 已核实：引擎的 t=2700 与真实的 t=2700 必须落在同一比赛阶段）。
-// 只有单半场时不平移。返回 { shift, frames: [{...原始帧, t}] }。
-export function stitchTimeline(frames) {
+//   P2 的时间戳整体 +shift，使交界处不回跳。中场休息被**压缩**——与引擎侧 5400s
+//   不含中场死时间的语义保持同构（引擎的 t=2700 与真实的 t=2700 落在同一比赛阶段）。
+//
+// **shift 的来源**（design D3 修订 + 审阅 P2-1d）：
+//   优先用源数据自带的**权威半场边界** `match.json.match_periods[]`——取
+//   `clock(P1.end_frame) − clock(P2.start_frame)`。
+//   退回（无 match_periods / 边界帧查不到时钟时）才用观测极值 `max(P1.t) − min(P2.t)`。
+//
+// ⚠️ **为什么不用观测极值**：P1 尾 / P2 头若有缺帧，"末尾真正存在的帧"会比半场边界**早**，
+//   观测极值法会把这缺失的一段时间**静默吸收进 shift**——接缝间隙恒为 0，缺口被藏起来。
+//   实测 20 场平均差 ~7s（如 1874553：权威 198.0s vs 观测 190.9s，差 7.1s 的 P1 尾部缺口）。
+//   用权威边界则缺口**如实显形**为接缝间隙（recordedSeamGapSec），符合本项目
+//   「缺口如实记录、不隐藏」的一贯原则。
+//
+// 只有单半场时不平移。返回 { shift, shiftSource, seamGapSec, frames: [{...原始帧, t}] }。
+export function stitchTimeline(frames, { matchPeriods = null, clockByFrame = null } = {}) {
   const byPeriod = new Map();
   for (const f of frames) {
     if (!byPeriod.has(f.period)) byPeriod.set(f.period, []);
@@ -91,19 +110,37 @@ export function stitchTimeline(frames) {
   }
   const p1 = byPeriod.get(1) || [];
   const p2 = byPeriod.get(2) || [];
-  let shift = 0;
-  if (p1.length && p2.length) {
-    const p1End = Math.max(...p1.map((f) => f.clock).filter(Number.isFinite));
-    const p2Start = Math.min(...p2.map((f) => f.clock).filter(Number.isFinite));
-    shift = p1End - p2Start;
+  const obsShift = (p1.length && p2.length)
+    ? Math.max(...p1.map((f) => f.clock).filter(Number.isFinite))
+      - Math.min(...p2.map((f) => f.clock).filter(Number.isFinite))
+    : 0;
+
+  let shift = obsShift;
+  let shiftSource = 'observed-extremes';
+  if (Array.isArray(matchPeriods) && matchPeriods.length >= 2) {
+    const endFrame = matchPeriods[0] && matchPeriods[0].end_frame;
+    const startFrame = matchPeriods[1] && matchPeriods[1].start_frame;
+    // 边界时钟优先查调用方给的全量 map（含空帧）；没有就用保留帧兜底。
+    const map = clockByFrame || new Map(frames.filter((f) => Number.isFinite(f.clock)).map((f) => [f.frame, f.clock]));
+    const a = map.get(endFrame);
+    const b = map.get(startFrame);
+    if (Number.isFinite(a) && Number.isFinite(b)) { shift = a - b; shiftSource = 'match_periods'; }
   }
+
   const out = frames.map((f) => ({
     ...f,
     t: f.period === 2 ? f.clock + shift : f.clock,
   }));
   // 排序保证单调（源文件本就有序；显式排序是对"回跳"的兜底，不依赖源顺序）
   out.sort((a, b) => a.t - b.t || a.frame - b.frame);
-  return { shift, frames: out };
+
+  // 接缝间隙 = 拼接后 P1 末帧到 P2 首帧的间隔。用权威边界时它**恰等于**半场边界处
+  // 缺失的观测时长（0 = 首尾帧齐全）；用观测极值法时恒为 0（缺口被吸收）。
+  const p1Max = out.filter((f) => f.period === 1).reduce((m, f) => Math.max(m, f.t), -Infinity);
+  const p2Min = out.filter((f) => f.period === 2).reduce((m, f) => Math.min(m, f.t), Infinity);
+  const seamGapSec = (Number.isFinite(p1Max) && Number.isFinite(p2Min)) ? Math.max(0, p2Min - p1Max) : null;
+
+  return { shift, shiftSource, seamGapSec, frames: out };
 }
 
 // 时间轴缺口统计：相邻帧的**异常大**间隔（无观测时段，来自回放/特写；半场拼接处那一个也计入）。
@@ -275,9 +312,14 @@ export function convertSkillcorner(matchJson, trackingText, opts = {}) {
   const rosterIds = new Set(roster.map((p) => p.id));
 
   // 解析 + 时间轴拼接
-  const parsed = parseTrackingJsonl(trackingText);
+  // 全量 frame→clock（含空帧）——权威半场边界帧常常正是空帧，只在保留帧里查会查不到。
+  const clockByFrame = new Map();
+  const parsed = parseTrackingJsonl(trackingText, { clockOut: clockByFrame });
   if (parsed.length === 0) throw new Error('tracking 里没有任何含球员数据的帧');
-  const { shift, frames: allFrames } = stitchTimeline(parsed);
+  const { shift, shiftSource, seamGapSec, frames: allFrames } = stitchTimeline(parsed, {
+    matchPeriods: matchJson.match_periods,
+    clockByFrame,
+  });
 
   // 时间窗裁剪（秒，拼接后的 t），在降采样之前做
   const from = opts.from ?? -Infinity;
@@ -410,8 +452,12 @@ export function convertSkillcorner(matchJson, trackingText, opts = {}) {
       // （design D4 修订后；早先"统一按 105×68"会引入按场地尺寸系统性分组的偏置）。
       pitchMeters: { length: L, width: W },
       timeAxis: {
-        stitch: 'P2 += (max(P1.clock) - min(P2.clock))——压缩中场休息为一个点，与引擎 5400s 同构',
+        stitch: 'P2 += shift——压缩中场休息，与引擎 5400s（无中场死时间）同构',
+        shiftSource, // 'match_periods'（权威半场边界）| 'observed-extremes'（退回）
         shiftSec: Number(shift.toFixed(2)),
+        // 接缝间隙：拼接后 P1 末帧到 P2 首帧的间隔。用权威边界时它恰等于半场边界处
+        // 缺失的观测时长（0 = 首尾帧齐全；>0 = 该处缺帧，如实显形不藏）。
+        seamGapSec: seamGapSec == null ? null : Number(seamGapSec.toFixed(2)),
         gaps: { count: gaps.count, maxSec: Number(gaps.maxSec.toFixed(2)), totalSec: Number(gaps.totalSec.toFixed(2)) },
       },
       idMap: {
