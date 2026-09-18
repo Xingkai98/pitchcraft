@@ -1,0 +1,28 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 3bbf740..e7bb691 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -2629,6 +2629,23 @@ fn is_defender(st: &MatchState, id: i32) -> bool {
+ /// 队形目标（P5 S1）：目标 = 角色基准 + 队形偏移(球位置, 控球阶段, 球侧)。
+ /// 门将恒回门线；防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
+ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
++    // === 实验4b：精确复现对抗审阅 A2 的「等间距次序目标 + 球锚定」===
++    // 审阅者实现：块中心随球平移（g=0.59），块内 9 个间距等分。
++    // 注意：这是纯目标公式（不读其他球员实时位置），却声称能消掉断层。
++    if id != 0 && id != 21 {
++        let home = id <= 10;
++        let ids: Vec<i32> = if home { (1..=10).collect() } else { (11..=20).collect() };
++        let mut sorted = ids.clone();
++        sorted.sort_by(|&a, &b| st.lineup[a as usize].0.partial_cmp(&st.lineup[b as usize].0).unwrap());
++        let r = sorted.iter().position(|&v| v == id).unwrap() as f64 / 9.0;
++        let ball_own = if home { st.ball_pos.0 } else { 1.0 - st.ball_pos.0 };
++        let centre = (0.165 + 0.59 * ball_own).clamp(0.12, 0.82);
++        let rear = (centre - 0.32 * 0.5).clamp(0.04, 0.86);
++        let tx_local = rear + 0.32 * r;
++        let tx = if home { tx_local } else { 1.0 - tx_local };
++        let ty = st.lineup[id as usize].1;
++        return (clamp01(tx).clamp(0.04, 0.9), clamp01(ty));
++    }
+     let base = st.lineup[id as usize];
+     let ball = st.ball_pos;
+     let home = id <= 10;
