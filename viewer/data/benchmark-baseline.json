@@ -6,6 +6,10 @@
   "metricsModule": {
     "path": "viewer/match-metrics.js",
     "sha256": "5fc00e9e7a1e47a5faf1775254acc6b36d95eb7b310eec89c0cc904818c86272",
+    "converters": {
+      "convert-tracking-to-frames.mjs": "8d7634eb74178f7b4c690f1f6bdfeb5faf04c3195f79b346a52909f60cb723e2",
+      "convert-skillcorner-to-frames.mjs": "92c1aae0f999f7cc5611580a98841123f410b5c34ba09a4846d2a5e218dc8a14"
+    },
     "convention": "q10–q90 线性插值分位跨度（R type-7；P37 换口径，见 match-metrics.js 头注释）",
     "aggregation": "per-frame instantaneous shape → mean over frames; frames with <7 outfield players dropped",
     "pitchMeters": "per-game（逐场尺寸，P37 D4）；缺省 [105,68]",
@@ -63,7 +67,8 @@
             "frameCount": 29002,
             "startSec": 0.04,
             "endSec": 5800.24,
-            "timeGaps": null
+            "timeGaps": null,
+            "timeAxis": null
           },
           "windows": [
             {
@@ -194,7 +199,8 @@
             "frameCount": 28232,
             "startSec": 0.04,
             "endSec": 5646.24,
-            "timeGaps": null
+            "timeGaps": null,
+            "timeAxis": null
           },
           "windows": [
             {
@@ -494,6 +500,11 @@
               "count": 62,
               "maxSec": 143.1,
               "totalSec": 1612.3
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 198,
+              "seamGapSec": 7.1
             }
           },
           "windows": [
@@ -629,6 +640,11 @@
               "count": 63,
               "maxSec": 116.5,
               "totalSec": 1568.7
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 78,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -764,6 +780,11 @@
               "count": 72,
               "maxSec": 129.6,
               "totalSec": 1988.3
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 275,
+              "seamGapSec": 9.5
             }
           },
           "windows": [
@@ -899,6 +920,11 @@
               "count": 51,
               "maxSec": 138,
               "totalSec": 1344
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 323,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -1034,6 +1060,11 @@
               "count": 60,
               "maxSec": 127.1,
               "totalSec": 1436.2
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 137,
+              "seamGapSec": 8.9
             }
           },
           "windows": [
@@ -1169,6 +1200,11 @@
               "count": 69,
               "maxSec": 141.6,
               "totalSec": 1543.1
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 196,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -1304,6 +1340,11 @@
               "count": 65,
               "maxSec": 95.3,
               "totalSec": 1579.5
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 96,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -1439,6 +1480,11 @@
               "count": 80,
               "maxSec": 136.2,
               "totalSec": 1612.4
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 77,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -1574,6 +1620,11 @@
               "count": 69,
               "maxSec": 85,
               "totalSec": 1420.7
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 101,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -1709,6 +1760,11 @@
               "count": 72,
               "maxSec": 133.5,
               "totalSec": 1718.3
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 313,
+              "seamGapSec": 39.1
             }
           },
           "windows": [
@@ -1844,6 +1900,11 @@
               "count": 61,
               "maxSec": 197.5,
               "totalSec": 1519.3
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 147,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -1979,6 +2040,11 @@
               "count": 59,
               "maxSec": 88.4,
               "totalSec": 1481.5
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 194,
+              "seamGapSec": 1.1
             }
           },
           "windows": [
@@ -2114,6 +2180,11 @@
               "count": 64,
               "maxSec": 83.9,
               "totalSec": 1389.1
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 152,
+              "seamGapSec": 13.4
             }
           },
           "windows": [
@@ -2249,6 +2320,11 @@
               "count": 54,
               "maxSec": 67.8,
               "totalSec": 1128.3
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 70,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -2384,6 +2460,11 @@
               "count": 49,
               "maxSec": 170.8,
               "totalSec": 1354.7
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 243,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -2519,6 +2600,11 @@
               "count": 70,
               "maxSec": 159.1,
               "totalSec": 2040.5
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 199,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -2654,6 +2740,11 @@
               "count": 69,
               "maxSec": 89.8,
               "totalSec": 1189.7
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 89,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -2778,6 +2869,11 @@
               "count": 61,
               "maxSec": 69.1,
               "totalSec": 1148
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 183,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -2913,6 +3009,11 @@
               "count": 63,
               "maxSec": 133.5,
               "totalSec": 1623.8
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 355,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -3048,6 +3149,11 @@
               "count": 73,
               "maxSec": 142.6,
               "totalSec": 1818
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 70,
+              "seamGapSec": 0.1
             }
           },
           "windows": [
@@ -3563,7 +3669,7 @@
     ],
     "controlProxy": "控球相位 = 离球最近者所属队（代理，非真实持球权）",
     "ballFrames": "球相关指标主口径只用原始观测球帧；全帧对照见 perMetric.ballDistAllFrames",
-    "timeGaps": "拼接后仍有约 27% 无观测时段（回放/特写），全部来自源数据缺口、接缝贡献 0；不被插值，按实际帧取样",
+    "timeGaps": "拼接后仍有无观测时段：skillcorner 球场均无观测 30516s（占 25.8%，来自回放/特写缺口 + 半场接缝间隙 80.5s ≈ 0.07%）；不被插值，按实际帧取样",
     "pitchSize": "逐场尺寸换算（P37 D4）：SkillCorner 有 104/105/106 三种场地，各按自己的尺寸归一化与换算，不折算到统一名义尺寸",
     "crossValidation": "交叉验证（half-split / LOO）本阶段是**报告项、不是门**：min/max 包含门的通过率与样本量无关（N=20 时约 0.25），数据正常时也会频繁变红——升格为门须先刻画门的零分布（见 change design D7）"
   },

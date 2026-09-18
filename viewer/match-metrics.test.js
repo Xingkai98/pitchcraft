@@ -592,6 +592,36 @@ test('口径·逐场尺寸全链路贯通【反证条】（frameMetrics/windowMe
     '不带尺寸的帧应退回 105×68（引擎侧口径不变）');
 });
 
+test('口径·弹性按逐场尺寸换算【反证条】（审阅 P3-2 的未守护路径）', () => {
+  // 弹性（纵深随球位的变化）也走 teamShape 的 depth（米制，用 L）。
+  // 构造「球在主队半场」与「球在对方半场」两桶**纵深不同**（spreadXs 步长 0.02 vs 0.03），
+  // 使 Δ 非零；再断言 105m / 104m 的 Δ 之比恰为 105/104。
+  // 反证：若 elasticity 忽略帧上 pitchMeters（退回 105），两场 Δ 相同 → 比值 1 ≠ 105/104 → 红。
+  const mk = (pm) => {
+    const frames = [];
+    for (let i = 0; i < 80; i += 1) {
+      const inOwnHalf = i < 40;
+      const f = makeFrame({
+        t: i * 0.2,
+        homeXs: spreadXs(inOwnHalf ? 0.02 : 0.03), // 两桶纵深不同 → Δ 非零
+        ball: inOwnHalf ? [0.1, 0.5] : [0.9, 0.5],
+      });
+      if (pm) f.pitchMeters = pm;
+      frames.push(f);
+    }
+    return frames;
+  };
+  const d105 = elasticity(mk([105, 68]), { divider: 'half' });
+  const d104 = elasticity(mk([104, 68]), { divider: 'half' });
+  assert.ok(d105 && d104, '两场都应有弹性结果');
+  assert.ok(d105.delta > 0, `Δ 应非零（实际 ${d105.delta}）`);
+  assert.ok(Math.abs(d105.delta / d104.delta - 105 / 104) < 1e-9,
+    `弹性 Δ 的 105/104 比应恰为 105/104（实际 ${d105.delta / d104.delta}）——不等说明没按逐场尺寸`);
+  // 显式传 opts.pitchMeters 也要生效（与从帧上取等价）
+  const viaOpts = elasticity(mk(null), { divider: 'half', pitchMeters: [104, 68] });
+  assert.ok(Math.abs(viaOpts.delta - d104.delta) < 1e-9, '显式传入应等价于帧上带');
+});
+
 test('口径·fromTrackingFrame 透传外推标记（坐标第三位=1）', () => {
   const raw = { t: 1, players: new Array(22).fill(null), ball: [0.5, 0.5] };
   raw.players[3] = [0.4, 0.5]; // 真检测（2 元素）

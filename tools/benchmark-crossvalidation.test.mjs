@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   SPLIT_SEED, CV_METRICS, mulberry32, shuffle, rangeOf, halfSplit, leaveOneGameOut,
-  recordsFromBaseline,
+  recordsFromBaseline, computeCrossValidation,
 } from './benchmark-crossvalidation.mjs';
 
 // 构造 records：{game, metric, value}。
@@ -185,4 +185,29 @@ test('recordsFromBaseline：有逐窗指标 → 提取 {game, metric, value}', (
   // 2 个窗，第 2 个 metric 为 null 跳过 → 3 条记录（hd/spread/gap 各 1）
   assert.equal(r.length, 3);
   assert.deepEqual(r.map((x) => x.metric).sort(), ['gap', 'hd', 'spread']);
+});
+
+test('recordsFromBaseline：结构异常一律按"无数据"返回 null（不抛异常，审阅 P3-1）', () => {
+  // 各种结构畸形：windows 不是数组 / 是数字数组 / game 缺失 / 全部窗口无指标
+  const cases = [
+    { datasets: { x: { games: [{ game: 'a', windows: 5 }] } } },
+    { datasets: { x: { games: [{ game: 'a', windows: [1, 2, 3] }] } } },
+    { datasets: { x: { games: [{ windows: [{ windowMetrics: { hd: 1 } }] }] } } },
+    { datasets: { x: { games: [{ game: 'a', windows: [{ windowMetrics: { hd: null } }] }] } } },
+    { datasets: { x: { games: 'not-an-array' } } },
+  ];
+  for (const b of cases) {
+    assert.doesNotThrow(() => recordsFromBaseline(b, 'x'));
+    assert.equal(recordsFromBaseline(b, 'x'), null, `应返回 null：${JSON.stringify(b).slice(0, 60)}`);
+  }
+});
+
+test('computeCrossValidation：对合成 records 给出完整报告结构（不依赖文件）', () => {
+  const spec = {};
+  for (let g = 0; g < 20; g += 1) spec[`g${g}`] = { hd: [10 + g, 15 + g] };
+  const cv = computeCrossValidation(recs(spec));
+  assert.ok(cv.halfSplit && cv.loo);
+  assert.equal(cv.halfSplit.seed, SPLIT_SEED);
+  assert.ok(cv.loo.perMetricSummary.hd);
+  assert.equal(cv.loo.perMetricSummary.hd.gamesTotal, 20);
 });

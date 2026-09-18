@@ -72,6 +72,23 @@ export function hashMetricsModule(path = METRICS_PATH) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+// 转换器指纹（审阅 P3-3）：转换器是基线的**直接输入**——改了它，基线数字就变
+// （实测：match_periods 拼接修正就改了 20 场的 shift 与缺口）。但基线原先只 pin 指标模块、
+// 不 pin 转换器，故"只改转换器不重生成基线"**不会触发任何哨兵**。
+// 这是**输入指纹**（记录用哪个版本的转换器产出了这些产物），不是"口径锁"——
+// 转换器只影响真实侧，引擎侧与 Metrica 基线不受它影响。
+export function converterFingerprints() {
+  const files = ['convert-tracking-to-frames.mjs', 'convert-skillcorner-to-frames.mjs'];
+  const out = {};
+  for (const f of files) {
+    const p = join(ROOT, 'tools', f);
+    // eslint-disable-next-line no-continue
+    if (!existsSync(p)) continue;
+    out[f] = createHash('sha256').update(readFileSync(p)).digest('hex');
+  }
+  return out;
+}
+
 // 一场真实比赛 → 逐窗指标与元数据（窗口列表、残窗、尾部未覆盖秒数）。
 // **逐场尺寸**：从帧上取（转换器写入 meta.pitchMeters）→ 传给 cutWindows 之后的指标层。
 export function realGameWindows(data, gameName) {
@@ -140,6 +157,12 @@ export function realGameWindows(data, gameName) {
       startSec: Math.round(frames[0].t * 100) / 100,
       endSec: Math.round(endSec * 100) / 100,
       timeGaps: (data.meta && data.meta.timeAxis && data.meta.timeAxis.gaps) || null,
+      // 半场拼接：偏移来源与结果接缝间隙（P37 D3；接缝间隙须如实记录，见审阅 P2-2）
+      timeAxis: (data.meta && data.meta.timeAxis) ? {
+        shiftSource: data.meta.timeAxis.shiftSource || null,
+        shiftSec: data.meta.timeAxis.shiftSec ?? null,
+        seamGapSec: data.meta.timeAxis.seamGapSec ?? null,
+      } : null,
     },
     windows: windowRecords,
     tail: {
@@ -156,6 +179,25 @@ export function realGameWindows(data, gameName) {
 
 const avg = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const round2 = (v) => (v == null ? null : Math.round(v * 100) / 100);
+
+// 时间缺口声明：**按实测动态算**，不硬编码（审阅 P2-2：硬编码的"接缝贡献 0"在改用
+// match_periods 权威边界后已不成立——接缝间隙随即如实显形）。
+function timeGapDeclaration(datasets) {
+  const parts = [];
+  for (const [key, ds] of Object.entries(datasets)) {
+    const gaps = ds.games.map((g) => g.meta.timeGaps).filter(Boolean);
+    if (!gaps.length) continue;
+    const totalGap = gaps.reduce((a, g) => a + (g.totalSec || 0), 0);
+    const seam = ds.games.reduce((a, g) => a + ((g.meta.timeAxis && g.meta.timeAxis.seamGapSec) || 0), 0);
+    // 全长 = 各场 endSec 之和（窗口切片的覆盖范围）
+    const span = ds.games.reduce((a, g) => a + (g.meta.endSec || 0), 0);
+    const pct = span ? (100 * totalGap / span) : 0;
+    const seamPct = span ? (100 * seam / span) : 0;
+    parts.push(`${key} 球场均无观测 ${totalGap.toFixed(0)}s（占 ${pct.toFixed(1)}%，来自回放/特写缺口 + `
+      + `半场接缝间隙 ${seam.toFixed(1)}s ≈ ${seamPct.toFixed(2)}%）`);
+  }
+  return `拼接后仍有无观测时段：${parts.join('；')}`;
+}
 const elasticitySummary = (deltas) => (deltas.length
   ? { avgDelta: avg(deltas), min: Math.min(...deltas), max: Math.max(...deltas), n: deltas.length }
   : null);
@@ -257,6 +299,8 @@ export async function generateBaseline({ dataDir = DATA_DIR } = {}) {
     metricsModule: {
       path: 'viewer/match-metrics.js',
       sha256: hashMetricsModule(),
+      // 转换器输入指纹（审阅 P3-3）：改了转换器须重生成基线（见 converterFingerprints 注释）
+      converters: converterFingerprints(),
       convention: `q${QUANTILE_LO * 100}–q${QUANTILE_HI * 100} 线性插值分位跨度（R type-7；P37 换口径，见 match-metrics.js 头注释）`,
       aggregation: 'per-frame instantaneous shape → mean over frames; frames with <7 outfield players dropped',
       pitchMeters: 'per-game（逐场尺寸，P37 D4）；缺省 [105,68]',
@@ -301,7 +345,9 @@ export async function generateBaseline({ dataDir = DATA_DIR } = {}) {
       ],
       controlProxy: '控球相位 = 离球最近者所属队（代理，非真实持球权）',
       ballFrames: '球相关指标主口径只用原始观测球帧；全帧对照见 perMetric.ballDistAllFrames',
-      timeGaps: '拼接后仍有约 27% 无观测时段（回放/特写），全部来自源数据缺口、接缝贡献 0；不被插值，按实际帧取样',
+      // 缺口归因**动态计算**（不硬编码——接缝间隙随拼接口径变化：观测极值法恒 0，
+      // 权威边界法如实显形。审阅 P2-2：硬编码"接缝贡献 0"在改用权威边界后已不成立）。
+      timeGaps: `${timeGapDeclaration(datasets)}；不被插值，按实际帧取样`,
       pitchSize: '逐场尺寸换算（P37 D4）：SkillCorner 有 104/105/106 三种场地，各按自己的尺寸归一化与换算，不折算到统一名义尺寸',
       crossValidation: '交叉验证（half-split / LOO）本阶段是**报告项、不是门**：min/max 包含门的通过率与样本量无关（N=20 时约 0.25），数据正常时也会频繁变红——升格为门须先刻画门的零分布（见 change design D7）',
     },

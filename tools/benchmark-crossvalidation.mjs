@@ -133,20 +133,27 @@ export function leaveOneGameOut(records, { metrics = CV_METRICS.map(([k]) => k) 
 // 只存了 frameCount/okPrimary，未存逐窗指标值。故本工具需要一个带 `windowMetrics` 的
 // 基线（或直接传入 records）。若基线无该字段 → 返回 null，调用方跳过（不失败，P36 惯例）。
 export function recordsFromBaseline(baseline, datasetKey) {
-  const ds = baseline.datasets && baseline.datasets[datasetKey];
+  const ds = baseline && baseline.datasets && baseline.datasets[datasetKey];
   if (!ds || !Array.isArray(ds.games)) return null;
   const recs = [];
   for (const g of ds.games) {
-    if (!Array.isArray(g.windows)) return null;
-    // 逐窗指标在 g.windows[i].windowMetrics（P37 起写入）
-    if (!g.windows.every((w) => 'windowMetrics' in w)) return null; // 缺逐窗指标 → 无法做窗口级 CV
+    // 结构防御：`windows` 不是数组、`g.game` 缺失等**结构异常**一律按"无法做窗口级 CV"处理
+    // （返回 null → 调用方跳过并退出 0），而不是让 `g.windows.every` 抛异常。
+    // 依据 spec「数据缺失时跳过而非失败」——结构异常与数据缺失同一处置。
+    if (!g || typeof g.game !== 'string' || !Array.isArray(g.windows)) return null;
+    if (!g.windows.every((w) => w && typeof w === 'object' && 'windowMetrics' in w)) return null;
     g.windows.forEach((w, i) => {
       const wm = w.windowMetrics;
-      if (!wm) return; // 该窗主口径无有效帧
-      for (const [k] of CV_METRICS) if (wm[k] != null) recs.push({ game: g.game, window: i, metric: k, value: wm[k] });
+      if (!wm || typeof wm !== 'object') return; // 该窗主口径无有效帧
+      for (const [k] of CV_METRICS) {
+        if (typeof wm[k] === 'number' && Number.isFinite(wm[k])) {
+          recs.push({ game: g.game, window: i, metric: k, value: wm[k] });
+        }
+      }
     });
   }
-  return recs;
+  // 一个记录都没有（例如所有窗口都无有效指标）→ 视为无数据，跳过而非产出空报告
+  return recs.length ? recs : null;
 }
 
 export function render(cv) {
@@ -179,29 +186,42 @@ export function render(cv) {
   return L.join('\n');
 }
 
+// 计算与渲染分离，便于：① main 统一兜底；② 测试直接喂合成 records。
+export function computeCrossValidation(records) {
+  return { halfSplit: halfSplit(records), loo: leaveOneGameOut(records) };
+}
+
 function main() {
   const idx = process.argv.indexOf('--baseline');
   const path = idx > -1 && process.argv[idx + 1] ? process.argv[idx + 1] : DEFAULT_BASELINE_PATH;
-  if (!existsSync(path)) {
-    console.log(`P37 交叉验证：跳过（基线缺失：${path}）\n  生成：node tools/benchmark-baseline.mjs`);
-    return 0;
-  }
-  let baseline;
   try {
-    baseline = JSON.parse(readFileSync(path, 'utf8'));
+    if (!existsSync(path)) {
+      console.log(`P37 交叉验证：跳过（基线缺失：${path}）\n  生成：node tools/benchmark-baseline.mjs`);
+      return 0;
+    }
+    let baseline;
+    try {
+      baseline = JSON.parse(readFileSync(path, 'utf8'));
+    } catch (err) {
+      console.log(`P37 交叉验证：跳过（基线损坏）\n  ${err.message}`);
+      return 0;
+    }
+    const key = baseline.primaryDataset || Object.keys(baseline.datasets || {})[0];
+    const records = recordsFromBaseline(baseline, key);
+    if (!records) {
+      console.log(`P37 交叉验证：跳过（基线 ${key} 无逐窗指标 windowMetrics —— 无法做窗口级交叉验证）`);
+      return 0;
+    }
+    console.log(render(computeCrossValidation(records)));
+    return 0;
   } catch (err) {
-    console.log(`P37 交叉验证：跳过（基线损坏）\n  ${err.message}`);
-    return 0;
+    // **未预期异常**：退出码 1（不是 0）——它是**工具缺陷**，不是"数据缺失"。
+    // spec 的"数据缺失时跳过而非失败"只覆盖已知的缺失路径（上面那三个 return 0），
+    // 不覆盖工具自身的崩溃。verify.sh 已去掉 `|| true`，故这里退出 1 会让 verify 如实红
+    // ——这正是审阅 P3-1 要的"未预期崩溃可见"。消息说清是报告项、数据本身没问题。
+    console.error(`⚠ P37 交叉验证工具异常退出（**报告项不阻塞数据结论，但工具本身需修**）：\n  ${err.stack || err.message}`);
+    return 1;
   }
-  const key = baseline.primaryDataset || Object.keys(baseline.datasets || {})[0];
-  const records = recordsFromBaseline(baseline, key);
-  if (!records) {
-    console.log(`P37 交叉验证：跳过（基线 ${key} 无逐窗指标 windowMetrics —— 无法做窗口级交叉验证）`);
-    return 0;
-  }
-  const cv = { halfSplit: halfSplit(records), loo: leaveOneGameOut(records) };
-  console.log(render(cv));
-  return 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {

@@ -164,12 +164,12 @@
 
 ## P4. 文档与收尾
 
-- [ ] P4.1 `README.md` / `CLAUDE.md`：SkillCorner 怎么抓、怎么转、基线怎么重生成、
+- [x] P4.1 `README.md` / `CLAUDE.md`：SkillCorner 怎么抓、怎么转、基线怎么重生成、
       交叉验证门怎么跑；口径在哪
-- [ ] P4.2 把实测发现写入文档（外推口径的影响量级、时间轴拼接、球场尺寸偏差、
+- [x] P4.2 把实测发现写入文档（外推口径的影响量级、时间轴拼接、球场尺寸偏差、
       half-split 结果）；数字以基线文件为**唯一来源**
-- [ ] P4.3 `openspec validate --all --strict` 通过
-- [ ] P4.4 代码审阅闭环（独立 subagent，直到无遗留问题；报告落 `reviews/impl-review*.md`）
+- [x] P4.3 `openspec validate --all --strict` 通过
+- [x] P4.4 代码审阅闭环（独立 subagent，直到无遗留问题；报告落 `reviews/impl-review*.md`）
 - [ ] P4.5 **合入**：merge origin/main 进分支 → push → PR → CI 绿 → merge
       —— **合入动作之前**必须先完成：跟踪 issue #78 的 comment + close、
       `openspec/changes/` 归档或留存确认、本地 main 快进。合入后 agent 会话即终止。

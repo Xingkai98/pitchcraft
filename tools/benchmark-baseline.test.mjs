@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashMetricsModule, realGameWindows } from './benchmark-baseline.mjs';
+import { hashMetricsModule, realGameWindows, converterFingerprints } from './benchmark-baseline.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE_PATH = join(ROOT, 'viewer', 'data', 'benchmark-baseline.json');
@@ -156,4 +156,16 @@ test('基线生成按逐场尺寸换算【反证条】（审阅发现的未守�
   const ratio = a.metrics[0].hd / b.metrics[0].hd;
   assert.ok(Math.abs(ratio - 105 / 104) < 1e-9,
     `105m/104m 纵深比应恰为 105/104（实际 ${ratio}）——不等说明没按逐场尺寸换算`);
+});
+
+test('基线：转换器输入指纹与当前实现一致（审阅 P3-3 的陈旧性哨兵）', { skip: !HAVE_BASELINE && SKIP_REASON }, () => {
+  // 转换器是基线的直接输入（改拼接/朝向/身份 → 基线数字变），但基线原先只 pin 指标模块。
+  // 这条哨兵让"只改转换器不重生成基线"能被检出——与指标模块的 sha256 哨兵同一纪律。
+  const b = load();
+  assert.ok(b.metricsModule.converters, '基线须记录转换器指纹');
+  const current = converterFingerprints();
+  for (const [file, hash] of Object.entries(current)) {
+    assert.equal(b.metricsModule.converters[file], hash,
+      `${file} 已变更而基线未重生成 —— 跑 node tools/benchmark-baseline.mjs`);
+  }
 });
