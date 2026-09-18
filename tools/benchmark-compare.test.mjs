@@ -13,28 +13,56 @@ import {
 } from './benchmark-compare.mjs';
 import { hashMetricsModule } from './benchmark-baseline.mjs';
 
-// 最小基线骨架（数值刻意简单，便于手算断言）
+// 最小基线骨架（P37 多数据集结构；数值刻意简单，便于手算断言）。
+// metrica 数据集作对照、skillcorner 作主数据集。
+function makeDataset(n = 13, base = 25) {
+  return {
+    label: 'dataset',
+    nGames: 2,
+    nWindows: n,
+    framesPerWindow: { nominal: 1500, primary: { median: 400, min: 200, max: 600 }, allPoints: { median: 1400, min: 900, max: 1500 } },
+    perMetric: {
+      hd: { avg: base, min: 16, max: 30, n },
+      ad: { avg: 26, min: 20, max: 29.6, n },
+      spread: { avg: 15, min: 10, max: 17, n },
+      gap: { avg: 8, min: 6, max: 10, n },
+      width: { avg: 39, min: 28, max: 47, n },
+      ballDist: { avg: 18, min: 16, max: 20, n },
+      ballDistAllFrames: { avg: 19, min: 15, max: 22, n },
+    },
+    perMetricAllPoints: {
+      hd: { avg: base + 7, min: 20, max: 34, n },
+      ad: { avg: 30, min: 24, max: 33, n },
+      spread: { avg: 18, min: 13, max: 21, n },
+      gap: { avg: 10, min: 8, max: 12, n },
+      width: { avg: 41, min: 30, max: 49, n },
+      ballDist: { avg: 20, min: 18, max: 22, n },
+      ballDistAllFrames: { avg: 21, min: 17, max: 24, n },
+    },
+    elasticity: {
+      half: { avgDelta: 3, min: -1, max: 7, n },
+      centroid: { avgDelta: -2, min: -6, max: 1, n },
+    },
+  };
+}
+
 function makeBaseline(overrides = {}) {
   return {
-    kind: 'p36-match-benchmark-baseline',
+    kind: 'p37-multi-dataset-benchmark-baseline',
+    schemaVersion: 2,
+    primaryDataset: 'skillcorner',
     metricsModule: { sha256: overrides.sha256 || null },
     windows: {
-      real: { nGames: 2, nWindows: 13 },
+      real: { nGames: 2, nWindows: 13, dataset: 'skillcorner' },
       engine: { seeds: [42, 1, 7, 99, 123], nWindows: 30, windowsPerSeed: 6 },
     },
-    real: {
-      perMetric: {
-        hd: { avg: 25, min: 16, max: 30, n: 13 },
-        ad: { avg: 26, min: 20, max: 29.6, n: 13 },
-        spread: { avg: 15, min: 10, max: 17, n: 13 },
-        gap: { avg: 8, min: 6, max: 10, n: 13 },
-        width: { avg: 39, min: 28, max: 47, n: 13 },
-        ballDist: { avg: 18, min: 16, max: 20, n: 13 },
-        ballDistAllFrames: { avg: 19, min: 15, max: 22, n: 13 },
-      },
-      elasticity: {
-        half: { avgDelta: 3, min: -1, max: 7, n: 13 },
-        centroid: { avgDelta: -2, min: -6, max: 1, n: 13 },
+    datasets: {
+      metrica: { ...makeDataset(13, 25), label: 'Metrica sample-data' },
+      skillcorner: { ...makeDataset(13, 25), label: 'SkillCorner opendata', nWindows: 139 },
+    },
+    crossDataset: {
+      metricaVsSkillcorner: {
+        hd: { aRange: [16, 30], bRange: [16, 30], aInsideB: true, bInsideA: true, overlap: true, gapM: 0 },
       },
     },
     engine: {
@@ -64,6 +92,9 @@ function makeEngineStats(hd) {
     elasticity: base.engine.elasticity,
   };
 }
+
+// 主数据集块（buildComparison 的输出按数据集分块）
+const primaryBlock = (cmp) => cmp.perDataset.find((d) => d.key === cmp.primaryDataset);
 
 // ── compareMetric：方向与幅度 ───────────────────────────────────────────
 
@@ -108,19 +139,25 @@ test('driftVsFrozen：引擎当前 vs 冻结基线的漂移（防恶化只报告
 
 // ── buildComparison：报告结构 ───────────────────────────────────────────
 
-test('buildComparison：三项采用指标 + 报告项 + 两种弹性分桶，数值正确接线', () => {
+test('buildComparison：逐数据集三项采用指标 + 报告项 + 弹性，数值正确接线', () => {
   const baseline = makeBaseline();
   const cmp = buildComparison(baseline, makeEngineStats({ avg: 40, min: 32, max: 48, n: 30 }));
-  assert.equal(cmp.adopted.length, ADOPTED_METRICS.length);
-  assert.equal(cmp.reported.length, REPORT_METRICS.length);
-  assert.equal(cmp.elasticity.length, 2);
-  const hd = cmp.adopted.find((a) => a.key === 'hd');
+  assert.equal(cmp.perDataset.length, 2, '两个数据集分别报告');
+  const ds = primaryBlock(cmp);
+  assert.equal(ds.adopted.length, ADOPTED_METRICS.length);
+  assert.equal(ds.reported.length, REPORT_METRICS.length);
+  assert.equal(ds.elasticity.length, 2);
+  const hd = ds.adopted.find((a) => a.key === 'hd');
   assert.equal(hd.comparison.direction, 'above');
-  assert.equal(hd.drift.frozenAvg, 40);
-  // 报告项的其余三项取基线真实值
-  const width = cmp.reported.find((r) => r.key === 'width');
+  assert.equal(hd.drift.frozenAvg, 40, '主数据集附冻结漂移');
+  // 非主数据集不附冻结漂移（引擎基线是全局的，只在主数据集展示一次）
+  const other = cmp.perDataset.find((d) => d.key !== cmp.primaryDataset);
+  assert.equal(other.adopted.find((a) => a.key === 'hd').drift, null);
+  const width = ds.reported.find((r) => r.key === 'width');
   assert.equal(width.comparison.real.avg, 39);
   assert.equal(width.comparison.direction, 'overlap');
+  // 全点口径对照也在（P37 D2）
+  assert.ok(hd.allPoints && hd.allPoints.real.avg === 32, '全点口径对照的真实值应上进');
   // 控球代理必须显式标注为代理（spec scenario）
   assert.match(cmp.possessionProxyNote, /代理/);
   assert.match(cmp.possessionProxyNote, /不等于真实持球权/);
@@ -136,7 +173,7 @@ test('报告期：引擎值远在真实范围之外也不产生失败语义（�
   assert.doesNotMatch(text, /合格|通过|FAIL|PASS|失败/);
 });
 
-test('renderReport：数值、方向、样本量都上屏', () => {
+test('renderReport：数值、方向、样本量、跨数据集检查都上屏', () => {
   const baseline = makeBaseline();
   const cmp = buildComparison(baseline, makeEngineStats({ avg: 40, min: 32, max: 48, n: 30 }));
   const text = renderReport(cmp);
@@ -144,7 +181,10 @@ test('renderReport：数值、方向、样本量都上屏', () => {
   assert.match(text, /25\.00 \[16\.00–30\.00\]/); // 真实观测范围
   assert.match(text, /\+60\.0%/); // 偏离幅度
   assert.match(text, /余量 2\.00m/);
-  assert.match(text, /2 场 \/ 13 个满窗/); // 样本量
+  assert.match(text, /SkillCorner opendata/); // 数据集分别报告
+  assert.match(text, /主数据集/);
+  assert.match(text, /跨数据集可比性/); // P37 D6：显式检查
+  assert.match(text, /Metrica ⊆ SkillCorner/);
   assert.match(text, /代理/); // 控球代理标注
 });
 
