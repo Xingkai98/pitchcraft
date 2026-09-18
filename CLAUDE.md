@@ -99,8 +99,11 @@ viewer 可切到「真实比赛（对照）」：公开 tracking 数据 → 帧�
   `tools/benchmark-baseline.test.mjs` + `tools/benchmark-crossvalidation.test.mjs`
 - 标尺是测量工具：**零引擎改动**。指标能否当门由实测分布是否分离决定（design D3），
   弹性是口径敏感量、不作校准目标（design D4）
-- 设计与审阅：`openspec/changes/p36-match-benchmark/`（P36 立尺 D1–D6 + 两轮审阅）、
-  `openspec/changes/p37-skillcorner-corpus/`（P37 扩样本 D1–D8 + 独立审阅 P1×5）
+- 设计与审阅（已归档，2026-09-18）：`openspec/changes/archive/2026-09-18-p36-match-benchmark/`
+  （P36 立尺 D1–D6 + 两轮审阅）、`openspec/changes/archive/2026-09-18-p37-skillcorner-corpus/`
+  （P37 扩样本 D1–D8 + 独立审阅 P1×5）；对照通路的来由见
+  `openspec/changes/archive/2026-09-18-p35-real-match-reference/`。
+  ⚠️ 主 spec 已含这三个 change 的 requirements（`openspec/specs/pitch-viewer/spec.md`）。
 
 ### 7. 参考的研究报告
 
