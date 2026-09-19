@@ -3,6 +3,24 @@
 > 本目录是 P38 wayfinder 探索（map issue #86）的实验代码存档。
 > 结论见 `../findings-final.md`。
 
+## wayfinder #90：真实横向行为规律（`q90-*.mjs`）
+
+> 结论见 `../real-lateral-laws.md`。**与上面那批探针的最重要差别是口径**：
+> 它修掉了一个**横向朝向 bug**（转换器的 y 轴没有跟 x 一起做半场翻转）——
+> 详见 `out/00-caliber.txt` §3b。**跨半场的个体横向统计必须用它**。
+
+```bash
+node q90-0-caliber.mjs      # 口径 + 与 real-formation-laws.md 对账 + 半场朝向修正
+node q90-1-team-follow.mjs  # Q1（含"引擎的球不去边路"这一上游发现）
+node q90-2-drivers.mjs      # Q2 个体横向驱动因子
+node q90-3-channels.mjs     # Q3 通道结构 / 位置分工
+node q90-4-phases.mjs       # Q4 攻防差异
+node q90-5-coupling.mjs     # Q5 横纵耦合
+node q90-6-verify-claims.mjs # 独立复核（另一套聚合；不一致即退出码 1）
+```
+
+输出存档在 `out/0{0..5}-*.txt`。**这些探针只读真实数据 + 引擎 wasm，不改引擎源码。**
+
 ## ⚠️ 运行前必读：wasm 必须是干净 main
 
 本轮探索**出过两次事故**，都源于用了错误的 `viewer/engine.wasm`：
