@@ -23,3 +23,6 @@ viewer/data/*
 !viewer/data/benchmark-baseline.json
 # 公开 tracking 数据集的本地副本（下载脚本落这里）
 .scratch/tracking-data/
+
+# P38 探索数据产物（转换后的帧序列，可由 notes/probes 里的脚本重生成）
+.scratch/p38-frames/

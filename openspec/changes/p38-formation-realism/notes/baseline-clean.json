@@ -1,0 +1,1727 @@
+{
+  "kind": "p37-multi-dataset-benchmark-baseline",
+  "schemaVersion": 2,
+  "generatedBy": "tools/benchmark-baseline.mjs",
+  "primaryDataset": "skillcorner",
+  "metricsModule": {
+    "path": "viewer/match-metrics.js",
+    "sha256": "5fc00e9e7a1e47a5faf1775254acc6b36d95eb7b310eec89c0cc904818c86272",
+    "converters": {
+      "convert-tracking-to-frames.mjs": "8d7634eb74178f7b4c690f1f6bdfeb5faf04c3195f79b346a52909f60cb723e2",
+      "convert-skillcorner-to-frames.mjs": "92c1aae0f999f7cc5611580a98841123f410b5c34ba09a4846d2a5e218dc8a14"
+    },
+    "convention": "q10–q90 线性插值分位跨度（R type-7；P37 换口径，见 match-metrics.js 头注释）",
+    "aggregation": "per-frame instantaneous shape → mean over frames; frames with <7 outfield players dropped",
+    "pitchMeters": "per-game（逐场尺寸，P37 D4）；缺省 [105,68]",
+    "sampleIntervalSec": 0.2,
+    "minOutfieldPlayers": 7,
+    "keeperIds": [
+      0,
+      21
+    ],
+    "extrapolationPolicy": "主口径跳过源数据标 is_detected=false 的外推点（与「缺失不参与」同口径）；全点口径并列于 perMetricAllPoints"
+  },
+  "windows": {
+    "sizeSec": 300,
+    "stepSec": 900,
+    "real": {
+      "nWindows": 41,
+      "nGames": 6,
+      "dataset": "skillcorner"
+    },
+    "engine": {
+      "nWindows": 30,
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123
+      ],
+      "durationSec": 5400,
+      "windowsPerSeed": 6,
+      "note": "5 种子 × 6 窗；同一种子内的窗口不独立（同一次模拟），引用时勿当作 30 个独立样本"
+    }
+  },
+  "datasets": {
+    "metrica": {
+      "label": "Metrica Sports sample-data",
+      "source": "https://github.com/metrica-sports/sample-data",
+      "license": "未声明正式许可；README 要求使用时注明来源并负责任使用（开发/研究用途）",
+      "collection": "25 Hz，人工标注/半自动；0-1 归一化坐标；球场恒 105×68",
+      "nGames": 2,
+      "nWindows": 13,
+      "games": [
+        {
+          "game": "real-game-1",
+          "status": null,
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "metrica-sports/sample-data",
+            "format": "metrica-3csv",
+            "hz": 25,
+            "keyframeHz": 5,
+            "frameCount": 29002,
+            "startSec": 0.04,
+            "endSec": 5800.24,
+            "timeGaps": null,
+            "timeAxis": null
+          },
+          "windows": [
+            {
+              "startSec": 0.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 27.61,
+                "ad": 27.35,
+                "spread": 14.53,
+                "gap": 8.35,
+                "width": 33.29,
+                "ballDist": 17.66
+              }
+            },
+            {
+              "startSec": 900.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 25.88,
+                "ad": 26.72,
+                "spread": 15.26,
+                "gap": 8.41,
+                "width": 39.58,
+                "ballDist": 16.66
+              }
+            },
+            {
+              "startSec": 1800.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 27.9,
+                "ad": 27.78,
+                "spread": 16.36,
+                "gap": 7.16,
+                "width": 42.43,
+                "ballDist": 18.3
+              }
+            },
+            {
+              "startSec": 2700.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.57,
+                "ad": 26.49,
+                "spread": 15.63,
+                "gap": 8.33,
+                "width": 40.16,
+                "ballDist": 18.48
+              }
+            },
+            {
+              "startSec": 3600.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 25.05,
+                "ad": 30.25,
+                "spread": 14,
+                "gap": 10.54,
+                "width": 34.31,
+                "ballDist": 19.67
+              }
+            },
+            {
+              "startSec": 4500.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.47,
+                "ad": 28.02,
+                "spread": 15.73,
+                "gap": 7.26,
+                "width": 43.07,
+                "ballDist": 20.38
+              }
+            },
+            {
+              "startSec": 5400.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.83,
+                "ad": 28.25,
+                "spread": 17.15,
+                "gap": 6.8,
+                "width": 46.78,
+                "ballDist": 20.15
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.04,
+            "uncoveredSec": 100.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "real-game-2",
+          "status": null,
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "metrica-sports/sample-data",
+            "format": "metrica-3csv",
+            "hz": 25,
+            "keyframeHz": 5,
+            "frameCount": 28232,
+            "startSec": 0.04,
+            "endSec": 5646.24,
+            "timeGaps": null,
+            "timeAxis": null
+          },
+          "windows": [
+            {
+              "startSec": 0.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 27.33,
+                "ad": 25.88,
+                "spread": 16.35,
+                "gap": 7.73,
+                "width": 43.95,
+                "ballDist": 18.36
+              }
+            },
+            {
+              "startSec": 900.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 25.43,
+                "ad": 24.43,
+                "spread": 15.79,
+                "gap": 7.57,
+                "width": 42.78,
+                "ballDist": 18.14
+              }
+            },
+            {
+              "startSec": 1800.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 26.45,
+                "ad": 27.89,
+                "spread": 15.6,
+                "gap": 8.02,
+                "width": 40.47,
+                "ballDist": 17.51
+              }
+            },
+            {
+              "startSec": 2700.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 30.19,
+                "ad": 28.7,
+                "spread": 15.31,
+                "gap": 10.05,
+                "width": 35.47,
+                "ballDist": 20.01
+              }
+            },
+            {
+              "startSec": 3600.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 24.73,
+                "ad": 25.04,
+                "spread": 15.61,
+                "gap": 7.84,
+                "width": 44.09,
+                "ballDist": 16.7
+              }
+            },
+            {
+              "startSec": 4500.04,
+              "nominalSec": 300,
+              "frameCount": 1500,
+              "okPrimary": 1500,
+              "okAllPoints": 1500,
+              "windowMetrics": {
+                "hd": 16.76,
+                "ad": 21.53,
+                "spread": 10.75,
+                "gap": 10.13,
+                "width": 28.17,
+                "ballDist": 16.62
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 4800.04,
+            "uncoveredSec": 846.2,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": {
+            "startSec": 5400.04,
+            "durationSec": 246.2,
+            "reason": "不足 300s 的残窗，不入统计"
+          }
+        }
+      ],
+      "framesPerWindow": {
+        "nominal": 1500,
+        "primary": {
+          "median": 1500,
+          "min": 1500,
+          "max": 1500
+        },
+        "allPoints": {
+          "median": 1500,
+          "min": 1500,
+          "max": 1500
+        }
+      },
+      "perMetric": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 25.93902330923077,
+          "min": 16.758590449999986,
+          "max": 30.19213127000001,
+          "n": 13
+        },
+        "ad": {
+          "avg": 26.79333066307693,
+          "min": 21.525344049999987,
+          "max": 30.252763029999997,
+          "n": 13
+        },
+        "spread": {
+          "avg": 15.236805963646637,
+          "min": 10.747985807741331,
+          "max": 17.153388788221324,
+          "n": 13
+        },
+        "gap": {
+          "avg": 8.323166302431668,
+          "min": 6.803545743561096,
+          "max": 10.542476607325892,
+          "n": 13
+        },
+        "width": {
+          "avg": 39.580609737435914,
+          "min": 28.174677546666672,
+          "max": 46.77525293333335,
+          "n": 13
+        },
+        "ballDist": {
+          "avg": 18.357294263710838,
+          "min": 16.624405626232143,
+          "max": 20.378468694115718,
+          "n": 13
+        },
+        "ballDistAllFrames": {
+          "avg": 18.92344709398753,
+          "min": 15.799017729244918,
+          "max": 21.775658259438224,
+          "n": 13
+        },
+        "possessionHome": {
+          "avg": 0.5060763191411293,
+          "min": 0.3206793206793207,
+          "max": 0.791889007470651,
+          "n": 13
+        },
+        "ballDistFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "possessionFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "frameCount": {
+          "avg": 1500,
+          "min": 1500,
+          "max": 1500,
+          "n": 13
+        }
+      },
+      "perMetricAllPoints": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 25.93902330923077,
+          "min": 16.758590449999986,
+          "max": 30.19213127000001,
+          "n": 13
+        },
+        "ad": {
+          "avg": 26.79333066307693,
+          "min": 21.525344049999987,
+          "max": 30.252763029999997,
+          "n": 13
+        },
+        "spread": {
+          "avg": 15.236805963646637,
+          "min": 10.747985807741331,
+          "max": 17.153388788221324,
+          "n": 13
+        },
+        "gap": {
+          "avg": 8.323166302431668,
+          "min": 6.803545743561096,
+          "max": 10.542476607325892,
+          "n": 13
+        },
+        "width": {
+          "avg": 39.580609737435914,
+          "min": 28.174677546666672,
+          "max": 46.77525293333335,
+          "n": 13
+        },
+        "ballDist": {
+          "avg": 18.357294263710838,
+          "min": 16.624405626232143,
+          "max": 20.378468694115718,
+          "n": 13
+        },
+        "ballDistAllFrames": {
+          "avg": 18.92344709398753,
+          "min": 15.799017729244918,
+          "max": 21.775658259438224,
+          "n": 13
+        },
+        "possessionHome": {
+          "avg": 0.5060763191411293,
+          "min": 0.3206793206793207,
+          "max": 0.791889007470651,
+          "n": 13
+        },
+        "ballDistFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "possessionFrames": {
+          "avg": 913.1538461538462,
+          "min": 226,
+          "max": 1248,
+          "n": 13
+        },
+        "frameCount": {
+          "avg": 1500,
+          "min": 1500,
+          "max": 1500,
+          "n": 13
+        }
+      },
+      "elasticity": {
+        "convention": "rawBallFramesOnly（球相关口径：只用原始观测球帧；外推球位按 ballFill 标记排除）",
+        "half": {
+          "avgDelta": 3.1558457166056773,
+          "min": -1.3985483427755625,
+          "max": 7.001892633912259,
+          "n": 13
+        },
+        "centroid": {
+          "avgDelta": -2.3171573095839624,
+          "min": -6.358875117814193,
+          "max": 1.5409275856854556,
+          "n": 13
+        }
+      }
+    },
+    "skillcorner": {
+      "label": "SkillCorner opendata（澳超 2024/25）",
+      "source": "https://github.com/SkillCorner/opendata",
+      "license": "MIT（仓库根 LICENSE）",
+      "collection": "10 fps，广播 CV 重建；米制中心原点；球场 104/105/106 三种；点带 is_detected 外推标记",
+      "nGames": 6,
+      "nWindows": 41,
+      "games": [
+        {
+          "game": "skillcorner-1874553",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22122,
+            "startSec": 0,
+            "endSec": 6024.1,
+            "timeGaps": {
+              "count": 62,
+              "maxSec": 143.1,
+              "totalSec": 1612.3
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 198,
+              "seamGapSec": 7.1
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1326,
+              "okPrimary": 236,
+              "okAllPoints": 1326,
+              "windowMetrics": {
+                "hd": 19.21,
+                "ad": 21.38,
+                "spread": 12.43,
+                "gap": 6.56,
+                "width": 32.04,
+                "ballDist": 16.56
+              }
+            },
+            {
+              "startSec": 900,
+              "nominalSec": 300,
+              "frameCount": 1178,
+              "okPrimary": 376,
+              "okAllPoints": 1178,
+              "windowMetrics": {
+                "hd": 19.05,
+                "ad": 19.34,
+                "spread": 14.38,
+                "gap": 4.42,
+                "width": 42.53,
+                "ballDist": 18.57
+              }
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 995,
+              "okPrimary": 552,
+              "okAllPoints": 995,
+              "windowMetrics": {
+                "hd": 18.49,
+                "ad": 19.44,
+                "spread": 13.08,
+                "gap": 4.67,
+                "width": 37.27,
+                "ballDist": 14.44
+              }
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 960,
+              "okPrimary": 516,
+              "okAllPoints": 960,
+              "windowMetrics": {
+                "hd": 18.37,
+                "ad": 18.54,
+                "spread": 12.09,
+                "gap": 4.79,
+                "width": 33.12,
+                "ballDist": 15.65
+              }
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 1151,
+              "okPrimary": 419,
+              "okAllPoints": 1151,
+              "windowMetrics": {
+                "hd": 13.82,
+                "ad": 17.08,
+                "spread": 10.46,
+                "gap": 3.93,
+                "width": 30.1,
+                "ballDist": 15.68
+              }
+            },
+            {
+              "startSec": 4511.5,
+              "nominalSec": 300,
+              "frameCount": 1100,
+              "okPrimary": 459,
+              "okAllPoints": 1100,
+              "windowMetrics": {
+                "hd": 16.49,
+                "ad": 17.3,
+                "spread": 11.72,
+                "gap": 4.81,
+                "width": 36.2,
+                "ballDist": 14.16
+              }
+            },
+            {
+              "startSec": 5400.1,
+              "nominalSec": 300,
+              "frameCount": 1091,
+              "okPrimary": 483,
+              "okAllPoints": 1091,
+              "windowMetrics": {
+                "hd": 19.07,
+                "ad": 18.13,
+                "spread": 13.62,
+                "gap": 5.37,
+                "width": 39.8,
+                "ballDist": 15.07
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700.1,
+            "uncoveredSec": 324,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1886347",
+          "status": "closed",
+          "pitchMeters": [
+            104,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21729,
+            "startSec": 0,
+            "endSec": 5901.7,
+            "timeGaps": {
+              "count": 63,
+              "maxSec": 116.5,
+              "totalSec": 1568.7
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 78,
+              "seamGapSec": 0.1
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1437,
+              "okPrimary": 781,
+              "okAllPoints": 1437,
+              "windowMetrics": {
+                "hd": 17.67,
+                "ad": 19.86,
+                "spread": 11.83,
+                "gap": 5.72,
+                "width": 31.36,
+                "ballDist": 14.43
+              }
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1212,
+              "okPrimary": 446,
+              "okAllPoints": 1212,
+              "windowMetrics": {
+                "hd": 19.31,
+                "ad": 18.05,
+                "spread": 14.35,
+                "gap": 5.01,
+                "width": 40.74,
+                "ballDist": 13.27
+              }
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1314,
+              "okPrimary": 633,
+              "okAllPoints": 1314,
+              "windowMetrics": {
+                "hd": 18.25,
+                "ad": 16.5,
+                "spread": 14.6,
+                "gap": 4.35,
+                "width": 42.34,
+                "ballDist": 13.55
+              }
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 1418,
+              "okPrimary": 811,
+              "okAllPoints": 1418,
+              "windowMetrics": {
+                "hd": 17.37,
+                "ad": 17.25,
+                "spread": 13.24,
+                "gap": 5.16,
+                "width": 36.58,
+                "ballDist": 15.68
+              }
+            },
+            {
+              "startSec": 3600.1,
+              "nominalSec": 300,
+              "frameCount": 766,
+              "okPrimary": 319,
+              "okAllPoints": 766,
+              "windowMetrics": {
+                "hd": 18.6,
+                "ad": 15.35,
+                "spread": 14.53,
+                "gap": 4.24,
+                "width": 41.67,
+                "ballDist": 14.82
+              }
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 841,
+              "okPrimary": 461,
+              "okAllPoints": 841,
+              "windowMetrics": {
+                "hd": 15.26,
+                "ad": 12.53,
+                "spread": 12.6,
+                "gap": 4.06,
+                "width": 37.09,
+                "ballDist": 13.32
+              }
+            },
+            {
+              "startSec": 5468.9,
+              "nominalSec": 300,
+              "frameCount": 690,
+              "okPrimary": 262,
+              "okAllPoints": 690,
+              "windowMetrics": {
+                "hd": 13.84,
+                "ad": 17.44,
+                "spread": 11.27,
+                "gap": 8.32,
+                "width": 34.47,
+                "ballDist": 14.77
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5768.9,
+            "uncoveredSec": 132.8,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1899585",
+          "status": "closed",
+          "pitchMeters": [
+            104,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 20341,
+            "startSec": 0,
+            "endSec": 6041.9,
+            "timeGaps": {
+              "count": 72,
+              "maxSec": 129.6,
+              "totalSec": 1988.3
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 275,
+              "seamGapSec": 9.5
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1174,
+              "okPrimary": 605,
+              "okAllPoints": 1174,
+              "windowMetrics": {
+                "hd": 18.3,
+                "ad": 16.47,
+                "spread": 13.93,
+                "gap": 5.47,
+                "width": 38.5,
+                "ballDist": 16.79
+              }
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1129,
+              "okPrimary": 586,
+              "okAllPoints": 1129,
+              "windowMetrics": {
+                "hd": 18.48,
+                "ad": 17.82,
+                "spread": 13.72,
+                "gap": 5.44,
+                "width": 39.46,
+                "ballDist": 12.98
+              }
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 935,
+              "okPrimary": 384,
+              "okAllPoints": 935,
+              "windowMetrics": {
+                "hd": 19.77,
+                "ad": 20.03,
+                "spread": 14.54,
+                "gap": 5.91,
+                "width": 40.28,
+                "ballDist": 14.32
+              }
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1076,
+              "okPrimary": 406,
+              "okAllPoints": 1076,
+              "windowMetrics": {
+                "hd": 14.89,
+                "ad": 16.22,
+                "spread": 11.27,
+                "gap": 4.74,
+                "width": 33.33,
+                "ballDist": 15.33
+              }
+            },
+            {
+              "startSec": 3600,
+              "nominalSec": 300,
+              "frameCount": 956,
+              "okPrimary": 296,
+              "okAllPoints": 956,
+              "windowMetrics": {
+                "hd": 19.12,
+                "ad": 19.2,
+                "spread": 13.6,
+                "gap": 4.84,
+                "width": 37.7,
+                "ballDist": 13.31
+              }
+            },
+            {
+              "startSec": 4509.3,
+              "nominalSec": 300,
+              "frameCount": 1100,
+              "okPrimary": 474,
+              "okAllPoints": 1100,
+              "windowMetrics": {
+                "hd": 12.21,
+                "ad": 17,
+                "spread": 10.46,
+                "gap": 5.27,
+                "width": 31.29,
+                "ballDist": 17.51
+              }
+            },
+            {
+              "startSec": 5400,
+              "nominalSec": 300,
+              "frameCount": 1042,
+              "okPrimary": 339,
+              "okAllPoints": 1042,
+              "windowMetrics": {
+                "hd": 17.19,
+                "ad": 21.01,
+                "spread": 12.01,
+                "gap": 5.6,
+                "width": 34.59,
+                "ballDist": 13.85
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 341.9,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-1959846",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 21370,
+            "startSec": 0,
+            "endSec": 5840.3,
+            "timeGaps": {
+              "count": 65,
+              "maxSec": 95.3,
+              "totalSec": 1579.5
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 96,
+              "seamGapSec": 0.1
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1254,
+              "okPrimary": 464,
+              "okAllPoints": 1254,
+              "windowMetrics": {
+                "hd": 19.38,
+                "ad": 18.59,
+                "spread": 12.32,
+                "gap": 4.56,
+                "width": 36.28,
+                "ballDist": 11.12
+              }
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1118,
+              "okPrimary": 506,
+              "okAllPoints": 1118,
+              "windowMetrics": {
+                "hd": 15.44,
+                "ad": 19.4,
+                "spread": 11.18,
+                "gap": 5.04,
+                "width": 33.97,
+                "ballDist": 16.71
+              }
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 1094,
+              "okPrimary": 485,
+              "okAllPoints": 1094,
+              "windowMetrics": {
+                "hd": 21.94,
+                "ad": 19.17,
+                "spread": 15.38,
+                "gap": 5.55,
+                "width": 44.96,
+                "ballDist": 15.27
+              }
+            },
+            {
+              "startSec": 2700,
+              "nominalSec": 300,
+              "frameCount": 1404,
+              "okPrimary": 625,
+              "okAllPoints": 1404,
+              "windowMetrics": {
+                "hd": 19.1,
+                "ad": 17.99,
+                "spread": 13.65,
+                "gap": 4.59,
+                "width": 39.32,
+                "ballDist": 14.11
+              }
+            },
+            {
+              "startSec": 3600.1,
+              "nominalSec": 300,
+              "frameCount": 892,
+              "okPrimary": 384,
+              "okAllPoints": 892,
+              "windowMetrics": {
+                "hd": 14.34,
+                "ad": 14.93,
+                "spread": 11.58,
+                "gap": 3.87,
+                "width": 34.02,
+                "ballDist": 16.9
+              }
+            },
+            {
+              "startSec": 4500.1,
+              "nominalSec": 300,
+              "frameCount": 1114,
+              "okPrimary": 540,
+              "okAllPoints": 1114,
+              "windowMetrics": {
+                "hd": 18.63,
+                "ad": 21.79,
+                "spread": 12.36,
+                "gap": 4.78,
+                "width": 34.53,
+                "ballDist": 13.72
+              }
+            },
+            {
+              "startSec": 5400,
+              "nominalSec": 300,
+              "frameCount": 1138,
+              "okPrimary": 627,
+              "okAllPoints": 1138,
+              "windowMetrics": {
+                "hd": 15.5,
+                "ad": 15.05,
+                "spread": 11.13,
+                "gap": 5.15,
+                "width": 33.44,
+                "ballDist": 16.07
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5700,
+            "uncoveredSec": 140.3,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2007448",
+          "status": "closed",
+          "pitchMeters": [
+            105,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22142,
+            "startSec": 0,
+            "endSec": 5804.5,
+            "timeGaps": {
+              "count": 64,
+              "maxSec": 83.9,
+              "totalSec": 1389.1
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 152,
+              "seamGapSec": 13.4
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1428,
+              "okPrimary": 492,
+              "okAllPoints": 1428,
+              "windowMetrics": {
+                "hd": 19.23,
+                "ad": 19.12,
+                "spread": 12.99,
+                "gap": 4.98,
+                "width": 35.53,
+                "ballDist": 13.93
+              }
+            },
+            {
+              "startSec": 972.6,
+              "nominalSec": 300,
+              "frameCount": 1101,
+              "okPrimary": 382,
+              "okAllPoints": 1101,
+              "windowMetrics": {
+                "hd": 18.33,
+                "ad": 15.56,
+                "spread": 12.25,
+                "gap": 4.51,
+                "width": 33.51,
+                "ballDist": 12.7
+              }
+            },
+            {
+              "startSec": 1800.1,
+              "nominalSec": 300,
+              "frameCount": 1126,
+              "okPrimary": 381,
+              "okAllPoints": 1126,
+              "windowMetrics": {
+                "hd": 21.11,
+                "ad": 21.1,
+                "spread": 12.77,
+                "gap": 3.95,
+                "width": 34.97,
+                "ballDist": 13.29
+              }
+            },
+            {
+              "startSec": 2707.7,
+              "nominalSec": 300,
+              "frameCount": 958,
+              "okPrimary": 368,
+              "okAllPoints": 958,
+              "windowMetrics": {
+                "hd": 15.94,
+                "ad": 20.13,
+                "spread": 11.82,
+                "gap": 5.57,
+                "width": 34.85,
+                "ballDist": 13.97
+              }
+            },
+            {
+              "startSec": 3601,
+              "nominalSec": 300,
+              "frameCount": 1147,
+              "okPrimary": 300,
+              "okAllPoints": 1147,
+              "windowMetrics": {
+                "hd": 18.45,
+                "ad": 15.36,
+                "spread": 13.17,
+                "gap": 5.45,
+                "width": 39.66,
+                "ballDist": 14.03
+              }
+            },
+            {
+              "startSec": 4501,
+              "nominalSec": 300,
+              "frameCount": 1359,
+              "okPrimary": 532,
+              "okAllPoints": 1359,
+              "windowMetrics": {
+                "hd": 15.4,
+                "ad": 17.04,
+                "spread": 11.37,
+                "gap": 4.31,
+                "width": 33.55,
+                "ballDist": 14.58
+              }
+            },
+            {
+              "startSec": 5421.5,
+              "nominalSec": 300,
+              "frameCount": 861,
+              "okPrimary": 350,
+              "okAllPoints": 861,
+              "windowMetrics": {
+                "hd": 18.03,
+                "ad": 18.11,
+                "spread": 12.28,
+                "gap": 6.66,
+                "width": 36.14,
+                "ballDist": 13.08
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 5721.5,
+            "uncoveredSec": 83,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": null
+        },
+        {
+          "game": "skillcorner-2013725",
+          "status": "closed",
+          "pitchMeters": [
+            106,
+            68
+          ],
+          "meta": {
+            "source": "SkillCorner/opendata",
+            "format": "skillcorner-jsonl",
+            "hz": 10,
+            "keyframeHz": 5,
+            "frameCount": 22496,
+            "startSec": 0,
+            "endSec": 5674.9,
+            "timeGaps": {
+              "count": 69,
+              "maxSec": 89.8,
+              "totalSec": 1189.7
+            },
+            "timeAxis": {
+              "shiftSource": "match_periods",
+              "shiftSec": 89,
+              "seamGapSec": 0.1
+            }
+          },
+          "windows": [
+            {
+              "startSec": 0,
+              "nominalSec": 300,
+              "frameCount": 1124,
+              "okPrimary": 650,
+              "okAllPoints": 1124,
+              "windowMetrics": {
+                "hd": 19.87,
+                "ad": 16.46,
+                "spread": 13.67,
+                "gap": 5.62,
+                "width": 41.25,
+                "ballDist": 18.17
+              }
+            },
+            {
+              "startSec": 900.1,
+              "nominalSec": 300,
+              "frameCount": 1009,
+              "okPrimary": 403,
+              "okAllPoints": 1009,
+              "windowMetrics": {
+                "hd": 14.75,
+                "ad": 15.75,
+                "spread": 10.61,
+                "gap": 4.51,
+                "width": 29.63,
+                "ballDist": 16.73
+              }
+            },
+            {
+              "startSec": 1800,
+              "nominalSec": 300,
+              "frameCount": 1146,
+              "okPrimary": 282,
+              "okAllPoints": 1146,
+              "windowMetrics": {
+                "hd": 17.87,
+                "ad": 20.8,
+                "spread": 12.11,
+                "gap": 5.24,
+                "width": 33.69,
+                "ballDist": 16.56
+              }
+            },
+            {
+              "startSec": 2700.1,
+              "nominalSec": 300,
+              "frameCount": 1298,
+              "okPrimary": 506,
+              "okAllPoints": 1298,
+              "windowMetrics": {
+                "hd": 17.91,
+                "ad": 18.73,
+                "spread": 11.79,
+                "gap": 6.04,
+                "width": 33.63,
+                "ballDist": 16.33
+              }
+            },
+            {
+              "startSec": 3612,
+              "nominalSec": 300,
+              "frameCount": 1052,
+              "okPrimary": 238,
+              "okAllPoints": 1052,
+              "windowMetrics": {
+                "hd": 16.2,
+                "ad": 16.86,
+                "spread": 10.91,
+                "gap": 5.14,
+                "width": 29.36,
+                "ballDist": 13.54
+              }
+            },
+            {
+              "startSec": 4500,
+              "nominalSec": 300,
+              "frameCount": 1204,
+              "okPrimary": 485,
+              "okAllPoints": 1204,
+              "windowMetrics": {
+                "hd": 19.3,
+                "ad": 17.7,
+                "spread": 11.98,
+                "gap": 4.84,
+                "width": 31.39,
+                "ballDist": 10.87
+              }
+            }
+          ],
+          "tail": {
+            "lastWindowEndSec": 4800,
+            "uncoveredSec": 874.9,
+            "note": "步长 900s/窗宽 300s：窗间 600s 间隔是切片设计（非连续段）；uncoveredSec 含该间隔与残窗"
+          },
+          "discardedPartialWindow": {
+            "startSec": 5400,
+            "durationSec": 274.9,
+            "reason": "不足 300s 的残窗，不入统计"
+          }
+        }
+      ],
+      "framesPerWindow": {
+        "nominal": 1500,
+        "primary": {
+          "median": 461,
+          "min": 236,
+          "max": 811
+        },
+        "allPoints": {
+          "median": 1118,
+          "min": 690,
+          "max": 1437
+        }
+      },
+      "perMetric": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 17.59726979795895,
+          "min": 12.212597046413498,
+          "max": 21.943309278350515,
+          "n": 41
+        },
+        "ad": {
+          "avg": 17.940399707705538,
+          "min": 12.525991323210414,
+          "max": 21.7894722222222,
+          "n": 41
+        },
+        "spread": {
+          "avg": 12.562972290599022,
+          "min": 10.457533899450981,
+          "max": 15.384282618053074,
+          "n": 41
+        },
+        "gap": {
+          "avg": 5.098750146748875,
+          "min": 3.8730848679354533,
+          "max": 8.324163752909213,
+          "n": 41
+        },
+        "width": {
+          "avg": 35.95451502928137,
+          "min": 29.355966386554613,
+          "max": 44.96358762886596,
+          "n": 41
+        },
+        "ballDist": {
+          "avg": 14.773967236979834,
+          "min": 10.870351042869533,
+          "max": 18.571518160698645,
+          "n": 41
+        },
+        "ballDistAllFrames": {
+          "avg": 14.853441573213411,
+          "min": 11.048022481464614,
+          "max": 18.571518160698645,
+          "n": 41
+        },
+        "possessionHome": {
+          "avg": 0.48822362198937697,
+          "min": 0.2134387351778656,
+          "max": 0.7862068965517242,
+          "n": 41
+        },
+        "ballDistFrames": {
+          "avg": 441.4146341463415,
+          "min": 222,
+          "max": 792,
+          "n": 41
+        },
+        "possessionFrames": {
+          "avg": 441.4146341463415,
+          "min": 222,
+          "max": 792,
+          "n": 41
+        },
+        "frameCount": {
+          "avg": 459.609756097561,
+          "min": 236,
+          "max": 811,
+          "n": 41
+        }
+      },
+      "perMetricAllPoints": {
+        "skippedWindows": 0,
+        "hd": {
+          "avg": 25.23251325366677,
+          "min": 17.048332161687174,
+          "max": 29.551150822669094,
+          "n": 41
+        },
+        "ad": {
+          "avg": 25.58312426239189,
+          "min": 19.451258943781937,
+          "max": 31.919304675716468,
+          "n": 41
+        },
+        "spread": {
+          "avg": 14.533127346317606,
+          "min": 11.545893835813422,
+          "max": 16.691009597028188,
+          "n": 41
+        },
+        "gap": {
+          "avg": 6.842663271457728,
+          "min": 5.540523387206463,
+          "max": 10.568151052665801,
+          "n": 41
+        },
+        "width": {
+          "avg": 37.650977208571284,
+          "min": 32.704958333333316,
+          "max": 46.69095902353967,
+          "n": 41
+        },
+        "ballDist": {
+          "avg": 18.530785041881064,
+          "min": 15.045089760795905,
+          "max": 22.30215857610158,
+          "n": 41
+        },
+        "ballDistAllFrames": {
+          "avg": 19.197186948746623,
+          "min": 15.580636925188411,
+          "max": 22.870489112900785,
+          "n": 41
+        },
+        "possessionHome": {
+          "avg": 0.47523044618238036,
+          "min": 0.20246913580246914,
+          "max": 0.7002032520325203,
+          "n": 41
+        },
+        "ballDistFrames": {
+          "avg": 900.2926829268292,
+          "min": 515,
+          "max": 1263,
+          "n": 41
+        },
+        "possessionFrames": {
+          "avg": 900.2926829268292,
+          "min": 515,
+          "max": 1263,
+          "n": 41
+        },
+        "frameCount": {
+          "avg": 1115.0731707317073,
+          "min": 690,
+          "max": 1437,
+          "n": 41
+        }
+      },
+      "elasticity": {
+        "convention": "rawBallFramesOnly（球相关口径：只用原始观测球帧；外推球位按 ballFill 标记排除）",
+        "half": {
+          "avgDelta": 1.709620915476109,
+          "min": -3.878566213730565,
+          "max": 6.329344895818224,
+          "n": 41
+        },
+        "centroid": {
+          "avgDelta": -0.9602306310487495,
+          "min": -7.621803925798105,
+          "max": 4.337477995084351,
+          "n": 41
+        }
+      }
+    }
+  },
+  "crossDataset": {
+    "metricaVsSkillcorner": {
+      "hd": {
+        "aRange": [
+          16.758590449999986,
+          30.19213127000001
+        ],
+        "bRange": [
+          12.212597046413498,
+          21.943309278350515
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "ad": {
+        "aRange": [
+          21.525344049999987,
+          30.252763029999997
+        ],
+        "bRange": [
+          12.525991323210414,
+          21.7894722222222
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "spread": {
+        "aRange": [
+          10.747985807741331,
+          17.153388788221324
+        ],
+        "bRange": [
+          10.457533899450981,
+          15.384282618053074
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "gap": {
+        "aRange": [
+          6.803545743561096,
+          10.542476607325892
+        ],
+        "bRange": [
+          3.8730848679354533,
+          8.324163752909213
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      },
+      "width": {
+        "aRange": [
+          28.174677546666672,
+          46.77525293333335
+        ],
+        "bRange": [
+          29.355966386554613,
+          44.96358762886596
+        ],
+        "aInsideB": false,
+        "bInsideA": true,
+        "overlap": true,
+        "gapM": 0
+      },
+      "ballDist": {
+        "aRange": [
+          16.624405626232143,
+          20.378468694115718
+        ],
+        "bRange": [
+          10.870351042869533,
+          18.571518160698645
+        ],
+        "aInsideB": false,
+        "bInsideA": false,
+        "overlap": true,
+        "gapM": 0
+      }
+    }
+  },
+  "engine": {
+    "perMetric": {
+      "skippedWindows": 0,
+      "hd": {
+        "avg": 40.401040519940814,
+        "min": 39.532951112755285,
+        "max": 41.89821212709499,
+        "n": 30
+      },
+      "ad": {
+        "avg": 40.637545516915026,
+        "min": 39.70601170629319,
+        "max": 42.00213810966881,
+        "n": 30
+      },
+      "spread": {
+        "avg": 18.64703140882382,
+        "min": 18.31292985625439,
+        "max": 19.01073508132405,
+        "n": 30
+      },
+      "gap": {
+        "avg": 23.53289471322298,
+        "min": 23.259807162473734,
+        "max": 23.86026090546401,
+        "n": 30
+      },
+      "width": {
+        "avg": 40.851777827266964,
+        "min": 40.50323288859342,
+        "max": 41.18225519999966,
+        "n": 30
+      },
+      "ballDist": {
+        "avg": 19.865262914949884,
+        "min": 12.735150639835284,
+        "max": 30.588099102070117,
+        "n": 30
+      },
+      "ballDistAllFrames": {
+        "avg": 19.865262914949884,
+        "min": 12.735150639835284,
+        "max": 30.588099102070117,
+        "n": 30
+      },
+      "possessionHome": {
+        "avg": 0.4723333333333334,
+        "min": 0.052,
+        "max": 0.9066666666666666,
+        "n": 30
+      },
+      "ballDistFrames": {
+        "avg": 1500,
+        "min": 1500,
+        "max": 1500,
+        "n": 30
+      },
+      "possessionFrames": {
+        "avg": 1500,
+        "min": 1500,
+        "max": 1500,
+        "n": 30
+      },
+      "frameCount": {
+        "avg": 1500,
+        "min": 1500,
+        "max": 1500,
+        "n": 30
+      }
+    },
+    "elasticity": {
+      "half": {
+        "avgDelta": -2.68598986237459,
+        "min": -4.279943111558147,
+        "max": -1.466730327021068,
+        "n": 30
+      },
+      "centroid": {
+        "avgDelta": -2.762937118944388,
+        "min": -4.061080180424177,
+        "max": -1.5405016696923397,
+        "n": 30
+      }
+    },
+    "perSeed": [
+      {
+        "seed": 42,
+        "hd": 40.04542071783408,
+        "ad": 40.90827498566461,
+        "spread": 18.548695915650573,
+        "gap": 23.557895591759358,
+        "width": 40.79559263587149
+      },
+      {
+        "seed": 1,
+        "hd": 40.802145527367635,
+        "ad": 40.54730447809114,
+        "spread": 18.703109860397607,
+        "gap": 23.501631904816858,
+        "width": 40.9133488253743
+      },
+      {
+        "seed": 7,
+        "hd": 40.551589981988265,
+        "ad": 40.33784784262644,
+        "spread": 18.71819793485632,
+        "gap": 23.657926714550115,
+        "width": 40.848196133334234
+      },
+      {
+        "seed": 99,
+        "hd": 40.185077559415994,
+        "ad": 40.682243293116706,
+        "spread": 18.586807059548892,
+        "gap": 23.46778761861607,
+        "width": 40.83760324444547
+      },
+      {
+        "seed": 123,
+        "hd": 40.42096881309802,
+        "ad": 40.71205698507624,
+        "spread": 18.678346273665735,
+        "gap": 23.4792317363725,
+        "width": 40.86414829730927
+      }
+    ]
+  },
+  "declarations": {
+    "rangeMeaning": "本基线是真实比赛的观测范围，不是\"真实足球的分布\"。区间自身不确定性大（bootstrap CI 宽度 ≈ 区间宽度），只可用于报警与量差距，不可作为验收判据。",
+    "rangeWidthMechanisms": [
+      "① 样本增加暴露更多变异（P36 预期的那条）",
+      "② 每窗样本量下降导致窗口均值方差上升（SkillCorner 主口径每窗有效帧远少于 Metrica 的恒 1500）",
+      "③ 口径差异（P37 D2 的估计量与两侧外推/缺失处理不同）"
+    ],
+    "notCovered": [
+      "联赛/球队风格/球队实力（Metrica 匿名；SkillCorner 已知澳超 2024/25，20 场）",
+      "比分状态未按追分/领先分桶",
+      "换人前后、天气、场地条件未分层",
+      "窗口步长 900s：窗间是散点切片、非连续时段；同一场的相邻窗高度相关，独立样本数 = 场次数"
+    ],
+    "controlProxy": "控球相位 = 离球最近者所属队（代理，非真实持球权）",
+    "ballFrames": "球相关指标主口径只用原始观测球帧；全帧对照见 perMetric.ballDistAllFrames",
+    "timeGaps": "拼接后仍有无观测时段：skillcorner 球场均无观测 9328s（占 26.4%，来自回放/特写缺口 + 半场接缝间隙 30.3s ≈ 0.09%）；不被插值，按实际帧取样",
+    "pitchSize": "逐场尺寸换算（P37 D4）：SkillCorner 有 104/105/106 三种场地，各按自己的尺寸归一化与换算，不折算到统一名义尺寸",
+    "crossValidation": "交叉验证（half-split / LOO）本阶段是**报告项、不是门**：min/max 包含门的通过率与样本量无关（N=20 时约 0.25），数据正常时也会频繁变红——升格为门须先刻画门的零分布（见 change design D7）"
+  },
+  "regenerate": {
+    "steps": [
+      "node tools/fetch-tracking-data.mjs",
+      "node tools/convert-tracking-to-frames.mjs --in .scratch/tracking-data/sample-data/data/Sample_Game_1 --out viewer/data/real-game-1.json",
+      "node tools/convert-tracking-to-frames.mjs --in .scratch/tracking-data/sample-data/data/Sample_Game_2 --out viewer/data/real-game-2.json",
+      "node tools/convert-skillcorner-to-frames.mjs --match <.../<id>_match.json> --out viewer/data/skillcorner-<id>.json（20 场）",
+      "(cd engine && cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)",
+      "node tools/benchmark-baseline.mjs"
+    ],
+    "note": "原始数据与转换产物不入库（.gitignore）；换用更多真实比赛时：把转换产物放进 viewer/data/ 并重跑本脚本"
+  }
+}

@@ -1,0 +1,21 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 3bbf740..2464163 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -2648,12 +2648,10 @@ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
+         let own_goal_x = if home { 0.0 } else { 1.0 };
+         let push = (ball.0 - own_goal_x).abs() * DEFENSE_PUSH_FACTOR;
+         let tx_full = base.0 + shift + attack_dir * press + attack_dir * push;
+-        // 不越过球（home line.x ≤ ball.x / away line.x ≥ ball.x），且不下穿角色基准（球在防线身后时停 base）
+-        tx = if home {
+-            tx_full.min(ball.0).max(base.0)
+-        } else {
+-            tx_full.max(ball.0).min(base.0)
+-        };
++        // 实验3：去掉「不越过球」与「不下穿 base」的**双重 clamp**，只保留球场边界。
++        // 假说：这两个 clamp 把后防钉死——球深入后场时后防被拽到球位、球在前场时后防又
++        // 不得越过 base，导致后防 x-sd 只有真实的一半（9.9 vs 19.7m）。
++        tx = tx_full;
+     }
+     let ty = base.1 + (ball.1 - 0.5) * SIDE_SHIFT_FACTOR * 0.6;
+     // P7 观感：目标不进小禁区/不顶门线（前锋最多压到禁区边缘 x=0.9，避免顶在球门线来回摆动）

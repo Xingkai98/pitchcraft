@@ -1,0 +1,81 @@
+{
+  "note": "P38 #91 判据组（成组否决：任一条不达标即不通过）",
+  "realReference": {
+    "hd": 25.885,
+    "spread": 15.21,
+    "gap": 8.34,
+    "latSd": 10.515,
+    "swarm": 0.671,
+    "fault": 4.95,
+    "midBack": 1.06
+  },
+  "criteria": [
+    {
+      "key": "hd",
+      "name": "纵深",
+      "group": "纵向",
+      "center": 25.885,
+      "tol": 2.5,
+      "lower": 23.385,
+      "upper": 28.385
+    },
+    {
+      "key": "spread",
+      "name": "紧凑度",
+      "group": "纵向",
+      "center": 15.21,
+      "tol": 1.8,
+      "lower": 13.41,
+      "upper": 17.01
+    },
+    {
+      "key": "gap",
+      "name": "重心间距",
+      "group": "纵向",
+      "center": 8.34,
+      "tol": 1.8,
+      "lower": 6.54,
+      "upper": 10.14
+    },
+    {
+      "key": "latSd",
+      "name": "横向位移 sd",
+      "group": "横向",
+      "center": 10.515,
+      "tol": 3.5,
+      "lower": 7.015,
+      "upper": 14.015
+    },
+    {
+      "key": "swarm",
+      "name": "y 两两相关",
+      "group": "整体性",
+      "center": 0.671,
+      "tol": 0.22,
+      "lower": 0.451,
+      "upper": 0.891
+    },
+    {
+      "key": "fault",
+      "name": "断层幅度",
+      "group": "结构",
+      "center": 4.95,
+      "tol": 2.5,
+      "lower": 2.45,
+      "upper": 7.45
+    },
+    {
+      "key": "midBack",
+      "name": "各线均衡",
+      "group": "结构",
+      "center": 1.06,
+      "tol": 0.22,
+      "lower": 0.84,
+      "upper": 1.28
+    }
+  ],
+  "mutationSelfTest": {
+    "variantsBlocked": 6,
+    "totalVariants": 6
+  }
+}
