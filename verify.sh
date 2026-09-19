@@ -27,7 +27,18 @@ echo ""
 echo "=== 3/9 Tools 单测（node --test tools/*.test.mjs：runner/service/queue-cli/detectors 等）==="
 # 此前 tools/ 单测从未被任何脚本或 CI 执行（review 指出）——P20 的 runner/service/queue-cli
 # 新增覆盖都在这里，必须进门槛。这些测试用 QUEUE_CLI 绝对路径、不依赖 cwd，故从 tools/ 跑安全。
-(cd tools && node --test *.test.mjs 2>&1 | grep -E "^(# (tests|pass|fail))")
+# 失败时**打印失败详情**（P38 #87 的教训）：原先只 grep 计数行，CI 上红了你只知道
+# "fail 1"，不知道是哪个用例、为什么——排查得靠猜。现在把输出落文件，红了就回放
+# 失败段落（`not ok` 及其后 12 行），绿了只打印计数。
+TOOLS_LOG=$(mktemp)
+(cd tools && node --test *.test.mjs) > "$TOOLS_LOG" 2>&1 || {
+  echo "── tools 测试失败详情 ──"
+  grep -A12 "^not ok" "$TOOLS_LOG" | head -60
+  rm -f "$TOOLS_LOG"
+  exit 1
+}
+grep -E "^(# (tests|pass|fail))" "$TOOLS_LOG"
+rm -f "$TOOLS_LOG"
 
 echo ""
 echo "=== 4/9 WASM 端到端（v2 并行节拍：engine.wasm → viewer 播放无 snap）==="

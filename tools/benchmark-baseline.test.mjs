@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashMetricsModule, realGameWindows, converterFingerprints } from './benchmark-baseline.mjs';
+import { hashMetricsModule, realGameWindows, converterFingerprints, engineFingerprints } from './benchmark-baseline.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE_PATH = join(ROOT, 'viewer', 'data', 'benchmark-baseline.json');
@@ -175,6 +175,61 @@ test('基线：转换器输入指纹与当前实现一致（审阅 P3-3 的陈�
     assert.equal(b.metricsModule.converters[file], hash,
       `${file} 已变更而基线未重生成 —— 跑 node tools/benchmark-baseline.mjs`);
   }
+});
+
+test('基线：引擎源码指纹与当前一致（P38 #87 的 wasm 来源哨兵）', { skip: !HAVE_BASELINE && SKIP_REASON }, async () => {
+  // **为什么加这条**：P37 的基线曾用**未合入分支**（demo/off-ball-movement）构建的 wasm 生成——
+  // 引擎侧 gap 偏 +55.8%、宽度偏 +25.9%，而这些错误数字进了 README。当时**没有任何哨兵**
+  // 能发现：指标模块哈希只管指标口径、转换器哈希只管真实侧，两者都管不到"wasm 从哪来"。
+  //
+  // **判据是行为，不是文本**（P38 #87 的第二次修正）：只比源码哈希会**对注释过敏**——
+  // 改一行注释就要重下 1.8GB 数据才能消红（实测：`adc3b4d` 纯注释改动就把这条打红了，
+  // 而那还是 main 上的正常提交）。故：
+  //   源码哈希一致          → 通过（快路径）
+  //   源码哈希不一致        → **重算引擎侧指标**与基线比对：
+  //       指标一致（±容差）  → 放行（仅注释/重构），提示下次重生成刷新指纹
+  //       指标不一致        → **硬失败**，要求重生成基线
+  // 重算只需要 wasm（CI 本来就构建），不碰真实数据——所以这条判据在 CI 上廉价且可靠。
+  const b = load();
+  assert.ok(b.engineFingerprint, '基线须记录引擎指纹（P38 #87）');
+  assert.equal(typeof b.engineFingerprint.sourceSha256, 'string',
+    '基线须记录 engine/src/lib.rs 的哈希');
+
+  const cur = engineFingerprints(
+    join(ROOT, 'viewer', 'engine.wasm'),
+    join(ROOT, 'engine', 'src', 'lib.rs'),
+  );
+  if (b.engineFingerprint.sourceSha256 === cur.sourceSha256) return; // 快路径：源码未变
+
+  // 源码变了——判断**行为**是否也变了。缺 wasm 时无法判断，保守失败并说明。
+  const wasmPath = join(ROOT, 'viewer', 'engine.wasm');
+  if (!existsSync(wasmPath)) {
+    assert.fail('engine/src/lib.rs 已变更，但缺少 viewer/engine.wasm 无法判定行为是否也变 —— '
+      + '先构建 wasm 再跑，或重生成基线：node tools/benchmark-baseline.mjs');
+  }
+  const { loadEngineWasm, sampleEngineStats } = await import('./benchmark-engine.mjs');
+  const loaded = await loadEngineWasm(wasmPath);
+  if (!loaded.ok) assert.fail(`加载 engine.wasm 失败：${loaded.message}`);
+  const fresh = await sampleEngineStats({ wasm: loaded.wasm });
+
+  // 逐指标比均值（基线记录的是 30 窗摘要的 avg）。容差取 1e-6 —— 引擎是确定性的，
+  // 行为没变就应当**逐位相同**；给极小容差只为容忍浮点求和顺序差异。
+  const KEYS = ['hd', 'ad', 'spread', 'gap', 'width', 'ballDist'];
+  const drift = [];
+  for (const k of KEYS) {
+    const was = b.engine.perMetric[k] && b.engine.perMetric[k].avg;
+    const now = fresh.perMetric[k] && fresh.perMetric[k].avg;
+    if (was == null || now == null) continue;
+    if (Math.abs(was - now) > 1e-6) drift.push(`${k}: 基线 ${was.toFixed(4)} → 现 ${now.toFixed(4)}`);
+  }
+  if (drift.length === 0) {
+    // 行为没变 —— 放行，但留在输出里（提示刷新指纹，免得每次 CI 都走这条慢路径）
+    console.log('注：engine/src/lib.rs 已变更但引擎指标逐位一致（仅注释/重构）。'
+      + '\n    建议下次重生成基线以刷新指纹：node tools/benchmark-baseline.mjs');
+    return;
+  }
+  assert.fail(`引擎行为已变而基线未重生成 —— 跑 node tools/benchmark-baseline.mjs\n`
+    + `  漂移：${drift.join('；')}`);
 });
 
 test('基线：时间缺口声明与逐场实测一致（审阅复审 P3-③ 的守护）', { skip: !HAVE_BASELINE && SKIP_REASON }, () => {

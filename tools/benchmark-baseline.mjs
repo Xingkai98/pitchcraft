@@ -72,6 +72,31 @@ export function hashMetricsModule(path = METRICS_PATH) {
   return createHash('sha256').update(readFileSync(path)).digest('hex');
 }
 
+/// 引擎指纹（P38 #87）：基线记录**产出引擎侧数字的 wasm 与其源码**的哈希。
+///
+/// **为什么必须记**：P37 的基线曾用**未合入分支**（demo/off-ball-movement）构建的 wasm 生成，
+/// 而当时没有任何哨兵能发现——引擎侧的 gap 因此偏了 55.8%、宽度偏了 25.9%，
+/// 且这些错误数字进了 README。指标模块与转换器的指纹都挡不住它（它们只管真实侧与指标口径）。
+///
+/// 两条都记录，但**只有源码哈希是判据**：
+///   - `sourceSha256`（**判据**）：`engine/src/lib.rs` 的内容哈希。
+///     它精确回答"这份基线是不是从当前 main 的源码跑出来的"——P37 那个 bug 的本质
+///     正是基线来自**未合入分支**的 lib.rs（工作区有 1145 行未提交改动）。
+///   - `wasmSha256`（**取证信息，不作判据**）：实际被加载的那份二进制。
+///     **不能拿它当门**：CI 每次 `cargo build` 重建 wasm，构建环境不同则字节不同
+///     ——本地一致、CI 必然红（P38 #87 实测踩过）。留在基线里仅用于排查
+///     "这份基线是谁、在哪跑出来的"。
+export function engineFingerprints(wasmPath, sourcePath) {
+  const out = { wasmPath: 'viewer/engine.wasm', sourcePath: 'engine/src/lib.rs' };
+  try {
+    out.wasmSha256 = createHash('sha256').update(readFileSync(wasmPath)).digest('hex');
+  } catch { out.wasmSha256 = null; }
+  try {
+    out.sourceSha256 = createHash('sha256').update(readFileSync(sourcePath)).digest('hex');
+  } catch { out.sourceSha256 = null; }
+  return out;
+}
+
 // 转换器指纹（审阅 P3-3）：转换器是基线的**直接输入**——改了它，基线数字就变
 // （实测：match_periods 拼接修正就改了 20 场的 shift 与缺口）。但基线原先只 pin 指标模块、
 // 不 pin 转换器，故"只改转换器不重生成基线"**不会触发任何哨兵**。
@@ -309,6 +334,11 @@ export async function generateBaseline({ dataDir = DATA_DIR } = {}) {
       keeperIds: KEEPER_IDS,
       extrapolationPolicy: '主口径跳过源数据标 is_detected=false 的外推点（与「缺失不参与」同口径）；全点口径并列于 perMetricAllPoints',
     },
+    // P38 #87：引擎指纹——防止"用未合入分支的 wasm 生成基线"再次发生
+    engineFingerprint: engineFingerprints(
+      join(ROOT, 'viewer', 'engine.wasm'),
+      join(ROOT, 'engine', 'src', 'lib.rs'),
+    ),
     windows: {
       sizeSec: WINDOW_SIZE_SEC,
       stepSec: WINDOW_STEP_SEC,
