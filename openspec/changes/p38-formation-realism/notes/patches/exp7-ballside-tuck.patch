@@ -1,0 +1,44 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 3bbf740..b9c1322 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -591,6 +591,18 @@ pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
+ // ---- P5 队形/攻防转换参数 ----
+ /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
+ pub const SIDE_SHIFT_FACTOR: f64 = 0.06;
++/// **横向：球侧过载 + 远端内收**（P38 实验7）
++///
++/// 真实球队的横向行为（notes/real-lateral-laws.md + 主 session 的轨迹图）：
++/// 整队向球侧倾斜（斜率 0.33-0.38），但**各人幅度不同**——远侧球员向内收（tuck in），
++/// 近侧球员保持宽度。本轮实验5 的错误是让全队用**同一个**球位系数，结果整队像一群鱼
++/// 同步横移（y 两两相关 0.629 → 0.950，真实 0.606）。
++///
++/// 本实验：偏移量随「球员自身基准 y 与球侧的夹角」变化——
++///   球员在球的**对侧**越多 → 内收越多（往中间挤）
++///   球员在球的**同侧**越多 → 保持原位（甚至稍微外扩）
++/// 这既是真实的足球行为（远端收缩保护中路），也天然制造**个体差异**（不 swarm）。
++pub const BALL_SIDE_OVERLOAD: f64 = 0.30;
+ /// 防线前压幅度（归一化）：球到前场时防线推进量（≈12m）
+ pub const DEFENSE_PUSH_FACTOR: f64 = 0.12;
+ /// 控球阶段压上偏移（归一化）：己方持球前压 / 对方持球回收（≈2m）
+@@ -2655,7 +2667,19 @@ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
+             tx_full.max(ball.0).min(base.0)
+         };
+     }
+-    let ty = base.1 + (ball.1 - 0.5) * SIDE_SHIFT_FACTOR * 0.6;
++    // 横向（P38 实验7）：球侧过载 + 远端内收。
++    // 球队重心仍向球侧倾（对齐真实斜率 0.33-0.38），但**每人幅度不同**：
++    // 远侧球员多收、近侧球员少动 → 产生个体差异而非整队平移。
++    let ball_side = ball.1 - 0.5;                 // -0.5..0.5，球偏哪侧
++    let my_off = base.1 - 0.5;                    // 该球员基准偏哪侧
++    // 「我有多远离球侧」：同侧=0，对侧=1
++    let farness = if ball_side.abs() < 1e-6 { 0.5 } else {
++        let same = ball_side.signum() == my_off.signum();
++        if same { 0.0 } else { 1.0 }
++    };
++    // 远端多收（往中路挤），近端少动（保宽度）
++    let tuck = BALL_SIDE_OVERLOAD * farness;      // 0（同侧）..0.30（对侧）
++    let ty = base.1 + ball_side * tuck;
+     // P7 观感：目标不进小禁区/不顶门线（前锋最多压到禁区边缘 x=0.9，避免顶在球门线来回摆动）
+     (clamp01(tx).clamp(0.04, 0.9), clamp01(ty))
+ }
