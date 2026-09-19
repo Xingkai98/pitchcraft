@@ -79,3 +79,25 @@ cd .. && node openspec/changes/p38-formation-realism/notes/probes-main/quick-met
 - **客队必须镜像**（`teamXs` 里 away 的 x 取 `1-x`）——主 session 曾因漏掉这步
   得出过错误结论（回归斜率被两队抵消）
 - **y 轴用 `PITCH_WIDTH_M`(68)**，不是 `PITCH_LENGTH_M`——曾用错导致横向移动量算错
+
+## 视觉探针（探索期发现用，不作门槛）
+
+| 文件 | 用途 |
+|---|---|
+| `render-trajectories.mjs` | 球员 120s **轨迹图** → PNG。三份来源对比：真实 / 基线 / 实验变体 |
+| `render-compare.mjs` | 同一球位时刻的**单帧**渲染 → PNG |
+
+用法：
+```bash
+node render-trajectories.mjs engine /tmp/traj.png "标签" 120   # 引擎（用当前 wasm）
+node render-trajectories.mjs real   /tmp/traj.png "真实" 120   # Metrica game1
+```
+
+**为什么重要**：它们暴露了纯数值判据看不到的东西——引擎球员的轨迹是**水平细线**
+（在铁轨上滑动），真实是散开的网。一个"四项指标全绿"的机制方案（exp4b）
+在轨迹图上与基线**无区别**。见 `../findings-final.md` §4b。
+
+产物存 `../visual/`。
+
+⚠️ 项目约束「验证不得依赖模型视觉」是指**门槛**不能靠看图；这些脚本产出的
+**横向/纵向位移 sd 是可算的数值**，可进 CI。图片只用于探索期发现问题。
