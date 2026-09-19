@@ -10,8 +10,8 @@ import { readFileSync } from 'node:fs';
 import {
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, cutWindows,
   windowMetrics, KEEPER_IDS, PITCH_LENGTH_M, PITCH_WIDTH_M,
-} from '../../../../../viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
+} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
 
 const HERE = '/home/happy/.claude/worktrees/wayfinder-realism';
 const label = process.argv[2] || 'current';
