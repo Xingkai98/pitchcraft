@@ -25,7 +25,7 @@
     "wasmPath": "viewer/engine.wasm",
     "sourcePath": "engine/src/lib.rs",
     "wasmSha256": "901da77b54b1f10ced4750cc534091333ef80af21cb79505fb76b0c90353c4f9",
-    "sourceSha256": "ff73f6579a9ac2bb0de67fdca6d0d96b81f5ca82ce29e23095c9d9e702c063dd"
+    "sourceSha256": "f897ed0440dd5d71513c09220b6f6101c32fd59d5548d59d531dd38665ded446"
   },
   "windows": {
     "sizeSec": 300,
