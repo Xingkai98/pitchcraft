@@ -5,9 +5,9 @@
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
 // 顶层 import 带版本号，强制浏览器刷新入口模块；传递依赖（game.js/renderer.js 内部 import）
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
-import { config } from './config.js?v=20260913-1';
+import { config } from './config.js?v=20260918-15';
 import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260913-1';
-import { createGame } from './game.js?v=20260913-1';
+import { createGame } from './game.js?v=20260918-15';
 import { createTrackingPlayer } from './tracking-player.js?v=20260918-3';
 import { mockEventStream } from './mock-event-stream.js?v=20260913-1';
 import { resetMicroMotion } from './micro-motion.js?v=20260913-1';

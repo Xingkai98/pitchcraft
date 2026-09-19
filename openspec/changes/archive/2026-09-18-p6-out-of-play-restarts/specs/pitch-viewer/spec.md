@@ -14,7 +14,7 @@
 #### Scenario: 角球站位
 - **GIVEN** 角球发球准备期（RestartPrep，球停在角旗）
 - **WHEN** 画面层播放该段
-- **THEN** 发球者走向角旗区（球在角旗等待，无瞬移）；攻方禁区包抄（nearest 几名向禁区移动）、防方回防（formation_target 自然覆盖），movers 呈现站位
+- **THEN** 发球者走向角旗区（球在角旗等待，无瞬移）；攻方全队压入禁区贴门线一侧、防方全队退入本方禁区前沿一侧（引擎 `corner_setup_target` 产出的 movers），movers 呈现站位
 
 #### Scenario: 头球射门
 - **GIVEN** shot detail=`header`（头球射门）

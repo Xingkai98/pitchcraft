@@ -2,6 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Game } from './game.js';
+import { config } from './config.js';
 import { interpretEvent } from './interpretation.js';
 
 // clip 模式测试：每个事件独立片段，默认不播放，点播才播
@@ -485,4 +486,61 @@ test('sent-off player is excluded from the rendered players list (no ghost)', ()
   assert.ok(g.players.some((p) => p.id === 5), '未罚下球员应仍在可见列表');
   // 内部全量列表仍保留该球员（保证时间线插值一致性）。
   assert.ok(g._players.some((p) => p.id === 15), '_players（全量）仍含 15');
+});
+
+// ---- micro-motion 抑制：高亮参与者回溯（P5 S3；issue #81 修复的守护）----
+// pass/shot 的 beat 在同一 tick 之后，故 currentEventIndex() 恒落在 beat 上
+// （tackle 的 beat 在前、foul 不产 beat——见 _highlightEnd）。
+// 此前 currentHighlightParticipants() 直接取 currentEventIndex() 的事件 → 恒为空集，
+// 抑制从不生效（实测约 94-99% 高亮帧，视统计口径）。本测试钉死「按事件窗口回溯查找」的语义。
+test('micro-motion 抑制：高亮窗口中点仍能取到参与者（beat 同 tick 不遮蔽）', () => {
+  const events = [
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 10, type: 'pass', subject: 9, from: 9, to: 5, x: 0.5, y: 0.5, x2: 0.4, y2: 0.5, speed: 10, result: 'success' },
+    // 引擎在同 tick 追加的 beat（会遮蔽 currentEventIndex 指向的高亮事件）
+    { t: 10, type: 'beat', movers: [], main: { type: 'dribble', subject: 5, x: 0.4, y: 0.5, x2: 0.4, y2: 0.5, speed: 5, touch_freq: 1 } },
+    { t: 11, type: 'beat', movers: [] },
+  ];
+  const lineup = [
+    { id: 9, team: 'home', x: 0.5, y: 0.5 },
+    { id: 5, team: 'home', x: 0.4, y: 0.5 },
+  ];
+  const g = new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
+  // 高亮窗口中段：currentEventIndex 指向 beat，但回溯应找到 pass
+  g.playTime = 10.3;
+  assert.equal(g.events[g.currentEventIndex()].type, 'beat', '前提：当前事件是同 tick 的 beat');
+  const parts = g.currentHighlightParticipants().sort((a, b) => a - b);
+  assert.deepEqual(parts, [5, 9], '高亮参与者应回溯取到 pass 的 from/to（不被 beat 遮蔽）');
+});
+
+test('micro-motion 抑制：高亮窗口外（无覆盖事件）返回空', () => {
+  const events = [
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 10, type: 'pass', subject: 9, from: 9, to: 5, x: 0.5, y: 0.5, x2: 0.4, y2: 0.5, speed: 10, result: 'success' },
+    { t: 30, type: 'shot', subject: 9, x: 0.6, y: 0.5, x2: 0.95, y2: 0.5, speed: 25, result: 'goal' },
+  ];
+  const lineup = [
+    { id: 9, team: 'home', x: 0.5, y: 0.5 },
+    { id: 5, team: 'home', x: 0.4, y: 0.5 },
+  ];
+  const g = new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
+  g.playTime = 20; // pass 已结束（end=10）、shot 未开始（t=30）
+  assert.deepEqual(g.currentHighlightParticipants(), [], '窗口外应无参与者');
+});
+
+test('micro-motion 抑制：犯规窗口内仍能取到参与者（foul 不产 beat、语义窗口 = 牌显示时长）', () => {
+  const events = [
+    { t: 0, type: 'kickoff', subject: 9, x: 0.5, y: 0.5 },
+    { t: 10, type: 'foul', subject: 6, carrier: 15, x: 0.6, y: 0.4, detail: 'foul_tackle' },
+    { t: 11, type: 'beat', movers: [] },
+  ];
+  const lineup = [
+    { id: 6, team: 'home', x: 0.6, y: 0.4 },
+    { id: 15, team: 'away', x: 0.6, y: 0.42 },
+  ];
+  const g = new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
+  // 犯规 tick 之后、牌显示窗口内：窗口零长度会失效，必须由 _highlightEnd 延长
+  g.playTime = 10 + config.interpretation.foul.cardShowDuration * 0.5;
+  const parts = g.currentHighlightParticipants().sort((a, b) => a - b);
+  assert.deepEqual(parts, [6, 15], '犯规窗口内应取到 subject/carrier（不被零长度窗口吞掉）');
 });

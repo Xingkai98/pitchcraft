@@ -1,5 +1,14 @@
 # Design: 死球重开正确化——门球 + 进球回中圈（goal-kick-and-restart）
 
+> **归档对齐说明（2026-09-18，issue #81）**：本文是立项时的原始设计稿（正文保留原样，勿据以实现）。
+> 核对后主体与现行实现一致（门球不触发 transition、进球后球回中圈），但对两处 spec 作了贴合代码的订正：
+> - `specs/match-engine/spec.md`：开大脚速度 "~15-20 m/s" 收敛为 "~16-20 m/s + 高度 h 0.5-0.8"。
+> - `specs/pitch-viewer/spec.md`：**原稿球终态坐标与代码相反**——原写 goal 停在 x=1.02、
+>   off_target "不越过门线"；代码（`viewer/interpretation.js`）实为 goal 停在网内 x=1.005、
+>   off_target 飞过球门 x=1.02、saved 停 `x2`。已按代码改写，否则会把错误规则写进主 spec。
+>
+> `tasks.md` 的勾选状态不作为完成依据。
+
 ## Context
 
 P5 完成后用户视觉验收发现两个死球呈现问题（2026-08-08）：

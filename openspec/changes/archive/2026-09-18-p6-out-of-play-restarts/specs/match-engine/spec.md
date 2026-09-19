@@ -4,15 +4,15 @@
 
 ### Requirement: 出界判定与重开类型
 
-引擎 SHALL 判定球出界并按类型触发重开：**射门打偏 → 门球（已有）**；传球出边线 → 界外球（对方）；传球出底线 → 门球（对方门将）；**防方头球解围出底线/出边线 → 角球/界外球（进攻方）**；射门被扑出底线 → 角球（进攻方）。出界走新高亮结局（PassOutOfPlay/CornerAward），落点坐标钳制在 [0,1]，事件带 detail 表达出界类型。**PassOutOfPlay 按 source 区分重开**：source=NormalPass（普通传球）出边线 → 界外球（对方）、出底线 → 门球（对方门将）；source=Clearance（防方解围）出边线 → 界外球（进攻方）、出底线 → 角球（进攻方）。**出界 roll（3-5%）仅普通传球**——重开球（角球发球/界外球掷球/门球开大脚）落点恒在界内。
+引擎 SHALL 判定球出界并按类型触发重开：**射门打偏 → 门球**（由 `p6-goal-kick-and-restart` 建立）；传球出边线 → 界外球（对方）；传球出底线 → 门球（对方门将）或角球（对方），按**越过的是哪条底线**区分；**防方头球解围出底线/出边线 → 角球/界外球（进攻方）**；射门被扑出底线 → 角球（进攻方）。出界走新高亮结局（PassOutOfPlay/CornerAward），事件的**场内投影坐标 `x2/y2` 钳制在 [0,1]**（真实越界值另存 `out_pos`，可越界），事件带 detail 表达出界类型。**出界触发由受 `pass_risk` 调制的涌现通道决定（P31：`open_play_out_probability(pass_risk)`，非固定百分比）**——重开球（角球发球/界外球掷球/门球开大脚）落点恒在界内、不走出界通道。
 
 #### Scenario: 传球出边线 → 界外球
-- **GIVEN** 一次传球落点出边线（y<0 或 y>1，3-5% 概率，source=NormalPass）
+- **GIVEN** 一次普通传球（source=NormalPass）的落点出边线（y<0 或 y>1，由 `open_play_out_probability(pass_risk)` 通道判定）
 - **THEN** 高亮结局 PassOutOfPlay（detail=`out_sideline`），pass 事件 to=None（无接球者），坐标钳制 [0,1]；对方掷界外球
 
-#### Scenario: 传球出底线 → 门球
-- **GIVEN** 一次传球落点出底线（x<0 或 x>1，source=NormalPass）
-- **THEN** 高亮结局 PassOutOfPlay（detail=`out_goal_line`），pass 事件 to=None；**门球重开（对方门将：home 传球出 x>1 或 x<0 → away 门将；away 传球出 x<0 或 x>1 → home 门将，简化不做触碰归属）**
+#### Scenario: 传球出底线 → 按底线归属重开
+- **GIVEN** 一次普通传球（source=NormalPass）的落点出底线（x<0 或 x>1）
+- **THEN** 高亮结局 PassOutOfPlay（detail=`out_goal_line`），pass 事件 to=None；重开按 `out_restart_for` 判定——**传球方越的是对方底线 → 门球（对方门将）；越的是己方底线 → 角球（对方）**（`own_goal_line` 区分；简化不做触碰归属）
 
 #### Scenario: 解围出底线 → 角球
 - **GIVEN** 防方头球解围（pass detail=clearance）落点出底线（source=Clearance）
@@ -23,12 +23,12 @@
 - **THEN** 高亮结局 PassOutOfPlay（detail=`out_sideline`），pass 事件 to=None；**界外球（进攻方掷）**
 
 #### Scenario: 射门被扑出底线 → 角球
-- **GIVEN** 一次射门被扑出（save-rebound）且**越线（概率 ~30% 触发，弹开点 = 门线外一点）**（home 攻 x>1 / away 攻 x<0）
-- **THEN** 高亮结局 CornerAward → 角球重开（进攻方从角旗区开球）；**越线弹开点仅引擎内部确定角旗侧，事件字段坐标一律钳制 [0,1]**
+- **GIVEN** 一次射门被扑出（save-rebound）且**越线（`corner_roll < 90`，即 ~90% 触发；越线点 = 原射门终点 `x2/y2` 的门线前一点，场内 x≈0.02/0.98）**（home 攻 x>1 / away 攻 x<0）
+- **THEN** 高亮结局 CornerAward → 角球重开（进攻方从角旗区开球）；**角旗侧由该越线点所在半场确定（仅引擎内部），事件字段坐标一律钳制 [0,1]**
 
 ### Requirement: 角球机制
 
-引擎 SHALL 支持角球：从角旗区开长角球到禁区（pass 高亮 + 高度 h）→ 落点松散球 + 攻防双追逐 → 争抢结果（攻方 55/45）→ 攻方头球射门（55%）/摆渡（30%）/拿球（15%）、防方头球解围（70%）/解围出底线（20%，再角球）/解围出边线（10%，界外球）。
+引擎 SHALL 支持角球：从角旗区开长角球到禁区（pass 高亮 + 高度 h）→ 落点松散球 + 攻防双追逐 → 争抢结果（攻方基线 55/45，P33 起叠加**主场偏移**——攻方为主队 58 / 客队 52，围绕 55/45 对称）→ 攻方头球射门（55%）/摆渡（30%）/拿球（15%）、防方头球解围（70%）/解围出底线（20%，再角球）/解围出边线（10%，界外球）。
 
 #### Scenario: 长角球发球
 - **GIVEN** 一次角球
@@ -36,7 +36,7 @@
 
 #### Scenario: 角球站位
 - **GIVEN** 角球发球准备期（RestartPrep，球在角旗）
-- **THEN** 攻方禁区包抄（nearest 几名向禁区/球门区预判，formation_target 覆盖）、防方回防（formation_target 自然覆盖 + 向禁区回收）；发球者走向角旗区
+- **THEN** **全队**外场球员的目标位置改由 `corner_setup_target` 决定（角球准备期 `formation_target` 被覆盖，不参与）：攻方全队压入禁区**贴门线一侧**、防方全队退入本方禁区**前沿一侧**（同函数；两者 y 均按 id 确定性分散在 0.2-0.8）；发球者单独走向角旗区
 
 #### Scenario: 禁区双追逐争抢
 - **GIVEN** 角球落点松散球（battle 标记）
@@ -44,7 +44,7 @@
 
 #### Scenario: 攻方头球射门
 - **GIVEN** 攻方赢得角球争抢
-- **THEN** 以概率分支（55/30/15）：头球射门（subject=攻方 chaser，shot 高亮 detail=header、h=0，起点=争抢点、方向=球门，result=goal(~10%)/saved(~40%)/off_target(~50%)）/ 头球摆渡（subject=攻方 chaser，pass 给队友，无 detail、h=0）/ 拿球组织（main 恢复，carrier=攻方 chaser）
+- **THEN** 以概率分支（55/30/15）：头球射门（subject=攻方 chaser，shot 高亮 detail=header、h=0，起点=争抢点、方向=球门，result=goal 15%/saved 30%/off_target 55%，对齐禁区内桶）/ 头球摆渡（subject=攻方 chaser，pass 给队友，无 detail、h=0）/ 拿球组织（main 恢复，carrier=攻方 chaser）
 
 #### Scenario: 防方头球解围
 - **GIVEN** 防方赢得角球争抢（防方 chaser 已移动到位）

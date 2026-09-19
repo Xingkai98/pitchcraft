@@ -1,5 +1,11 @@
 # Design: 抢断四段式演绎（tackle-drama）
 
+> **归档对齐说明（2026-09-18，issue #81）**：本文是立项时的原始设计稿（四段式）。
+> 后续 P2 Phase B 把演绎升级为**五段式**（补 `carrier_from_x/y` 被铲者带球起点与 `loose_x/y`
+> 弹开点），实现已随之改动，本文未回改。归档时 `specs/pitch-viewer/spec.md` 已**重写为五段式**
+> 以对齐主 spec 现行口径，避免照原样归档把主 spec 退回四段式。逐条差异见
+> `.scratch/notes/issue81-delta-drift-inventory.md`；`tasks.md` 的勾选状态不作为完成依据。
+
 ## Context
 
 P0 已打通"引擎 → 事件流 → 画面"链路，但 tackle 的演绎是占位水平：`interpretTackle` 只生成"防守者从 (x,y) 跑到 (x2,y2)"两个锚点，球在事件内完全不参与。用户期望抢断是一个完整戏剧：**持球 → 防守者逼近 → 碰撞捅开 → 球向旁弹开 → 有人拿到球**。且拿球者**不一定是防守者**——原持球人也可能重新拿回（抢断未成）。

@@ -1,5 +1,22 @@
 # Design: 队形公式 + 阶段转换 + micro-motion（team-shape-and-transition）
 
+> **归档对齐说明（2026-09-18，issue #81）**：本文是立项时的原始设计稿，其中若干处已被后续 change 演进或**从未实现**，
+> 归档时 `specs/*/spec.md` 已改写对齐现行代码（本文正文保留原样，勿据以实现）：
+> - **dead-zone**：本文写"绑定 P4 单门 0.5m"，现行 `DEAD_ZONE_METERS = 2.0`（P7 观感修复放大到 2m）。
+> - **repulsion 最小间距**：本文写"球员半径 ×2（约 0.02 归一化）"，现行 `SAME_TEAM_MIN_DIST_M = 2.2m` 米制（P34/#53）。
+> - transition 触发源只有 Tackle / SaveCaught 两种（本文的"拦截后续加入"未实施，spec 已删除该占位）。
+> - **球侧平移的"防守收窄/进攻保宽度"**（本文正文）**未实现**——`formation_target` 无随 phase 变化的宽度因子；
+>   spec 已改为代码实有的"纵向同向随球压缩（y 偏移 = (ball_y−0.5)×`SIDE_SHIFT_FACTOR`×0.6）"。
+> - **"持球 hold 门控（8-15 tick，按 carrier 计数）"**（本文正文）**机制已被 P31 删除**——
+>   `HOLD_MIN_TICKS`/`POSSESSION_HOLD_MIN` 在代码中已无读取，测试 `p31_slot_layer_is_gone`
+>   明确断言槽位/固定节拍层已删。transition 期间实际是"该 tick 只产 main + movers、不走机会评估"，
+>   窗口结束恢复**自然 deadline** 驱动的机会评估。spec 已按此改写（删去 hold 计数从句）。
+> - **"新持球者前插（等松散球拾取后激活，落在窗口 [T,T+4) 内）"**（本文正文）**对 tackle 路径不可达**——
+>   实测（300 seed / 1418 次 tackle-success）拾取**恒发生在 T+4**、窗口内无外场持球者，
+>   故 `carrier_move` 的反击前插分支在该路径永不进入。spec 已按实测改写。
+>
+> 逐条差异见 `.scratch/notes/issue81-delta-drift-inventory.md`；`tasks.md` 的勾选状态不作为完成依据。
+
 ## Context
 
 P4（并行节拍核心，Change A）建立固定 tick + beat 事件 + 球所有权。本 change 在 p4 核心之上加"真实感层"：队形整体移动、攻防转换/反击、静止球员 micro-motion。三者都是引擎内可调公式 / viewer 渲染 polish，不改变 beat 协议或 viewer 架构。

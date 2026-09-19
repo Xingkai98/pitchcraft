@@ -488,7 +488,7 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
 
 /// 固定 tick 时长（秒）
 pub const TICK_SECONDS: f64 = 1.0;
-/// movers 位移阈值 = 静区（dead-zone），等值 ~0.5m（移动 ⇔ 发 movers）
+/// movers 位移阈值 = 静区（dead-zone），2.0m（移动 ⇔ 发 movers；P7 由 0.5m 放大）
 pub const DEAD_ZONE_METERS: f64 = 2.0; // P7 观感：到位静止距离——前锋到位后目标微变（球位置波动）不追，避免球门旁来回小幅摆动
 /// 松散球拾取半径（米）
 pub const PICKUP_RADIUS_METERS: f64 = 0.5;
@@ -3201,10 +3201,10 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     } else if caught {
         HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
     } else {
-        // 扑出反弹：先掷越线概率（~80%，P7）——越线 → CornerAward（角球）；否则弹回场内松散球
+        // 扑出反弹：先掷越线概率（90%，P7）——越线 → CornerAward（角球）；否则弹回场内松散球
         let corner_roll = rng.next_u64() % 100;
         if corner_roll < 90 {
-            // 越线：弹开点 = 门线外一点（home 攻 x>1 / away 攻 x<0），仅引擎内部确定角旗侧，不进事件
+            // 越线：越线点 = 原射门终点 (x2,y2)（门线前一点，场内 x≈0.02/0.98），仅引擎内部确定角旗侧，不进事件
             HighlightOutcome::CornerAward { rebound_from: (x2, y2) }
         } else {
             // 扑出反弹：弹开方向按 deflectPoint 规则（射手→门将逼近方向的垂线弹开，同 tackle）
@@ -4026,7 +4026,7 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     } else if caught {
         HighlightOutcome::ShotSavedCaught { gk: gk_id, save_pos: (x2, y2) }
     } else {
-        // 头球扑出：越线（~80%，P7）→ 角球；否则弹回场内松散球（同普通射门 saved-rebound）
+        // 头球扑出：越线（90%，P7）→ 角球；否则弹回场内松散球（同普通射门 saved-rebound）
         let corner_roll = rng.next_u64() % 100;
         if corner_roll < 90 {
             HighlightOutcome::CornerAward { rebound_from: (x2, y2) }
