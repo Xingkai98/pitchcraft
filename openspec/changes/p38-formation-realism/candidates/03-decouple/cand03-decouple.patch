@@ -1,0 +1,53 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 57efe3f..5d050d0 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -591,6 +591,13 @@ pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
+ // ---- P5 队形/攻防转换参数 ----
+ /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
+ pub const SIDE_SHIFT_FACTOR: f64 = 0.06;
++
++/// **两队队形解耦滞后**（P38 候选03）：非持球方的块锚相对球位**滞后**这么多（归一化）。
++///
++/// 依据：真实射门瞬间的防守者是**两层**结构——最近 2.5m（贴身）、第二近 5.4m（待命）。
++/// 引擎是单层且都很远（8.3 / 9.8m）。exp4b 让两队共用块锚 → 块重叠 → 防守者全贴到 1m
++/// → 射门空间因子归零（射门 −93%）。本常量把两队的块**错开**，恢复"一人贴、一人待命"。
++pub const DECOUPLE_LAG: f64 = 0.10;
+ /// 防线前压幅度（归一化）：球到前场时防线推进量（≈12m）
+ pub const DEFENSE_PUSH_FACTOR: f64 = 0.12;
+ /// 控球阶段压上偏移（归一化）：己方持球前压 / 对方持球回收（≈2m）
+@@ -2629,6 +2636,21 @@ fn is_defender(st: &MatchState, id: i32) -> bool {
+ /// 队形目标（P5 S1）：目标 = 角色基准 + 队形偏移(球位置, 控球阶段, 球侧)。
+ /// 门将恒回门线；防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
+ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
++    // === P38 候选03：两队「相向而不同位」——块锚按控球相位解耦 ===
++    //
++    // 实测依据（probes-main/probe-shot-space.mjs，Metrica 2 场 × 24 脚射门）：
++    //   真实射门瞬间 —— 最近防守者中位 **2.5m**（贴身），第二近中位 **5.4m**（79% <8m）。
++    //   即真实是「一人贴、一人 5m 待命」的两层结构。
++    //   引擎射门瞬间 —— 最近 8.3m、第二近 9.8m（只有 15% <8m）：周围根本没人。
++    //
++    // exp4b（等间距 + 单一块锚）崩溃的机制：两队共用 `centre = 0.165 + 0.59*ball`，
++    // 进攻方压上时防守方的块**也**在同一个位置 → 两队的块重叠 →
++    // 「进攻三区最近防守者 <8m 占比」50.6% → 92% → 射门空间因子归零。
++    //
++    // 本候选：**块的锚按控球相位分离**——
++    //   进攻方：块随球前压（保持推进的纵深）
++    //   防守方：块**滞后**于球（回撤保护），而不是与进攻方同步
++    // 这样两队不再重叠，第二防守者自然落在 5-8m 而不是 1m。
+     let base = st.lineup[id as usize];
+     let ball = st.ball_pos;
+     let home = id <= 10;
+@@ -2642,7 +2664,11 @@ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
+     if let Some(tr) = &st.transition {
+         if tr.attacking == my_team { press *= 2.0; } // 反击窗口前压放大
+     }
+-    let mut tx = base.0 + shift + attack_dir * press;
++    // 相位解耦：非持球方的块锚**滞后**球位（回撤保护），持球方照常前压。
++    // `decouple` 作用于块锚（shift 项），使两队的队形不再落在同一位置。
++    let my_team_is_attacking = (home && st.possession == 0) || (!home && st.possession == 1);
++    let decouple = if my_team_is_attacking { 0.0 } else { -DECOUPLE_LAG };
++    let mut tx = base.0 + shift + decouple + attack_dir * press;
+     if is_defender(st, id) {
+         // 防线随球前压/回撤：防线沿进攻方向推，且不越过球（不塌缩到 base 之后）
+         let own_goal_x = if home { 0.0 } else { 1.0 };

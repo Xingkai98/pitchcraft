@@ -1,0 +1,41 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 57efe3f..1412d6c 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -591,6 +591,11 @@ pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
+ // ---- P5 队形/攻防转换参数 ----
+ /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
+ pub const SIDE_SHIFT_FACTOR: f64 = 0.06;
++
++/// **两队队形解耦滞后**（P38 候选03）：非持球方的块锚相对球位滞后（归一化）。
++/// 依据：真实射门瞬间防守者是两层结构（最近 2.5m 贴身 / 第二近 5.4m 待命），
++/// 引擎是单层且都远（8.3/9.8m）。exp4b 让两队共用块锚 → 重叠 → 射门 −93%。
++pub const DECOUPLE_LAG: f64 = 0.10;
+ /// 防线前压幅度（归一化）：球到前场时防线推进量（≈12m）
+ pub const DEFENSE_PUSH_FACTOR: f64 = 0.12;
+ /// 控球阶段压上偏移（归一化）：己方持球前压 / 对方持球回收（≈2m）
+@@ -2629,6 +2634,24 @@ fn is_defender(st: &MatchState, id: i32) -> bool {
+ /// 队形目标（P5 S1）：目标 = 角色基准 + 队形偏移(球位置, 控球阶段, 球侧)。
+ /// 门将恒回门线；防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
+ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
++    // === P38 exp4b + 候选03 组合：等间距块 + 两队相位解耦 ===
++    if id != 0 && id != 21 {
++        let home = id <= 10;
++        let ids: Vec<i32> = if home { (1..=10).collect() } else { (11..=20).collect() };
++        let mut sorted = ids.clone();
++        sorted.sort_by(|&a, &b| st.lineup[a as usize].0.partial_cmp(&st.lineup[b as usize].0).unwrap());
++        let r = sorted.iter().position(|&v| v == id).unwrap() as f64 / 9.0;
++        let ball_own = if home { st.ball_pos.0 } else { 1.0 - st.ball_pos.0 };
++        // 候选03：非持球方的块锚滞后 → 两队不再重叠
++        let my_team_is_attacking = (home && st.possession == 0) || (!home && st.possession == 1);
++        let lag = if my_team_is_attacking { 0.0 } else { DECOUPLE_LAG };
++        let centre = (0.165 + 0.59 * ball_own - lag).clamp(0.12, 0.82);
++        let rear = (centre - 0.32 * 0.5).clamp(0.04, 0.86);
++        let tx_local = rear + 0.32 * r;
++        let tx = if home { tx_local } else { 1.0 - tx_local };
++        let ty = st.lineup[id as usize].1;
++        return (clamp01(tx).clamp(0.04, 0.9), clamp01(ty));
++    }
+     let base = st.lineup[id as usize];
+     let ball = st.ball_pos;
+     let home = id <= 10;
