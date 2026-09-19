@@ -1,0 +1,25 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 57efe3f..1081255 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -530,16 +530,16 @@ const SHOT_FACTOR_GAIN: f64 = 2.5;
+ /// 起脚窗口长度（tick，D1）：推进到射程后在此窗口内由 hazard 决定射/转/被抢断
+ const SHOT_WINDOW_TICKS: u32 = 2;
+ /// 最近防守者压迫尺度（米）：≤ 此距离按满压迫计，≥ 则无压迫
+-const SHOT_PRESSURE_NEAR_M: f64 = 8.0;
++const SHOT_PRESSURE_NEAR_M: f64 = 3.0;
+ /// 第二防守者压迫尺度（米）
+-const SHOT_PRESSURE_SECOND_M: f64 = 16.0;
++const SHOT_PRESSURE_SECOND_M: f64 = 8.0;
+ /// 射门冷却（tick）：最近一次射门后的局部衰减窗口。
+ /// **只读局部计时器**（最近一射后的 tick 数），不读「本场已射多少次」——C 路原则（D2）。
+ const SHOT_COOLDOWN_TICKS: u32 = 8;
+ /// 射门空间可用性：防守者距离 ≤ 此值视为完全无空间
+-const SHOT_SPACE_MIN_M: f64 = 2.0;
++const SHOT_SPACE_MIN_M: f64 = 1.5;
+ /// 射门空间可用性：防守者距离 ≥ 此值视为完全自由
+-const SHOT_SPACE_MAX_M: f64 = 8.0;
++const SHOT_SPACE_MAX_M: f64 = 5.0;
+ /// hazard 掷定粒度（与 `maybe_open_foul` 同口径：千分位）
+ const SHOT_ROLL_SCALE: f64 = 1000.0;
+ /// 起脚窗口压迫分桶（方向性观测）：最近防守者 ≤ 此值 → 「贴身」桶
