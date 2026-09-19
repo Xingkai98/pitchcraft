@@ -101,6 +101,12 @@ viewer 可切到「真实比赛（对照）」：公开 tracking 数据 → 帧�
 - 基线：`viewer/data/benchmark-baseline.json`（**入库**，是 `viewer/data/*` 的 gitignore 例外；
   其余真实数据仍不入库）。重生成：fetch → convert（含 20 场 SkillCorner）→ 构建 wasm →
   `node tools/benchmark-baseline.mjs`
+- ⚠️ **引擎侧数字必须来自 main 源码构建的 wasm**（P38 #87 的教训）：P37 的基线曾用
+  **未合入分支**（`demo/off-ball-movement`）的 wasm 生成——重心间距偏 −55.8%、宽度偏 −25.9%，
+  且这些数字进了 README，而**当时没有任何哨兵能发现**。现在基线记录
+  `engineFingerprint`（`viewer/engine.wasm` 与 `engine/src/lib.rs` 的双哈希），
+  `tools/benchmark-baseline.test.mjs` 会在源码变更而基线未重生成时**变红**。
+  改引擎做实验请记得 `git checkout engine/src/lib.rs` 还原后重跑测试（那红是预期的）
 - 口径写死在 `viewer/match-metrics.js` 头部注释与 spec：剔除门将 / 瞬时队形逐帧算再均值 /
   **`q10–q90` 纵深**（P37 用户拍板 β：trim1 是顺序统计量、值依赖人数 n，跳过外推点后两侧
   人数不同 → 不是同一估计量）/ **逐场球场尺寸**（104/105/106 不折算）/ 控球代理（离球最近者，

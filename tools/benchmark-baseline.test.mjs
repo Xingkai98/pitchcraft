@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { hashMetricsModule, realGameWindows, converterFingerprints } from './benchmark-baseline.mjs';
+import { hashMetricsModule, realGameWindows, converterFingerprints, engineFingerprints } from './benchmark-baseline.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const BASELINE_PATH = join(ROOT, 'viewer', 'data', 'benchmark-baseline.json');
@@ -174,6 +174,37 @@ test('基线：转换器输入指纹与当前实现一致（审阅 P3-3 的陈�
   for (const [file, hash] of Object.entries(current)) {
     assert.equal(b.metricsModule.converters[file], hash,
       `${file} 已变更而基线未重生成 —— 跑 node tools/benchmark-baseline.mjs`);
+  }
+});
+
+test('基线：引擎源码指纹与当前一致（P38 #87 的 wasm 来源哨兵）', { skip: !HAVE_BASELINE && SKIP_REASON }, () => {
+  // **为什么加这条**：P37 的基线曾用**未合入分支**（demo/off-ball-movement）构建的 wasm 生成——
+  // 引擎侧 gap 偏 +55.8%、宽度偏 +25.9%，而这些错误数字进了 README。当时**没有任何哨兵**
+  // 能发现：指标模块哈希只管指标口径、转换器哈希只管真实侧，两者都管不到"wasm 从哪来"。
+  //
+  // 断的是**源码哈希**（engine/src/lib.rs）而非 wasm 二进制：二进制受构建环境影响
+  // （工具链版本、优化 flag），源码哈希才能稳定回答"这份基线是不是从 main 的源码跑出来的"。
+  // wasm 哈希一并记录，但**只在能读到 wasm 时才比**（CI 的 tools 步骤不保证已构建 wasm）。
+  const b = load();
+  assert.ok(b.engineFingerprint, '基线须记录引擎指纹（P38 #87）');
+  assert.equal(typeof b.engineFingerprint.sourceSha256, 'string',
+    '基线须记录 engine/src/lib.rs 的哈希');
+
+  const cur = engineFingerprints(
+    join(ROOT, 'viewer', 'engine.wasm'),
+    join(ROOT, 'engine', 'src', 'lib.rs'),
+  );
+  assert.equal(
+    b.engineFingerprint.sourceSha256, cur.sourceSha256,
+    'engine/src/lib.rs 已变更而基线未重生成 —— 跑 node tools/benchmark-baseline.mjs\n'
+    + '（若你正在改引擎做实验：这是预期的红——实验完请 git checkout 还原后重跑测试）',
+  );
+  // wasm 二进制：能读到才比（缺 wasm 时 cur.wasmSha256 为 null，跳过而不误报）
+  if (cur.wasmSha256 && b.engineFingerprint.wasmSha256) {
+    assert.equal(
+      b.engineFingerprint.wasmSha256, cur.wasmSha256,
+      'viewer/engine.wasm 与基线记录的不一致 —— 重跑 node tools/benchmark-baseline.mjs',
+    );
   }
 });
 
