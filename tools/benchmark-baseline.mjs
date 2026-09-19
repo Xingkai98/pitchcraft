@@ -78,10 +78,14 @@ export function hashMetricsModule(path = METRICS_PATH) {
 /// 而当时没有任何哨兵能发现——引擎侧的 gap 因此偏了 55.8%、宽度偏了 25.9%，
 /// 且这些错误数字进了 README。指标模块与转换器的指纹都挡不住它（它们只管真实侧与指标口径）。
 ///
-/// 两条都要：
-///   - `wasmSha256`：实际被加载的那份（`viewer/engine.wasm`）
-///   - `sourceSha256`：`engine/src/lib.rs` 的内容哈希——**能区分"未提交的分支改动"**
-///     （wasm 二进制可能因构建环境不同而变化，源码哈希更稳、也更能说明"从哪个源码来的"）
+/// 两条都记录，但**只有源码哈希是判据**：
+///   - `sourceSha256`（**判据**）：`engine/src/lib.rs` 的内容哈希。
+///     它精确回答"这份基线是不是从当前 main 的源码跑出来的"——P37 那个 bug 的本质
+///     正是基线来自**未合入分支**的 lib.rs（工作区有 1145 行未提交改动）。
+///   - `wasmSha256`（**取证信息，不作判据**）：实际被加载的那份二进制。
+///     **不能拿它当门**：CI 每次 `cargo build` 重建 wasm，构建环境不同则字节不同
+///     ——本地一致、CI 必然红（P38 #87 实测踩过）。留在基线里仅用于排查
+///     "这份基线是谁、在哪跑出来的"。
 export function engineFingerprints(wasmPath, sourcePath) {
   const out = { wasmPath: 'viewer/engine.wasm', sourcePath: 'engine/src/lib.rs' };
   try {

@@ -199,13 +199,11 @@ test('基线：引擎源码指纹与当前一致（P38 #87 的 wasm 来源哨兵
     'engine/src/lib.rs 已变更而基线未重生成 —— 跑 node tools/benchmark-baseline.mjs\n'
     + '（若你正在改引擎做实验：这是预期的红——实验完请 git checkout 还原后重跑测试）',
   );
-  // wasm 二进制：能读到才比（缺 wasm 时 cur.wasmSha256 为 null，跳过而不误报）
-  if (cur.wasmSha256 && b.engineFingerprint.wasmSha256) {
-    assert.equal(
-      b.engineFingerprint.wasmSha256, cur.wasmSha256,
-      'viewer/engine.wasm 与基线记录的不一致 —— 重跑 node tools/benchmark-baseline.mjs',
-    );
-  }
+  // ⚠️ **不比 wasm 二进制哈希**（P38 #87 的 CI 教训）：CI 每次 `cargo build` 重建 wasm，
+  // 构建环境（工具链版本、优化 flag、缓存）不同则字节不同——本地重建一致、CI 上必然红。
+  // 二进制哈希只作**取证信息**留在基线里（排查"这份基线是谁跑出来的"），不作判据。
+  // **源码哈希才是判据**：它精确回答"基线是不是从当前 main 的源码跑出来的"，
+  // 也正是 P37 那个 bug 的本质（基线来自未合入分支的 lib.rs）。
 });
 
 test('基线：时间缺口声明与逐场实测一致（审阅复审 P3-③ 的守护）', { skip: !HAVE_BASELINE && SKIP_REASON }, () => {
