@@ -7,75 +7,142 @@
     "latSd": 10.515,
     "swarm": 0.671,
     "fault": 4.95,
-    "midBack": 1.06
+    "midBack": 1.06,
+    "shotsReg": 16.51
   },
   "criteria": [
     {
       "key": "hd",
       "name": "纵深",
       "group": "纵向",
+      "dir": "band",
       "center": 25.885,
       "tol": 2.5,
       "lower": 23.385,
-      "upper": 28.385
+      "upper": 28.385,
+      "centerSource": "real"
     },
     {
       "key": "spread",
       "name": "紧凑度",
       "group": "纵向",
+      "dir": "band",
       "center": 15.21,
       "tol": 1.8,
       "lower": 13.41,
-      "upper": 17.01
+      "upper": 17.01,
+      "centerSource": "real"
     },
     {
       "key": "gap",
       "name": "重心间距",
       "group": "纵向",
+      "dir": "band",
       "center": 8.34,
       "tol": 1.8,
       "lower": 6.54,
-      "upper": 10.14
+      "upper": 10.14,
+      "centerSource": "real"
     },
     {
       "key": "latSd",
       "name": "横向位移 sd",
       "group": "横向",
+      "dir": "band",
       "center": 10.515,
       "tol": 3.5,
       "lower": 7.015,
-      "upper": 14.015
+      "upper": 14.015,
+      "centerSource": "real"
     },
     {
       "key": "swarm",
       "name": "y 两两相关",
       "group": "整体性",
+      "dir": "band",
       "center": 0.671,
       "tol": 0.22,
       "lower": 0.451,
-      "upper": 0.891
+      "upper": 0.891,
+      "centerSource": "real"
     },
     {
       "key": "fault",
       "name": "断层幅度",
       "group": "结构",
+      "dir": "band",
       "center": 4.95,
       "tol": 2.5,
       "lower": 2.45,
-      "upper": 7.45
+      "upper": 7.45,
+      "centerSource": "real"
     },
     {
       "key": "midBack",
       "name": "各线均衡",
       "group": "结构",
+      "dir": "band",
       "center": 1.06,
       "tol": 0.22,
       "lower": 0.84,
-      "upper": 1.28
+      "upper": 1.28,
+      "centerSource": "real"
+    },
+    {
+      "key": "shotsReg",
+      "name": "普通射门/场",
+      "group": "行为",
+      "dir": "min",
+      "floor": 5.5,
+      "centerSource": "engine-l1-gate-lower-edge",
+      "realReference": 16.51,
+      "note": "口径：普通射门（detail != header），逐场按 90 分钟归一后平均；下界单边（真实 16.5 为参照、不设上界），锚在引擎 L1 门预注册下沿 6.0 − 0.5"
     }
   ],
   "mutationSelfTest": {
-    "variantsBlocked": 11,
-    "totalVariants": 11
+    "variantsBlocked": 16,
+    "totalVariants": 16,
+    "fixtures": [
+      {
+        "tag": "combo-local-0.96-R8",
+        "shotsReg": 3,
+        "source": "probes-main/out/combos.jsonl（local s=0.96 R=8；10 种子；wasm d2859d20）"
+      },
+      {
+        "tag": "combo-local-0.96-R12",
+        "shotsReg": 1.6,
+        "source": "probes-main/out/combos.jsonl（local s=0.96 R=12；10 种子；wasm bb5a5eed）"
+      },
+      {
+        "tag": "combo-local-0.96-R15",
+        "shotsReg": 0.7,
+        "source": "probes-main/out/combos.jsonl（local s=0.96 R=15；10 种子；wasm 1463c3c4）"
+      },
+      {
+        "tag": "combo-local-0.7-R12",
+        "shotsReg": 4.2,
+        "source": "probes-main/out/combos.jsonl（local s=0.7 R=12；10 种子；wasm a418b9be）"
+      },
+      {
+        "tag": "combo-local-0.85-R12",
+        "shotsReg": 2.2,
+        "source": "probes-main/out/combos.jsonl（local s=0.85 R=12；10 种子；wasm 36f6bbcb）"
+      },
+      {
+        "tag": "exp4b-alone+guard",
+        "shotsReg": 0.5,
+        "source": "fixtures/exp4b-alone.json（wasm c7ac17d8）"
+      }
+    ]
+  },
+  "soleBlocker": {
+    "hd": [],
+    "spread": [],
+    "gap": [],
+    "latSd": [],
+    "swarm": [],
+    "fault": [],
+    "midBack": [],
+    "shotsReg": []
   }
 }

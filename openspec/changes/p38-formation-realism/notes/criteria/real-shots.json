@@ -1,0 +1,23 @@
+{
+  "note": "真实（Metrica 2 场）每场**普通射门**原始计数。由 real-shots.mjs 从 RawEventsData.csv 提炼；评测器只读本文件（CSV 是 gitignored 的大文件，不进依赖）。",
+  "caliber": "普通射门 = Type==SHOT 且 Subtype 不含 HEAD；BLOCKED 计入",
+  "eventsDir": "<ROOT>/.scratch/tracking-data/sample-data/data",
+  "games": [
+    {
+      "game": 1,
+      "shotsTotal": 24,
+      "shotsHeader": 6,
+      "shotsRegular": 18,
+      "source": "Sample_Game_1_RawEventsData.csv",
+      "sourceSha256": "097dda6345e17390"
+    },
+    {
+      "game": 2,
+      "shotsTotal": 24,
+      "shotsHeader": 7,
+      "shotsRegular": 17,
+      "source": "Sample_Game_2_RawEventsData.csv",
+      "sourceSha256": "edf31a18599265b7"
+    }
+  ]
+}
