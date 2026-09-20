@@ -2,9 +2,9 @@
 // 用**同一份** match-metrics 口径，逐数据集、逐口径（主/全点）打印。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
 const { fromTrackingFrame, cutWindows, windowMetrics, summarizeWindowMetrics, framePitchMeters } = M;
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+const ROOT = '../../../../..';
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 
 function loadMetrica(n) {

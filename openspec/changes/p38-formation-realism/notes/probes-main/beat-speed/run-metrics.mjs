@@ -2,13 +2,13 @@
 import {
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, cutWindows,
   windowMetrics, summarizeWindowMetrics,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../../tools/benchmark-engine.mjs';
 const wasmPath = process.argv[2] || WASM_PATH;
 const seeds = process.argv.slice(3).map(Number);
 const load = await loadEngineWasm(wasmPath);
 if (!load.ok) { console.error(load.message); process.exit(1); }
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../../viewer/game.js');
 const all = [];
 for (const seed of (seeds.length?seeds:BENCHMARK_SEEDS)) {
   const game = createGame(simulateStream(load.wasm, seed, ENGINE_DURATION_SEC));

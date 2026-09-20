@@ -3,11 +3,11 @@
 //  (B) 一个**正当的机制改动**（块锚定，即 design-a 甲2 / design-b C 的核心）会不会也搬家？
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
 const { cutWindows, KEEPER_IDS, PITCH_LENGTH_M, BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames } = M;
-const { loadEngineWasm, simulateStream } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs').href);
-const { createGame } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js').href);
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+const { loadEngineWasm, simulateStream } = await import(pathToFileURL('../../../../../tools/benchmark-engine.mjs').href);
+const { createGame } = await import(pathToFileURL('../../../../../viewer/game.js').href);
+const ROOT = '../../../../..';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 
 const load = await loadEngineWasm(process.argv[2] || '/tmp/wf-probe/engine-PRISTINE-MAIN.wasm');

@@ -1,12 +1,12 @@
 // 诊断：球为什么不去边路 —— 查球员 y 分布与球的 y 分布
-import { BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames } from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+import { BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames } from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
 
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(mean(a.map((v) => (v - m) ** 2))); };
 
 const load = await loadEngineWasm(WASM_PATH);
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../viewer/game.js');
 
 for (const seed of [42, 1]) {
   const game = createGame(simulateStream(load.wasm, seed, ENGINE_DURATION_SEC));

@@ -8,13 +8,14 @@
 // 真实与引擎用**同一段代码**计算（P36 的教训：口径分叉 = 数字不可比）。
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, KEEPER_IDS,
   PITCH_LENGTH_M, PITCH_WIDTH_M,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
 
-const HERE = '/home/happy/.claude/worktrees/wayfinder-realism';
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const qs = (s, p) => { const h = (s.length - 1) * p; const lo = Math.floor(h); const hi = Math.ceil(h); return s[lo] + (h - lo) * (s[hi] - s[lo]); };
 

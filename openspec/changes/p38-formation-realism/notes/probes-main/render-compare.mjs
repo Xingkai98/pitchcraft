@@ -6,9 +6,10 @@
 // 只做探索性观察——项目约束「验证不得依赖模型视觉」指的是**门槛**，看画面用于发现问题是正当的。
 
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { join } from 'node:path';
 
-const HERE = '/home/happy/.claude/worktrees/wayfinder-realism';
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
 const { config } = await import(`${HERE}/viewer/config.js`);
 const { renderFrame } = await import(`${HERE}/viewer/renderer.js`);
 const { SoftCanvas, canvasToPng } = await import(`${HERE}/viewer/soft-canvas.js`);

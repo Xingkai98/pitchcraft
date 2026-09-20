@@ -8,11 +8,14 @@
 //   Q3 真实球队是不是「整体平移」而引擎是「原地拉伸」？量化：防线高度 vs 球位 的斜率。
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   PITCH_LENGTH_M, BENCHMARK_SEEDS, ENGINE_DURATION_SEC, KEEPER_IDS,
   quantileSorted, sampleEngineFrames, cutWindows,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
+
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const q = quantileSorted;
@@ -64,7 +67,7 @@ console.log(`  模板原始纵深（x 0.14→0.62）= ${((0.62 - 0.14) * 105).to
 // ── Q2 目标能否解释观测 ────────────────────────────────────────────
 const load = await loadEngineWasm(WASM_PATH);
 if (!load.ok) { console.error(load.message); process.exit(1); }
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../viewer/game.js');
 
 const engineFrames = [];
 for (const seed of BENCHMARK_SEEDS.slice(0, 3)) {
@@ -141,7 +144,7 @@ function lineTable(frames, label, mode) {
 lineTable(engineFrames, '引擎（防线=id1-4 / 锋线=id9-10）', 'id');
 const realFrames = [];
 for (const fn of ['1', '2']) {
-  const g = JSON.parse(readFileSync(`/home/happy/.claude/worktrees/wayfinder-realism/viewer/data/real-game-${fn}.json`, 'utf8'));
+  const g = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-${fn}.json`, 'utf8'));
   const frames = g.frames.map((fr) => ({ t: fr.t, ball: fr.ball || null, players: fr.players.map((p, id) => (p ? { id, x: p[0], y: p[1] } : null)) }));
   for (const w of cutWindows(frames)) realFrames.push(...w);
 }

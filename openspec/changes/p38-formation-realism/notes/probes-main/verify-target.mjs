@@ -13,7 +13,7 @@
 
 import { readFileSync, readdirSync } from 'node:fs';
 
-const SC_DIR = '/home/happy/.claude/worktrees/wayfinder-realism/.scratch/p38-frames';
+const SC_DIR = '../../../../../.scratch/p38-frames';
 const L = 105;
 
 function mean(a) { return a.reduce((x, y) => x + y, 0) / a.length; }

@@ -1,6 +1,6 @@
 // adv9: 独立复算（不复用 match-metrics 的聚合），核验 adv7 的两个承重数字。
 import { readFileSync } from 'node:fs';
-const ROOT='/home/happy/.claude/worktrees/wayfinder-realism';
+const ROOT='../../../../..';
 const q=(s,p)=>{const h=(s.length-1)*p,i=Math.floor(h);return i+1>=s.length?s[s.length-1]:s[i]+(h-i)*(s[i+1]-s[i]);};
 const mean=a=>a.reduce((x,y)=>x+y,0)/a.length;
 function depth(frames,team,opts){ const skipExt=(opts||{}).skipExt; //{

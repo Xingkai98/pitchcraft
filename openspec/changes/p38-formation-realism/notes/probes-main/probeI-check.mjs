@@ -1,9 +1,9 @@
-import { BENCHMARK_SEEDS, ENGINE_DURATION_SEC, KEEPER_IDS, quantileSorted, sampleEngineFrames, cutWindows, teamShape } from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH, sampleEngineStats } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+import { BENCHMARK_SEEDS, ENGINE_DURATION_SEC, KEEPER_IDS, quantileSorted, sampleEngineFrames, cutWindows, teamShape } from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH, sampleEngineStats } from '../../../../../tools/benchmark-engine.mjs';
 const mean=(a)=>a.reduce((x,y)=>x+y,0)/a.length;
 const q=quantileSorted;
 const load=await loadEngineWasm(WASM_PATH);
-const { createGame }=await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame }=await import('../../../../../viewer/game.js');
 const fr=[];
 for(const seed of BENCHMARK_SEEDS.slice(0,3)){
   const g=createGame(simulateStream(load.wasm,seed,ENGINE_DURATION_SEC));

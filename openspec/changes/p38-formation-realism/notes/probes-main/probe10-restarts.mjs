@@ -1,15 +1,18 @@
 // probe 10：引擎「深度尾巴」里有多少是重开（角球准备）几何而不是开放比赛
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   PITCH_LENGTH_M, BENCHMARK_SEEDS, ENGINE_DURATION_SEC,
   sampleEngineFrames, cutWindows, KEEPER_IDS, teamShape,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
+
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 
 const load = await loadEngineWasm(WASM_PATH);
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../viewer/game.js');
 const EF = [];
 // 同时记录事件类型，用于标记重开帧
 const stream = simulateStream(load.wasm, BENCHMARK_SEEDS[0], ENGINE_DURATION_SEC);
@@ -66,7 +69,7 @@ console.log(`\n引擎纵深：全部帧 ${all.avg.toFixed(1)}m (n=${all.n})  剔
 // 真实侧同样处理
 const RF = [];
 for (const f of ['1', '2']) {
-  const g = JSON.parse(readFileSync(`/home/happy/.claude/worktrees/wayfinder-realism/viewer/data/real-game-${f}.json`, 'utf8'));
+  const g = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-${f}.json`, 'utf8'));
   const frames = g.frames.map((fr) => ({ t: fr.t, ball: fr.ball || null, players: fr.players.map((p, id) => (p ? { id, x: p[0], y: p[1] } : null)) }));
   for (const w of cutWindows(frames)) RF.push(...w);
 }

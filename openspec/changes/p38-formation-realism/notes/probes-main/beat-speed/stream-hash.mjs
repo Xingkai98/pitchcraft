@@ -1,4 +1,4 @@
-import { loadEngineWasm, simulateStream, ENGINE_DURATION_SEC } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+import { loadEngineWasm, simulateStream, ENGINE_DURATION_SEC } from '../../../../../../tools/benchmark-engine.mjs';
 import { createHash } from 'node:crypto';
 const wasm = process.argv[2];
 const load = await loadEngineWasm(wasm);

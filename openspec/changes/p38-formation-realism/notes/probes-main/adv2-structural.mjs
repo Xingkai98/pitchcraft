@@ -1,10 +1,13 @@
 // adv2: S1–S5 结构判据，**带口径变体开关**，逐条与 structural-check.mjs 对照。
 // 用法: node adv2-structural.mjs <wasmPath> <label>
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { pathToFileURL } from 'node:url';
-import { loadEngineWasm, simulateStream } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
-const { createGame } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js').href);
+import { loadEngineWasm, simulateStream } from '../../../../../tools/benchmark-engine.mjs';
+
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
+const { createGame } = await import(pathToFileURL('../../../../../viewer/game.js').href);
 const { PITCH_LENGTH_M, PITCH_WIDTH_M, BENCHMARK_SEEDS, ENGINE_DURATION_SEC,
   sampleEngineFrames, cutWindows, KEEPER_IDS } = M;
 
@@ -21,7 +24,7 @@ for (const seed of BENCHMARK_SEEDS.slice(0, 3)) {
 }
 const R = [];
 for (const f of ['1', '2']) {
-  const g = JSON.parse(readFileSync(`/home/happy/.claude/worktrees/wayfinder-realism/viewer/data/real-game-${f}.json`, 'utf8'));
+  const g = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-${f}.json`, 'utf8'));
   const frames = g.frames.map((fr) => ({ t: fr.t, ball: fr.ball || null, players: fr.players.map((p, id) => (p ? { id, x: p[0], y: p[1] } : null)) }));
   for (const w of cutWindows(frames)) R.push(...w);
 }

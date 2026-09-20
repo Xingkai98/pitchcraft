@@ -4,10 +4,10 @@ import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 import { join } from 'node:path';
-import { loadEngineWasm, simulateStream } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
-const { createGame } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js').href);
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+import { loadEngineWasm, simulateStream } from '../../../../../tools/benchmark-engine.mjs';
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
+const { createGame } = await import(pathToFileURL('../../../../../viewer/game.js').href);
+const ROOT = '../../../../..';
 
 const wasmPath = process.argv[2];
 const label = process.argv[3] || 'x';
