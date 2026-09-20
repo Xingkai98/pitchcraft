@@ -81,7 +81,7 @@ echo "=== 8/9 交叉验证（P37：真实侧内部自洽性，**报告项、不�
 # "全部验证通过"在工具炸掉时照样打印。不加则意外崩溃会如实红（set -e）。
 node tools/benchmark-crossvalidation.mjs
 echo ""
-echo "=== 9/9 队形判据（P38 map #86：报告期——只打印，不阻塞）==="
+echo "=== 8 条队形判据（P38 map #86：报告期——只打印，不阻塞）==="
 # ⚠️ **本步不产生 pass/fail、不阻塞**（#91 的形态决策）：引擎现状（纵深 40.5 vs 靶子 25.9）
 # **本来就达标不了**——是"确实还没修"，不是判据错。立成硬门会立即变红并一直红到
 # #89（队形机制）做完为止，与 P37 把 half-split 降级为报告项同理（design D7）。
@@ -89,5 +89,9 @@ echo "=== 9/9 队形判据（P38 map #86：报告期——只打印，不阻塞�
 # ——它的价值在**守住已修好的状态**，不在逼现在变绿。
 # 判据组定义与变异自证见 openspec/changes/p38-formation-realism/notes/criteria/README.md。
 node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs
+echo ""
+# 射门判据的**守护测试**（阶段 1）：用反证条证明它会红——不是"证明判据对"，
+# 而是"证明判据被改成空转/改回双边带时会失败"。判据退化时本步会红。
+node --test openspec/changes/p38-formation-realism/notes/criteria/shot-criterion.test.mjs
 echo ""
 echo "=== 全部验证通过 ==="

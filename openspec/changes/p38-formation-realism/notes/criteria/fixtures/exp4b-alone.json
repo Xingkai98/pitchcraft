@@ -1,0 +1,30 @@
+{
+  "note": "exp4b（等间距块）**单独**跑 —— 阶段 1 射门判据的原始动机靶子。手工记录：该配置需要前置守卫才能跑满 10 种子，故不在 combos.jsonl 的自动扫描里（那是 exp4b+local 组合）。",
+  "whyThisFixture": "这是判据组 7 条**全都拦不住**的那个配置：纵深 26.50 ✅ / 紧凑 15.52 ✅ / 重心间距 8.03 ✅ / 断层 3.96 ✅ / 各线均衡 1.03 ✅ —— 五条几何判据全绿，而它场均只有 0.5 脚普通射门（真实 16.5、引擎合法簇 6–11）。加射门判据前，它靠 latSd/swarm 两条才能被挡；只补射门这一条不能替代几何判据，但它把'几乎不射门'这件事**从'没人管'变成'有一条明说'**。",
+  "reproduction": [
+    "git checkout engine/src/lib.rs",
+    "git apply openspec/changes/p38-formation-realism/notes/patches/exp4b-equal-spacing.patch",
+    "git apply openspec/changes/p38-formation-realism/notes/patches/fix-tackle-duplicate-mover.patch",
+    "(cd engine && cargo build --target wasm32-unknown-unknown --release)",
+    "cp engine/target/wasm32-unknown-unknown/release/fm_engine.wasm viewer/engine.wasm",
+    "node openspec/changes/p38-formation-realism/notes/criteria/eval-criteria.mjs exp4b+guard",
+    "git checkout engine/src/lib.rs   # 还原"
+  ],
+  "duplicateMoverNote": "**不带** fix-tackle-duplicate-mover 守卫时 exp4b 单独跑 10 种子崩 1 个（`beat mover id duplicate: 10`，wasm e0a5c306），评测器如实报 `crashedSeeds:1` 并将其判为不可用（shotsReg → null）。这正是 notes/patches/README.md 说那个补丁'等 #89 真正压缩队形时才会变成必需'的实测依据。",
+  "measured": {
+    "tag": "exp4b-alone+guard",
+    "hd": 26.496,
+    "spread": 15.524,
+    "gap": 8.026,
+    "width": 40.858,
+    "latSd": 0.685,
+    "lonSd": 8.509,
+    "swarm": -0.006,
+    "straight": 0.17,
+    "fault": 3.957,
+    "midBack": 1.027,
+    "shotsReg": 0.5,
+    "wasmSha8": "c7ac17d8",
+    "seeds": [42, 1, 7, 99, 123, 2, 3, 5, 11, 17]
+  }
+}

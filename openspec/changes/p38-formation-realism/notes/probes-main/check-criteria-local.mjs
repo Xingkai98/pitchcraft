@@ -20,12 +20,31 @@ const OUT = join(HERE, 'out');
 const spec = JSON.parse(readFileSync(SPEC, 'utf8'));
 const KEYS = spec.criteria.map((c) => c.key);
 
+// 口径桥接：线 A/B 的归档（sweep-*.mjs / p38-eval.mjs）里射门字段叫
+// `shotsRegularPerMatch`，判据键叫 `shotsReg`——**同义**（都是逐场按 5400s 归一后的
+// 普通射门均值）。不桥接的话归档表会把每一行都显示成"—*"（未测），
+// 让人误以为"这批数据没有射门数字"，而其实有。
+// ⚠️ 只桥接这一个字段：别的字段两边同名，改名会掩盖真正的缺字段。
+function normalize(row) {
+  if (row.shotsReg == null && row.shotsRegularPerMatch != null) {
+    return { ...row, shotsReg: row.shotsRegularPerMatch };
+  }
+  return row;
+}
+
 // 判一行：返回 { key, ok, v }
+// ⚠️ 判据有两种形态（`criteria-spec.json` 的 `dir`）：
+//   'band'：双边 [lower, upper]；'min'：单边 ≥ floor（射门那一条，阶段 1 新增）。
+// 加一条判据就把这里炸了——**读 spec 的脚本都得跟着 spec 的形状走**。
 export function judge(row) {
   return spec.criteria.map((c) => {
     const v = row[c.key];
-    const ok = v != null && Number.isFinite(v) && v >= c.lower && v <= c.upper;
-    return { key: c.key, name: c.name, group: c.group, ok, v, lower: c.lower, upper: c.upper };
+    const ok = v != null && Number.isFinite(v)
+      && (c.dir === 'min' ? v >= c.floor : (v >= c.lower && v <= c.upper));
+    return {
+      key: c.key, name: c.name, group: c.group, ok, v,
+      dir: c.dir, lower: c.lower, upper: c.upper, floor: c.floor,
+    };
   });
 }
 
@@ -33,7 +52,8 @@ export function report(rows, title) {
   console.log(`\n=== ${title} ===`);
   const names = spec.criteria.map((c) => c.name);
   console.log(`  ${'配置'.padEnd(20)} ${names.map((n) => n.padStart(9)).join(' ')}   通过`);
-  for (const r of rows) {
+  for (const raw of rows) {
+    const r = normalize(raw);
     const j = judge(r);
     const cells = j.map((x) => {
       const s = x.v == null || !Number.isFinite(x.v) ? '—' : x.v.toFixed(2);

@@ -45,10 +45,18 @@ console.log('（判据组定义见 notes/criteria/README.md；成组否决，任
 let bad = 0;
 for (const c of spec.criteria) {
   const v = cur[c.key];
-  const ok = v != null && v >= c.lower && v <= c.upper;
+  // 判据有两种形态（见 criteria-spec.json 的 `dir`）：
+  //   'band'：双边，v ∈ [lower, upper]
+  //   'min' ：单边下界，v ≥ floor（射门这一条；上界无锚点，见 calibrate.mjs 的说明）
+  const ok = c.dir === 'min'
+    ? (v != null && Number.isFinite(v) && v >= c.floor)
+    : (v != null && v >= c.lower && v <= c.upper);
   if (!ok) bad += 1;
-  const shown = v == null ? '—' : (typeof v === 'number' ? v.toFixed(3) : v);
-  console.log(`  ${ok ? '✅' : '❌'} [${c.group}] ${c.name.padEnd(12)} 当前 ${String(shown).padStart(8)}   目标 [${c.lower}, ${c.upper}]`);
+  const shown = v == null || !Number.isFinite(v) ? '—' : (typeof v === 'number' ? v.toFixed(3) : v);
+  const target = c.dir === 'min'
+    ? `≥ ${c.floor}（单边；真实参照 ${c.realReference}）`
+    : `[${c.lower}, ${c.upper}]`;
+  console.log(`  ${ok ? '✅' : '❌'} [${c.group}] ${c.name.padEnd(12)} 当前 ${String(shown).padStart(8)}   目标 ${target}`);
 }
 console.log(`\n  ${bad === 0 ? '全部达标' : `${bad}/${spec.criteria.length} 条不达标`}`);
 console.log('\n注：本步不阻塞（报告期）。引擎现况达标不了是**确实还没修**，不是判据错——');

@@ -69,16 +69,19 @@ for (const p of patches) {
 restore();
 
 // 汇总表
-const cols = ['tag', 'hd', 'spread', 'gap', 'width', 'latSd', 'lonSd', 'swarm', 'straight', 'fault', 'midBack'];
+const cols = ['tag', 'hd', 'spread', 'gap', 'width', 'latSd', 'lonSd', 'swarm', 'straight', 'fault', 'midBack', 'shotsReg'];
 const w = (s, n) => String(s).padEnd(n);
 console.log(`\n\n===== 候选判据 × 变体 =====\n`);
 console.log(cols.map((c) => w(c, c === 'tag' ? 22 : 9)).join(''));
 console.log('-'.repeat(22 + 9 * (cols.length - 1)));
 for (const r of rows) console.log(cols.map((c) => w(c === 'tag' ? r[c] : (r[c] ?? '—'), c === 'tag' ? 22 : 9)).join(''));
 
-console.log(`\n真实靶子（Metrica）: hd=${realAvg.hd} spread=${realAvg.spread} gap=${realAvg.gap} width=${realAvg.width}`);
+console.log(`\n真实靶子（Metrica 2 场，按 90 分钟归一）: hd=${realAvg.hd} spread=${realAvg.spread} gap=${realAvg.gap} width=${realAvg.width}`);
 console.log(`                     latSd=${realAvg.latSd} lonSd=${realAvg.lonSd} swarm=${realAvg.swarm} straight=${realAvg.straight}`);
-console.log(`                     fault=${realAvg.fault} midBack=${realAvg.midBack}`);
+console.log(`                     fault=${realAvg.fault} midBack=${realAvg.midBack} shotsReg=${realAvg.shotsReg}`);
+// 射门判据的**实际**标定带来自引擎自己的 L1 门（`engine/tests/realism.rs`：普通射门 6–11/场），
+// 不是真实值 ±30%——理由见 criteria/README.md「射门口径」。这里把它显式打出来做对照。
+console.log(`                     （引擎 L1 门：普通射门 6–11/场；真实 16.5–16.8 是含篮板/封堵的更宽口径）`);
 
 writeFileSync(`${HERE}/openspec/changes/p38-formation-realism/notes/criteria/table.json`, `${JSON.stringify(rows, null, 2)}\n`);
 console.log('\n→ table.json');
