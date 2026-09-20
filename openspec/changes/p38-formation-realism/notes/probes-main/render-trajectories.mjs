@@ -6,8 +6,19 @@
 // 用法：node render-trajectories.mjs <engine|real> <out.png> <label> [windowSec]
 
 import { readFileSync, writeFileSync } from 'node:fs';
+import { dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { findRepoRoot } from '../probes/repo-root.mjs';
 
-const HERE = process.env.P38_ROOT || '/home/happy/.claude/worktrees/wayfinder-realism';
+// ⚠️ **不要再硬编码 worktree 路径**（本脚本原来缺省指到
+// `/home/happy/.claude/worktrees/wayfinder-realism`——一个**旧 worktree**）。
+// 后果正是 P38 明令禁止的那类假绿：在新 worktree 里"用改过的 wasm 渲染"，
+// 实际读的是旧 worktree 的 wasm，两张图**一模一样**却没人发现
+// （2026-09-20 阶段 2 实测踩到：exp4b+gate3 与 baseline 的图与 sd 完全相同，
+//  只是因为我多看了一眼 sd 才对上）。改为从脚本自身位置上溯仓库根；
+// `P38_ROOT` 仍可覆盖（用于刻意跨仓对比）。
+const HERE = process.env.P38_ROOT || findRepoRoot(dirname(fileURLToPath(import.meta.url)));
+console.error(`[render-trajectories] 渲染源：${HERE}`);
 const { SoftCanvas, canvasToPng } = await import(`${HERE}/viewer/soft-canvas.js`);
 
 const [source, outPath, label, winArg] = process.argv.slice(2);
