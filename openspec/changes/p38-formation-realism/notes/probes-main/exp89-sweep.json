@@ -1,0 +1,6 @@
+[
+  { "form": "-", "gate": "engageShift:{\"shift\":-3.0}", "tag": "e1-clean-shift-3.0" },
+  { "form": "-", "gate": "engageShift:{\"shift\":-2.0}", "tag": "e2-clean-shift-2.0" },
+  { "form": "exp4b", "gate": "engageShift:{\"shift\":-3.0}", "tag": "e3-exp4b-shift-3.0" },
+  { "form": "exp4b", "gate": "positionGateNoGuard:{\"radius\":25,\"meters\":0.5}", "tag": "e4-control-posGate-only" }
+]

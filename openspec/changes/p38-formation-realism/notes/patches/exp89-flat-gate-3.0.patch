@@ -1,0 +1,14 @@
+# P38 #89：对照：全局收门到 3.0m（= 已测过的 exp10 形态），隔离"位置条件"的作用。实测射门 11.4、犯规 20.4（在干净 main 上 L1 绿）
+# 变体名 flatGate3m（probes-main/exp89-variants.mjs）
+# 干净 main = 901da77b
+--- a/engine/src/lib.rs	2026-09-20 18:34:32.600128672 +0800
++++ b/engine/src/lib.rs	2026-09-20 18:34:32.602219293 +0800
+@@ -550,7 +550,7 @@
+ // ---- P31 开放比赛持球决策（#25 阶段 3，D1）----
+ /// 出球档阈值（米）：最近防守者 ≤ 此距离即视为「被贴身逼抢」→ 出球（球权流动由状态涌现，
+ /// 不由时钟配额）。取 `FOUL_PRESS_DIST_M`(8m) 同尺度——与防守侧「贴身缠斗」同口径。
+-const OPEN_PLAY_PASS_PRESSURE_M: f64 = 8.0;
++const OPEN_PLAY_PASS_PRESSURE_M: f64 = 3.0;
+ /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
+ /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
+ const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.3;
