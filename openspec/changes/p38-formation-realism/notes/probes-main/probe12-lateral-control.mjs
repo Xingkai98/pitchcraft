@@ -2,17 +2,20 @@
 // 对每个 300s 窗单独算「每个深度次序槽位的 y 标准差」，再跨窗平均。窗内无场间膨胀。
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   PITCH_LENGTH_M, PITCH_WIDTH_M, BENCHMARK_SEEDS, ENGINE_DURATION_SEC,
   sampleEngineFrames, cutWindows, KEEPER_IDS,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
+
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const sd = (a) => { if (a.length < 2) return NaN; const m = mean(a); return Math.sqrt(mean(a.map((v) => (v - m) ** 2))); };
 
 const load = await loadEngineWasm(WASM_PATH);
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../viewer/game.js');
 const engineWindows = [];
 for (const seed of BENCHMARK_SEEDS.slice(0, 3)) {
   const game = createGame(simulateStream(load.wasm, seed, ENGINE_DURATION_SEC));
@@ -20,7 +23,7 @@ for (const seed of BENCHMARK_SEEDS.slice(0, 3)) {
 }
 const realWindows = [];
 for (const f of ['1', '2']) {
-  const g = JSON.parse(readFileSync(`/home/happy/.claude/worktrees/wayfinder-realism/viewer/data/real-game-${f}.json`, 'utf8'));
+  const g = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-${f}.json`, 'utf8'));
   const frames = g.frames.map((fr) => ({ t: fr.t, ball: fr.ball || null, players: fr.players.map((p, id) => (p ? { id, x: p[0], y: p[1] } : null)) }));
   for (const w of cutWindows(frames)) realWindows.push(w);
 }

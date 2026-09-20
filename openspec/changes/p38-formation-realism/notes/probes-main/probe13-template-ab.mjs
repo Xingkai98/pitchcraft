@@ -5,10 +5,10 @@ import { readFileSync } from 'node:fs';
 import {
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, cutWindows,
   windowMetrics, elasticity, teamShape, KEEPER_IDS,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream } from '../../../../../tools/benchmark-engine.mjs';
 
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+const ROOT = '../../../../..';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 
 async function run(wasmPath, label) {

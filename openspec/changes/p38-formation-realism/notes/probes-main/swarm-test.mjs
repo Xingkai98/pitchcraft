@@ -6,8 +6,11 @@
 //   2. 轨迹**直线度** = 净位移 / 路径长度（1=直线，越小越曲折）
 //   3. 球员间距（是否挤成一团）
 import { readFileSync } from 'node:fs';
-import { BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, KEEPER_IDS } from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+import { fileURLToPath } from 'node:url';
+import { BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, KEEPER_IDS } from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
+
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(mean(a.map((v) => (v - m) ** 2))); };
@@ -53,12 +56,12 @@ function analyze(frames, label) {
 }
 
 // 真实
-const rg = JSON.parse(readFileSync('/home/happy/.claude/worktrees/wayfinder-realism/viewer/data/real-game-1.json', 'utf8'));
+const rg = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-1.json`, 'utf8'));
 const rframes = rg.frames.map((f) => ({ t: f.t, ball: f.ball, players: f.players.map((p, id) => (p ? { id, x: p[0], y: p[1] } : null)) }));
 analyze(rframes, '真实 Metrica');
 
 const load = await loadEngineWasm(WASM_PATH);
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../viewer/game.js');
 for (const seed of [42, 1]) {
   const game = createGame(simulateStream(load.wasm, seed, ENGINE_DURATION_SEC));
   analyze(sampleEngineFrames(game), `引擎 s${seed}`);

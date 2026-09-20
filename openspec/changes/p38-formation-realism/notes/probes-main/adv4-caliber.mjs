@@ -2,12 +2,12 @@
 // 这一步直接决定 findings-so-far 里「后防横向移动 24 倍」这类数字能不能用。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
 const { fromTrackingFrame, cutWindows, KEEPER_IDS, PITCH_LENGTH_M, PITCH_WIDTH_M,
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames } = M;
-const { loadEngineWasm, simulateStream } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs').href);
-const { createGame } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js').href);
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+const { loadEngineWasm, simulateStream } = await import(pathToFileURL('../../../../../tools/benchmark-engine.mjs').href);
+const { createGame } = await import(pathToFileURL('../../../../../viewer/game.js').href);
+const ROOT = '../../../../..';
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const sd = (a) => { const m = mean(a); return Math.sqrt(mean(a.map((v) => (v - m) ** 2))); };
 

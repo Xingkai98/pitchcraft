@@ -21,6 +21,19 @@ node q90-6-verify-claims.mjs # 独立复核（另一套聚合；不一致即退�
 
 输出存档在 `out/0{0..5}-*.txt`。**这些探针只读真实数据 + 引擎 wasm，不改引擎源码。**
 
+## 路径已可移植（2026-09-20 修复）
+
+这批探针原先**硬编码了某个 worktree 的绝对路径**（`/home/happy/.claude/worktrees/wayfinder-realism`）。
+那个 worktree 已删除 → 54 个文件**全部失效**。现已批量修复：
+
+- 所有路径改为 **`fileURLToPath(new URL('<相对深度>', import.meta.url))`** 锚定，
+  **从任何 cwd 都能跑**（原来隐含假设"必须从仓库根跑"）
+- 顺带修了 `readFileSync('相对路径')` 的同类问题（Node 按 **cwd** 解析，不是按模块）
+
+**验证**：102 个 .mjs 语法全过；抽查探针从 `/tmp` 也能跑出与原始结论一致的数。
+
+⚠️ 但**路径对 ≠ 数字对**：跑之前仍须重建 wasm（见下）。
+
 ## ⚠️ 运行前必读：wasm 必须是干净 main
 
 本轮探索**出过两次事故**，都源于用了错误的 `viewer/engine.wasm`：

@@ -1,4 +1,4 @@
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
 const load = await loadEngineWasm(WASM_PATH);
 const evs = JSON.parse(simulateStream(load.wasm, 42, 300));
 const acts = new Set();

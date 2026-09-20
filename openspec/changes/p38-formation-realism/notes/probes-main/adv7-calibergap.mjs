@@ -4,12 +4,12 @@
 //   (C) 两侧分组口径等价性：固定 id 组 == 最深 4 人的帧占比（引擎 vs 真实）
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
 const { fromTrackingFrame, cutWindows, KEEPER_IDS, PITCH_LENGTH_M, framePitchMeters,
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, teamShape, windowMetrics, summarizeWindowMetrics } = M;
-const { loadEngineWasm, simulateStream } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs').href);
-const { createGame } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js').href);
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+const { loadEngineWasm, simulateStream } = await import(pathToFileURL('../../../../../tools/benchmark-engine.mjs').href);
+const { createGame } = await import(pathToFileURL('../../../../../viewer/game.js').href);
+const ROOT = '../../../../..';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 
 function loadMetrica(n) {

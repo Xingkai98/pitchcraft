@@ -1,12 +1,12 @@
 // adv4b: 口径等价性 —— 结构判据 S1/S2/S3 在「池化 vs 窗内」「固定 id vs 次序」下是否同值。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
 const { cutWindows, KEEPER_IDS, PITCH_LENGTH_M, PITCH_WIDTH_M,
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames } = M;
-const { loadEngineWasm, simulateStream } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs').href);
-const { createGame } = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js').href);
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+const { loadEngineWasm, simulateStream } = await import(pathToFileURL('../../../../../tools/benchmark-engine.mjs').href);
+const { createGame } = await import(pathToFileURL('../../../../../viewer/game.js').href);
+const ROOT = '../../../../..';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const sd = (a) => { const m = mean(a); return Math.sqrt(mean(a.map((v) => (v - m) ** 2))); };
 

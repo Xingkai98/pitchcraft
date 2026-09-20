@@ -2,9 +2,9 @@
 // 同时检验 real-formation-laws §1.1 的 SK 列（均匀 2.0–2.9m）是否被 42% 外推点的过滤口径歪曲。
 import { readFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
-const M = await import(pathToFileURL('/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js').href);
+const M = await import(pathToFileURL('../../../../../viewer/match-metrics.js').href);
 const { fromTrackingFrame, cutWindows, KEEPER_IDS, framePitchMeters } = M;
-const ROOT = '/home/happy/.claude/worktrees/wayfinder-realism';
+const ROOT = '../../../../..';
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const pos = (sorted, p) => { const h = (sorted.length - 1) * p; const i = Math.floor(h); return i + 1 >= sorted.length ? sorted[sorted.length - 1] : sorted[i] + (h - i) * (sorted[i + 1] - sorted[i]); };
 const P10 = Array.from({ length: 10 }, (_, i) => i / 9);

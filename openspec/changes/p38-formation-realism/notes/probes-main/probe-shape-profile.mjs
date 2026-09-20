@@ -9,11 +9,14 @@
 // 用法：node probe-shape-profile.mjs
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import {
   PITCH_LENGTH_M, BENCHMARK_SEEDS, ENGINE_DURATION_SEC,
   sampleEngineFrames, cutWindows, teamShape, KEEPER_IDS,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
+
+const HERE = fileURLToPath(new URL('../../../../..', import.meta.url));
 
 const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length;
 const q = (sorted, p) => {
@@ -37,15 +40,15 @@ function slotXs(frame, team) {
 
 // ── 真实侧（Metrica，已转换产物）─────────────────────────────────────────
 function loadReal() {
-  const g1 = JSON.parse(readFileSync('/home/happy/.claude/worktrees/wayfinder-realism/viewer/data/real-game-1.json', 'utf8'));
-  const g2 = JSON.parse(readFileSync('/home/happy/.claude/worktrees/wayfinder-realism/viewer/data/real-game-2.json', 'utf8'));
+  const g1 = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-1.json`, 'utf8'));
+  const g2 = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-2.json`, 'utf8'));
   return [g1, g2];
 }
 
 // ── 引擎侧 ──────────────────────────────────────────────────────────────
 const load = await loadEngineWasm(WASM_PATH);
 if (!load.ok) { console.error(load.message); process.exit(1); }
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../viewer/game.js');
 
 const engineFrames = [];
 for (const seed of BENCHMARK_SEEDS.slice(0, 3)) {

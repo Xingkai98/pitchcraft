@@ -17,8 +17,8 @@ import { readFileSync } from 'node:fs';
 import {
   PITCH_LENGTH_M, BENCHMARK_SEEDS, ENGINE_DURATION_SEC, KEEPER_IDS,
   quantileSorted,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
 
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : NaN);
 const span = (xs) => {
@@ -45,7 +45,7 @@ function outfieldXsMeters(players, team) {
 
 const load = await loadEngineWasm(WASM_PATH);
 if (!load.ok) { console.error(load.message); process.exit(1); }
-const { createGame } = await import('/home/happy/.claude/worktrees/wayfinder-realism/viewer/game.js');
+const { createGame } = await import('../../../../../viewer/game.js');
 
 const SEEDS = BENCHMARK_SEEDS.slice(0, 3);
 const PER_SEED = [];
