@@ -35,10 +35,11 @@ const CASES = [
     + '与带保护那版的 0.4 之差**正是有效门 0.5→1.5 的效应**，不是"保护条有用"'],
   ['exp89-engage-shift-3.5.patch', 'engageShift', { shift: -3.5 },
     '★ 射门倾向 -4.3→-3.5：L1 口径射门 7.75→15.71/场（真实 16.51）、犯规 23.46 ∈ L1[16,30]；'
-    + '但进球 0.89→2.11，仍破 3 条 L1（shot_result / tackle_dilution / home_away）'],
+    + '但进球 0.89→2.11，L1 **6 绿 3 红**（shot_result / tackle_dilution / home_away）'],
   ['exp89-engage-shift-3.0.patch', 'engageShift', { shift: -3.0 },
     '★ 射门倾向 -4.3→-3.0：L1 口径射门 7.75→24.82/场（**超引擎 L1 射门带 [6,11]**）、'
-    + '犯规 23.56 ∈ L1[16,30]；但进球 →3.18，破 3 条 L1'],
+    + '犯规 23.56 ∈ L1[16,30]；但进球 →3.18、shot/tackle 2.749 ∉ [0.5,1.5]，'
+    + 'L1 **5 绿 4 红**（shot_result / pass_completion / tackle_dilution / home_away）'],
   ['exp89-flat-gate-3.0.patch', 'flatGate', { meters: 3.0 },
     '对照：全局收门到 3.0m（= 已测过的 exp10 形态），隔离"位置条件"的作用。'
     + '实测射门 11.4、犯规 20.4（在干净 main 上 L1 绿）'],

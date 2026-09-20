@@ -38,6 +38,9 @@ function features(frame, carrierId, isHome) {
   const opp = []; const mate = [];
   for (const p of frame.players) {
     if (!p) continue;
+    // ⚠️ **必须排除持球者自己**（同 probe-real-shot-pass.mjs）：不排除时 `dist(c,c)=0`
+    // 会被当作"最近队友"→ `mateDist ≡ 0`、`nMate10` 变成"队友数 + 1"。
+    if (p.id === carrierId) continue;
     if (KEEPER_IDS.includes(p.id)) continue;
     const d = dist(cx, cy, p.x, p.y);
     (p.id <= 10 === isHome ? mate : opp).push({ d, depth: (isHome ? p.x - cx : cx - p.x) * PITCH_LENGTH_M });

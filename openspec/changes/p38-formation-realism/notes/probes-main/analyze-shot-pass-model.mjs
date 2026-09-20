@@ -8,11 +8,11 @@
 //   `dGoal`  = 到球门中心的**欧氏**距离（物理真值，球员感知的就是这个）
 //   `dGoalX` = **只按纵深** = Rust `dist_to_goal_m`（lib.rs:4762），引擎实际喂进
 //              `distance_quality` 的那个数（引擎的简化：y 角向建模留给 B 档 xG 升级）
-//   中位差 4.31m。**结论对口径敏感**——只报一个就是选择性报告：
-//     欧氏口径：仅 dGoal 留一 AUC 0.769 ≫ 仅 d1 0.582（"位置主导"成立）
-//     引擎口径：仅 dGoalX 0.613 ≈ 仅 d1 0.627（**位置并不明显更强**）
-//   所以要同时看：**压力维度两种口径下都不是主导**（这条稳），
-//   但"球门距离单独就能解释多少"**取决于你怎么量距离**（这条不稳，必须如实说）。
+//   中位差 4.31m。**结论对口径敏感**——只报一个就是选择性报告。
+//   实测（真留一）：欧氏口径 仅距离 0.792 / 仅 d1 0.516（位置明显更强）；
+//                  引擎口径 仅距离 0.626 / 仅 d1 0.516（差距小得多）。
+//   所以要同时看：**去掉 d1 几乎不掉**（两种口径都是）——压力维度不承载独有信息，
+//   **这条稳**；但"球门距离单独能解释多少"**取决于你怎么量距离**——这条不稳，必须如实说。
 //
 // 用法：node analyze-shot-pass-model.mjs [jsonl 路径]
 
@@ -79,11 +79,15 @@ function run(distKey) {
   /**
    * **真留一**：每次丢掉一个样本重新拟合。`mode`：
    *   { type: 'all' }           全特征
-   *   { type: 'only', idx }     **真单变量**：只保留 `idx` 这一列，其余全置 0
+   *   { type: 'only', idx }     **真单变量**：只保留 `idx` 这一列
    *   { type: 'drop', idx }     去掉 `idx`，其余全留
-   * ⚠️ 审阅教训：上一版把 `drop` 写成了标签上的「仅 X」——`loo(iD1)` 实际是
-   * "去掉 d1 但**保留距离**"，却被打印成「仅 d1」。**单变量与去一法不是一回事**，
-   * 混起来会把"位置+压力联合"的判别力记到 d1 头上。现在两者分开列。
+   * ⚠️ 审阅教训（两条，都在这里栽过）：
+   *   ① 上一版把 `drop` 打印成「仅 X」——单变量与去一法不是一回事。
+   *   ② 上一版把没用到的那 7 列**置 0** 来实现"单变量"，那是**错的**：
+   *      7 列常量彼此共线、又与截距共线 → 参数落在一条**平坦脊**上，
+   *      全批梯度下降每次停在不同点，**同一个设计矩阵会给出随口径漂移的 AUC**
+   *      （实测同一份 d1-only 数据打出 0.410 / 0.546 / 0.516，取决于学习率与迭代数）。
+   *      → 现在"单变量"**真的只拟合 1 个特征**（cols 截断），不是靠置 0 掩盖。
    */
   const mask = (x, mode) => x.map((v, j) => {
     if (mode.type === 'all') return v;
@@ -91,11 +95,32 @@ function run(distKey) {
     return j === mode.idx ? 0 : v;
   });
   const loo = (mode) => {
+    // 单变量模式：只保留那一列（真正降维，避免共线脊）
+    const use = mode.type === 'only' ? [mode.idx] : cols.map((_, j) => j);
+    const d1 = design.map((d) => ({ x: use.map((j) => d.x[j]), y: d.y }));
+    const mu2 = use.map((_, k) => mean(d1.map((d) => d.x[k])));
+    const sd2 = use.map((_, k) => Math.sqrt(mean(d1.map((d) => (d.x[k] - mu2[k]) ** 2))) || 1);
+    const z2 = (x) => x.map((v, k) => (v - mu2[k]) / sd2[k]);
+    const fit2 = (train) => {
+      const w = new Array(use.length + 1).fill(0);
+      const X = train.map((d) => z2(d.x));
+      for (let it = 0; it < 20000; it += 1) {
+        const g = new Array(w.length).fill(0);
+        for (let i = 0; i < X.length; i += 1) {
+          const e = sigmoid(w[0] + X[i].reduce((a, v, j) => a + v * w[j + 1], 0)) - train[i].y;
+          g[0] += e;
+          for (let j = 0; j < X[i].length; j += 1) g[j + 1] += e * X[i][j];
+        }
+        for (let k = 0; k < w.length; k += 1) w[k] -= 0.5 * (g[k] / X.length + (k === 0 ? 0 : 0.05 * w[k]));
+      }
+      return w;
+    };
+    const pred2 = (w, x) => sigmoid(w[0] + z2(x).reduce((a, v, j) => a + v * w[j + 1], 0));
     const pairs = [];
-    for (let i = 0; i < design.length; i += 1) {
-      const held = design.filter((_, j) => j !== i);
-      const w = fit(held.map((d) => ({ x: mask(d.x, mode), y: d.y })));
-      pairs.push([pred(w, mask(design[i].x, mode)), design[i].y]);
+    for (let i = 0; i < d1.length; i += 1) {
+      const held = d1.filter((_, j) => j !== i);
+      const w = fit2(held);
+      pairs.push([pred2(w, d1[i].x), d1[i].y]);
     }
     return auc(pairs);
   };
@@ -133,11 +158,15 @@ for (const r of res) {
   console.log(`  ${label[r.distKey].padEnd(18)} ${r.full.toFixed(3).padStart(7)} ${r.onlyDist.toFixed(3).padStart(7)} ${r.onlyD1.toFixed(3).padStart(7)} ${r.dropDist.toFixed(3).padStart(7)} ${r.dropD1.toFixed(3).padStart(7)}`);
 }
 console.log('\n  读法（三条，都要说）：');
-console.log('   1. **仅 d1 是弱判别器**（0.41–0.63），但**不是抛硬币**——早先那句"字面意义的抛硬币"');
-console.log('      指的是在**贴身**子集内的单变量 AUC 0.499，不是这里的全体本留一。别混用。');
-console.log('   2. **去掉 d1 几乎不掉**（去 d1 ≈ 全特征）→ 压力维度可替换、不承载独有信息。**这条稳。**');
-console.log('   3. 但"球门距离能解释多少"**依赖量距离的方式**：欧氏口径下仅距离 0.78（接近全特征），');
-console.log('      引擎的仅纵进口径下只有 0.61。**不要只报对自己有利的那个口径。**');
+console.log('   1. **仅 d1 是弱判别器**（0.516，两口径必然相同——单变量设计矩阵与口径无关），');
+console.log('      但**不是抛硬币**。注意区分三处不同的数：');
+console.log('        · 全体本单变量留一 0.516（本表）');
+console.log('        · 贴身子集内的单变量 AUC 0.499（§1.2）');
+console.log('        · 偏效应系数（在距离也在模型里时）0.39–0.45（§1.4 上半）');
+console.log('   2. **去掉 d1 几乎不掉**（0.844 vs 0.844；0.806 vs 0.806）→');
+console.log('      压力维度不承载独有信息。**这是本节最稳的一条。**');
+console.log('   3. 但"球门距离能解释多少"**依赖量距离的方式**：欧氏口径下仅距离 0.792（接近全特征），');
+console.log('      引擎的仅纵进口径下只有 0.626。**不要只报对自己有利的那个口径。**');
 
 // ── 标定表（欧氏口径：物理真值；与 probe 的 dGoal 同义）───────────────
 console.log('\n[★ 标定表：P(射门) 在同一 dGoal 桶内，随 d1 怎么变]');

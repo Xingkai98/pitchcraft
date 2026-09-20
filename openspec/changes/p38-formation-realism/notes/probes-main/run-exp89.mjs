@@ -108,13 +108,24 @@ function runL1() {
     { cwd: join(ROOT, 'engine'), env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600000 });
   const out = `${r.stdout || ''}\n${r.stderr || ''}`;
   const m = (re) => { const x = out.match(re); return x ? Number(x[1]) : NaN; };
-  // ⚠️ 匹配**全部** `#[ignore]` 测试，不能只匹配 `l1_`（审阅发现）：
-  // `l3_shot_ratios` 与 `l3_home_away_goal_calibration` 同样是硬门/报告项，
-  // 早先只数 `l1_*` 会让 "5 绿 0 红" 变成 "5 个被解析的测试全绿"，而引擎实际是 9 个。
-  // 本 campaign 的教训：**读数范围必须与门的范围一致**，否则是口径分叉。
-  const fails = [...out.matchAll(/^test ((?:l1_|l3_|p\d+_)\w+) \.\.\. FAILED$/gm)].map((x) => x[1]);
-  const passes = [...out.matchAll(/^test ((?:l1_|l3_|p\d+_)\w+) \.\.\. ok$/gm)].map((x) => x[1]);
-  const total = fails.length + passes.length;
+  // ⚠️⚠️ **不要按行解析 `test NAME ... ok/FAILED`**（第二轮审阅发现，这条我改错过一次）：
+  // `--nocapture` 下每个测试自己的 stdout 会插在 `test NAME ... ` 与 `ok/FAILED` **之间**，
+  // 并行运行时更是交错；用 `$` 锚定的行正则**会静默漏掉测试**。
+  // 实测：`R3-shift-3.0` 记成 8 个（5 绿 3 红），而引擎实际是 9 个（**5 绿 4 红**——
+  // 漏掉的正是失败的 `l1_tackle_dilution_and_slot_mix`，于是"红了 4 条"被少报成 3 条）。
+  // → 改用**两个可靠来源**：
+  //   ① 计数：libtest 的收尾行 `test result: ok|FAILED. N passed; M failed; ...`（唯一且格式稳定）
+  //   ② 失败名单：`thread 'NAME' (tid) panicked at …`（stderr，格式稳定），按测试名前缀过滤
+  const sum = out.match(/test result: (?:ok|FAILED)\. (\d+) passed; (\d+) failed;/);
+  const nPassed = sum ? Number(sum[1]) : NaN;
+  const nFailed = sum ? Number(sum[2]) : NaN;
+  const TEST_NAME = /^(?:l1_|l3_|p\d+_)\w+$/;
+  const panicNames = [...out.matchAll(/thread '([a-z0-9_]+)' \(\d+\) panicked at/g)].map((x) => x[1]);
+  const fails = [...new Set(panicNames.filter((n) => TEST_NAME.test(n)))];
+  // 绿名单：`test NAME ... ok` 只要**前缀行存在**就算（不要求行尾锚定，避开交错）
+  const passLineNames = [...out.matchAll(/^test ((?:l1_|l3_|p\d+_)\w+) \.\.\. /gm)].map((x) => x[1]);
+  const passes = [...new Set(passLineNames)].filter((n) => !fails.includes(n));
+  const total = Number.isFinite(nPassed + nFailed) ? nPassed + nFailed : passes.length + fails.length;
   const res = {
     l1Sec: +((Date.now() - t0) / 1000).toFixed(1),
     // ⚠️ `[fouls]` 那行 println 在 assert **之后**——断言失败时它不打印，
@@ -126,14 +137,19 @@ function runL1() {
     headersPerMatch: m(/\(\+header ([\d.]+)\)/),
     goalsHome: m(/进球 主([\d.]+)\/客/),
     goalsAway: m(/进球 主[\d.]+\/客([\d.]+)/),
-    l1Passed: passes.length,
-    l1Failed: fails.length,
+    // 计数用 libtest 收尾行，名单用 panic 线程名——**两者口径不同会自相矛盾**，
+    // 故同时落盘并在下面断言一致（不一致就说明解析又坏了，宁可吵也不要静默）。
+    l1Passed: Number.isFinite(nPassed) ? nPassed : passes.length,
+    l1Failed: Number.isFinite(nFailed) ? nFailed : fails.length,
     l1FailedNames: fails,
     l1TestTotal: total,
-    // 红/绿的**明细**也落盘——只留计数的话，"哪条红"要靠翻 stdout，等于丢证据。
-    l1FailedNamesAll: fails,
     l1PassedNames: passes,
+    l1SummaryLine: sum ? sum[0] : null,
   };
+  if (Number.isFinite(nFailed) && nFailed !== fails.length) {
+    console.error(`⚠ L1 解析自相矛盾：收尾行说失败 ${nFailed} 个，panic 名单只捞到 ${fails.length} 个`
+      + `（${fails.join(',')}）——名单解析可能又漂了`);
+  }
   return { res, out };
 }
 
@@ -172,8 +188,18 @@ try {
     console.log(`[${label}] 犯规 ${l1.res.foulsPerMatch} / 射门 ${l1.res.shotsPerMatch} / `
       + `L1 ${l1.res.l1Passed}绿 ${l1.res.l1Failed}红 ${l1.res.l1FailedNames.join(',')}`);
     if (l1.res.l1Failed && l1.res.l1FailedNames.length) {
-      // 失败明细在 stdout 的 assertion 消息里，抓出来供诊断
-      result = { ...result, l1FailureDetail: (l1.out.match(/^.*assertion.*$/gm) || []).slice(0, 6) };
+      // 失败明细：**别 grep "assertion"**（审阅发现）——Rust 打印的是
+      // `panicked at tests/realism.rs:759:5:` 然后**下一行**才是消息，
+      // 且 `assert!(cond, "msg")` 的消息里根本没有 "assertion" 这个词（实测 0 次命中）。
+      // 改为抓「panic 行 + 紧随其后的若干行」。
+      const lines = l1.out.split('\n');
+      const detail = [];
+      for (let i = 0; i < lines.length && detail.length < 8; i += 1) {
+        if (/panicked at tests\//.test(lines[i])) {
+          detail.push(...lines.slice(i, i + 3).filter((l) => l.trim()));
+        }
+      }
+      result = { ...result, l1FailureDetail: detail };
     }
   }
   result = { ...(result || {}), tag: label, form: process.argv[2] || 'clean', gate: process.argv[3] || 'clean', wasmSha8: sha, ...metrics, ...quick, ...(l1 ? l1.res : {}) };
