@@ -48,11 +48,19 @@ const original = readFileSync(LIBSRC, 'utf8');
 const CLEAN_SHA = process.env.CLEAN_SHA || '901da77b';
 const sha8 = () => createHash('sha256').update(readFileSync(WASM)).digest('hex').slice(0, 8);
 
+// ⚠️ 构建 + **搬运的成败都要检**（审阅发现）：早先 `cp` 的返回码被丢掉，
+// 一旦它失败（或 build 产物是陈的），实验就会跑在**上一版 wasm** 上，
+// 却记下一个看着合理的 sha——正是本 campaign 反复出的那类假绿。
 const rebuild = () => {
   const r = spawnSync(CARGO, ['build', '--target', 'wasm32-unknown-unknown', '--release'],
     { cwd: join(ROOT, 'engine'), env, encoding: 'utf8' });
   if (r.status !== 0) throw new Error(`构建失败：\n${(r.stderr || '').slice(-3000)}`);
-  spawnSync('cp', [BUILT, WASM]);
+  const cp = spawnSync('cp', [BUILT, WASM]);
+  if (cp.status !== 0) throw new Error(`wasm 搬运失败（cp 退出 ${cp.status}）`);
+  if (!existsSync(WASM)) throw new Error(`搬运后 ${WASM} 不存在`);
+  // 产物必须与刚构建的 wasm 逐字节相同
+  const a = readFileSync(BUILT); const b = readFileSync(WASM);
+  if (!a.equals(b)) throw new Error('viewer/engine.wasm 与构建产物不一致（搬运后校验失败）');
 };
 
 // ── 快车道：JS 侧数犯规/射门/抢断（同一组判据种子，几秒）──────────────────
@@ -100,9 +108,13 @@ function runL1() {
     { cwd: join(ROOT, 'engine'), env, encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600000 });
   const out = `${r.stdout || ''}\n${r.stderr || ''}`;
   const m = (re) => { const x = out.match(re); return x ? Number(x[1]) : NaN; };
-  // `test l1_xxx ... ok/FAILED`
-  const fails = [...out.matchAll(/^test (l1_\w+) \.\.\. FAILED$/gm)].map((x) => x[1]);
-  const passes = [...out.matchAll(/^test (l1_\w+) \.\.\. ok$/gm)].map((x) => x[1]);
+  // ⚠️ 匹配**全部** `#[ignore]` 测试，不能只匹配 `l1_`（审阅发现）：
+  // `l3_shot_ratios` 与 `l3_home_away_goal_calibration` 同样是硬门/报告项，
+  // 早先只数 `l1_*` 会让 "5 绿 0 红" 变成 "5 个被解析的测试全绿"，而引擎实际是 9 个。
+  // 本 campaign 的教训：**读数范围必须与门的范围一致**，否则是口径分叉。
+  const fails = [...out.matchAll(/^test ((?:l1_|l3_|p\d+_)\w+) \.\.\. FAILED$/gm)].map((x) => x[1]);
+  const passes = [...out.matchAll(/^test ((?:l1_|l3_|p\d+_)\w+) \.\.\. ok$/gm)].map((x) => x[1]);
+  const total = fails.length + passes.length;
   const res = {
     l1Sec: +((Date.now() - t0) / 1000).toFixed(1),
     // ⚠️ `[fouls]` 那行 println 在 assert **之后**——断言失败时它不打印，
@@ -117,6 +129,10 @@ function runL1() {
     l1Passed: passes.length,
     l1Failed: fails.length,
     l1FailedNames: fails,
+    l1TestTotal: total,
+    // 红/绿的**明细**也落盘——只留计数的话，"哪条红"要靠翻 stdout，等于丢证据。
+    l1FailedNamesAll: fails,
+    l1PassedNames: passes,
   };
   return { res, out };
 }

@@ -81,8 +81,14 @@ function features(frame, carrierId, isHome) {
   const cx = c[0]; const cy = c[1];
   const goalX = isHome ? 1.0 : 0.0;
   const goalY = 0.5;
+  // ⚠️ **两个球门距离口径，都要留**（审阅发现）：
+  //   `dGoal`   = 到球门中心的欧氏距离（自然的足球量）
+  //   `dGoalX`  = **只按纵深**（= Rust `dist_to_goal_m`，lib.rs:4762），
+  //              是引擎真正喂进 `distance_quality` 的那个数——复算引擎打分必须用这个。
+  // 二者中位差 4.31m，混用会让"引擎自己的打分"这一行不成立。
   const dGoal = dist(cx, cy, goalX, goalY);
-  // 引擎口径：持球者→球门中心 与 进攻方向 的夹角余弦
+  const dGoalX = (isHome ? 1.0 - cx : cx) * PITCH_LENGTH_M;
+  // 引擎口径：持球者→球门中心 与 进攻方向 的夹角余弦（与 `shot_angle_cos` 逐字对齐）
   const dx = (isHome ? 1.0 - cx : cx) * PITCH_LENGTH_M;
   const dy = (isHome ? 0.5 - cy : cy - 0.5) * PITCH_WIDTH_M;
   const angleCos = (dx === 0 && dy === 0) ? 1.0 : dx / Math.hypot(dx, dy);
@@ -91,6 +97,9 @@ function features(frame, carrierId, isHome) {
   for (let id = 0; id < frame.players.length; id += 1) {
     const p = frame.players[id];
     if (!p) continue;
+    // ⚠️ **必须排除持球者自己**（审阅发现）：不排除时 `dist(c,c)=0` 会被当作"最近队友"，
+    // 使 `mateDist ≡ 0`、`nMate10` 变成"队友数 + 1"。真实侧与引擎侧同错，特征退化但不偏。
+    if (id === carrierId) continue;
     if (KEEPER_IDS.includes(id)) continue;
     const d = dist(cx, cy, p[0], p[1]);
     // 「goal-side 纵深」：沿进攻轴，>0 = 该球员在持球者与所攻球门之间
@@ -117,7 +126,7 @@ function features(frame, carrierId, isHome) {
     && (Math.abs(cy - 0.5) * PITCH_WIDTH_M <= 20.16);
 
   return {
-    dGoal, angleCos, d1, d2, nOpp8, nOpp16, oppGoalSide, laneBlocked, d2GoalSide,
+    dGoal, dGoalX, angleCos, d1, d2, nOpp8, nOpp16, oppGoalSide, laneBlocked, d2GoalSide,
     mateDist, nMate10, inBox: inBox ? 1 : 0,
   };
 }

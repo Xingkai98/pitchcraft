@@ -48,15 +48,31 @@ const GATE_ANCHOR = `    let stalled_unpressed = st.ticks_since_meaningful_actio
 /** f64 字面量：`3` 会被 rustc 判为整数类型错误（P38 踩过一次，构建失败但被 try/finally 正确还原）。 */
 const f64lit = (v) => (Number.isInteger(v) ? `${v}.0` : String(v));
 
+/**
+ * `effectiveCutoff` = 加上保护条之后，**实际**在射程内放行射门的那个距离（米）。
+ *
+ * ⚠️ 审阅发现（重要，这条是**探针自身**的坑）：带保护时 `pass_gate_m = M` 会被保护条**短路**——
+ * 逻辑是 `(nd ≤ pass_gate_m && nd > G) || (nd ≤ G && nd ≤ 8.0)`，第二项在 `G ≤ 8` 时恒真。
+ * 于是 `nd ≤ max(M, G)` 全部出球，**`M` 只有在 `M > G` 时才起作用**。
+ * 换句话说 `M = 0.5, G = 1.5` 与 `M = 1.5, G = 1.5` **逐位等价**，有效门是 **1.5m**。
+ * → 报数时必须报 `max(M, G)`，不能报 `M`。
+ */
+export const effectiveCutoff = (meters, guardMeters) => Math.max(Number(meters),
+  guardMeters == null ? 0 : Number(guardMeters));
+
 /** 在 gate 前插入 `let pass_gate_m = …;`，再把 gate 改成用它。 */
 const buildGate = ({ radius, meters, guardMeters, what }) => {
   const r = Number(radius);
   const m = Number(meters);
   const guard = guardMeters == null ? null : Number(guardMeters);
   return (src) => {
+    // 有效门（米）：带保护条时 `max(M, guard)`，因为保护条会短路第一项（见 `effectiveCutoff`）。
+    // 写进源码注释 → 数字可审计，不靠读者自己推。
+    const armed = guard == null ? `${f64lit(m)}（无保护条）` : `${f64lit(effectiveCutoff(m, guard))}`;
     let out = anchorOnce(src, GATE_ANCHOR, `    let stalled_unpressed = st.ticks_since_meaningful_action >= LIVENESS_STAGE_2_TICKS;
-    // #89：出球门从「单标量、全场一个值」改成「**射程内极小、射程外不变**」——
+    // #89：出球门从「单标量、全场一个值」改成「**射程内按位置放行、射程外不变**」——
     // 真实球员在 2–3m 下起脚（见 exp89-variants.mjs 头部表），射门与否由球门距离决定。
+    // ⚠️ 有效门 = max(pass_gate_m, guard) = ${armed}m（保护条会短路第一项，见 effectiveCutoff）。
     let pass_gate_m = if dist_to_goal_m(st, carrier) <= ${f64lit(r)} { ${f64lit(m)} } else { OPEN_PLAY_PASS_PRESSURE_M };
     if gk_holding || nearest_defender_m <= pass_gate_m || stalled_unpressed {`, 'gate');
     if (guard != null) {
