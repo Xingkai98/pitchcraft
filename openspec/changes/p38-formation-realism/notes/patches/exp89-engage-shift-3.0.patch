@@ -1,0 +1,14 @@
+# P38 #89：★ 射门倾向 -4.3→-3.0：射门 7.2→26.8/场（超真实），犯规 23.56 ∈ L1[16,30]；但进球 0.95→3.18 破 4 条 L1
+# 变体名 engageShift-3（probes-main/exp89-variants.mjs）
+# 干净 main = 901da77b
+--- a/engine/src/lib.rs	2026-09-20 17:23:16.709662908 +0800
++++ b/engine/src/lib.rs	2026-09-20 17:23:16.712926788 +0800
+@@ -553,7 +553,7 @@
+ const OPEN_PLAY_PASS_PRESSURE_M: f64 = 8.0;
+ /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
+ /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
+-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.3;
++const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -3.0;
+ 
+ /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
+ fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {

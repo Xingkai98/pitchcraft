@@ -1,0 +1,17 @@
+# P38 #89：同上但**无** d1≤1.5m 保护条（隔离保护条的贡献：实测无差别）
+# 变体名 positionGateNoGuard_R25_M0.5（probes-main/exp89-variants.mjs）
+# 干净 main = 901da77b
+--- a/engine/src/lib.rs	2026-09-20 17:23:16.639382980 +0800
++++ b/engine/src/lib.rs	2026-09-20 17:23:16.639382980 +0800
+@@ -1782,7 +1782,10 @@
+     //    让停滞段自行通过**既有传球生产者**恢复流动。guard 本身不 emit——它只改
+     //    `ticks_since_meaningful_action` 这一状态，本函数因该状态变化而选出球候选。
+     let stalled_unpressed = st.ticks_since_meaningful_action >= LIVENESS_STAGE_2_TICKS;
+-    if gk_holding || nearest_defender_m <= OPEN_PLAY_PASS_PRESSURE_M || stalled_unpressed {
++    // #89：出球门从「单标量、全场一个值」改成「**射程内极小、射程外不变**」——
++    // 真实球员在 2–3m 下起脚（见 exp89-variants.mjs 头部表），射门与否由球门距离决定。
++    let pass_gate_m = if dist_to_goal_m(st, carrier) <= 25.0 { 0.5 } else { OPEN_PLAY_PASS_PRESSURE_M };
++    if gk_holding || nearest_defender_m <= pass_gate_m || stalled_unpressed {
+         return CarrierPlan {
+             action: Some(CarrierAction::Pass { target: carrier_pass_target(st) }),
+             exec: CarrierExecution::Pass { allow_out: true },

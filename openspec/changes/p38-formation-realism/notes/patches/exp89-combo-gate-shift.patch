@@ -1,0 +1,29 @@
+# P38 #89：可加性对照：位置门 + 倾向抬升（实测 19.9 vs 可加预测 21.2）
+# 变体名 comboGateShift_R25_M0.5_s-3.5（probes-main/exp89-variants.mjs）
+# 干净 main = 901da77b
+--- a/engine/src/lib.rs	2026-09-20 17:23:16.769872571 +0800
++++ b/engine/src/lib.rs	2026-09-20 17:23:16.773002985 +0800
+@@ -553,7 +553,7 @@
+ const OPEN_PLAY_PASS_PRESSURE_M: f64 = 8.0;
+ /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
+ /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
+-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.3;
++const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -3.5;
+ 
+ /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
+ fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
+@@ -1782,7 +1782,13 @@
+     //    让停滞段自行通过**既有传球生产者**恢复流动。guard 本身不 emit——它只改
+     //    `ticks_since_meaningful_action` 这一状态，本函数因该状态变化而选出球候选。
+     let stalled_unpressed = st.ticks_since_meaningful_action >= LIVENESS_STAGE_2_TICKS;
+-    if gk_holding || nearest_defender_m <= OPEN_PLAY_PASS_PRESSURE_M || stalled_unpressed {
++    // #89：出球门从「单标量、全场一个值」改成「**射程内极小、射程外不变**」——
++    // 真实球员在 2–3m 下起脚（见 exp89-variants.mjs 头部表），射门与否由球门距离决定。
++    let pass_gate_m = if dist_to_goal_m(st, carrier) <= 25.0 { 0.5 } else { OPEN_PLAY_PASS_PRESSURE_M };
++    let too_close_to_shield = nearest_defender_m <= 1.5;
++    if gk_holding || (nearest_defender_m <= pass_gate_m && !too_close_to_shield)
++        || (too_close_to_shield && nearest_defender_m <= OPEN_PLAY_PASS_PRESSURE_M)
++        || stalled_unpressed {
+         return CarrierPlan {
+             action: Some(CarrierAction::Pass { target: carrier_pass_target(st) }),
+             exec: CarrierExecution::Pass { allow_out: true },
