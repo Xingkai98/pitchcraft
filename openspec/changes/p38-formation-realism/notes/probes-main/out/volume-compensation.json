@@ -1,0 +1,265 @@
+{
+  "caliber": {
+    "realPassSuccess": "PASS 成功 ⟺ 下一条事件仍由同队产生；BALL OUT 显式排除（其 Team 是踢出界方）；无下一条/END HALF → 未定义，从分母剔除"
+  },
+  "real": [
+    {
+      "game": 1,
+      "spanSec": 5800.2,
+      "shotsRegular": 18,
+      "shotsHeader": 6,
+      "goalsRegular": 2,
+      "savedRegular": 5,
+      "blockedRegular": 1,
+      "headerGoals": 1,
+      "headerSaved": 2,
+      "passEvents": 799,
+      "passSuccess": 738,
+      "passFail": 61,
+      "passUndefined": 0,
+      "passFailCause": {
+        "interceptionOrLoss": 47,
+        "ballOut": 14
+      },
+      "corners": 11,
+      "throwIns": 28,
+      "goalKicks": 13,
+      "freeKicks": 32,
+      "fouls": 22,
+      "yellow": 4,
+      "red": 0,
+      "challenges": 233,
+      "tackles": 103,
+      "tacklesWon": 55,
+      "rates": {
+        "shotsReg": 16.758042826109445,
+        "goals": 1.862004758456605,
+        "shotsTotal": 22.34405710147926,
+        "goalsTotal": 2.7930071376849077,
+        "onTargetRate": 0.3888888888888889,
+        "conversion": 0.1111111111111111,
+        "onTargetRateTotal": 0.4166666666666667,
+        "conversionTotal": 0.125,
+        "passTotal": 743.8709010034137,
+        "passFail": 56.79114513292645,
+        "passSuccessRate": 0.9236545682102628,
+        "corners": 10.241026171511328,
+        "throwIns": 26.06806661839247,
+        "goalKicks": 12.103030929967932,
+        "fouls": 20.482052343022655,
+        "yellow": 3.72400951691321,
+        "tackles": 95.89324506051516,
+        "tackleSuccessRate": 0.5339805825242718
+      }
+    },
+    {
+      "game": 2,
+      "spanSec": 5646.2,
+      "shotsRegular": 17,
+      "shotsHeader": 7,
+      "goalsRegular": 4,
+      "savedRegular": 6,
+      "blockedRegular": 2,
+      "headerGoals": 1,
+      "headerSaved": 0,
+      "passEvents": 964,
+      "passSuccess": 869,
+      "passFail": 95,
+      "passUndefined": 0,
+      "passFailCause": {
+        "interceptionOrLoss": 78,
+        "ballOut": 17
+      },
+      "corners": 7,
+      "throwIns": 32,
+      "goalKicks": 12,
+      "freeKicks": 30,
+      "fouls": 20,
+      "yellow": 6,
+      "red": 0,
+      "challenges": 311,
+      "tackles": 107,
+      "tacklesWon": 49,
+      "rates": {
+        "shotsReg": 16.25872268074103,
+        "goals": 3.8255818072331835,
+        "shotsTotal": 22.953490843399102,
+        "goalsTotal": 4.781977259041479,
+        "onTargetRate": 0.5882352941176471,
+        "conversion": 0.23529411764705882,
+        "onTargetRateTotal": 0.4583333333333333,
+        "conversionTotal": 0.20833333333333334,
+        "passTotal": 921.9652155431972,
+        "passFail": 90.8575679217881,
+        "passSuccessRate": 0.9014522821576764,
+        "corners": 6.694768162658071,
+        "throwIns": 30.60465445786547,
+        "goalKicks": 11.476745421699551,
+        "fouls": 19.127909036165917,
+        "yellow": 5.7383727108497755,
+        "tackles": 102.33431334348766,
+        "tackleSuccessRate": 0.45794392523364486
+      }
+    }
+  ],
+  "engine": {
+    "seeds": 200,
+    "seedStart": 401,
+    "mean": {
+      "shotsReg": 7.755,
+      "goals": 0.805,
+      "shotsTotal": 8.415,
+      "goalsTotal": 0.89,
+      "onTargetRate": 0.3545709637584639,
+      "conversion": 0.10574947274947269,
+      "onTargetRateTotal": 0.3549212001234063,
+      "conversionTotal": 0.10724999020587253,
+      "boxShare": 0.5540534881784882,
+      "passTotal": 418.13,
+      "passFail": 49.665,
+      "passSuccessRate": 0.8481666588709841,
+      "passSuccessRateDirected": 0.9127021383796301,
+      "corners": 2.145,
+      "throwIns": 18.375,
+      "goalKicks": 0,
+      "fouls": 23.53,
+      "yellow": 2.995,
+      "tackles": 9.41,
+      "tackleSuccessRate": 0.529923865908773
+    }
+  },
+  "comparison": [
+    {
+      "name": "普通射门/场",
+      "key": "shotsReg",
+      "kind": "volume",
+      "engine": 7.755,
+      "real": 16.508382753425238,
+      "ratio": 0.46976133978908113
+    },
+    {
+      "name": "射门/场(含头球)",
+      "key": "shotsTotal",
+      "kind": "volume",
+      "engine": 8.415,
+      "real": 22.64877397243918,
+      "ratio": 0.37154329016837895
+    },
+    {
+      "name": "进球/场(普通)",
+      "key": "goals",
+      "kind": "volume",
+      "engine": 0.805,
+      "real": 2.8437932828448944,
+      "ratio": 0.2830726146151834
+    },
+    {
+      "name": "进球/场(含头球)",
+      "key": "goalsTotal",
+      "kind": "volume",
+      "engine": 0.89,
+      "real": 3.7874921983631937,
+      "ratio": 0.23498398237879495
+    },
+    {
+      "name": "传球/场",
+      "key": "passTotal",
+      "kind": "volume",
+      "engine": 418.13,
+      "real": 832.9180582733054,
+      "ratio": 0.5020061647682502
+    },
+    {
+      "name": "失败传球/场",
+      "key": "passFail",
+      "kind": "volume",
+      "engine": 49.665,
+      "real": 73.82435652735728,
+      "ratio": 0.6727454506372231
+    },
+    {
+      "name": "射正率(普通)",
+      "key": "onTargetRate",
+      "kind": "ratio",
+      "engine": 0.3545709637584639,
+      "real": 0.488562091503268,
+      "ratio": 0.7257439124420733
+    },
+    {
+      "name": "射正率(含头球)",
+      "key": "onTargetRateTotal",
+      "kind": "ratio",
+      "engine": 0.3549212001234063,
+      "real": 0.4375,
+      "ratio": 0.8112484574249287
+    },
+    {
+      "name": "转化率(普通)",
+      "key": "conversion",
+      "kind": "ratio",
+      "engine": 0.10574947274947269,
+      "real": 0.17320261437908496,
+      "ratio": 0.6105535596478989
+    },
+    {
+      "name": "转化率(含头球)",
+      "key": "conversionTotal",
+      "kind": "ratio",
+      "engine": 0.10724999020587253,
+      "real": 0.16666666666666669,
+      "ratio": 0.6434999412352351
+    },
+    {
+      "name": "传球成功率",
+      "key": "passSuccessRate",
+      "kind": "ratio",
+      "engine": 0.8481666588709841,
+      "real": 0.9125534251839695,
+      "ratio": 0.9294432911694949
+    },
+    {
+      "name": "犯规/场",
+      "key": "fouls",
+      "kind": "volume",
+      "engine": 23.53,
+      "real": 19.804980689594288,
+      "ratio": 1.1880849756325624
+    },
+    {
+      "name": "抢断/场",
+      "key": "tackles",
+      "kind": "volume",
+      "engine": 9.41,
+      "real": 99.11377920200141,
+      "ratio": 0.0949413903471656
+    },
+    {
+      "name": "抢断成功率",
+      "key": "tackleSuccessRate",
+      "kind": "ratio",
+      "engine": 0.529923865908773,
+      "real": 0.4959622538789583,
+      "ratio": 1.068476203106584
+    }
+  ],
+  "realMean": {
+    "shotsReg": 16.508382753425238,
+    "goals": 2.8437932828448944,
+    "shotsTotal": 22.64877397243918,
+    "goalsTotal": 3.7874921983631937,
+    "onTargetRate": 0.488562091503268,
+    "conversion": 0.17320261437908496,
+    "onTargetRateTotal": 0.4375,
+    "conversionTotal": 0.16666666666666669,
+    "passTotal": 832.9180582733054,
+    "passFail": 73.82435652735728,
+    "passSuccessRate": 0.9125534251839695,
+    "corners": 8.467897167084699,
+    "throwIns": 28.33636053812897,
+    "goalKicks": 11.789888175833742,
+    "fouls": 19.804980689594288,
+    "yellow": 4.731191113881493,
+    "tackles": 99.11377920200141,
+    "tackleSuccessRate": 0.4959622538789583
+  }
+}
