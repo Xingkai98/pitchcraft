@@ -1,0 +1,1348 @@
+{
+  "seeds": [
+    42,
+    1,
+    7,
+    99,
+    123,
+    2,
+    3,
+    5,
+    11,
+    17
+  ],
+  "durationSec": 5400,
+  "rows": [
+    {
+      "tag": "base-0.03",
+      "nWin": 54,
+      "nMatches": 9,
+      "latSd": 0.59,
+      "lonSd": 8.61,
+      "swarm": -0.005,
+      "straight": 0.165,
+      "fault": 4.13,
+      "midBack": 1.03,
+      "hd": 27.15,
+      "spread": 15.59,
+      "gap": 10.88,
+      "width": 40.45,
+      "perMatch": [
+        {
+          "latSd": 0.28,
+          "lonSd": 4.44,
+          "swarm": -0.028,
+          "straight": 0.063,
+          "fault": 4.2,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.22,
+          "lonSd": 14.1,
+          "swarm": -0.007,
+          "straight": 0.13,
+          "fault": 4.2,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.04,
+          "lonSd": 11.72,
+          "swarm": -0.01,
+          "straight": 0.412,
+          "fault": 4.1,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.14,
+          "lonSd": 5.59,
+          "swarm": -0.008,
+          "straight": 0.115,
+          "fault": 4.2,
+          "midBack": 1.05
+        },
+        {
+          "latSd": 0.07,
+          "lonSd": 5.78,
+          "swarm": -0.041,
+          "straight": 0.138,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.31,
+          "lonSd": 9.28,
+          "swarm": 0.033,
+          "straight": 0.182,
+          "fault": 4.1,
+          "midBack": 1.05
+        },
+        {
+          "latSd": 0.18,
+          "lonSd": 9.57,
+          "swarm": -0.005,
+          "straight": 0.225,
+          "fault": 4,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 3.98,
+          "lonSd": 6.84,
+          "swarm": 0.046,
+          "straight": 0.107,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.1,
+          "lonSd": 10.18,
+          "swarm": -0.023,
+          "straight": 0.116,
+          "fault": 4.2,
+          "midBack": 1.03
+        }
+      ],
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        2,
+        3,
+        5,
+        11,
+        17
+      ],
+      "nSeeds": 9,
+      "crashedSeeds": [
+        {
+          "seed": 123,
+          "reason": "beat mover id duplicate: 17"
+        }
+      ],
+      "manDownFrames": 14140,
+      "shotsRegularPerMatch": 1,
+      "shotsHeaderPerMatch": 0.67,
+      "shotsPerMatch": 1.67,
+      "goalsPerMatch": 0.22,
+      "perSeed": [
+        {
+          "seed": 42,
+          "shotsRegular": 0,
+          "shotsHeader": 0,
+          "shotsTotal": 0,
+          "goals": 0
+        },
+        {
+          "seed": 1,
+          "shotsRegular": 0,
+          "shotsHeader": 2,
+          "shotsTotal": 2,
+          "goals": 1
+        },
+        {
+          "seed": 7,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 99,
+          "shotsRegular": 0,
+          "shotsHeader": 0,
+          "shotsTotal": 0,
+          "goals": 0
+        },
+        {
+          "seed": 2,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 3,
+          "shotsRegular": 1,
+          "shotsHeader": 1,
+          "shotsTotal": 2,
+          "goals": 0
+        },
+        {
+          "seed": 5,
+          "shotsRegular": 1,
+          "shotsHeader": 1,
+          "shotsTotal": 2,
+          "goals": 0
+        },
+        {
+          "seed": 11,
+          "shotsRegular": 0,
+          "shotsHeader": 1,
+          "shotsTotal": 1,
+          "goals": 0
+        },
+        {
+          "seed": 17,
+          "shotsRegular": 1,
+          "shotsHeader": 1,
+          "shotsTotal": 2,
+          "goals": 1
+        }
+      ],
+      "variant": "base",
+      "lag": 0.03,
+      "curveK": 2,
+      "wasmSha8": "8cc2a9f9"
+    },
+    {
+      "tag": "base-0.05",
+      "nWin": 60,
+      "nMatches": 10,
+      "latSd": 0.49,
+      "lonSd": 10.79,
+      "swarm": -0.029,
+      "straight": 0.131,
+      "fault": 4.06,
+      "midBack": 1.04,
+      "hd": 27.17,
+      "spread": 15.67,
+      "gap": 12.63,
+      "width": 40.86,
+      "perMatch": [
+        {
+          "latSd": 0.18,
+          "lonSd": 9.51,
+          "swarm": -0.029,
+          "straight": 0.061,
+          "fault": 4,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.18,
+          "lonSd": 9.23,
+          "swarm": 0.018,
+          "straight": 0.146,
+          "fault": 4,
+          "midBack": 1.05
+        },
+        {
+          "latSd": 0.13,
+          "lonSd": 3.5,
+          "swarm": -0.017,
+          "straight": 0.049,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 3.63,
+          "lonSd": 21.74,
+          "swarm": -0.085,
+          "straight": 0.101,
+          "fault": 3.9,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.1,
+          "lonSd": 4.1,
+          "swarm": -0.049,
+          "straight": 0.059,
+          "fault": 4.1,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.1,
+          "lonSd": 15.6,
+          "swarm": -0.009,
+          "straight": 0.367,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.12,
+          "lonSd": 17.28,
+          "swarm": -0.023,
+          "straight": 0.319,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.33,
+          "lonSd": 12.06,
+          "swarm": -0.01,
+          "straight": 0.041,
+          "fault": 4.1,
+          "midBack": 1.05
+        },
+        {
+          "latSd": 0.02,
+          "lonSd": 3.7,
+          "swarm": -0.067,
+          "straight": 0.036,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.15,
+          "lonSd": 11.18,
+          "swarm": -0.018,
+          "straight": 0.135,
+          "fault": 4.1,
+          "midBack": 1.04
+        }
+      ],
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123,
+        2,
+        3,
+        5,
+        11,
+        17
+      ],
+      "nSeeds": 10,
+      "crashedSeeds": [],
+      "manDownFrames": 11160,
+      "shotsRegularPerMatch": 1.4,
+      "shotsHeaderPerMatch": 0.9,
+      "shotsPerMatch": 2.3,
+      "goalsPerMatch": 0.4,
+      "perSeed": [
+        {
+          "seed": 42,
+          "shotsRegular": 0,
+          "shotsHeader": 1,
+          "shotsTotal": 1,
+          "goals": 0
+        },
+        {
+          "seed": 1,
+          "shotsRegular": 1,
+          "shotsHeader": 3,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 7,
+          "shotsRegular": 0,
+          "shotsHeader": 0,
+          "shotsTotal": 0,
+          "goals": 0
+        },
+        {
+          "seed": 99,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 123,
+          "shotsRegular": 1,
+          "shotsHeader": 0,
+          "shotsTotal": 1,
+          "goals": 1
+        },
+        {
+          "seed": 2,
+          "shotsRegular": 0,
+          "shotsHeader": 1,
+          "shotsTotal": 1,
+          "goals": 0
+        },
+        {
+          "seed": 3,
+          "shotsRegular": 1,
+          "shotsHeader": 0,
+          "shotsTotal": 1,
+          "goals": 0
+        },
+        {
+          "seed": 5,
+          "shotsRegular": 2,
+          "shotsHeader": 1,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 11,
+          "shotsRegular": 2,
+          "shotsHeader": 2,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 17,
+          "shotsRegular": 4,
+          "shotsHeader": 1,
+          "shotsTotal": 5,
+          "goals": 1
+        }
+      ],
+      "variant": "base",
+      "lag": 0.05,
+      "curveK": 2,
+      "wasmSha8": "058c213c"
+    },
+    {
+      "tag": "base-0.08",
+      "nWin": 60,
+      "nMatches": 10,
+      "latSd": 0.91,
+      "lonSd": 13.19,
+      "swarm": -0.001,
+      "straight": 0.231,
+      "fault": 4.03,
+      "midBack": 1.03,
+      "hd": 27.24,
+      "spread": 15.65,
+      "gap": 14.88,
+      "width": 40.74,
+      "perMatch": [
+        {
+          "latSd": 0.17,
+          "lonSd": 10.35,
+          "swarm": -0.026,
+          "straight": 0.036,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.16,
+          "lonSd": 16.2,
+          "swarm": -0.007,
+          "straight": 0.399,
+          "fault": 4,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.12,
+          "lonSd": 9.84,
+          "swarm": 0.044,
+          "straight": 0.285,
+          "fault": 3.9,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.21,
+          "lonSd": 12.9,
+          "swarm": -0.001,
+          "straight": 0.334,
+          "fault": 4,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 3.55,
+          "lonSd": 20.92,
+          "swarm": 0.044,
+          "straight": 0.192,
+          "fault": 4,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 3.22,
+          "lonSd": 16.99,
+          "swarm": 0.015,
+          "straight": 0.137,
+          "fault": 4.1,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.13,
+          "lonSd": 17.49,
+          "swarm": -0.019,
+          "straight": 0.467,
+          "fault": 4,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.58,
+          "lonSd": 10.21,
+          "swarm": -0.023,
+          "straight": 0.106,
+          "fault": 4,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.12,
+          "lonSd": 7.95,
+          "swarm": -0.045,
+          "straight": 0.119,
+          "fault": 4.2,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.82,
+          "lonSd": 9.03,
+          "swarm": 0.004,
+          "straight": 0.231,
+          "fault": 4,
+          "midBack": 1.01
+        }
+      ],
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123,
+        2,
+        3,
+        5,
+        11,
+        17
+      ],
+      "nSeeds": 10,
+      "crashedSeeds": [],
+      "manDownFrames": 6560,
+      "shotsRegularPerMatch": 3.3,
+      "shotsHeaderPerMatch": 1,
+      "shotsPerMatch": 4.3,
+      "goalsPerMatch": 0.6,
+      "perSeed": [
+        {
+          "seed": 42,
+          "shotsRegular": 1,
+          "shotsHeader": 1,
+          "shotsTotal": 2,
+          "goals": 0
+        },
+        {
+          "seed": 1,
+          "shotsRegular": 3,
+          "shotsHeader": 1,
+          "shotsTotal": 4,
+          "goals": 0
+        },
+        {
+          "seed": 7,
+          "shotsRegular": 2,
+          "shotsHeader": 2,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 99,
+          "shotsRegular": 2,
+          "shotsHeader": 0,
+          "shotsTotal": 2,
+          "goals": 0
+        },
+        {
+          "seed": 123,
+          "shotsRegular": 2,
+          "shotsHeader": 1,
+          "shotsTotal": 3,
+          "goals": 1
+        },
+        {
+          "seed": 2,
+          "shotsRegular": 3,
+          "shotsHeader": 2,
+          "shotsTotal": 5,
+          "goals": 1
+        },
+        {
+          "seed": 3,
+          "shotsRegular": 6,
+          "shotsHeader": 2,
+          "shotsTotal": 8,
+          "goals": 0
+        },
+        {
+          "seed": 5,
+          "shotsRegular": 8,
+          "shotsHeader": 0,
+          "shotsTotal": 8,
+          "goals": 1
+        },
+        {
+          "seed": 11,
+          "shotsRegular": 4,
+          "shotsHeader": 0,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 17,
+          "shotsRegular": 2,
+          "shotsHeader": 1,
+          "shotsTotal": 3,
+          "goals": 1
+        }
+      ],
+      "variant": "base",
+      "lag": 0.08,
+      "curveK": 2,
+      "wasmSha8": "cfee0402"
+    },
+    {
+      "tag": "lag0.1",
+      "nWin": 60,
+      "nMatches": 10,
+      "latSd": 0.44,
+      "lonSd": 8.29,
+      "swarm": -0.024,
+      "straight": 0.36,
+      "fault": 4.1,
+      "midBack": 1.03,
+      "hd": 27.25,
+      "spread": 15.67,
+      "gap": 16.26,
+      "width": 40.82,
+      "perMatch": [
+        {
+          "latSd": 0.1,
+          "lonSd": 11.45,
+          "swarm": -0.019,
+          "straight": 0.472,
+          "fault": 4.1,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.58,
+          "lonSd": 13.93,
+          "swarm": -0.027,
+          "straight": 0.276,
+          "fault": 4,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.5,
+          "lonSd": 9.44,
+          "swarm": -0.039,
+          "straight": 0.348,
+          "fault": 4,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 2.85,
+          "lonSd": 15.01,
+          "swarm": 0.067,
+          "straight": 0.363,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0,
+          "lonSd": 3.13,
+          "swarm": -0.044,
+          "straight": 0.168,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0,
+          "lonSd": 2.6,
+          "swarm": -0.044,
+          "straight": 0.092,
+          "fault": 4.2,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.16,
+          "lonSd": 0.32,
+          "swarm": -0.044,
+          "straight": 0.951,
+          "fault": 4.1,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0,
+          "lonSd": 9.29,
+          "swarm": -0.044,
+          "straight": 0.448,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.08,
+          "lonSd": 11.28,
+          "swarm": -0.023,
+          "straight": 0.315,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.12,
+          "lonSd": 6.44,
+          "swarm": -0.021,
+          "straight": 0.164,
+          "fault": 4.2,
+          "midBack": 1.03
+        }
+      ],
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123,
+        2,
+        3,
+        5,
+        11,
+        17
+      ],
+      "nSeeds": 10,
+      "crashedSeeds": [],
+      "manDownFrames": 0,
+      "shotsRegularPerMatch": 2.8,
+      "shotsHeaderPerMatch": 0.6,
+      "shotsPerMatch": 3.4,
+      "goalsPerMatch": 0.2,
+      "perSeed": [
+        {
+          "seed": 42,
+          "shotsRegular": 4,
+          "shotsHeader": 0,
+          "shotsTotal": 4,
+          "goals": 0
+        },
+        {
+          "seed": 1,
+          "shotsRegular": 4,
+          "shotsHeader": 0,
+          "shotsTotal": 4,
+          "goals": 0
+        },
+        {
+          "seed": 7,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 99,
+          "shotsRegular": 3,
+          "shotsHeader": 2,
+          "shotsTotal": 5,
+          "goals": 1
+        },
+        {
+          "seed": 123,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 2,
+          "shotsRegular": 0,
+          "shotsHeader": 0,
+          "shotsTotal": 0,
+          "goals": 0
+        },
+        {
+          "seed": 3,
+          "shotsRegular": 5,
+          "shotsHeader": 2,
+          "shotsTotal": 7,
+          "goals": 1
+        },
+        {
+          "seed": 5,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 11,
+          "shotsRegular": 2,
+          "shotsHeader": 1,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 17,
+          "shotsRegular": 1,
+          "shotsHeader": 1,
+          "shotsTotal": 2,
+          "goals": 0
+        }
+      ],
+      "lag": 0.1,
+      "wasmSha8": "aaa5a0bc"
+    },
+    {
+      "tag": "base-0.14",
+      "nWin": 60,
+      "nMatches": 10,
+      "latSd": 0.49,
+      "lonSd": 11.9,
+      "swarm": -0.023,
+      "straight": 0.373,
+      "fault": 4.12,
+      "midBack": 1.03,
+      "hd": 27.27,
+      "spread": 15.67,
+      "gap": 17.88,
+      "width": 40.83,
+      "perMatch": [
+        {
+          "latSd": 0.09,
+          "lonSd": 17.76,
+          "swarm": -0.021,
+          "straight": 0.45,
+          "fault": 3.9,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.17,
+          "lonSd": 16.08,
+          "swarm": -0.023,
+          "straight": 0.519,
+          "fault": 4,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0,
+          "lonSd": 0,
+          "swarm": -0.044,
+          "straight": null,
+          "fault": 4.2,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.22,
+          "lonSd": 13.85,
+          "swarm": -0.003,
+          "straight": 0.003,
+          "fault": 4.2,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.01,
+          "lonSd": 0.76,
+          "swarm": -0.044,
+          "straight": 0.953,
+          "fault": 4,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 3.04,
+          "lonSd": 15.93,
+          "swarm": -0.074,
+          "straight": 0.033,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.08,
+          "lonSd": 10.89,
+          "swarm": -0.006,
+          "straight": 0.619,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.6,
+          "lonSd": 15.71,
+          "swarm": -0.039,
+          "straight": 0.366,
+          "fault": 4.3,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.51,
+          "lonSd": 15.73,
+          "swarm": 0.093,
+          "straight": 0.218,
+          "fault": 4.2,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.18,
+          "lonSd": 12.31,
+          "swarm": -0.065,
+          "straight": 0.196,
+          "fault": 4.2,
+          "midBack": 1.03
+        }
+      ],
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123,
+        2,
+        3,
+        5,
+        11,
+        17
+      ],
+      "nSeeds": 10,
+      "crashedSeeds": [],
+      "manDownFrames": 0,
+      "shotsRegularPerMatch": 3,
+      "shotsHeaderPerMatch": 0.4,
+      "shotsPerMatch": 3.4,
+      "goalsPerMatch": 0.2,
+      "perSeed": [
+        {
+          "seed": 42,
+          "shotsRegular": 3,
+          "shotsHeader": 1,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 1,
+          "shotsRegular": 1,
+          "shotsHeader": 0,
+          "shotsTotal": 1,
+          "goals": 0
+        },
+        {
+          "seed": 7,
+          "shotsRegular": 0,
+          "shotsHeader": 0,
+          "shotsTotal": 0,
+          "goals": 0
+        },
+        {
+          "seed": 99,
+          "shotsRegular": 2,
+          "shotsHeader": 1,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 123,
+          "shotsRegular": 3,
+          "shotsHeader": 1,
+          "shotsTotal": 4,
+          "goals": 0
+        },
+        {
+          "seed": 2,
+          "shotsRegular": 4,
+          "shotsHeader": 1,
+          "shotsTotal": 5,
+          "goals": 0
+        },
+        {
+          "seed": 3,
+          "shotsRegular": 4,
+          "shotsHeader": 0,
+          "shotsTotal": 4,
+          "goals": 0
+        },
+        {
+          "seed": 5,
+          "shotsRegular": 2,
+          "shotsHeader": 0,
+          "shotsTotal": 2,
+          "goals": 1
+        },
+        {
+          "seed": 11,
+          "shotsRegular": 6,
+          "shotsHeader": 0,
+          "shotsTotal": 6,
+          "goals": 0
+        },
+        {
+          "seed": 17,
+          "shotsRegular": 5,
+          "shotsHeader": 0,
+          "shotsTotal": 5,
+          "goals": 0
+        }
+      ],
+      "variant": "base",
+      "lag": 0.14,
+      "curveK": 2,
+      "wasmSha8": "fbab4a5a"
+    },
+    {
+      "tag": "base-0.2",
+      "nWin": 60,
+      "nMatches": 10,
+      "latSd": 0.45,
+      "lonSd": 12.29,
+      "swarm": -0.011,
+      "straight": 0.189,
+      "fault": 4.2,
+      "midBack": 1.03,
+      "hd": 27.42,
+      "spread": 15.72,
+      "gap": 19.79,
+      "width": 40.92,
+      "perMatch": [
+        {
+          "latSd": 0.3,
+          "lonSd": 8.04,
+          "swarm": -0.043,
+          "straight": 0.042,
+          "fault": 4.2,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.09,
+          "lonSd": 22.07,
+          "swarm": -0.021,
+          "straight": 0.465,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.17,
+          "lonSd": 15.69,
+          "swarm": -0.022,
+          "straight": 0.362,
+          "fault": 4.2,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.14,
+          "lonSd": 9.15,
+          "swarm": -0.064,
+          "straight": 0.24,
+          "fault": 4.2,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0,
+          "lonSd": 0,
+          "swarm": -0.044,
+          "straight": null,
+          "fault": 4.2,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.1,
+          "lonSd": 16.62,
+          "swarm": -0.025,
+          "straight": 0,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.05,
+          "lonSd": 5.59,
+          "swarm": 0.022,
+          "straight": 0.01,
+          "fault": 4.3,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.41,
+          "lonSd": 16.66,
+          "swarm": -0.044,
+          "straight": 0.517,
+          "fault": 4.3,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 3.14,
+          "lonSd": 17.37,
+          "swarm": 0.041,
+          "straight": 0.051,
+          "fault": 4.2,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.12,
+          "lonSd": 11.68,
+          "swarm": 0.094,
+          "straight": 0.012,
+          "fault": 4.2,
+          "midBack": 1.03
+        }
+      ],
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123,
+        2,
+        3,
+        5,
+        11,
+        17
+      ],
+      "nSeeds": 10,
+      "crashedSeeds": [],
+      "manDownFrames": 0,
+      "shotsRegularPerMatch": 4.5,
+      "shotsHeaderPerMatch": 0.8,
+      "shotsPerMatch": 5.3,
+      "goalsPerMatch": 0.6,
+      "perSeed": [
+        {
+          "seed": 42,
+          "shotsRegular": 3,
+          "shotsHeader": 1,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 1,
+          "shotsRegular": 6,
+          "shotsHeader": 0,
+          "shotsTotal": 6,
+          "goals": 1
+        },
+        {
+          "seed": 7,
+          "shotsRegular": 3,
+          "shotsHeader": 1,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 99,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 123,
+          "shotsRegular": 2,
+          "shotsHeader": 0,
+          "shotsTotal": 2,
+          "goals": 0
+        },
+        {
+          "seed": 2,
+          "shotsRegular": 8,
+          "shotsHeader": 2,
+          "shotsTotal": 10,
+          "goals": 0
+        },
+        {
+          "seed": 3,
+          "shotsRegular": 7,
+          "shotsHeader": 2,
+          "shotsTotal": 9,
+          "goals": 2
+        },
+        {
+          "seed": 5,
+          "shotsRegular": 4,
+          "shotsHeader": 0,
+          "shotsTotal": 4,
+          "goals": 0
+        },
+        {
+          "seed": 11,
+          "shotsRegular": 7,
+          "shotsHeader": 1,
+          "shotsTotal": 8,
+          "goals": 1
+        },
+        {
+          "seed": 17,
+          "shotsRegular": 2,
+          "shotsHeader": 1,
+          "shotsTotal": 3,
+          "goals": 0
+        }
+      ],
+      "variant": "base",
+      "lag": 0.2,
+      "curveK": 2,
+      "wasmSha8": "5b3f2b25"
+    },
+    {
+      "tag": "base-0.28",
+      "nWin": 60,
+      "nMatches": 10,
+      "latSd": 0.76,
+      "lonSd": 12.83,
+      "swarm": -0.019,
+      "straight": 0.379,
+      "fault": 4.15,
+      "midBack": 1.03,
+      "hd": 27.39,
+      "spread": 15.72,
+      "gap": 21.71,
+      "width": 40.86,
+      "perMatch": [
+        {
+          "latSd": 0,
+          "lonSd": 0,
+          "swarm": -0.044,
+          "straight": null,
+          "fault": 4.3,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 2.89,
+          "lonSd": 20.28,
+          "swarm": -0.064,
+          "straight": 0.101,
+          "fault": 4.2,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.25,
+          "lonSd": 18.62,
+          "swarm": 0.007,
+          "straight": 0.767,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 3.78,
+          "lonSd": 25.52,
+          "swarm": 0.019,
+          "straight": 0.241,
+          "fault": 4.1,
+          "midBack": 1.02
+        },
+        {
+          "latSd": 0.06,
+          "lonSd": 7.93,
+          "swarm": -0.075,
+          "straight": 0.821,
+          "fault": 4.1,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.12,
+          "lonSd": 7.43,
+          "swarm": -0.015,
+          "straight": 0.113,
+          "fault": 4.2,
+          "midBack": 1.04
+        },
+        {
+          "latSd": 0.01,
+          "lonSd": 0.01,
+          "swarm": -0.044,
+          "straight": 0,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.22,
+          "lonSd": 16.35,
+          "swarm": 0.062,
+          "straight": 0.606,
+          "fault": 4.1,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.14,
+          "lonSd": 16.44,
+          "swarm": -0.02,
+          "straight": 0.615,
+          "fault": 4.2,
+          "midBack": 1.03
+        },
+        {
+          "latSd": 0.17,
+          "lonSd": 15.72,
+          "swarm": -0.021,
+          "straight": 0.151,
+          "fault": 4.1,
+          "midBack": 1.04
+        }
+      ],
+      "seeds": [
+        42,
+        1,
+        7,
+        99,
+        123,
+        2,
+        3,
+        5,
+        11,
+        17
+      ],
+      "nSeeds": 10,
+      "crashedSeeds": [],
+      "manDownFrames": 0,
+      "shotsRegularPerMatch": 3.7,
+      "shotsHeaderPerMatch": 0.3,
+      "shotsPerMatch": 4,
+      "goalsPerMatch": 0.4,
+      "perSeed": [
+        {
+          "seed": 42,
+          "shotsRegular": 5,
+          "shotsHeader": 0,
+          "shotsTotal": 5,
+          "goals": 1
+        },
+        {
+          "seed": 1,
+          "shotsRegular": 4,
+          "shotsHeader": 1,
+          "shotsTotal": 5,
+          "goals": 0
+        },
+        {
+          "seed": 7,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 99,
+          "shotsRegular": 1,
+          "shotsHeader": 2,
+          "shotsTotal": 3,
+          "goals": 1
+        },
+        {
+          "seed": 123,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 1
+        },
+        {
+          "seed": 2,
+          "shotsRegular": 5,
+          "shotsHeader": 0,
+          "shotsTotal": 5,
+          "goals": 0
+        },
+        {
+          "seed": 3,
+          "shotsRegular": 3,
+          "shotsHeader": 0,
+          "shotsTotal": 3,
+          "goals": 0
+        },
+        {
+          "seed": 5,
+          "shotsRegular": 5,
+          "shotsHeader": 0,
+          "shotsTotal": 5,
+          "goals": 0
+        },
+        {
+          "seed": 11,
+          "shotsRegular": 4,
+          "shotsHeader": 0,
+          "shotsTotal": 4,
+          "goals": 1
+        },
+        {
+          "seed": 17,
+          "shotsRegular": 4,
+          "shotsHeader": 0,
+          "shotsTotal": 4,
+          "goals": 0
+        }
+      ],
+      "variant": "base",
+      "lag": 0.28,
+      "curveK": 2,
+      "wasmSha8": "f662c702"
+    }
+  ]
+}

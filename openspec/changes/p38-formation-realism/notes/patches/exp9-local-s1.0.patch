@@ -1,0 +1,42 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 57efe3f..9999a67 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -591,6 +591,8 @@ pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
+ // ---- P5 队形/攻防转换参数 ----
+ /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
+ pub const SIDE_SHIFT_FACTOR: f64 = 0.06;
++pub const LAT_BLEND: f64 = 1.0;
++pub const LAT_RADIUS_M: f64 = 12.0;
+ /// 防线前压幅度（归一化）：球到前场时防线推进量（≈12m）
+ pub const DEFENSE_PUSH_FACTOR: f64 = 0.12;
+ /// 控球阶段压上偏移（归一化）：己方持球前压 / 对方持球回收（≈2m）
+@@ -2655,7 +2657,19 @@ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
+             tx_full.max(ball.0).min(base.0)
+         };
+     }
+-    let ty = base.1 + (ball.1 - 0.5) * SIDE_SHIFT_FACTOR * 0.6;
++
++    // 线B `local`：每人的 ty 向**半径 R 内队友的 y 均值**混合。
++    // 邻居集合逐人不同 → 信号个体化（是压低 swarm 的关键）。
++    let mut sum = 0.0; let mut n = 0.0;
++    for oid in 0..22i32 {
++        if oid == id || st.sent_off[oid as usize] { continue; }
++        if (oid <= 10) != home { continue; }
++        if oid == 0 || oid == 21 { continue; }
++        let op = st.pos[oid as usize];
++        if same_team_dist_m(op, st.pos[id as usize]) <= LAT_RADIUS_M { sum += op.1; n += 1.0; }
++    }
++    let local_y = if n > 0.0 { sum / n } else { base.1 };
++    let ty = base.1 * (1.0 - LAT_BLEND) + local_y * LAT_BLEND + (ball.1 - 0.5) * SIDE_SHIFT_FACTOR * 0.6;
+     // P7 观感：目标不进小禁区/不顶门线（前锋最多压到禁区边缘 x=0.9，避免顶在球门线来回摆动）
+     (clamp01(tx).clamp(0.04, 0.9), clamp01(ty))
+ }
+@@ -3451,6 +3465,7 @@ fn emit_tackle_highlight_impl(
+     for oid in 0..22i32 {
+         if oid == victim || oid == def_id || st.sent_off[oid as usize] { continue; }
+         if (oid <= 10) != (victim <= 10) { continue; } // 同队
++        if (movers.iter().any(|m| m.id == oid)) { continue; }
+         let op = st.pos[oid as usize];
+         if same_team_dist_m(pushed_from, op) < SAME_TEAM_MIN_DIST_M {
+             let (_, np) = separate_pair_m(pushed_from, op, SAME_TEAM_MIN_DIST_M, false, true);

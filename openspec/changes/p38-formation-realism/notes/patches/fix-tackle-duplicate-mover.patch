@@ -1,0 +1,16 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 57efe3f..c5ea309 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -3451,6 +3451,11 @@ fn emit_tackle_highlight_impl(
+     for oid in 0..22i32 {
+         if oid == victim || oid == def_id || st.sent_off[oid as usize] { continue; }
+         if (oid <= 10) != (victim <= 10) { continue; } // 同队
++        // 已有 mover 者跳过：`beat_movers` 已为它产出一条（起点 = 本拍真实起点），
++        // 而本循环的起点读的是**分离后**的 `st.pos`——两条 from 不同但 id 相同，
++        // 违反 `viewer/protocol.js::validateBeat` 的唯一性契约，`createGame` 直接抛错。
++        // P38 实测：队形压紧后队友间距普遍 <2m，本分支才被走到（exp4b 10 种子崩 1 个）。
++        if movers.iter().any(|m| m.id == oid) { continue; }
+         let op = st.pos[oid as usize];
+         if same_team_dist_m(pushed_from, op) < SAME_TEAM_MIN_DIST_M {
+             let (_, np) = separate_pair_m(pushed_from, op, SAME_TEAM_MIN_DIST_M, false, true);

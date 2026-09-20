@@ -75,7 +75,7 @@
     }
   ],
   "mutationSelfTest": {
-    "variantsBlocked": 6,
-    "totalVariants": 6
+    "variantsBlocked": 11,
+    "totalVariants": 11
   }
 }

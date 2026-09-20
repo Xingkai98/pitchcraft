@@ -7,13 +7,18 @@
 // 输出 JSON 一行，供 drive-criteria.mjs 汇总成表。
 
 import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import {
   BENCHMARK_SEEDS, ENGINE_DURATION_SEC, sampleEngineFrames, cutWindows,
   windowMetrics, KEEPER_IDS, PITCH_LENGTH_M, PITCH_WIDTH_M,
-} from '/home/happy/.claude/worktrees/wayfinder-realism/viewer/match-metrics.js';
-import { loadEngineWasm, simulateStream, WASM_PATH } from '/home/happy/.claude/worktrees/wayfinder-realism/tools/benchmark-engine.mjs';
+} from '../../../../../viewer/match-metrics.js';
+import { loadEngineWasm, simulateStream, WASM_PATH } from '../../../../../tools/benchmark-engine.mjs';
 
-const HERE = '/home/happy/.claude/worktrees/wayfinder-realism';
+// ⚠️ **不要硬编码 worktree 绝对路径**：脚本拷到新 worktree 后会仍指向旧的，
+// 导致"在新 worktree 跑"实际跑的是旧 worktree 的 wasm/数据——**看似有效实则串味**。
+// 统一基于脚本自身位置上溯（criteria → notes → change → changes → openspec → ROOT）。
+const HERE = join(dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const label = process.argv[2] || 'current';
 const isReal = label === '--real';
 
@@ -43,7 +48,13 @@ function outfield(frame, team) {
   return (frame.players || []).filter((p) => p && !KEEPER_IDS.includes(p.id) && (isHome ? p.id <= 10 : p.id >= 11));
 }
 
-function evaluate(frames, tag) {
+// ⚠️ **单场求值**（P38 线 B 的口径修正）：不要跨场拼接帧再算 sd——
+// 不同场次的球员 y 均值不同，拼接会把**场间偏移**计进方差，sdf 被灌水。
+// 实测（probe-latsd-caliber.mjs）：某配置逐场 1.73m vs 拼接 11.26m（**6.5×**），
+// 且**方向是反的**——动得越多场间偏移越大、虚高越多，等于**奖励横向大改的 hack**。
+// 与 P36「口径分叉 = 数字不可比」是同一个错误，只是发生在**时间轴**上。
+// 真实侧（--real）本来就是逐场算再平均，引擎侧必须同口径。
+function evaluateOne(frames, tag) {
   // ── 1. 三窗口指标（与 P37 口径一致：q10-q90 纵深等）──
   const wins = cutWindows(frames).map((w) => windowMetrics(w).primary).filter(Boolean);
   const hd = mean(wins.map((w) => w.hd));
@@ -117,20 +128,31 @@ function evaluate(frames, tag) {
   };
 }
 
+// 逐场算再平均（**正确口径**）：每个场各自算一遍，再对场取均值。
+// 合并时：窗口类指标（hd/spread/gap/width）本就逐窗算再平均，可以合并场后取均值；
+// 位移 sd 类必须逐场——它们已经逐场算好了，只需对场平均。
+function evaluateByMatch(perMatch, tag) {
+  const rows = perMatch.map((fr, i) => evaluateOne(fr, `${tag}#${i}`));
+  const keys = Object.keys(rows[0]).filter((k) => typeof rows[0][k] === 'number');
+  const out = { tag, matches: rows.length };
+  for (const k of keys) out[k] = +(rows.reduce((s, r) => s + r[k], 0) / rows.length).toFixed(3);
+  return out;
+}
+
 if (isReal) {
   for (const g of ['1', '2']) {
     const d = JSON.parse(readFileSync(`${HERE}/viewer/data/real-game-${g}.json`, 'utf8'));
     const frames = d.frames.map((fr) => ({ t: fr.t, ball: fr.ball || null, players: fr.players.map((p, id) => (p ? { id, x: p[0], y: p[1] } : null)) }));
-    console.log(JSON.stringify(evaluate(frames, `real-game${g}`)));
+    console.log(JSON.stringify(evaluateOne(frames, `real-game${g}`)));
   }
 } else {
   const load = await loadEngineWasm(WASM_PATH);
   if (!load.ok) { console.error(load.message); process.exit(1); }
   const { createGame } = await import(`${HERE}/viewer/game.js`);
-  const all = [];
+  const perMatch = [];
   for (const seed of BENCHMARK_SEEDS.slice(0, 3)) {
     const game = createGame(simulateStream(load.wasm, seed, ENGINE_DURATION_SEC));
-    all.push(...sampleEngineFrames(game));
+    perMatch.push(sampleEngineFrames(game));   // ← 每场单独一个数组，不拼接
   }
-  console.log(JSON.stringify(evaluate(all, label)));
+  console.log(JSON.stringify(evaluateByMatch(perMatch, label)));
 }

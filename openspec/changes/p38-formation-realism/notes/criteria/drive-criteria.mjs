@@ -7,8 +7,13 @@
 
 import { execFileSync } from 'node:child_process';
 import { readdirSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 
-const HERE = '/home/happy/.claude/worktrees/wayfinder-realism';
+// ⚠️ **不要硬编码 worktree 绝对路径**：脚本拷到新 worktree 后会仍指向旧的，
+// 导致"在新 worktree 跑"实际跑的是旧 worktree 的 wasm/数据——**看似有效实则串味**。
+// 统一基于脚本自身位置上溯（criteria → notes → change → changes → openspec → ROOT）。
+const HERE = join(dirname(fileURLToPath(import.meta.url)), '../../../../..');
 const PATCH_DIR = `${HERE}/openspec/changes/p38-formation-realism/notes/patches`;
 const CARGO = `${process.env.HOME}/.cargo/bin/cargo`;
 const PATH = `${process.env.HOME}/.cargo/bin:${process.env.PATH}`;

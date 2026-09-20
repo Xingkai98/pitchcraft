@@ -7,7 +7,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 
-const HERE = '/home/happy/.claude/worktrees/wayfinder-realism';
+const HERE = process.env.P38_ROOT || '/home/happy/.claude/worktrees/wayfinder-realism';
 const { SoftCanvas, canvasToPng } = await import(`${HERE}/viewer/soft-canvas.js`);
 
 const [source, outPath, label, winArg] = process.argv.slice(2);
