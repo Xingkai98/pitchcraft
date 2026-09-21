@@ -70,7 +70,7 @@ if (!existsSync(EV_DIR)) {
 //
 // ⚠⚠ **`Saved Off Target` 不是 on-target**（StatsBomb Open Data Spec v1.1 / Glossary：
 // "saved by the goalkeeper **but was not on target**"）。第一版用 `startsWith('Saved')`
-// 把它一锅端进 `saved` —— **错**（本样本 33 脚，禁区 19 / 远射 10）。
+// 把它一锅端进 `saved` —— **错**（本样本 33 脚：禁区 19 / 弧 4 / 远射 10）。
 // 官方 on-target = {Goal, Saved, Saved to Post}（`Saved to Post` 也算中柱/on-target）。
 //
 // 引擎口径（`engine/src/lib.rs:3170-3176` **只有三个 outcome，没有 blocked**）：
@@ -114,6 +114,7 @@ for (const f of files) {
       x, y, depth_m, euclid_m, cls,
       onTarget: cls === 'goal' || cls === 'saved',
       woodwork: outcome === 'Post' || outcome === 'Saved to Post',
+      isHeader: ((s.body_part || {}).name === 'Head'),
       xg: typeof s.statsbomb_xg === 'number' ? s.statsbomb_xg : null,
       body: (s.body_part || {}).name || null,
       technique: (s.technique || {}).name || null,
@@ -150,7 +151,7 @@ function statsOf(rows) {
   const [convLo, convHi] = wilson(g, on);
   return {
     n, goal: g, saved: sv, blocked: bl, off, onTarget: on,
-    goalRate: n ? g / n : null, [Symbol.iterator]: undefined,
+    goalRate: n ? g / n : null,
     sotRate: n ? on / n : null, sotLo, sotHi,
     goalLo: gLo, goalHi: gHi,
     // 转化率（进球 / 射正）—— #102 §2.3B 关心的那个量
@@ -164,7 +165,7 @@ function statsOf(rows) {
 say('## 1. 与引擎同口径（纵深）—— 三桶\n');
 say('> 引擎 `shot_bucket`：禁区内 ≤16.5m / 禁区弧 ≤25.0m / 远射 >25.0m，全按**纵深**（只看 x）。');
 say('> 每桶声明 `goal/saved/off` 三条：禁区内 15/30/55、弧 7/22/71、远射 4/11/85');
-say('> （`engine/src/lib.rs:5317-5324` 的 `shot_bucket`；门带在 `realism.rs:658-670`）。\n');
+say('> （`engine/src/lib.rs:4775` 的 `shot_bucket`；门带在 `realism.rs:659-671`）。\n');
 
 const buckets = [
   { name: '禁区内 ≤16.5m', test: (r) => r.depth_m <= BOX_DIST_M, engine: [0.15, 0.30] },
@@ -178,7 +179,14 @@ const buckets = [
 // （把"和落在带内"当成"两个分量各自落在各自带内"，反之亦然）。已改。
 const bandPass = (lo, hi, cil, cih) => (cil >= lo && cih <= hi) ? '✅ 带内'
   : (cih < lo || cil > hi) ? '❌ 带外' : '⚠️ 跨带边';
+// ⚠⚠⚠ **第三个口径维度：头球**（第二轮审阅发现，与 E1 同类）
+// 引擎的分桶计数 `n_box_*` / `n_arc_*` / `n_far_*` **只在非头球分支递增**
+// （`engine/tests/realism.rs:428-439` 的 `if is_header {…} else {…分桶…}`）。
+// 即**引擎的桶带看不到头球**。故 §2.2 比桶带时**必须排头球**；
+// 而 §4b 的 L3（`realism.rs:947`）用 `shots = regular + header`，**含头球**。
+// 第一版一律"含头球"并宣称"与引擎 regular 口径一致"——**错**（regular 就是非头球）。
 const bucketStats = {};
+const noHeader = (rows) => rows.filter((r) => !r.isHeader);
 // ⚠⚠ **引擎只有三个 outcome：goal / saved / off_target，没有 blocked**
 // （`engine/src/lib.rs:3170-3176` 的 ("goal"|"saved"|"off_target")；全库 0 处 blocked）。
 // 故引擎的 `off_target` **吸收**了 StatsBomb 分开计的 `Blocked`。
@@ -194,7 +202,8 @@ const ENGINE_BANDS = {
 say('| 桶 | n | 量 | 真实 [CI] | 门带 | 判定 |');
 say('|---|---|---|---|---|---|');
 for (const b of buckets) {
-  const rows = shots.filter(b.test);
+  // ⚠ 引擎桶带 = **非头球**口径（`n_box_*` 只在 else 分支累加）
+  const rows = noHeader(shots.filter(b.test));
   const st = statsOf(rows);
   // 引擎口径：off_target = off + blocked
   st.offEngine = st.off + st.blocked;
@@ -216,11 +225,12 @@ say('> ⚠ **`off` 一列是 `off + blocked`**（引擎口径，它没有 blocke
 // ── 2. ★ 直接回答 #102 §2.3B 的悬案 ─────────────────────────────────────
 say('## 2. ★ 判定 #102 §2.3B 的悬案\n');
 say('> **问题**（`conversion-adaptive.md` §2.3B）：真实禁区内 on-target 率是否撞 L1 门带的上限？');
-say('> L1 门（`realism.rs:659-661`）声明禁区内 `goal ∈ [0.10,0.20]` + `saved ∈ [0.24,0.36]`');
+say('> L1 门（`realism.rs:659-661`，禁区内 goal/saved/off 三条）声明 `goal ∈ [0.10,0.20]` + `saved ∈ [0.24,0.36]`');
 say('> → **on-target 上界 = 0.20 + 0.36 = 0.56**。\n');
 {
   const upper = 0.20 + 0.36;
-  const box = shots.filter((r) => r.depth_m <= BOX_DIST_M);
+  const boxAll = shots.filter((r) => r.depth_m <= BOX_DIST_M);
+  const box = noHeader(boxAll);   // ⚠ 引擎桶带口径 = 非头球（见 §1 注释）
   // ⚠⚠ **两个 on-target 口径必须分开报**（审阅发现的头条错误）：
   //   · 引擎口径（`realism.rs:947` 的 `sot_r`）= `(goal + saved) / n`，blocked 在分母里
   //   · **#102 的口径**（`conversion-adaptive.md` §2.2 的 † 脚注）
@@ -243,15 +253,29 @@ say('> → **on-target 上界 = 0.20 + 0.36 = 0.56**。\n');
   say('|---|---|---|---|---|');
   say(`| **引擎口径**（\`realism.rs:947\`） | (goal+saved)/n | **${f3(eSot)}** | [${f3(eCI[0])}, ${f3(eCI[1])}] | ${verdict(eCI[0], eCI[1])} |`);
   say(`| **#102 口径**（\`conversion-adaptive.md\` §2.2 †） | (goal+saved+wood)/(n−blocked) | **${f3(cSot)}** | [${f3(cCI[0])}, ${f3(cCI[1])}] | ${verdict(cCI[0], cCI[1])} |`);
+  // 含头球（不对接引擎桶带，但 #102 的原报告也没说排头球）
+  const bn = boxAll.length;
+  const bg = boxAll.filter((r) => r.cls === 'goal').length;
+  const bsv = boxAll.filter((r) => r.cls === 'saved').length;
+  const bbl = boxAll.filter((r) => r.cls === 'blocked').length;
+  const bwd = boxAll.filter((r) => r.woodwork).length;
+  const cAll = (bg + bsv + bwd) / (bn - bbl);
+  const cAllCI = wilson(bg + bsv + bwd, bn - bbl);
+  say(`| （对照）#102 口径 + **含头球** | 同上 | ${f3(cAll)} | [${f3(cAllCI[0])}, ${f3(cAllCI[1])}] | ${verdict(cAllCI[0], cAllCI[1])} |`);
+  say('');
+  say(`> ⚠⚠ **头球口径也会翻判定**（第二轮审阅发现，与 E1 同类）：`);
+  say(`> 引擎的分桶计数**只在非头球分支累加**（\`realism.rs:428-439\`），故桶带看不到头球。`);
+  say(`> 本表前两行已按引擎口径**排头球**（n=${bn} → ${n}）；含头球时 #102 口径是 ${f3(cAll)}。`);
+  say(`> **排头球后，#102 口径从"跨带边"变成"冲突"**（CI 下界 ${f3(cCI[0])} > 0.56）。`);
   say('');
   say(`> ⚠⚠ **头条结论取决于口径，务必连口径一起引**：`);
-  say(`> · 按**引擎口径**：${f3(eSot)} 远低于 0.56 → 不冲突；`);
-  say(`> · 按 **#102 自己的口径**（它是那个悬案的提出者）：${f3(cSot)}，CI [${f3(cCI[0])}, ${f3(cCI[1])}]`);
-  say(`>   → **仍跨过 0.56，即仍是"不可判定"**（点估计只差 0.003，样本再大也判不了）。`);
+  say(`> · 按**引擎口径**：${f3(eSot)}，CI 上界 ${f3(eCI[1])} < 0.56 → **不冲突**（引擎桶带标定得住）；`);
+  say(`> · 按 **#102 自己的口径**（它是悬案的提出者）：${f3(cSot)}，CI 下界 ${f3(cCI[0])} > 0.56`);
+  say(`>   → **冲突**：真实数据落在 L1 门带之外。`);
   say('');
   say(`> **#102 §2.3B 的结论更新**：当时用 Metrica 2–3 场得 CI [0.553, 0.868]（宽 0.315）；`);
   say(`> 现在 **${n.toLocaleString()} 次射门**把 **#102 口径**的 CI 压到宽 **${f3(cCI[1] - cCI[0])}**——`);
-  say(`> **变窄了 8 倍，但中心值也移动了**（0.741 → ${f3(cSot)}），`);
+  say(`> **变窄了 11.2 倍，但中心值也移动了**（0.741 → ${f3(cSot)}），`);
   say(`> 所以"跨过 0.56"这个状态**没有改变**，只是从"样本不足"变成了"点估计就压在边界上"。`);
   say('');
   say('> **两个口径的差从哪来**（合起来 14pp）：中柱进分子（+2.5pp）、**封堵出分母（+11.4pp）**。');
@@ -307,21 +331,48 @@ for (let i = 0; i < EU_EDGES.length - 1; i += 1) {
 say('');
 
 // ── 4. 两口径为什么不同 ─────────────────────────────────────────────────
-say('## 4. ⚠ 两个口径为什么给出不同结论（#102 §2.3B 的根因）\n');
+say('## 4. ⚠ 三个口径维度：谁是「#102 翻车」的主因？\n');
+say('> #102 §2.3B 的结论涉及**三个独立的分类选择**。把它们分开算（同一份禁区内射门）：\n');
 {
-  const inBox = shots.filter((r) => r.depth_m <= BOX_DIST_M);
-  const boxButWide = inBox.filter((r) => r.euclid_m > BOX_DIST_M);
-  const st1 = statsOf(inBox); const st2 = statsOf(boxButWide);
-  say(`「纵深在禁区内、但欧氏 >16.5m」的射门 = **${boxButWide.length.toLocaleString()} 次**`);
-  say(`（占禁区内射门的 ${pct(boxButWide.length / inBox.length)}）—— 这批是**贴近底线的极小角度射门**：\n`);
+  const A = { eng: [0.4481, 0.4339, 0.4623], c102: [0.6224, 0.6064, 0.6381] };  // 排头球
+  say('| 维度 | 选项 | 引擎口径 | #102 口径 |');
+  say('|---|---|---|---|');
+  say(`| **A. on-target 公式**（**排头球**） | 引擎 \`(g+saved)/n\` vs #102 \`(g+saved+wood)/(n−blocked)\` | ${f3(A.eng[0])} ✅ | ${f3(A.c102[0])} ❌ |`);
+  say(`| **C. 头球**（引擎桶带看不到头球） | 排头球 vs 含头球 | 0.448 vs 0.420 | **0.622 vs 0.563** |`);
+  say(`| **B. 距离口径** | 纵深 ≤16.5 vs 欧氏 ≤16.5 | 0.448 vs 0.436 | 0.622 vs 0.574 |`);
+  say('');
+  say('**灵敏度**（在新样本 n≈4709 上各维度能移动多少）：');
+  say('- **A（on-target 公式）：14.3pp** ← 最大');
+  say('- **C（头球）：2.8pp**（引擎口径）/ **5.9pp**（#102 口径）');
+  say('- **B（纵深 vs 欧氏）：1.1–1.6pp** ← 最小');
+  say('');
+  say('> ⚠⚠ **但这不等于"#102 翻车的错因是 A"**（第二轮审阅指出，我复算确认）：');
+  say('> #102 用的是 **n=30** 的 Metrica 样本。做个最简反事实——');
+  say('> **把 A 换成引擎口径、n 仍是 30**：');
+  say('> p=0.40 → CI [0.246, 0.577]；p=0.50 → CI [0.332, 0.668] —— **两种都仍跨 0.56**。');
+  say('> 要 CI 上界 <0.56 需 **n≈44** 以上（p≈0.42 时）。');
+  say('> → **#102 的错因是样本量（n=30），不是任何口径选择。**');
+  say('> 本表的 A/B/C 应读作**新样本下的灵敏度比较**，不是错因归因。');
+  say('> （#102 诊断出"口径错配"这个*现象*是对的，但它把 B 当成了主因。）');
+  say('');
+}
+
+// ── 4c. B 维度（距离口径）值得单独记：纵深把 18% 的低质量射门算进"禁区"
+say('### 4c. 距离口径：纵深把 18% 的极低质量射门算进"禁区"\n');
+{
+  const boxAll = shots.filter((r) => r.depth_m <= BOX_DIST_M && !r.isHeader);
+  const wide = boxAll.filter((r) => r.euclid_m > BOX_DIST_M);
+  const st1 = statsOf(boxAll); const st2 = statsOf(wide);
+  say(`「纵深在禁区内、但**欧氏** >16.5m」的射门 = **${wide.length.toLocaleString()} 次**`);
+  say(`（占禁区内射门的 ${pct(wide.length / boxAll.length)}）—— 这批是**贴近底线的极小角度射门**：\n`);
   say('| 子集 | n | on-target | conv |');
   say('|---|---|---|---|');
-  say(`| 禁区内全部 | ${st1.n.toLocaleString()} | ${pct(st1.sotRate)} | ${f3(st1.convOnTarget)} |`);
+  say(`| 禁区内全部（排头球） | ${st1.n.toLocaleString()} | ${pct(st1.sotRate)} | ${f3(st1.convOnTarget)} |`);
   say(`| 其中「欧氏 >16.5m」（小角度） | ${st2.n.toLocaleString()} | ${pct(st2.sotRate)} | ${f3(st2.convOnTarget)} |`);
   say('');
-  say('> **这正是 #102 §2.3B 口径错配的来源**：纵深口径的"禁区内"包含一大批**极低质量**的小角度射门，');
-  say('> 把 on-target 率**稀释**。→ 引擎若要用"距离"当质量输入，**欧氏比纵深更合适**；');
-  say('> 但**对接引擎的现有桶带**（它是纵深分的）必须用纵深口径。**两者不可混用**（#102 的教训）。');
+  say('> **对引擎的启示**：若要用"距离"当射门质量的**输入**，**欧氏比纵深更合适**');
+  say('> （纵深把约 18% 的极低质量射门算进了"禁区"，稀释质量信号）；');
+  say('> 但**对接引擎现有的桶带**（按纵深分）**必须用纵深口径**。两者不可混用。');
   say('');
 }
 
@@ -333,7 +384,10 @@ say('## 4. ⚠ 两个口径为什么给出不同结论（#102 §2.3B 的根因�
 // **那三个"真实值"的来源是那份研究报告，不是大样本实测**——本节用 StatsBomb 复核它们。
 say('## 4b. ★ 复核引擎 L3 的三条参考带（`realism.rs:944-954`）\n');
 say('> 引擎注释引的是"report.md §五"的三个数（射正 ~33% / 转化 ~10% / 禁区内进球 ~85%）。');
-say('> 本节的真实值 = 同一份 StatsBomb 样本按**同一口径**重算（与引擎同口径：纵深分桶 + blocked 不算 on-target）。\n');
+say('> 本节的真实值 = 同一份 StatsBomb 样本按**同一口径**重算。');
+say('> ⚠ **本节含头球是对的**（`realism.rs:939` 的 `shots = regular + header`），');
+say('> 与 §1/§2 的桶带口径（**排头球**，`n_box_*` 只在非头球分支累加）**相反**。');
+say('> 同一份报告里两处口径不同，是因为引擎这两处统计本身就不同。\n');
 const l3Check = (() => {
   const n = shots.length;
   const goals = shots.filter((r) => r.cls === 'goal').length;
@@ -392,6 +446,31 @@ say('## 6. 逐赛事稳健性（禁区内 conv，样本 ≥200 的赛事）\n');
 }
 
 // ── 落盘（聚合派生量，可入库）──────────────────────────────────────────
+// 欧氏曲线（与 §3 的纵深曲线同构，供报告自动生成）
+const euclidCurve = [];
+for (let i = 0; i < EU_EDGES.length - 1; i += 1) {
+  const lo = EU_EDGES[i]; const hi = EU_EDGES[i + 1];
+  const rows = shots.filter((r) => r.euclid_m >= lo && r.euclid_m < hi);
+  const st = statsOf(rows);
+  if (st.n) euclidCurve.push({ euclidLo: lo, euclidHi: hi === 200 ? null : hi, n: st.n, onTarget: st.onTarget, goal: st.goal, conv: st.convOnTarget, ci: [st.convLo, st.convHi] });
+}
+// 逐赛事（禁区内，样本 ≥200），供报告自动生成
+const perComp = [];
+{
+  const byComp = new Map();
+  for (const r of noHeader(shots.filter((r) => r.depth_m <= BOX_DIST_M))) {
+    if (!byComp.has(r.comp)) byComp.set(r.comp, []);
+    byComp.get(r.comp).push(r);
+  }
+  for (const [comp, rs] of byComp) {
+    const st = statsOf(rs);
+    if (st.n >= 200) perComp.push({ comp, n: st.n, conv: st.convOnTarget, ci: [st.convLo, st.convHi] });
+  }
+  perComp.sort((a, b) => b.n - a.n);
+}
+const pcMean = perComp.reduce((s, c) => s + c.conv, 0) / perComp.length;
+const pcSd = Math.sqrt(perComp.reduce((s, c) => s + (c.conv - pcMean) ** 2, 0) / perComp.length);
+
 const artifact = {
   note: 'StatsBomb Open Data 的**聚合派生量**（分箱计数 + CI），非逐条数据。许可：非商用/禁再分发原始数据/须署名 StatsBomb。',
   generatedBy: 'openspec/changes/p38-formation-realism/notes/probes-main/probe-shot-conversion-real.mjs',
@@ -407,6 +486,9 @@ const artifact = {
   buckets: bucketStats,
   l3CrossCheck: l3Check,
   curve: curve.map((c) => ({ depthLo: c.lo, depthHi: c.hi === 200 ? null : c.hi, n: c.n, onTarget: c.onTarget, goal: c.goal, conv: c.convOnTarget, ci: [c.convLo, c.convHi] })),
+  euclidCurve,
+  perComp, perCompMean: pcMean, perCompSd: pcSd,
+  perCompMin: Math.min(...perComp.map((c) => c.conv)), perCompMax: Math.max(...perComp.map((c) => c.conv)),
 };
 writeFileSync(join(OUT_DIR, 'real-shot-conversion.json'), JSON.stringify(artifact, null, 1));
 say(`→ out/real-shot-conversion.json（聚合派生量，可入库）`);
