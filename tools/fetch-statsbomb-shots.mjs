@@ -252,6 +252,17 @@ async function main() {
   // 全部场（不只本轮下的），含字节数与 sha256 —— 换机器重跑后若样本变了，哈希就变。
   const { createHash } = await import('node:crypto');
   const present = readdirSync(EV_DIR).filter((f) => f.endsWith('.json')).sort();
+  // ⚠ **自检：本次"应该有的"集合 vs 盘上实际集合**（审阅发现：历史上的样本是
+  // 多次运行累积的，与任何单次 --limit 的确定性输出都不一致，导致不可复现）。
+  const wantSet = new Set(want.map((m) => `${m.match_id}.json`));
+  const extra = present.filter((f) => !wantSet.has(f));
+  const missing = [...wantSet].filter((f) => !present.includes(f));
+  if (extra.length || missing.length) {
+    console.warn(`\n⚠ 样本与本次 --limit ${want.length} 的确定性输出不一致：`);
+    console.warn(`   多出 ${extra.length} 场（历次累积）、缺少 ${missing.length} 场。`);
+    console.warn('   **报告里的数字只对 manifest 记录的这一份样本负责。**');
+    console.warn('   要得到与 --limit 严格一致的样本：清空 events/ 后重跑。');
+  }
   const manifest = present.map((f) => {
     const mid = f.replace(/\.json$/, '');
     const buf = readFileSync(join(EV_DIR, f));
@@ -265,7 +276,7 @@ async function main() {
     console.warn(`⚠ ${failed.length} 场失败（重跑本脚本即可续传）：${failed.slice(0, 10).join(', ')}${failed.length > 10 ? ' …' : ''}`);
   }
   console.log('\n下一步：node openspec/changes/p38-formation-realism/notes/probes-main/probe-shot-conversion-real.mjs');
-  process.exitCode = failed.length ? 0 : 0;
+  process.exitCode = failed.length ? 1 : 0;   // 有失败则非零退出（自动化调用方可察觉）
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) await main();

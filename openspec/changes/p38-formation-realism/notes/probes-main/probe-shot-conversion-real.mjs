@@ -65,17 +65,23 @@ if (!existsSync(EV_DIR)) {
 
 // ── 装载：逐场抽射门（只读聚合，不留原始数据）────────────────────────────
 //
-// StatsBomb 的 shot outcome 取值（实测）：
+// StatsBomb 的 shot outcome 取值（实测 8 种，全部覆盖）：
 //   Goal / Saved / Saved to Post / Saved Off Target / Blocked / Off T / Wayward / Post
-// 引擎口径：
-//   goal     = Goal
-//   saved    = Saved*（门将扑到）—— ⚠ `Saved to Post`/`Saved Off Target` 也算 saved
-//   off      = Off T / Wayward / Post（打偏/打飞/中柱未进）
-//   blocked  = Blocked（**不算 on-target**，与引擎一致）
+//
+// ⚠⚠ **`Saved Off Target` 不是 on-target**（StatsBomb Open Data Spec v1.1 / Glossary：
+// "saved by the goalkeeper **but was not on target**"）。第一版用 `startsWith('Saved')`
+// 把它一锅端进 `saved` —— **错**（本样本 33 脚，禁区 19 / 远射 10）。
+// 官方 on-target = {Goal, Saved, Saved to Post}（`Saved to Post` 也算中柱/on-target）。
+//
+// 引擎口径（`engine/src/lib.rs:3170-3176` **只有三个 outcome，没有 blocked**）：
+//   goal    = Goal
+//   saved   = Saved / Saved to Post        ← on-target 的那两种
+//   off     = Off T / Wayward / Post / Saved Off Target   ← 打偏/打飞/中柱未进/扑偏
+//   blocked = Blocked（StatsBomb 单列，**引擎没有这一态** → 计入 off，见 §4b）
 const classify = (outcome) => {
   if (outcome === 'Goal') return 'goal';
   if (outcome === 'Blocked') return 'blocked';
-  if (outcome && outcome.startsWith('Saved')) return 'saved';
+  if (outcome === 'Saved' || outcome === 'Saved to Post') return 'saved';
   return 'off';
 };
 
@@ -107,6 +113,7 @@ for (const f of files) {
       mid, comp: compOf.get(mid) || '?',
       x, y, depth_m, euclid_m, cls,
       onTarget: cls === 'goal' || cls === 'saved',
+      woodwork: outcome === 'Post' || outcome === 'Saved to Post',
       xg: typeof s.statsbomb_xg === 'number' ? s.statsbomb_xg : null,
       body: (s.body_part || {}).name || null,
       technique: (s.technique || {}).name || null,
@@ -212,18 +219,43 @@ say('> **问题**（`conversion-adaptive.md` §2.3B）：真实禁区内 on-targ
 say('> L1 门（`realism.rs:659-661`）声明禁区内 `goal ∈ [0.10,0.20]` + `saved ∈ [0.24,0.36]`');
 say('> → **on-target 上界 = 0.20 + 0.36 = 0.56**。\n');
 {
-  const st = bucketStats['禁区内 ≤16.5m'];
   const upper = 0.20 + 0.36;
-  const clash = st.sotLo > upper;
-  say(`| 量 | 值 |`);
-  say(`|---|---|`);
-  say(`| 真实禁区内 on-target（**纵深口径**，n=${st.n.toLocaleString()}） | **${f3(st.sotRate)}**，95% CI **[${f3(st.sotLo)}, ${f3(st.sotHi)}]** |`);
-  say(`| L1 门允许上界（goal 0.20 + saved 0.36） | **${f3(upper)}** |`);
-  say(`| 判定 | ${clash ? '❌ **冲突**：CI 下界 > 上界' : (st.sotHi < upper ? '✅ **不冲突**：CI 上界 < 门的上界' : '⚠️ **仍不可判定**：CI 跨过边界')} |`);
+  const box = shots.filter((r) => r.depth_m <= BOX_DIST_M);
+  // ⚠⚠ **两个 on-target 口径必须分开报**（审阅发现的头条错误）：
+  //   · 引擎口径（`realism.rs:947` 的 `sot_r`）= `(goal + saved) / n`，blocked 在分母里
+  //   · **#102 的口径**（`conversion-adaptive.md` §2.2 的 † 脚注）
+  //     = `(goal + saved + woodwork) / (n − blocked)`，**封堵不进分母**
+  // 第一版只报引擎口径、却把它当成在判定 #102 的悬案 —— **换了被测量的定义**。
+  // 同一份数据在两个口径下给出**相反**的判定（引擎口径 0.42 远低于 0.56；
+  // #102 口径 0.563 **跨过** 0.56）。故两个都报。
+  const n = box.length;
+  const g = box.filter((r) => r.cls === 'goal').length;
+  const sv = box.filter((r) => r.cls === 'saved').length;
+  const bl = box.filter((r) => r.cls === 'blocked').length;
+  const wood = box.filter((r) => r.woodwork).length;
+  const eSot = (g + sv) / n;                 // 引擎口径
+  const eCI = wilson(g + sv, n);
+  const cSot = (g + sv + wood) / (n - bl);   // #102 † 口径
+  const cCI = wilson(g + sv + wood, n - bl);
+  const verdict = (lo, hi) => (hi < upper ? '✅ **不冲突**（CI 上界 < 上界）'
+    : (lo > upper ? '❌ **冲突**（CI 下界 > 上界）' : '⚠️ **仍不可判定**（CI 跨过边界）'));
+  say('| on-target 口径 | 公式 | 值 | 95% CI | 判定 vs 0.56 |');
+  say('|---|---|---|---|---|');
+  say(`| **引擎口径**（\`realism.rs:947\`） | (goal+saved)/n | **${f3(eSot)}** | [${f3(eCI[0])}, ${f3(eCI[1])}] | ${verdict(eCI[0], eCI[1])} |`);
+  say(`| **#102 口径**（\`conversion-adaptive.md\` §2.2 †） | (goal+saved+wood)/(n−blocked) | **${f3(cSot)}** | [${f3(cCI[0])}, ${f3(cCI[1])}] | ${verdict(cCI[0], cCI[1])} |`);
   say('');
-  say(`> **#102 §2.3B 的结论更新**：当时用 Metrica 2–3 场得 CI [0.553, 0.868]，`);
-  say(`> 跨过 0.56 → 不可判定。现在 **${st.n.toLocaleString()} 次射门**把 CI 压到宽 **${f3(st.convW)}**，`);
-  say(`> 与门的上界 ${f3(upper)} 的关系如上一行。`);
+  say(`> ⚠⚠ **头条结论取决于口径，务必连口径一起引**：`);
+  say(`> · 按**引擎口径**：${f3(eSot)} 远低于 0.56 → 不冲突；`);
+  say(`> · 按 **#102 自己的口径**（它是那个悬案的提出者）：${f3(cSot)}，CI [${f3(cCI[0])}, ${f3(cCI[1])}]`);
+  say(`>   → **仍跨过 0.56，即仍是"不可判定"**（点估计只差 0.003，样本再大也判不了）。`);
+  say('');
+  say(`> **#102 §2.3B 的结论更新**：当时用 Metrica 2–3 场得 CI [0.553, 0.868]（宽 0.315）；`);
+  say(`> 现在 **${n.toLocaleString()} 次射门**把 **#102 口径**的 CI 压到宽 **${f3(cCI[1] - cCI[0])}**——`);
+  say(`> **变窄了 8 倍，但中心值也移动了**（0.741 → ${f3(cSot)}），`);
+  say(`> 所以"跨过 0.56"这个状态**没有改变**，只是从"样本不足"变成了"点估计就压在边界上"。`);
+  say('');
+  say('> **两个口径的差从哪来**（合起来 14pp）：中柱进分子（+2.5pp）、**封堵出分母（+11.4pp）**。');
+  say('> 后者是主因——它把分母从 6067 缩到 4797。');
   say('');
 }
 // 顺带：引擎三桶的实际 on-target vs 真实
@@ -368,7 +400,8 @@ const artifact = {
     coordinateSystem: 'StatsBomb 120x80 → 纵深米 = (120-x)/120*105',
     depth: 'x-only（与引擎 dist_to_goal_m 同口径）',
     euclid: '到球门中心（对照，非引擎口径）',
-    onTarget: 'goal + saved*（blocked 不算）—— 与 engine/tests/realism.rs:947 一致',
+    onTarget: '引擎口径 = goal + Saved + Saved to Post；Blocked 计入分母但不计入分子（engine/tests/realism.rs:947 的 sot_r）。⚠ 与 #102 §2.2 的 † 口径（含中柱、且封堵不进分母）不同——见 §2 两口径对照',
+    offTargetEngine: '引擎只有 goal/saved/off_target 三态（无 blocked），故 off = StatsBomb 的 off + Blocked',
     engineBuckets: { boxDist: BOX_DIST_M, arcDist: ARC_DIST_M },
   },
   buckets: bucketStats,
