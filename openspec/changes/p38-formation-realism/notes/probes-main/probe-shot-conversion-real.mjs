@@ -278,8 +278,15 @@ say('> → **on-target 上界 = 0.20 + 0.36 = 0.56**。\n');
   say(`> **变窄了 11.2 倍，但中心值也移动了**（0.741 → ${f3(cSot)}），`);
   say(`> 所以"跨过 0.56"这个状态**没有改变**，只是从"样本不足"变成了"点估计就压在边界上"。`);
   say('');
-  say('> **两个口径的差从哪来**（合起来 14pp）：中柱进分子（+2.5pp）、**封堵出分母（+11.4pp）**。');
-  say('> 后者是主因——它把分母从 6067 缩到 4797。');
+  const s0 = (g + sv) / n;
+  const s1 = (g + sv + wood) / n;
+  const s2 = (g + sv + wood) / (n - bl);
+  const s1b = (g + sv) / (n - bl);
+  say(`> **两个口径的差从哪来**（合计 **+${((s2 - s0) * 100).toFixed(1)}pp**）：`);
+  say(`> 按"先加中柱、再缩分母"：中柱进分子 **+${((s1 - s0) * 100).toFixed(1)}pp**、`);
+  say(`> **封堵出分母 +${((s2 - s1) * 100).toFixed(1)}pp**（分母 ${n} → ${n - bl}）。`);
+  say(`> ⚠ 分解**路径依赖**：换顺序得 +${((s1b - s0) * 100).toFixed(1)}pp / +${((s2 - s1b) * 100).toFixed(1)}pp，`);
+  say(`> 两种顺序相差约 ${(Math.abs((s2 - s1) - (s1b - s0)) * 100).toFixed(1)}pp。**报告时应注明顺序。**`);
   say('');
 }
 // 顺带：引擎三桶的实际 on-target vs 真实
@@ -333,20 +340,34 @@ for (let i = 0; i < EU_EDGES.length - 1; i += 1) {
 say('');
 
 // ── 4. 两口径为什么不同 ─────────────────────────────────────────────────
-say('## 4. ⚠ 三个口径维度：谁是「#102 翻车」的主因？\n');
+say('## 4. ⚠ 三个口径维度：新样本下的灵敏度比较\n');
 say('> #102 §2.3B 的结论涉及**三个独立的分类选择**。把它们分开算（同一份禁区内射门）：\n');
 {
-  const A = { eng: [0.4481, 0.4339, 0.4623], c102: [0.6224, 0.6064, 0.6381] };  // 排头球
+  // ⚠ **全部口径必须一致：一律排头球**（与 §1/§2 同）。
+  // 第一版把欧氏行写成含头球（0.436/0.574）而同表 A 行是排头球——**口径混排**，
+  // 且使"B 最多动 1.6pp"低估（实为 3.0pp）。第二轮审阅发现，已改。
+  const rate = (rows) => {
+    const n = rows.length;
+    const g = rows.filter((r) => r.cls === 'goal').length;
+    const sv = rows.filter((r) => r.cls === 'saved').length;
+    const wd = rows.filter((r) => r.woodwork).length;
+    const bl = rows.filter((r) => r.cls === 'blocked').length;
+    return { n, eng: (g + sv) / n, c102: (g + sv + wd) / (n - bl) };
+  };
+  const Rdepth = rate(noHeader(shots.filter((r) => r.depth_m <= BOX_DIST_M)));
+  const Reuclid = rate(noHeader(shots.filter((r) => r.euclid_m <= BOX_DIST_M)));
+  const RinBox = rate(shots.filter((r) => r.depth_m <= BOX_DIST_M));   // 含头球
+  const dd = (a, b) => `${(Math.abs(a - b) * 100).toFixed(1)}pp`;
   say('| 维度 | 选项 | 引擎口径 | #102 口径 |');
   say('|---|---|---|---|');
-  say(`| **A. on-target 公式**（**排头球**） | 引擎 \`(g+saved)/n\` vs #102 \`(g+saved+wood)/(n−blocked)\` | ${f3(A.eng[0])} ✅ | ${f3(A.c102[0])} ❌ |`);
-  say(`| **C. 头球**（引擎桶带看不到头球） | 排头球 vs 含头球 | 0.448 vs 0.420 | **0.622 vs 0.563** |`);
-  say(`| **B. 距离口径** | 纵深 ≤16.5 vs 欧氏 ≤16.5 | 0.448 vs 0.436 | 0.622 vs 0.574 |`);
+  say(`| **A. on-target 公式**（**排头球**） | 引擎 \`(g+saved)/n\` vs #102 \`(g+saved+wood)/(n−blocked)\` | ${f3(Rdepth.eng)} ✅ | ${f3(Rdepth.c102)} ❌ |`);
+  say(`| **C. 头球**（引擎桶带看不到头球） | 排头球 vs 含头球 | ${f3(Rdepth.eng)} vs ${f3(RinBox.eng)} | ${f3(Rdepth.c102)} vs ${f3(RinBox.c102)} |`);
+  say(`| **B. 距离口径**（**都排头球**） | 纵深 ≤16.5（n=${Rdepth.n}） vs 欧氏 ≤16.5（n=${Reuclid.n}） | ${f3(Rdepth.eng)} vs ${f3(Reuclid.eng)} | ${f3(Rdepth.c102)} vs ${f3(Reuclid.c102)} |`);
   say('');
-  say('**灵敏度**（在新样本 n≈4709 上各维度能移动多少）：');
-  say('- **A（on-target 公式）：14.3pp** ← 最大');
-  say('- **C（头球）：2.8pp**（引擎口径）/ **5.9pp**（#102 口径）');
-  say('- **B（纵深 vs 欧氏）：1.1–1.6pp** ← 最小');
+  say('**灵敏度**（各维度能移动多少——括号内是"换成另一选项后差值变化"）：');
+  say(`- **A（on-target 公式）：${dd(Rdepth.eng, Rdepth.c102)}** ← 最大`);
+  say(`- **C（头球）：${dd(Rdepth.eng, RinBox.eng)}**（引擎口径）/${dd(Rdepth.c102, RinBox.c102)}（#102 口径）`);
+  say(`- **B（纵深 vs 欧氏）：${dd(Rdepth.eng, Reuclid.eng)}**（引擎口径）/${dd(Rdepth.c102, Reuclid.c102)}（#102 口径）← 最小`);
   say('');
   say('> ⚠⚠ **但这不等于"#102 翻车的错因是 A"**（第二轮审阅指出，我复算确认）：');
   say('> #102 用的是 **n=30** 的 Metrica 样本。做个最简反事实——');
