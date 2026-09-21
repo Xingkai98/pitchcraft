@@ -31,7 +31,7 @@ const meta = await buildPanel({ stride: 10 });
 const nUnits = meta.units.length;
 
 say('# #101 探针 1：横向位置的候选驱动（可解释性阶梯）\n');
-say(`样本：SkillCorner **${C.skillcorner20Ids().length} 场**（P38 #90 是 6 场），2Hz 有效采样（stride=10，源 10fps）。`);
+say(`样本：SkillCorner **${C.skillcorner20Ids().length} 场**（P38 #90 是 6 场），面板 **0.5Hz（Δt = 2.0s）**：源 10fps → 产物 5Hz → stride 10。`);
 say(`面板：**${meta.nRows.toLocaleString()}** 人·采样点，「场·队·人」单元 **${nUnits}** 个，${meta.nFrames.toLocaleString()} 帧·场采样点。`);
 say('因变量主口径 = `y_i − mateY`（留一队友重心），即**个体相对队友的横向位置**。');
 say('聚合 = 逐单元回归后跨单元平均（P38 口径，绝不跨场拼接）。\n');

@@ -11,10 +11,13 @@
 // 后果：报出 75.2% / 88.3%，据此**错误地否定了第一轮审阅者的 0.539 / 0.824**——
 // 审阅者是对的。本版改为按 `row[IDX.unit]` 累积，真值 **57.8% / 82.4%**。
 //
-// ── 顺带给出一个可推导的恒等 ────────────────────────────────────────────
-// 逐人回归的**截距就是该人的均值**，它从 SST 里被扣掉，故
-//     `MoP R² ≡ B / (B + C)`
-// 数值验证见输出末尾。这条把 §5 与 §2 打通（第一版误写成"不可对应"）。
+// ── 两者的关系是近似，不是恒等式 ────────────────────────────────────────
+// `B/(B+C)` = **共享 β** 的**比值之比**；`MoP` = **逐人 β** 的**比值之均值**。
+// 二者只在"SST 跨人齐性 + β 齐性"时相等。实测：7 因子差 −0.21pp（巧合抵消）、
+// 14 因子差 **+3.40pp**（真实差距量级）。
+// ⚠ 本文件第二版曾把它写成 `MoP R² ≡ B/(B+C)`——**第三轮审阅实测证伪**，已改。
+// ⚠ 第二版还把 14 因子的 3.4pp 缺口解释为"成列删除与加权"——**错**：
+//   (a)(b) 读的是同一批 byPerson 行，不存在行集差异。
 //
 // 运行：node issue101-8-aggregation.mjs
 // 产出：out/101-8-aggregation.txt
@@ -52,9 +55,8 @@ const summary = [];
 for (const [label, CTX] of Object.entries(SETS)) {
   const ctxF = CTX.map((n) => P.FACTORS.find((f) => f.name === n));
   const cols = ctxF.map((f) => f.col);
-  // 按两种单元同时收集：byPerson（「场·队·人」）、byTeam（「场·队」，供 pooled 的固定效应）
+  // 按「场·队·人」单元收集；pooled 的"队"由 `bp.team` 字段在下方重建
   const byPerson = new Map();
-  const byTeam = new Map();
   await P.readPanel((row) => {
     const y = row[P.IDX.y]; if (!Number.isFinite(y)) return;
     const xs = [];
@@ -73,14 +75,7 @@ for (const [label, CTX] of Object.entries(SETS)) {
 
   // ── (a) pooled（§5 口径）：组内去均值（个人固定效应）后回归 devY ──
   {
-    // 先按「场·队」重组
-    for (const [, bp] of byPerson) {
-      if (!byTeam.has(bp.team)) byTeam.set(bp.team, { u: [], X: [], y: [] });
-      const bt = byTeam.get(bp.team);
-      // 需要 person 标签做组内去均值：用 team 内的行序不行，故从 byPerson 的 key 拿
-      void bt;
-    }
-    // 直接在所有「场·队·人」上做：组内去均值 = 减去该 person 的均值
+    // 组内去均值 = 减去该 person 的均值（person 即 byPerson 的 key）
     let A_sum = 0, dev_sum = 0, ctx_sum = 0, N = 0;
     const teamGroups = new Map();
     for (const [k, bp] of byPerson) {
@@ -160,14 +155,14 @@ for (const [label, CTX] of Object.entries(SETS)) {
   say(`/ B 情境响应 **${(100 * B / (pooledA + pooledDev)).toFixed(1)}%** / C 个体残差 **${(100 * Cc / (pooledA + pooledDev)).toFixed(1)}%**`);
   say(`→ 可解释份额 (A+B)/总 = **${(100 * pooledExplained).toFixed(1)}%**\n`);
   say(`**mean-of-per-person**（§2 口径）：**${(100 * mop).toFixed(1)}%**（${rs.length} 个「场·队·人」单元）\n`);
-  say(`> **恒等式**：逐人回归的截距就是该人的均值（已从 SST 扣除），故 \`MoP R² ≡ B/(B+C)\`。`);
-  say(`> 本因子集 B/(B+C) = ${C.f2(B, 3)}/${C.f2(B + Cc, 3)} = **${(100 * B / (B + Cc)).toFixed(1)}%**，实测 MoP = **${(100 * mop).toFixed(1)}%**。`);
+  say(`> **两者的关系是近似，不是恒等式**（第三轮实测证伪了第二轮的 \`MoP ≡ B/(B+C)\`）：`);
+  say(`> \`B/(B+C)\` = **共享 β** 的**比值之比**；\`MoP\` = **逐人 β** 的**比值之均值**。`);
+  say(`> 本因子集 B/(B+C) = ${C.f2(B, 3)}/${C.f2(B + Cc, 3)} = **${(100 * B / (B + Cc)).toFixed(2)}%**，实测 MoP = **${(100 * mop).toFixed(2)}%**，差 **${(100 * (mop - B / (B + Cc))).toFixed(2)}pp**。`);
   say(`> ⚠ 故 pooled 的"可解释份额"（${(100 * pooledExplained).toFixed(1)}%）与 MoP（${(100 * mop).toFixed(1)}%）**不是同一个量**：`);
   say(`> 前者含 A（个人固定效应），后者**不含**——MoP 只对应 B/(B+C)。`);
   say('');
   summary.push({ label, pooledExplained, mop, B, C: Cc, pooledA, pooledDev });
 
-  void byTeam;
 }
 
 say('## 结论\n');
@@ -181,9 +176,9 @@ for (const s of summary) {
 say('');
 say('> **读法**：两个口径**回答不同问题**，不是同一量的两种算法：');
 say('> - `pooled` 把**个人固定效应（A）**算进"可解释"，给出 A/B/C 三层。');
-say('> - `MoP` 的截距吸收了 A，故它 **≡ B/(B+C)**，只回答"扣掉个人档位后，情境能解释多少"。');
+say('> - `MoP` 的截距吸收了 A，故它**近似** B/(B+C)（本数据 7 因子差 −0.21pp、14 因子差 +3.40pp），');
 say('> - 因此"聚合差"不是一个有意义的量；有意义的是 **A+B**（pooled，81.7%）与');
-say('>   **B/(B+C)**（MoP 对应量，58.0%）——两者差的就是 A。');
+say('>   只回答"扣掉个人档位后，情境能解释多少"；对应量 **B/(B+C)**（58.0%）。');
 say('');
 say('> ⚠ **本探针第一版报的 75.2% / 88.3% 是错的**（循环 `byTeam` 而非 `byPerson`，');
 say('> 40 单元而非 400；且 (a) 列误写成 B/总）。第一轮审阅者的 **0.824（14 因子）在新口径下正确**；');

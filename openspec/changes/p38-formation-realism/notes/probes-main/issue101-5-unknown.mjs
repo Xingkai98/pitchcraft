@@ -28,6 +28,19 @@ import * as C from './issue101-common.mjs';
 import * as Q from './q90-common.mjs';
 import { buildPanel, readPanel, FACTORS, IDX } from './issue101-panel.mjs';
 
+function solveRidge2(A, b, K, lambda) {
+  const M = new Float64Array(K * (K + 1));
+  for (let i = 0; i < K; i += 1) { for (let j = 0; j < K; j += 1) M[i * (K + 1) + j] = A[i * K + j] + (i === j ? lambda : 0); M[i * (K + 1) + K] = b[i]; }
+  for (let c = 0; c < K; c += 1) {
+    let p = c; for (let r = c + 1; r < K; r += 1) if (Math.abs(M[r * (K + 1) + c]) > Math.abs(M[p * (K + 1) + c])) p = r;
+    if (Math.abs(M[p * (K + 1) + c]) < 1e-14) return null;
+    if (p !== c) for (let j = c; j <= K; j += 1) { const t = M[c * (K + 1) + j]; M[c * (K + 1) + j] = M[p * (K + 1) + j]; M[p * (K + 1) + j] = t; }
+    const d = M[c * (K + 1) + c]; for (let j = c; j <= K; j += 1) M[c * (K + 1) + j] /= d;
+    for (let r = 0; r < K; r += 1) { if (r === c) continue; const f = M[r * (K + 1) + c]; if (f === 0) continue; for (let j = c; j <= K; j += 1) M[r * (K + 1) + j] -= f * M[c * (K + 1) + j]; }
+  }
+  const o = new Float64Array(K); for (let i = 0; i < K; i += 1) o[i] = M[i * (K + 1) + K]; return o;
+}
+
 const lines = [];
 const say = (s = '') => { lines.push(s); console.log(s); };
 mkdirSync(C.OUT_DIR, { recursive: true });
@@ -168,8 +181,9 @@ say('## 5.3 补测：球的速度方向能不能加解释力\n');
 say('> 球速是最容易补的遗漏候选（位置已有，差分即得）。这里实测它的增量。\n');
 
 // 需要帧间的球位置 → 回到原始帧序列算
-// ⚠ 采样密度：面板是 5Hz 源每 2 帧取 1（=2Hz，Δt=0.4s）。这里用**每一帧**（10fps，
-// Δt=0.2s），因为要算速度。第一版 `i += 10` 导致 Δt=1.0s 正好卡在上限外 → 样本为 0。
+// ⚠ 采样密度：这里**绕开面板**，直接用产物帧序列（5Hz、Δt=0.2s）算速度——
+// 面板是 stride=10 抽的（Δt=2.0s），太稀，算不了帧间速度。
+// 第一版 `i += 10` 遍历产物导致 Δt=1.0s 正好卡在上限外 → 样本为 0（已修）。
 function ballVelRows(ids) {
   const out = [];
   for (const id of ids) {
@@ -199,7 +213,7 @@ function ballVelRows(ids) {
   return out;
 }
 const bv = ballVelRows(ids);
-say(`球速样本：**${bv.length.toLocaleString()}** 帧·队（10fps，Δt=0.2s，剔除球外推帧）\n`);
+say(`球速样本：**${bv.length.toLocaleString()}** 帧·队（产物 5Hz、Δt=0.2s，剔除球外推帧）\n`);
 
 // 球速两分量之间的耦合（作为"补一个球速候选值不值"的筛子）
 const acVx = C.univariateByUnit(bv.map((r) => ({ key: r.key, x: r.vby, y: r.vbx })), 200);
@@ -213,5 +227,98 @@ say('> **读法**：球速是**位置的时间导数**，与球位高度共线�
 say('> 再加球速的**独立**信息有限。故本轮结论：**球速不是被遗漏的关键驱动**。');
 say('> 若要正式排除，应在探针 1 的框架里加 `ballVy` 因子看它的 unique R²（留作后续工作）。\n');
 
+
+// ── 5.1b 残差的时间结构（报告 §2.2/§5.6 引用的"残差 slow 20.3%"的产物）──────
+//
+// 动机：#101 报告多处引用"对**残差**做 slow/fast 分解，slow 只占 20.3%"，
+// 但第三轮审阅指出**全仓无产物**（20.3 只出现在探针 9 的一个不相干格子里）。
+// 本节把那个数真正算出来并落盘。
+//
+// 口径：残差 = §5 的 7 因子 pooled-with-FE 模型的 `devY − ŷ`（即 C 层）。
+// slow/fast 用与 §5.1 相同的居中滑动均值（窗 120s）。
+say('## 5.1b 残差的时间结构（"残差 slow 20.3%"的产物）\n');
+say('> 口径：残差 = §5 的 7 因子 pooled-with-FE 模型的 `devY − ŷ`（C 层）。\n');
+{
+  const CTX = ['ballY', 'ballDepth', 'phase', 'nearOppY', 'k3OppY', 'oppCy', 'ownX'];
+  const ctxF = CTX.map((n) => FACTORS.find((f) => f.name === n));
+  const cols = ctxF.map((f) => f.col);
+  const byTeam = new Map();
+  const meta2 = meta;
+  await readPanel((row) => {
+    const y = row[IDX.y]; if (!Number.isFinite(y)) return;
+    const xs = [];
+    for (let k = 0; k < cols.length; k += 1) {
+      const f = ctxF[k]; let v = row[f.col];
+      if (f.signed) v = v === 1 ? 1 : v === 0 ? -1 : NaN;
+      if (!Number.isFinite(v)) return;
+      xs.push(v);
+    }
+    const u = meta2.units[row[IDX.unit]];
+    const key = `${u.match}|${u.team}`;
+    if (!byTeam.has(key)) byTeam.set(key, { u: [], y: [], X: [] });
+    const b = byTeam.get(key); b.u.push(row[IDX.unit]); b.y.push(y); b.X.push(xs);
+  });
+  const F2 = cols.length; const K2 = F2 + 1;
+  const pooledRatios = []; const perPersonRatios = [];
+  for (const [, b] of byTeam) {
+    const n = b.y.length; if (n < 400) continue;
+    const byLabel = new Map();
+    for (let i = 0; i < n; i += 1) { if (!byLabel.has(b.u[i])) byLabel.set(b.u[i], []); byLabel.get(b.u[i]).push(b.y[i]); }
+    const lm = new Map([...byLabel].map(([l, arr]) => [l, C.mean(arr)]));
+    const devY = new Float64Array(n);
+    for (let i = 0; i < n; i += 1) devY[i] = b.y[i] - lm.get(b.u[i]);
+    const Xc = b.X.map((x) => Float64Array.from(x));
+    for (let f = 0; f < F2; f += 1) {
+      const m = new Map();
+      for (let i = 0; i < n; i += 1) { if (!m.has(b.u[i])) m.set(b.u[i], []); m.get(b.u[i]).push(Xc[i][f]); }
+      const mm = new Map([...m].map(([l, arr]) => [l, C.mean(arr)]));
+      for (let i = 0; i < n; i += 1) Xc[i][f] -= mm.get(b.u[i]);
+    }
+    const XtX = new Float64Array(K2 * K2), Xty = new Float64Array(K2);
+    for (let i = 0; i < n; i += 1) for (let a = 0; a < K2; a += 1) {
+      const xa = a === 0 ? 1 : Xc[i][a - 1];
+      for (let c = 0; c < K2; c += 1) XtX[a * K2 + c] += xa * (c === 0 ? 1 : Xc[i][c - 1]);
+      Xty[a] += xa * devY[i];
+    }
+    let tr = 0; for (let i = 0; i < K2; i += 1) tr += XtX[i * K2 + i];
+    const beta = solveRidge2(XtX, Xty, K2, 1e-6 * tr / K2); if (!beta) continue;
+    const resid = new Float64Array(n);
+    for (let i = 0; i < n; i += 1) { let p = beta[0]; for (let f = 0; f < F2; f += 1) p += beta[f + 1] * Xc[i][f]; resid[i] = devY[i] - p; }
+    // 池化（比值之比）
+    const half = WIN >> 1;
+    const pre = new Float64Array(n + 1);
+    for (let i = 0; i < n; i += 1) pre[i + 1] = pre[i] + resid[i];
+    const slow = new Float64Array(n);
+    for (let i = 0; i < n; i += 1) { const a = Math.max(0, i - half); const bb = Math.min(n, i + half + 1); slow[i] = (pre[bb] - pre[a]) / (bb - a); }
+    const mu = C.mean(resid);
+    const vt = C.mean([...resid].map((v) => (v - mu) ** 2));
+    const vs = C.mean([...slow].map((v) => (v - mu) ** 2));
+    if (vt > 1e-12) pooledRatios.push(vs / vt);
+    // 逐人（比值之均值）
+    const byP = new Map();
+    for (let i = 0; i < n; i += 1) { if (!byP.has(b.u[i])) byP.set(b.u[i], []); byP.get(b.u[i]).push(resid[i]); }
+    for (const arr of byP.values()) {
+      const m = arr.length; if (m < 100) continue;
+      const mm2 = C.mean(arr);
+      const pr = new Float64Array(m + 1);
+      for (let i = 0; i < m; i += 1) pr[i + 1] = pr[i] + arr[i];
+      const sl = new Float64Array(m); const h = WIN >> 1;
+      for (let i = 0; i < m; i += 1) { const a = Math.max(0, i - h); const bb = Math.min(m, i + h + 1); sl[i] = (pr[bb] - pr[a]) / (bb - a); }
+      const vtt = C.mean(arr.map((v) => (v - mm2) ** 2));
+      if (vtt <= 1e-12) continue;
+      perPersonRatios.push(C.mean([...sl].map((v) => (v - mm2) ** 2)) / vtt);
+    }
+  }
+  say(`| 口径 | 残差的 slow 占比 | 单元数 |`);
+  say(`|---|---|---|`);
+  say(`| 池化（比值之比） | ${C.f2(100 * C.mean(pooledRatios), 1)}% | ${pooledRatios.length}（场·队） |`);
+  say(`| **逐人（比值之均值）** | **${C.f2(100 * C.mean(perPersonRatios), 1)}%** | ${perPersonRatios.length}（场·队·人） |`);
+  say('');
+  say('> **读法**：残差里 slow 只占 12–20%——**不是"大部分"**。');
+  say('> 故"未解释的那部分主要是慢漂移"的说法不成立（报告 §2.2/§5.6 已按此改写）。');
+  say('> 报告正文引用的 **20.3%** = 逐人口径（本表第二行）。\n');
+}
+
 writeFileSync(join(C.OUT_DIR, '101-5-unknown.txt'), lines.join('\n'));
+
 console.log(`\n→ ${join(C.OUT_DIR, '101-5-unknown.txt')}`);

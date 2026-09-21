@@ -50,7 +50,7 @@ say('> 逐「场·队」单元内分解（不跨场拼接）。先按人**组内
 // 原版 CTX 里含 `nearMateGap = y_i − y_最近队友` —— 它含 `y_i`，
 // 故回归能在"组内去均值之后"仍部分重构 devY（**泄漏进 B 层**）。
 // 现改为**只保留不含 y_i 的因子**。因子集敏感性（A/B/C 随 CTX 变化的实测）见报告 §5.1b
-// 与 `/tmp/set-scan.mjs`：B 在 **23.3–36.1%** 之间、C 在 **9.7–20.3%** 之间——
+// 与 `issue101-9-factor-sets.mjs`：B 在 **23.3–36.1%** 之间、C 在 **9.7–20.3%** 之间——
 // 纳入"队友/对手的位置"能把 B 抬到 36%、C 压到 11%。**报告采用本文件这组（B 25.3 / C 18.3）。**
 const CTX = ['ballY', 'ballDepth', 'phase', 'nearOppY', 'k3OppY', 'oppCy', 'ownX'];
 const ctxF = CTX.map((n) => FACTORS.find((f) => f.name === n));
