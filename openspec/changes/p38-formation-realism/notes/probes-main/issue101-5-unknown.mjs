@@ -35,13 +35,20 @@ mkdirSync(C.OUT_DIR, { recursive: true });
 const meta = await buildPanel({ stride: 10 });
 const ids = C.skillcorner20Ids();
 
+// 面板采样间隔（秒）。stride=10 × 源 0.2s = **2.0s**（实测 dt 众数 2.0，已核）。
+const SAMPLE_DT = 2.0;
+// slow/fast 分解的窗（采样点）。60 × 2.0s = **120s**。
+// ⚠ 这两个常量必须在使用前声明——第一版把 `const WIN` 放在 §5.1 的报告行之后，
+// 触发 TDZ（`Cannot access 'WIN' before initialization`），**整个脚本跑不起来**（审阅发现）。
+const WIN = 60;
+
 say('# #101 探针 5：仍然未知的部分\n');
 say(`面板：${meta.nRows.toLocaleString()} 行\n`);
 
 // ── 5.1 未解释方差的四路拆解 ────────────────────────────────────────────
 say('## 5.1 未能被候选驱动解释的方差，拆成四块\n');
 say('> 分层：对每个「场·队·人」，把 y 序列写成 `y_t = slow_t + fast_t`（slow 已含该单元的均值）。');
-say(`> \`slow\` 用**居中滑动窗口均值**（窗 ${WIN} 采样点 = ${WIN / 2}s）估计，\`fast\` = 残差。`);
+say(`> \`slow\` 用**居中滑动窗口均值**（窗 ${WIN} 采样点 = ${WIN * SAMPLE_DT}s）估计，\`fast\` = 残差。`);
 say('> 全部在单元内做，不跨场拼接。\n');
 
 // 逐单元收集（内存：单元 ≈ 20 场 × 2 队 × 10 人 = 400 个，每人 ~4500 采样点）
@@ -54,14 +61,17 @@ await readPanel((row) => {
   perUnit.get(u).push(y);
 });
 
-// 窗 60 采样点 @2Hz = 30s。
+// ⚠ **采样间隔是 2.0s，不是 0.5s**（面板 stride=10 × 源 0.2s；实测 dt 众数 = 2.0）。
+// 第一版的注释与输出把窗长写成 WIN/2 秒，**整体错了 4 倍**（审阅发现）。
+// 本文件一律按 `SAMPLE_DT = 2.0` 换算，避免再犯。
+//
+// 窗 60 采样点 = **120s**。
 //
 // ⚠ **slow 必须与 fast 正交**（第一版没管，两项相加 112%）。
 // 用**居中滑动均值**（两侧各 WIN/2）估计 slow：`slow_t = mean(y_{t-W/2..t+W/2})`，
 // 则 `fast_t = y_t − slow_t`，且 Σ fast·slow ≈ 0（对平稳序列），
 // 于是 Var(y) ≈ Var(slow) + Var(fast)（边缘按可用窗截断，不做零填充）。
 // 这是标准的"趋势–周期"分解口径（Hodrick–Prescott 的移动平均特例）。
-const WIN = 60;
 function decomposeUnit(ys) {
   const n = ys.length;
   if (n < 400) return null;
@@ -101,7 +111,7 @@ say(`分解恒等式：Var(y) = Var(slow) + Var(fast) + 2·(Cov(y,slow) − Var(
 say(`实测 Cov(y,slow) ${C.f2(vCovAll)} vs Var(slow) ${C.f2(vSlowAll)}（正交性自检）\n`);
 say(`| 块 | 方差 (m²) | 占单元内方差 | 自检 | 含义 |`);
 say(`|---|---|---|---|---|`);
-say(`| slow（窗 ${WIN} 采样点 = ${WIN / 2}s 的**居中**滑动均值） | ${C.f2(vSlowAll)} | **${(100 * vSlowAll / vTotAll).toFixed(1)}%** | — | 慢漂移（U2） |`);
+say(`| slow（窗 ${WIN} 采样点 = ${WIN * SAMPLE_DT}s 的**居中**滑动均值） | ${C.f2(vSlowAll)} | **${(100 * vSlowAll / vTotAll).toFixed(1)}%** | — | 慢漂移（U2） |`);
 say(`| fast（y − slow） | ${C.f2(vFastAll)} | **${(100 * vFastAll / vTotAll).toFixed(1)}%** | — | 快变化（U3 + 未被解释的情境） |`);
 say(`| 合计（单元内） | ${C.f2(vTotAll)} | 100% | ${C.f2(100 * (vSlowAll + vFastAll) / vTotAll, 1)}% | — |`);
 say('');
@@ -133,7 +143,7 @@ say(C.tsv(['窗长（采样点）', 'Var(slow) 占比', 'Var(fast) 占比', '合
       return { s: C.mean([...slow].map((v) => (v - mu) ** 2)) / vt, f: C.mean(ys.map((v, i) => (v - slow[i]) ** 2)) / vt };
     }).filter(Boolean);
     const s = 100 * C.mean(dec.map((d) => d.s)); const f = 100 * C.mean(dec.map((d) => d.f));
-    return [`${w}（${w / 2}s）`, `${C.f2(s, 1)}%`, `${C.f2(f, 1)}%`, `${C.f2(s + f, 1)}%`];
+    return [`${w}（${w * SAMPLE_DT}s）`, `${C.f2(s, 1)}%`, `${C.f2(f, 1)}%`, `${C.f2(s + f, 1)}%`];
   })));
 say('');
 say('> 切分点是任意的（没有自然尺度），故报告一族窗长而非单一数字。');
