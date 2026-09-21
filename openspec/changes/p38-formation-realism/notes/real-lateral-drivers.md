@@ -628,6 +628,7 @@ SkillCorner 的 `match.players[].id` **每场独立**（同一人在 20 场里 2
 | `issue101-6-null.mjs` | **置换零假设** | `out/101-6-null.txt` |
 | `issue101-7-factor.mjs` | PCA 共同因子 | `out/101-7-factor.txt` |
 | `issue101-8-aggregation.mjs` | **聚合口径对照**（pooled vs mean-of-per-person） | `out/101-8-aggregation.txt` |
+| `issue101-9-factor-sets.mjs` | **情境因子集敏感性**（A/B/C 随 CTX 变化） | `out/101-9-factor-sets.txt` |
 
 **运行顺序**：
 ```bash
