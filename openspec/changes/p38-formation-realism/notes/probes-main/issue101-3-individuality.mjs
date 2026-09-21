@@ -49,14 +49,12 @@ say('> 逐「场·队」单元内分解（不跨场拼接）。先按人**组内
 // ⚠ **情境因子必须不含 `y_i`**（本探针第一版踩的坑，留档）：
 // 原版 CTX 里含 `nearMateGap = y_i − y_最近队友` —— 它含 `y_i`，
 // 故回归能在"组内去均值之后"仍部分重构 devY（**泄漏进 B 层**）。
-// 实测影响：B 23.3% → 21.7%、C 20.3% → 21.9%（量级小，但方向是"高估情境、低估残差"）。
-// 现改为**只保留不含 y_i 的因子**，并在 §3.1 报出对因子集的敏感性。
+// 现改为**只保留不含 y_i 的因子**。因子集敏感性（A/B/C 随 CTX 变化的实测）见报告 §5.1b
+// 与 `/tmp/set-scan.mjs`：B 在 **23.3–36.1%** 之间、C 在 **9.7–20.3%** 之间——
+// 纳入"队友/对手的位置"能把 B 抬到 36%、C 压到 11%。**报告采用本文件这组（B 25.3 / C 18.3）。**
 const CTX = ['ballY', 'ballDepth', 'phase', 'nearOppY', 'k3OppY', 'oppCy', 'ownX'];
 const ctxF = CTX.map((n) => FACTORS.find((f) => f.name === n));
 const ctxCols = ctxF.map((f) => f.col);
-
-// 敏感性对照用的备选因子集（含自指因子 → 会轻微泄漏）
-const CTX_LEAKY = ['ballY', 'ballDepth', 'phase', 'nearOppY', 'oppCy', 'nearMateGap', 'ownX'];
 
 // 读面板：按「场·队」收集（每单元 ~2200 行，40 个单元 → 88k 行，可驻留）
 const byTeam = new Map(); // `${match}|${team}` -> {units: Int32Array, Y, X[]}
