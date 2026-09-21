@@ -106,7 +106,7 @@ cd .. && node openspec/changes/p38-formation-realism/notes/probes-main/quick-met
 ## 口径提醒
 
 - **真实侧**：`viewer/data/real-game-{1,2}.json`（Metrica，2 场）；
-  SkillCorner 转换产物在 `.scratch/p38-frames/`（6 场，需按 `00-fetch-subset.mjs` 流程生成）
+  SkillCorner 转换产物在 `.scratch/p38-frames/`（wayfinder #101 已扩到 20 场，见 `issue101-convert-all.mjs`）
 - **客队必须镜像**（`teamXs` 里 away 的 x 取 `1-x`）——主 session 曾因漏掉这步
   得出过错误结论（回归斜率被两队抵消）
 - **y 轴用 `PITCH_WIDTH_M`(68)**，不是 `PITCH_LENGTH_M`——曾用错导致横向移动量算错
