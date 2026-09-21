@@ -448,8 +448,11 @@ say('## 5. 附：freeze_frame 覆盖（能否加"防守者距离"维度）\n');
 // ── 6. 逐赛事稳健性 ─────────────────────────────────────────────────────
 say('## 6. 逐赛事稳健性（禁区内 conv，样本 ≥200 的赛事）\n');
 {
+  // ⚠ **与 §1/§2 同口径：排头球**。第一版这里用 `shots.filter`（含头球），
+  // 于是本节的表（含头球、10 行）与落盘的 `perComp`（排头球、7 行）不一致，
+  // 表内自己的汇总行也跟着分成两套（10 赛事 0.395 vs 7 赛事 0.401）。已统一。
   const byComp = new Map();
-  for (const r of shots.filter((s) => s.depth_m <= BOX_DIST_M)) {
+  for (const r of noHeader(shots.filter((s) => s.depth_m <= BOX_DIST_M))) {
     if (!byComp.has(r.comp)) byComp.set(r.comp, []);
     byComp.get(r.comp).push(r);
   }
