@@ -27,7 +27,9 @@
 DV_i  = y_i − mateY_i        （mateY_i = 其余 9 人均值）
 F_ij  = y_j − mateY_i
 Cov(DV_i, F_ij) = Cov(y_i, F_ij) − Cov(mateY_i, F_ij)
-  两项**各自为 0**（各含一个 σ²/(n−1) 抵消）
+  Cov(y_i, F_ij)    = 0 − 0 = 0          （y_i ⊥ y_j；y_i 不在 mateY_i 里）
+  Cov(mateY_i, F_ij) = σ²/(n−1) − σ²/(n−1) = 0
+  ⟹ 两项均为 0
   ⟹ 独立零假设下 Cov(DV_i, F_ij) ≡ 0,  即该回归的 R² 真值 = 0
 ```
 
