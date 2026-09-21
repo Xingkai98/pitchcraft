@@ -51,7 +51,7 @@ const LAG_COLS = [IDX.yPrev, IDX.dyPrev, IDX.dxPrev];
 const FL = F + LAG_COLS.length;
 const CAP = 6000;
 // ── GBM 的算力注记（踩过三轮，留档）────────────────────────────────────
-// 纯 JS 树实现，本机 4 核。树构建的三轮优化实测（50k 行基准）：
+// 纯 JS 树实现，本机 4 核。树构建的三轮优化实测（**100k 行**基准，见 issue101-common 的 presort 注释）：
 //   v1 每节点重排序            3.4 s/棵
 //   v2 每棵树子样本 presort    1.7 s/棵
 //   v3 **presort 整份训练集一次、全树复用**  **0.19 s/棵**

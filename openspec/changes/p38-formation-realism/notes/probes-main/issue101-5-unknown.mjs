@@ -237,9 +237,15 @@ say('> 若要正式排除，应在探针 1 的框架里加 `ballVy` 因子看它
 // 口径：残差 = §5 的 7 因子 pooled-with-FE 模型的 `devY − ŷ`（即 C 层）。
 // slow/fast 用与 §5.1 相同的居中滑动均值（窗 120s）。
 say('## 5.1b 残差的时间结构（"残差 slow 20.3%"的产物）\n');
-say('> 口径：残差 = §5 的 7 因子 pooled-with-FE 模型的 `devY − ŷ`（C 层）。\n');
-{
-  const CTX = ['ballY', 'ballDepth', 'phase', 'nearOppY', 'k3OppY', 'oppCy', 'ownX'];
+say('> 口径：残差 = 该因子集 pooled-with-FE 模型的 `devY − ŷ`（C 层）。');
+say('> 同时给 7 因子（§5 用）与 14 因子（§2 用）两套——报告 §2.2 两条都引用。\n');
+const RESID_SETS = {
+  '7 因子（§5 用）': ['ballY', 'ballDepth', 'phase', 'nearOppY', 'k3OppY', 'oppCy', 'ownX'],
+  '14 因子（§2 用）': ['ballY', 'ballDepth', 'phase', 'nearOppY', 'k3OppY', 'oppCy', 'nearMateY', 'k3MateY', 'k3AnyY', 'nearAnyDist', 'goalOwnY', 'goalOppY', 'ownX', 'xXphase'],
+};
+say('| 因子集 | 池化（比值之比） | **逐人（比值之均值）** | 单元数 |');
+say('|---|---|---|---|');
+for (const [setName, CTX] of Object.entries(RESID_SETS)) {
   const ctxF = CTX.map((n) => FACTORS.find((f) => f.name === n));
   const cols = ctxF.map((f) => f.col);
   const byTeam = new Map();
@@ -309,15 +315,13 @@ say('> 口径：残差 = §5 的 7 因子 pooled-with-FE 模型的 `devY − ŷ`
       perPersonRatios.push(C.mean([...sl].map((v) => (v - mm2) ** 2)) / vtt);
     }
   }
-  say(`| 口径 | 残差的 slow 占比 | 单元数 |`);
-  say(`|---|---|---|`);
-  say(`| 池化（比值之比） | ${C.f2(100 * C.mean(pooledRatios), 1)}% | ${pooledRatios.length}（场·队） |`);
-  say(`| **逐人（比值之均值）** | **${C.f2(100 * C.mean(perPersonRatios), 1)}%** | ${perPersonRatios.length}（场·队·人） |`);
-  say('');
-  say('> **读法**：残差里 slow 只占 12–20%——**不是"大部分"**。');
-  say('> 故"未解释的那部分主要是慢漂移"的说法不成立（报告 §2.2/§5.6 已按此改写）。');
-  say('> 报告正文引用的 **20.3%** = 逐人口径（本表第二行）。\n');
+  say(`| ${setName} | ${C.f2(100 * C.mean(pooledRatios), 1)}%（${pooledRatios.length} 场·队） | **${C.f2(100 * C.mean(perPersonRatios), 1)}%** | ${perPersonRatios.length} 场·队·人 |`);
 }
+
+say('');
+say('> **读法**：残差里 slow 只占 9–20%——**不是"大部分"**。');
+say('> 故"未解释的那部分主要是慢漂移"的说法不成立（报告 §2.2/§5.6 已按此改写）。');
+say('> 报告正文引用的 **20.3%（7 因子）/ 16.6%（14 因子）** = 逐人口径（表的第二列）。\n');
 
 writeFileSync(join(C.OUT_DIR, '101-5-unknown.txt'), lines.join('\n'));
 
