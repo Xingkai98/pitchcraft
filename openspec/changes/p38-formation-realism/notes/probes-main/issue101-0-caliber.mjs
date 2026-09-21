@@ -63,10 +63,50 @@ function individualYSd(m) {
   return { sd: C.mean(sds), n: sds.length };
 }
 
-const six = P38_SUBSET.filter((i) => allIds.includes(i)).map(C.loadSkillcorner);
-const sixSd = six.map(individualYSd);
-const all20 = allIds.map(C.loadSkillcorner);
-const allSd = all20.map(individualYSd);
+// ⚠ **内存 + 速度**：20 场**解析后同时驻留** ≈3GB，本机 7GB 下会被 OOM 杀（实测）；
+// 但每场重复解析 8 次又太慢（每次 ~2s × 20 场 × 8 = 5 分钟）。
+// 折中：**每场只解析一次**，就地抽出本探针对账所需的**小聚合量**（逐人 y、逐人 (x,y)、
+// 逐帧球位、逐帧 cy），然后立刻丢弃该场。驻留峰值 = 一场（~150MB）。
+const cache = new Map(); // id -> {perY, perXY, ballYs, cys}
+for (const id of allIds) {
+  const m = C.loadSkillcorner(id);
+  const perY = new Map();          // `team|uid` -> [y]
+  const perXY = new Map();         // `team|uid` -> [[x,y]]（供 stillLateral）
+  // ⚠ **成对存**：`cy` 的可用条件是"该队非门将 ≥7 人"，比"球是真观测"更松——
+  // 两者**下标不对齐**。第一版重构按下标配对取，导致斜率算成 NaN（自行发现后改为成对）。
+  const pairs = [];                // [{ballY, team, cy}]，仅"球真观测 + 该队可用"时 push
+  const cys = new Map();           // team -> [cy]（供方差分解，条件同 perY）
+  for (let i = 0; i < m.frames.length; i += 1) {
+    const f = m.frames[i];
+    if (!f.ball) continue;
+    const ballRaw = !m.phase || m.phase.ballDet[i] === 1;
+    for (const team of ['home', 'away']) {
+      const ps = Q.framePlayers(m, f, team, { idx: i });
+      if (ps.length < 7) continue;
+      const cy = C.mean(ps.map((p) => p.y));
+      if (!cys.has(team)) cys.set(team, []);
+      cys.get(team).push(cy);
+      // ⚠ ballY 必须按**该队自己的朝向**取（客队是镜像的）——第一版用了 home 的值，
+      // 于是客队 cy 配了个镜像球位，斜率塌到 0.004（自行发现）。
+      if (ballRaw) pairs.push({ ballY: Q.ballYCanon(m, f, team, i), team, cy });
+      for (const p of ps) {
+        const k = `${team}|${p.id}`;
+        if (!perY.has(k)) { perY.set(k, []); perXY.set(k, []); }
+        perY.get(k).push(p.y);
+        perXY.get(k).push([f.t, p.x, p.y]);
+      }
+    }
+  }
+  cache.set(id, { perY, perXY, cys, pairs });
+}
+const sixIds = P38_SUBSET.filter((i) => allIds.includes(i));
+const C6 = sixIds.map((id) => ({ id, ...cache.get(id) }));
+
+// ⚠ **内存**：20 场解析后同时驻留 ≈3GB，本机 7GB 下会被 OOM 杀（实测）。
+// 故一律**逐场装载 → 算完即弃**，只留下小的聚合结果。
+const sdOf = (c) => { const sds = []; let n = 0; for (const a of c.perY.values()) if (a.length >= 100) { sds.push(C.std(a)); n += 1; } return { sd: C.mean(sds), n }; };
+const sixSd = C6.map((c) => ({ id: c.id, ...sdOf(c) }));
+const allSd = allIds.map((id) => ({ id, ...sdOf(cache.get(id)) }));
 
 say(`| 样本 | 人·场 n | 个体 y sd 均值 |`);
 say(`|---|---|---|`);
@@ -78,7 +118,7 @@ say('');
 
 // 逐场值（供报告核验离散度）
 say('逐场个体 y sd（20 场）：');
-say(all20.map((m, i) => `  ${m.id}: ${C.f2(allSd[i].sd)}m (n=${allSd[i].n})`).join('\n'));
+say(allSd.map((r) => `  ${r.id}: ${C.f2(r.sd)}m (n=${r.n})`).join('\n'));
 say('');
 
 // ── 对账 2：球队重心跟球斜率（逐场逐队再平均）────────────────────────────
@@ -102,8 +142,9 @@ function teamFollow(m) {
   return pairs;
 }
 
-const pairs6 = six.flatMap(teamFollow);
-const pairs20 = all20.flatMap(teamFollow);
+const followOf = (c, id) => c.pairs.map((p) => ({ key: `${id}|${p.team}`, x: p.ballY, y: p.cy }));
+const pairs6 = C6.flatMap((c) => followOf(c, c.id));
+const pairs20 = allIds.flatMap((id) => followOf(cache.get(id), id));
 const r6 = C.univariateByUnit(pairs6, 500);
 const r20 = C.univariateByUnit(pairs20, 500);
 const rMet = C.univariateByUnit(C.loadMetrica().flatMap(teamFollow), 500);
@@ -130,8 +171,17 @@ function ballSpread(m) {
   ys.sort((a, b) => a - b);
   return Q.quantile(ys, 0.9) - Q.quantile(ys, 0.1);
 }
-const spread6 = C.mean(six.map(ballSpread));
-const spread20 = C.mean(all20.map(ballSpread));
+// 球 y 的覆盖：逐场对**每支队的朝向**各算一次 q10–q90，再平均（与 ballSpread 同口径）。
+const spreadOf = (c) => {
+  const out = [];
+  for (const team of ['home', 'away']) {
+    const ys = c.pairs.filter((p) => p.team === team).map((p) => p.ballY).sort((a, b) => a - b);
+    if (ys.length > 100) out.push(Q.quantile(ys, 0.9) - Q.quantile(ys, 0.1));
+  }
+  return C.mean(out);
+};
+const spread6 = C.mean(C6.map(spreadOf));
+const spread20 = C.mean(allIds.map((id) => spreadOf(cache.get(id))));
 say(`| 样本 | 球 y q10–q90 均值 |`);
 say(`|---|---|`);
 say(`| SkillCorner 6 场 | ${C.f2(spread6)}m |`);
@@ -143,43 +193,31 @@ say('');
 say('## 对账 4：个体 y 的方差分解\n');
 say('P38 #90 §2.1 报告 SkillCorner 6 场：队伍层 37.1% / 静息档位 34.0% / 个体游走 28.9%。\n');
 
-function varianceDecomp(m) {
+const vdOf = (c) => {
   const out = [];
   for (const team of ['home', 'away']) {
-    // 逐帧 cy
-    const devs = new Map(); // uid -> [y - cy]
-    const cys = [];
-    for (let i = 0; i < m.frames.length; i += 1) {
-      const ps = Q.framePlayers(m, m.frames[i], team, { idx: i });
-      if (ps.length < 7) continue;
-      const cy = C.mean(ps.map((p) => p.y));
-      cys.push(cy);
-      for (const p of ps) {
-        if (!devs.has(p.id)) devs.set(p.id, []);
-        devs.get(p.id).push([p.y, cy]);
-      }
+    const cyArr = c.cys.get(team);
+    if (!cyArr || cyArr.length < 200) continue;
+    const dev = []; const perMean = [];
+    for (const [k, ys] of c.perY) {
+      if (!k.startsWith(`${team}|`)) continue;
+      if (ys.length !== cyArr.length) continue; // 该人中途缺帧 → 跳过
+      let sd = 0;
+      for (let i = 0; i < ys.length; i += 1) { const d = ys[i] - cyArr[i]; sd += d; dev.push(d); }
+      perMean.push(sd / ys.length);
     }
-    if (cys.length < 200) continue;
-    const grand = C.mean(cys);
-    // 池化：Var = IT + DEV（交叉项恒 0）
-    const it = C.mean(cys.map((c) => (c - grand) ** 2));
-    const allDev = [];
-    const perPlayerMeanDev = [];
-    for (const arr of devs.values()) {
-      let s = 0;
-      for (const [y, cy] of arr) { s += y - cy; allDev.push(y - cy); }
-      perPlayerMeanDev.push(s / arr.length);
-    }
-    const dev = C.mean(allDev.map((d) => d ** 2));
-    const rest = C.mean(perPlayerMeanDev.map((d) => d ** 2));
-    const walk = dev - rest;
-    const tot = it + dev;
-    out.push({ it: it / tot, rest: rest / tot, walk: walk / tot, var: tot });
+    if (!dev.length) continue;
+    const grand = C.mean(cyArr);
+    const it = C.mean(cyArr.map((v) => (v - grand) ** 2));
+    const devVar = C.mean(dev.map((d) => d ** 2));
+    const rest = C.mean(perMean.map((d) => d ** 2));
+    const tot = it + devVar;
+    out.push({ it: it / tot, rest: rest / tot, walk: (devVar - rest) / tot, var: tot });
   }
   return out;
-}
-const vd6 = six.flatMap(varianceDecomp);
-const vd20 = all20.flatMap(varianceDecomp);
+};
+const vd6 = C6.flatMap(vdOf);
+const vd20 = allIds.flatMap((id) => vdOf(cache.get(id)));
 say(`| 样本 | 队·场 n | 队伍层（全队平移） | 静息档位（职责偏移） | 个体游走 | Var(y) m² |`);
 say(`|---|---|---|---|---|---|`);
 say(`| SkillCorner 6 场 | ${vd6.length} | ${C.f2(100 * C.mean(vd6.map((v) => v.it)), 1)}% | `
@@ -192,36 +230,40 @@ say('');
 say('## 对账 5：静止帧的横向速率 |vy|（纵向速度 < 0.25 m/s 的帧对）\n');
 say('P38 #90 §5.4 报告：SkillCorner **0.780 m/s**（Δt 中位 0.20s）。\n');
 
-function stillLateral(m) {
+function stillLateralOf(c) {
   const out = [];
-  for (const team of ['home', 'away']) {
-    const per = new Map();
-    for (let i = 0; i < m.frames.length; i += 1) {
-      const f = m.frames[i];
-      for (const p of Q.framePlayers(m, f, team, { idx: i })) {
-        if (!per.has(p.id)) per.set(p.id, []);
-        per.get(p.id).push([f.t, p.x, p.y]);
-      }
-    }
-    for (const arr of per.values()) {
-      for (let j = 1; j < arr.length; j += 1) {
-        const [t0, x0, y0] = arr[j - 1]; const [t1, x1, y1] = arr[j];
-        const dt = t1 - t0;
-        if (dt <= 0 || dt > 0.5) continue; // 断帧
-        const vx = (x1 - x0) / dt; const vy = (y1 - y0) / dt;
-        if (Math.abs(vx) < 0.25) out.push(Math.abs(vy));
-      }
+  for (const [, arr] of c.perXY) {
+    for (let j = 1; j < arr.length; j += 1) {
+      const [t0, x0, y0] = arr[j - 1]; const [t1, x1, y1] = arr[j];
+      const dt = t1 - t0;
+      if (dt <= 0 || dt > 0.5) continue; // 断帧
+      const vx = (x1 - x0) / dt; const vy = (y1 - y0) / dt;
+      if (Math.abs(vx) < 0.25) out.push(Math.abs(vy));
     }
   }
   return out;
 }
-const st6 = six.flatMap(stillLateral);
-const st20 = all20.flatMap(stillLateral);
+const st6 = C6.flatMap(stillLateralOf);
+const st20 = allIds.flatMap((id) => stillLateralOf(cache.get(id)));
 say(`| 样本 | n 帧对 | 静止帧 \|vy\| 均值 |`);
 say(`|---|---|---|`);
 say(`| SkillCorner 6 场 | ${st6.length} | **${C.f2(C.mean(st6), 3)} m/s** |`);
 say(`| SkillCorner 20 场 | ${st20.length} | **${C.f2(C.mean(st20), 3)} m/s** |`);
-say(`| Metrica 2 场 | ${C.loadMetrica().flatMap(stillLateral).length} | ${C.f2(C.mean(C.loadMetrica().flatMap(stillLateral)), 3)} m/s |`);
+const stMet = C.loadMetrica().flatMap((m) => {
+  const per = new Map();
+  for (let i = 0; i < m.frames.length; i += 1) {
+    const f = m.frames[i];
+    for (const team of ['home', 'away']) {
+      for (const p of Q.framePlayers(m, f, team, { idx: i })) {
+        const k = `${p.id}`;
+        if (!per.has(k)) per.set(k, []);
+        per.get(k).push([f.t, p.x, p.y]);
+      }
+    }
+  }
+  return stillLateralOf({ perXY: per });
+});
+say(`| Metrica 2 场 | ${stMet.length} | ${C.f2(C.mean(stMet), 3)} m/s |`);
 say('');
 
 // ── 对账汇总表 ─────────────────────────────────────────────────────────
