@@ -156,7 +156,8 @@ function statsOf(rows) {
 // ── 1. 与引擎同口径：三桶（纵深）────────────────────────────────────────
 say('## 1. 与引擎同口径（纵深）—— 三桶\n');
 say('> 引擎 `shot_bucket`：禁区内 ≤16.5m / 禁区弧 ≤25.0m / 远射 >25.0m，全按**纵深**（只看 x）。');
-say('> 每桶声明 `(goal%, saved%)`：禁区内 15/30、弧 7/22、远射 4/11。\n');
+say('> 每桶声明 `goal/saved/off` 三条：禁区内 15/30/55、弧 7/22/71、远射 4/11/85');
+say('> （`engine/src/lib.rs:5317-5324` 的 `shot_bucket`；门带在 `realism.rs:658-670`）。\n');
 
 const buckets = [
   { name: '禁区内 ≤16.5m', test: (r) => r.depth_m <= BOX_DIST_M, engine: [0.15, 0.30] },
@@ -170,37 +171,40 @@ const buckets = [
 // （把"和落在带内"当成"两个分量各自落在各自带内"，反之亦然）。已改。
 const bandPass = (lo, hi, cil, cih) => (cil >= lo && cih <= hi) ? '✅ 带内'
   : (cih < lo || cil > hi) ? '❌ 带外' : '⚠️ 跨带边';
-say('| 桶 | n | **goal** [CI] | 门带 | 判定 | **saved** [CI] | 门带 | 判定 |');
-say('|---|---|---|---|---|---|---|---|');
 const bucketStats = {};
+// ⚠⚠ **引擎只有三个 outcome：goal / saved / off_target，没有 blocked**
+// （`engine/src/lib.rs:3170-3176` 的 ("goal"|"saved"|"off_target")；全库 0 处 blocked）。
+// 故引擎的 `off_target` **吸收**了 StatsBomb 分开计的 `Blocked`。
+// 第一版把 blocked 与 off 分开比、还写"引擎没有为这两项声明带"——**两处都错**：
+//   · 引擎**有** off 带（`realism.rs:661` 禁区内 off ∈ [0.48,0.60]）
+//   · 正确的 off 口径 = **off + blocked**
+// 现在按引擎口径合并，并**三条带全判**（goal / saved / off）。
 const ENGINE_BANDS = {
-  '禁区内 ≤16.5m': { goal: [0.10, 0.20], saved: [0.24, 0.36] },
-  '禁区弧 16.5–25m': { goal: [0.03, 0.12], saved: [0.14, 0.30] },
-  '远射 >25m': { goal: [0.0, 0.08], saved: [0.04, 0.18] },
+  '禁区内 ≤16.5m': { goal: [0.10, 0.20], saved: [0.24, 0.36], off: [0.48, 0.60] },
+  '禁区弧 16.5–25m': { goal: [0.03, 0.12], saved: [0.14, 0.30], off: [0.61, 0.75] },
+  '远射 >25m': { goal: [0.0, 0.08], saved: [0.04, 0.18], off: [0.78, 0.92] },
 };
+say('| 桶 | n | 量 | 真实 [CI] | 门带 | 判定 |');
+say('|---|---|---|---|---|---|');
 for (const b of buckets) {
   const rows = shots.filter(b.test);
   const st = statsOf(rows);
+  // 引擎口径：off_target = off + blocked
+  st.offEngine = st.off + st.blocked;
+  st.offEngineRate = st.offEngine / st.n;
+  st.offEngineCI = wilson(st.offEngine, st.n);
   bucketStats[b.name] = st;
   const bd = ENGINE_BANDS[b.name];
-  const gRate = st.goal / st.n; const svRate = st.saved / st.n;
-  const [gLo, gHi] = wilson(st.goal, st.n);
-  const [svLo, svHi] = wilson(st.saved, st.n);
-  say(`| ${b.name} | ${st.n.toLocaleString()} | ${pct(gRate)} [${pct(gLo)}, ${pct(gHi)}] | `
-    + `[${pct(bd.goal[0])}, ${pct(bd.goal[1])}] | ${bandPass(bd.goal[0], bd.goal[1], gLo, gHi)} | `
-    + `${pct(svRate)} [${pct(svLo)}, ${pct(svHi)}] | [${pct(bd.saved[0])}, ${pct(bd.saved[1])}] | ${bandPass(bd.saved[0], bd.saved[1], svLo, svHi)} |`);
+  for (const [lab, k, band] of [['goal', st.goal, bd.goal], ['saved', st.saved, bd.saved], ['off（含 blocked）', st.offEngine, bd.off]]) {
+    const [lo, hi] = wilson(k, st.n);
+    say(`| ${lab === 'goal' ? b.name : ''} | ${lab === 'goal' ? st.n.toLocaleString() : ''} | ${lab} | `
+      + `${pct(k / st.n)} [${pct(lo)}, ${pct(hi)}] | [${pct(band[0])}, ${pct(band[1])}] | ${bandPass(band[0], band[1], lo, hi)} |`);
+  }
 }
 say('');
 say('> **读法**：`✅ 带内` = 真实比例与门带相容；`❌ 带外` = 真实数据落在门带之外');
-say('（门带需重标或引擎需改）；`⚠️ 跨带边` = CI 跨过边界，**样本量不足以判定**。');
-say('> 三桶的 `blocked`/`off` 比例一并列在下表（引擎没有为这两项声明带）。\n');
-say('| 桶 | blocked | off |');
-say('|---|---|---|');
-for (const b of buckets) {
-  const st = bucketStats[b.name];
-  say(`| ${b.name} | ${pct(st.blocked / st.n)} | ${pct(st.off / st.n)} |`);
-}
-say('');
+say('> （门带需重标或引擎需改）；`⚠️ 跨带边` = CI 跨过边界，**样本量不足以判定**。');
+say('> ⚠ **`off` 一列是 `off + blocked`**（引擎口径，它没有 blocked）。\n');
 
 // ── 2. ★ 直接回答 #102 §2.3B 的悬案 ─────────────────────────────────────
 say('## 2. ★ 判定 #102 §2.3B 的悬案\n');
@@ -223,16 +227,19 @@ say('> → **on-target 上界 = 0.20 + 0.36 = 0.56**。\n');
   say('');
 }
 // 顺带：引擎三桶的实际 on-target vs 真实
-say('### 2b. 引擎 `(goal, saved)` 点估计 vs 真实（描述性，**不是门**）\n');
-say('| 桶 | 真实 goal / saved | 引擎声明 | 差 |');
+say('### 2b. 引擎 `(goal, saved, off)` 点估计 vs 真实（描述性，**不是门**）\n');
+say('| 桶 | 真实 goal / saved / off* | 引擎声明 | 差（真实 − 引擎下沿） |');
 say('|---|---|---|---|');
 for (const b of buckets) {
   const st = bucketStats[b.name];
-  const gR = st.goal / st.n; const svR = st.saved / st.n;
-  say(`| ${b.name} | ${pct(gR)} / ${pct(svR)} | ${pct(b.engine[0])} / ${pct(b.engine[1])} | `
-    + `${(gR - b.engine[0] >= 0 ? '+' : '')}${pct(gR - b.engine[0])} / ${(svR - b.engine[1] >= 0 ? '+' : '')}${pct(svR - b.engine[1])} |`);
+  const bd = ENGINE_BANDS[b.name];
+  const gR = st.goal / st.n; const svR = st.saved / st.n; const oR = st.offEngineRate;
+  const d = (a, c) => `${a - c >= 0 ? '+' : ''}${pct(a - c)}`;
+  say(`| ${b.name} | ${pct(gR)} / ${pct(svR)} / ${pct(oR)} | `
+    + `${pct(bd.goal[0])} / ${pct(bd.saved[0])} / ${pct(bd.off[0])} | ${d(gR, bd.goal[0])} / ${d(svR, bd.saved[0])} / ${d(oR, bd.off[0])} |`);
 }
 say('');
+say('> \\* `off` 含 blocked（引擎口径）。引擎声明列取**带的下沿**。');
 say('> ⚠ 本表是**描述性对照**（点估计相减），判定请看上面按 Wilson CI 的表。\n');
 
 // ── 3. 完整曲线：按纵深分箱 ─────────────────────────────────────────────
