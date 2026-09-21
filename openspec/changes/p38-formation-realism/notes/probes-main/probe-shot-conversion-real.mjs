@@ -462,7 +462,8 @@ say('## 6. 逐赛事稳健性（禁区内 conv，样本 ≥200 的赛事）\n');
   if (convs.length > 1) {
     const mu = convs.reduce((a, b) => a + b, 0) / convs.length;
     const sd = Math.sqrt(convs.reduce((a, b) => a + (b - mu) ** 2, 0) / convs.length);
-    say(`\n> 跨 ${rows.length} 个赛事：均值 ${f3(mu)}、sd ${f3(sd)}、范围 [${f3(Math.min(...convs))}, ${f3(Math.max(...convs))}]。`);
+    say(`\n> 跨 ${rows.length} 个赛事（**排头球**，样本 ≥200）：**均值 ${f3(mu)}、sd ${f3(sd)}、范围 [${f3(Math.min(...convs))}, ${f3(Math.max(...convs))}]**。`);
+    say('> ⚠ 这是**等权**跨赛事均值；§2/§3 的池化值（按射门数加权）是另一个量，勿混引。');
     say('> 若离散度大，说明"单一转化率常数"跨联赛不成立，应分联赛标定。');
   }
   say('');
