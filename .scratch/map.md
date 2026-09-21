@@ -1,3 +1,7 @@
+> ⚠️ **本地快照（已过期）**：本文件是票据**迁移到 GitHub issues 之前**的副本。
+> 现行地图在 **GitHub issue #86**（`gh issue view 86`）。
+> 本地保留仅作历史存档；**不要以本文件为决策依据**。
+
 # Wayfinder Map: Football Manager 2D 复刻（从零写）
 
 ## Destination
