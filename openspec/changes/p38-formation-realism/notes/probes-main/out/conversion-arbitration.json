@@ -1,0 +1,926 @@
+[
+  {
+    "shift": -4.3,
+    "wasmSha8": "901da77b",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 7.2,
+    "goalsPerMatch": 0.8,
+    "regularGoalsPerMatch": 0.6,
+    "headerPerMatch": 0.3,
+    "savedPerMatch": 1.5,
+    "offPerMatch": 5.1,
+    "onTargetRatePooled": 0.2917,
+    "onTargetRatePerMatch": 0.2912,
+    "conversionPooled": 0.0833,
+    "conversionPerMatch": 0.0726,
+    "goalsPerShot": 0.0833,
+    "foulsPerMatch": 20.2,
+    "tacklesPerMatch": 9.6,
+    "shotOverTackle": 0.75,
+    "passesPerMatch": 419.3,
+    "passSuccessPooled": 0.8393,
+    "euclidMean_m": 18.16,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 47,
+        "perMatch": 4.7,
+        "goals": 6,
+        "goalsPerMatch": 0.6,
+        "saved": 9,
+        "off": 0,
+        "share": 0.6528,
+        "conv": 0.1277,
+        "convPerMatch": 0.121,
+        "onTarget": 0.3191
+      },
+      {
+        "bucket": "arc",
+        "n": 16,
+        "perMatch": 1.6,
+        "goals": 0,
+        "goalsPerMatch": 0,
+        "saved": 6,
+        "off": 0,
+        "share": 0.2222,
+        "conv": 0,
+        "convPerMatch": 0,
+        "onTarget": 0.375
+      },
+      {
+        "bucket": "far",
+        "n": 9,
+        "perMatch": 0.9,
+        "goals": 0,
+        "goalsPerMatch": 0,
+        "saved": 0,
+        "off": 0,
+        "share": 0.125,
+        "conv": 0,
+        "convPerMatch": 0,
+        "onTarget": 0
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 38,
+        "share": 0.5278,
+        "conv": 0.1316
+      },
+      {
+        "bucket": "arc",
+        "n": 19,
+        "share": 0.2639,
+        "conv": 0.0526
+      },
+      {
+        "bucket": "far",
+        "n": 15,
+        "share": 0.2083,
+        "conv": 0
+      }
+    ]
+  },
+  {
+    "shift": -4.15,
+    "wasmSha8": "848bb79d",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 8.6,
+    "goalsPerMatch": 1.1,
+    "regularGoalsPerMatch": 0.9,
+    "headerPerMatch": 0.7,
+    "savedPerMatch": 2.2,
+    "offPerMatch": 5.5,
+    "onTargetRatePooled": 0.3605,
+    "onTargetRatePerMatch": 0.334,
+    "conversionPooled": 0.1047,
+    "conversionPerMatch": 0.0893,
+    "goalsPerShot": 0.1047,
+    "foulsPerMatch": 20.5,
+    "tacklesPerMatch": 9.1,
+    "shotOverTackle": 0.945,
+    "passesPerMatch": 416.6,
+    "passSuccessPooled": 0.8377,
+    "euclidMean_m": 18.58,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 55,
+        "perMatch": 5.5,
+        "goals": 7,
+        "goalsPerMatch": 0.7,
+        "saved": 14,
+        "off": 0,
+        "share": 0.6395,
+        "conv": 0.1273,
+        "convPerMatch": 0.1202,
+        "onTarget": 0.3818
+      },
+      {
+        "bucket": "arc",
+        "n": 18,
+        "perMatch": 1.8,
+        "goals": 1,
+        "goalsPerMatch": 0.1,
+        "saved": 7,
+        "off": 0,
+        "share": 0.2093,
+        "conv": 0.0556,
+        "convPerMatch": 0.0333,
+        "onTarget": 0.4444
+      },
+      {
+        "bucket": "far",
+        "n": 13,
+        "perMatch": 1.3,
+        "goals": 1,
+        "goalsPerMatch": 0.1,
+        "saved": 1,
+        "off": 0,
+        "share": 0.1512,
+        "conv": 0.0769,
+        "convPerMatch": 0.0476,
+        "onTarget": 0.1538
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 41,
+        "share": 0.4767,
+        "conv": 0.122
+      },
+      {
+        "bucket": "arc",
+        "n": 26,
+        "share": 0.3023,
+        "conv": 0.0769
+      },
+      {
+        "bucket": "far",
+        "n": 19,
+        "share": 0.2209,
+        "conv": 0.1053
+      }
+    ]
+  },
+  {
+    "shift": -4,
+    "wasmSha8": "513731b4",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 10.8,
+    "goalsPerMatch": 1.5,
+    "regularGoalsPerMatch": 1.3,
+    "headerPerMatch": 1,
+    "savedPerMatch": 2.7,
+    "offPerMatch": 6.8,
+    "onTargetRatePooled": 0.3704,
+    "onTargetRatePerMatch": 0.3901,
+    "conversionPooled": 0.1204,
+    "conversionPerMatch": 0.1398,
+    "goalsPerShot": 0.1204,
+    "foulsPerMatch": 24.8,
+    "tacklesPerMatch": 9.6,
+    "shotOverTackle": 1.125,
+    "passesPerMatch": 415.6,
+    "passSuccessPooled": 0.84,
+    "euclidMean_m": 19.27,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 62,
+        "perMatch": 6.2,
+        "goals": 10,
+        "goalsPerMatch": 1,
+        "saved": 18,
+        "off": 0,
+        "share": 0.5741,
+        "conv": 0.1613,
+        "convPerMatch": 0.2304,
+        "onTarget": 0.4516
+      },
+      {
+        "bucket": "arc",
+        "n": 36,
+        "perMatch": 3.6,
+        "goals": 1,
+        "goalsPerMatch": 0.1,
+        "saved": 9,
+        "off": 0,
+        "share": 0.3333,
+        "conv": 0.0278,
+        "convPerMatch": 0.05,
+        "onTarget": 0.2778
+      },
+      {
+        "bucket": "far",
+        "n": 10,
+        "perMatch": 1,
+        "goals": 2,
+        "goalsPerMatch": 0.2,
+        "saved": 0,
+        "off": 0,
+        "share": 0.0926,
+        "conv": 0.2,
+        "convPerMatch": 0.1389,
+        "onTarget": 0.2
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 46,
+        "share": 0.4259,
+        "conv": 0.1304
+      },
+      {
+        "bucket": "arc",
+        "n": 41,
+        "share": 0.3796,
+        "conv": 0.122
+      },
+      {
+        "bucket": "far",
+        "n": 21,
+        "share": 0.1944,
+        "conv": 0.0952
+      }
+    ]
+  },
+  {
+    "shift": -3.85,
+    "wasmSha8": "da8c0a39",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 11.9,
+    "goalsPerMatch": 1.5,
+    "regularGoalsPerMatch": 1.3,
+    "headerPerMatch": 0.8,
+    "savedPerMatch": 2.8,
+    "offPerMatch": 7.8,
+    "onTargetRatePooled": 0.3445,
+    "onTargetRatePerMatch": 0.3495,
+    "conversionPooled": 0.1092,
+    "conversionPerMatch": 0.1053,
+    "goalsPerShot": 0.1092,
+    "foulsPerMatch": 23.3,
+    "tacklesPerMatch": 8.7,
+    "shotOverTackle": 1.368,
+    "passesPerMatch": 417.7,
+    "passSuccessPooled": 0.8463,
+    "euclidMean_m": 19.6,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 65,
+        "perMatch": 6.5,
+        "goals": 9,
+        "goalsPerMatch": 0.9,
+        "saved": 17,
+        "off": 0,
+        "share": 0.5462,
+        "conv": 0.1385,
+        "convPerMatch": 0.1229,
+        "onTarget": 0.4
+      },
+      {
+        "bucket": "arc",
+        "n": 39,
+        "perMatch": 3.9,
+        "goals": 4,
+        "goalsPerMatch": 0.4,
+        "saved": 10,
+        "off": 0,
+        "share": 0.3277,
+        "conv": 0.1026,
+        "convPerMatch": 0.1083,
+        "onTarget": 0.359
+      },
+      {
+        "bucket": "far",
+        "n": 15,
+        "perMatch": 1.5,
+        "goals": 0,
+        "goalsPerMatch": 0,
+        "saved": 1,
+        "off": 0,
+        "share": 0.1261,
+        "conv": 0,
+        "convPerMatch": 0,
+        "onTarget": 0.0667
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 48,
+        "share": 0.4034,
+        "conv": 0.125
+      },
+      {
+        "bucket": "arc",
+        "n": 45,
+        "share": 0.3782,
+        "conv": 0.0889
+      },
+      {
+        "bucket": "far",
+        "n": 26,
+        "share": 0.2185,
+        "conv": 0.1154
+      }
+    ]
+  },
+  {
+    "shift": -3.7,
+    "wasmSha8": "118683ad",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 12.9,
+    "goalsPerMatch": 2.1,
+    "regularGoalsPerMatch": 1.9,
+    "headerPerMatch": 0.8,
+    "savedPerMatch": 2.7,
+    "offPerMatch": 8.3,
+    "onTargetRatePooled": 0.3566,
+    "onTargetRatePerMatch": 0.3575,
+    "conversionPooled": 0.1473,
+    "conversionPerMatch": 0.1486,
+    "goalsPerShot": 0.1473,
+    "foulsPerMatch": 26.8,
+    "tacklesPerMatch": 8,
+    "shotOverTackle": 1.613,
+    "passesPerMatch": 417.4,
+    "passSuccessPooled": 0.8412,
+    "euclidMean_m": 19.89,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 62,
+        "perMatch": 6.2,
+        "goals": 13,
+        "goalsPerMatch": 1.3,
+        "saved": 14,
+        "off": 0,
+        "share": 0.4806,
+        "conv": 0.2097,
+        "convPerMatch": 0.2083,
+        "onTarget": 0.4355
+      },
+      {
+        "bucket": "arc",
+        "n": 47,
+        "perMatch": 4.7,
+        "goals": 4,
+        "goalsPerMatch": 0.4,
+        "saved": 11,
+        "off": 0,
+        "share": 0.3643,
+        "conv": 0.0851,
+        "convPerMatch": 0.0702,
+        "onTarget": 0.3191
+      },
+      {
+        "bucket": "far",
+        "n": 20,
+        "perMatch": 2,
+        "goals": 2,
+        "goalsPerMatch": 0.2,
+        "saved": 2,
+        "off": 0,
+        "share": 0.155,
+        "conv": 0.1,
+        "convPerMatch": 0.1333,
+        "onTarget": 0.2
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 44,
+        "share": 0.3411,
+        "conv": 0.2045
+      },
+      {
+        "bucket": "arc",
+        "n": 54,
+        "share": 0.4186,
+        "conv": 0.1296
+      },
+      {
+        "bucket": "far",
+        "n": 31,
+        "share": 0.2403,
+        "conv": 0.0968
+      }
+    ]
+  },
+  {
+    "shift": -3.55,
+    "wasmSha8": "b41bc62a",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 16,
+    "goalsPerMatch": 2.8,
+    "regularGoalsPerMatch": 2.6,
+    "headerPerMatch": 1,
+    "savedPerMatch": 2.7,
+    "offPerMatch": 10.7,
+    "onTargetRatePooled": 0.3312,
+    "onTargetRatePerMatch": 0.3257,
+    "conversionPooled": 0.1625,
+    "conversionPerMatch": 0.161,
+    "goalsPerShot": 0.1625,
+    "foulsPerMatch": 25.8,
+    "tacklesPerMatch": 9.3,
+    "shotOverTackle": 1.72,
+    "passesPerMatch": 414.9,
+    "passSuccessPooled": 0.8361,
+    "euclidMean_m": 20.11,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 82,
+        "perMatch": 8.2,
+        "goals": 20,
+        "goalsPerMatch": 2,
+        "saved": 17,
+        "off": 0,
+        "share": 0.5125,
+        "conv": 0.2439,
+        "convPerMatch": 0.2434,
+        "onTarget": 0.4512
+      },
+      {
+        "bucket": "arc",
+        "n": 49,
+        "perMatch": 4.9,
+        "goals": 3,
+        "goalsPerMatch": 0.3,
+        "saved": 8,
+        "off": 0,
+        "share": 0.3063,
+        "conv": 0.0612,
+        "convPerMatch": 0.0625,
+        "onTarget": 0.2245
+      },
+      {
+        "bucket": "far",
+        "n": 29,
+        "perMatch": 2.9,
+        "goals": 3,
+        "goalsPerMatch": 0.3,
+        "saved": 2,
+        "off": 0,
+        "share": 0.1812,
+        "conv": 0.1034,
+        "convPerMatch": 0.0938,
+        "onTarget": 0.1724
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 51,
+        "share": 0.3187,
+        "conv": 0.2549
+      },
+      {
+        "bucket": "arc",
+        "n": 68,
+        "share": 0.425,
+        "conv": 0.1324
+      },
+      {
+        "bucket": "far",
+        "n": 41,
+        "share": 0.2562,
+        "conv": 0.0976
+      }
+    ]
+  },
+  {
+    "shift": -3.4,
+    "wasmSha8": "75871fd9",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 16.6,
+    "goalsPerMatch": 2.5,
+    "regularGoalsPerMatch": 2.4,
+    "headerPerMatch": 0.6,
+    "savedPerMatch": 2.9,
+    "offPerMatch": 11.3,
+    "onTargetRatePooled": 0.3193,
+    "onTargetRatePerMatch": 0.3239,
+    "conversionPooled": 0.1446,
+    "conversionPerMatch": 0.1443,
+    "goalsPerShot": 0.1446,
+    "foulsPerMatch": 24.5,
+    "tacklesPerMatch": 9,
+    "shotOverTackle": 1.844,
+    "passesPerMatch": 415.1,
+    "passSuccessPooled": 0.8427,
+    "euclidMean_m": 20.84,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 74,
+        "perMatch": 7.4,
+        "goals": 20,
+        "goalsPerMatch": 2,
+        "saved": 21,
+        "off": 0,
+        "share": 0.4458,
+        "conv": 0.2703,
+        "convPerMatch": 0.2498,
+        "onTarget": 0.5541
+      },
+      {
+        "bucket": "arc",
+        "n": 58,
+        "perMatch": 5.8,
+        "goals": 4,
+        "goalsPerMatch": 0.4,
+        "saved": 5,
+        "off": 0,
+        "share": 0.3494,
+        "conv": 0.069,
+        "convPerMatch": 0.0472,
+        "onTarget": 0.1552
+      },
+      {
+        "bucket": "far",
+        "n": 34,
+        "perMatch": 3.4,
+        "goals": 0,
+        "goalsPerMatch": 0,
+        "saved": 3,
+        "off": 0,
+        "share": 0.2048,
+        "conv": 0,
+        "convPerMatch": 0,
+        "onTarget": 0.0882
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 49,
+        "share": 0.2952,
+        "conv": 0.2449
+      },
+      {
+        "bucket": "arc",
+        "n": 67,
+        "share": 0.4036,
+        "conv": 0.1642
+      },
+      {
+        "bucket": "far",
+        "n": 50,
+        "share": 0.3012,
+        "conv": 0.02
+      }
+    ]
+  },
+  {
+    "shift": -3.2,
+    "wasmSha8": "07a4c0cf",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 20.5,
+    "goalsPerMatch": 3.2,
+    "regularGoalsPerMatch": 3.1,
+    "headerPerMatch": 1.2,
+    "savedPerMatch": 5,
+    "offPerMatch": 12.4,
+    "onTargetRatePooled": 0.3951,
+    "onTargetRatePerMatch": 0.3959,
+    "conversionPooled": 0.1512,
+    "conversionPerMatch": 0.1567,
+    "goalsPerShot": 0.1512,
+    "foulsPerMatch": 25.9,
+    "tacklesPerMatch": 8.3,
+    "shotOverTackle": 2.47,
+    "passesPerMatch": 412,
+    "passSuccessPooled": 0.8257,
+    "euclidMean_m": 19.3,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 107,
+        "perMatch": 10.7,
+        "goals": 23,
+        "goalsPerMatch": 2.3,
+        "saved": 33,
+        "off": 0,
+        "share": 0.522,
+        "conv": 0.215,
+        "convPerMatch": 0.2219,
+        "onTarget": 0.5234
+      },
+      {
+        "bucket": "arc",
+        "n": 70,
+        "perMatch": 7,
+        "goals": 6,
+        "goalsPerMatch": 0.6,
+        "saved": 12,
+        "off": 0,
+        "share": 0.3415,
+        "conv": 0.0857,
+        "convPerMatch": 0.0838,
+        "onTarget": 0.2571
+      },
+      {
+        "bucket": "far",
+        "n": 28,
+        "perMatch": 2.8,
+        "goals": 2,
+        "goalsPerMatch": 0.2,
+        "saved": 5,
+        "off": 0,
+        "share": 0.1366,
+        "conv": 0.0714,
+        "convPerMatch": 0.0741,
+        "onTarget": 0.25
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 75,
+        "share": 0.3659,
+        "conv": 0.2
+      },
+      {
+        "bucket": "arc",
+        "n": 95,
+        "share": 0.4634,
+        "conv": 0.1368
+      },
+      {
+        "bucket": "far",
+        "n": 35,
+        "share": 0.1707,
+        "conv": 0.0857
+      }
+    ]
+  },
+  {
+    "shift": -3,
+    "wasmSha8": "8ffcb7b8",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 26.8,
+    "goalsPerMatch": 4.1,
+    "regularGoalsPerMatch": 3.7,
+    "headerPerMatch": 1.9,
+    "savedPerMatch": 7.3,
+    "offPerMatch": 15.8,
+    "onTargetRatePooled": 0.4104,
+    "onTargetRatePerMatch": 0.4006,
+    "conversionPooled": 0.1381,
+    "conversionPerMatch": 0.1341,
+    "goalsPerShot": 0.1381,
+    "foulsPerMatch": 25.7,
+    "tacklesPerMatch": 8.1,
+    "shotOverTackle": 3.309,
+    "passesPerMatch": 404.3,
+    "passSuccessPooled": 0.8155,
+    "euclidMean_m": 19.24,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 162,
+        "perMatch": 16.2,
+        "goals": 31,
+        "goalsPerMatch": 3.1,
+        "saved": 55,
+        "off": 0,
+        "share": 0.6045,
+        "conv": 0.1914,
+        "convPerMatch": 0.1933,
+        "onTarget": 0.5309
+      },
+      {
+        "bucket": "arc",
+        "n": 58,
+        "perMatch": 5.8,
+        "goals": 2,
+        "goalsPerMatch": 0.2,
+        "saved": 13,
+        "off": 0,
+        "share": 0.2164,
+        "conv": 0.0345,
+        "convPerMatch": 0.0333,
+        "onTarget": 0.2586
+      },
+      {
+        "bucket": "far",
+        "n": 48,
+        "perMatch": 4.8,
+        "goals": 4,
+        "goalsPerMatch": 0.4,
+        "saved": 5,
+        "off": 0,
+        "share": 0.1791,
+        "conv": 0.0833,
+        "convPerMatch": 0.0636,
+        "onTarget": 0.1875
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 113,
+        "share": 0.4216,
+        "conv": 0.1858
+      },
+      {
+        "bucket": "arc",
+        "n": 98,
+        "share": 0.3657,
+        "conv": 0.1224
+      },
+      {
+        "bucket": "far",
+        "n": 57,
+        "share": 0.2127,
+        "conv": 0.0702
+      }
+    ]
+  },
+  {
+    "shift": -2.7,
+    "wasmSha8": "f4879ee8",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 29.3,
+    "goalsPerMatch": 4.8,
+    "regularGoalsPerMatch": 4.5,
+    "headerPerMatch": 1.8,
+    "savedPerMatch": 6.3,
+    "offPerMatch": 18.5,
+    "onTargetRatePooled": 0.3686,
+    "onTargetRatePerMatch": 0.3592,
+    "conversionPooled": 0.1536,
+    "conversionPerMatch": 0.149,
+    "goalsPerShot": 0.1536,
+    "foulsPerMatch": 25,
+    "tacklesPerMatch": 9.1,
+    "shotOverTackle": 3.22,
+    "passesPerMatch": 404.9,
+    "passSuccessPooled": 0.818,
+    "euclidMean_m": 19.3,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 168,
+        "perMatch": 16.8,
+        "goals": 32,
+        "goalsPerMatch": 3.2,
+        "saved": 43,
+        "off": 0,
+        "share": 0.5734,
+        "conv": 0.1905,
+        "convPerMatch": 0.1826,
+        "onTarget": 0.4464
+      },
+      {
+        "bucket": "arc",
+        "n": 76,
+        "perMatch": 7.6,
+        "goals": 10,
+        "goalsPerMatch": 1,
+        "saved": 14,
+        "off": 0,
+        "share": 0.2594,
+        "conv": 0.1316,
+        "convPerMatch": 0.1317,
+        "onTarget": 0.3158
+      },
+      {
+        "bucket": "far",
+        "n": 49,
+        "perMatch": 4.9,
+        "goals": 3,
+        "goalsPerMatch": 0.3,
+        "saved": 6,
+        "off": 0,
+        "share": 0.1672,
+        "conv": 0.0612,
+        "convPerMatch": 0.0708,
+        "onTarget": 0.1837
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 117,
+        "share": 0.3993,
+        "conv": 0.1966
+      },
+      {
+        "bucket": "arc",
+        "n": 120,
+        "share": 0.4096,
+        "conv": 0.1583
+      },
+      {
+        "bucket": "far",
+        "n": 56,
+        "share": 0.1911,
+        "conv": 0.0536
+      }
+    ]
+  },
+  {
+    "shift": -2.4,
+    "wasmSha8": "cfd2bc40",
+    "seeds": 10,
+    "crashedSeeds": 0,
+    "shotsPerMatch": 40.6,
+    "goalsPerMatch": 4.7,
+    "regularGoalsPerMatch": 4.3,
+    "headerPerMatch": 2,
+    "savedPerMatch": 9.4,
+    "offPerMatch": 26.9,
+    "onTargetRatePooled": 0.3374,
+    "onTargetRatePerMatch": 0.3354,
+    "conversionPooled": 0.1059,
+    "conversionPerMatch": 0.1058,
+    "goalsPerShot": 0.1059,
+    "foulsPerMatch": 26.1,
+    "tacklesPerMatch": 9.7,
+    "shotOverTackle": 4.186,
+    "passesPerMatch": 403.3,
+    "passSuccessPooled": 0.7979,
+    "euclidMean_m": 20.08,
+    "buckets": [
+      {
+        "bucket": "box",
+        "n": 201,
+        "perMatch": 20.1,
+        "goals": 33,
+        "goalsPerMatch": 3.3,
+        "saved": 60,
+        "off": 0,
+        "share": 0.4951,
+        "conv": 0.1642,
+        "convPerMatch": 0.1594,
+        "onTarget": 0.4627
+      },
+      {
+        "bucket": "arc",
+        "n": 141,
+        "perMatch": 14.1,
+        "goals": 8,
+        "goalsPerMatch": 0.8,
+        "saved": 26,
+        "off": 0,
+        "share": 0.3473,
+        "conv": 0.0567,
+        "convPerMatch": 0.0625,
+        "onTarget": 0.2411
+      },
+      {
+        "bucket": "far",
+        "n": 64,
+        "perMatch": 6.4,
+        "goals": 2,
+        "goalsPerMatch": 0.2,
+        "saved": 8,
+        "off": 0,
+        "share": 0.1576,
+        "conv": 0.0313,
+        "convPerMatch": 0.0393,
+        "onTarget": 0.1563
+      }
+    ],
+    "euclidBuckets": [
+      {
+        "bucket": "box",
+        "n": 133,
+        "share": 0.3276,
+        "conv": 0.1654
+      },
+      {
+        "bucket": "arc",
+        "n": 182,
+        "share": 0.4483,
+        "conv": 0.1044
+      },
+      {
+        "bucket": "far",
+        "n": 91,
+        "share": 0.2241,
+        "conv": 0.022
+      }
+    ]
+  }
+]

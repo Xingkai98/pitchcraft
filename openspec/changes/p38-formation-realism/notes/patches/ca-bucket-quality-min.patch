@@ -1,0 +1,84 @@
+# P38 #102：★ #102 交付变体：两参数最小质量自适应（欧氏 + 引擎既有折线）
+#
+# 由 probes-main/make-conversion-patches.mjs 生成（不手工编辑）。
+# 应用： git apply <本文件>   （在干净 main worktree 里）
+# ⚠️ 引擎行为改动**不是可合入方案**（未走 OpenSpec、L1 九门有红）——见 notes/conversion-adaptive.md
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 57efe3f..acade5b 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -553,7 +553,7 @@ const SHOT_WINDOW_FREE_M: f64 = 8.0;
+ const OPEN_PLAY_PASS_PRESSURE_M: f64 = 8.0;
+ /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
+ /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
+-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.3;
++const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -3.4;
+ 
+ /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
+ fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
+@@ -3163,7 +3163,8 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
+     let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
+     // P9 射门质量：按起脚距离分桶（禁区内 15/30、禁区弧 7/22、远射 4/11）
+     // 主场优势通道①：判定窗口按射门方主客平移（home goal 上移 / away 不压，saved 宽不变）。
+-    let (goal_p, saved_p) = shot_bucket(dist_to_goal_m(st, shooter));
++    let euclid_m = euclid_to_goal_m(st, shooter);
++    let (goal_p, saved_p) = shot_bucket(dist_to_goal_m(st, shooter), euclid_m);
+     let (goal_lo, saved_hi) = clinical_goal_window(st.possession, goal_p, saved_p);
+     let score_roll = rng.next_u64() % 100;
+     let (result, caught) = if score_roll < goal_lo {
+@@ -4772,13 +4773,31 @@ fn dist_to_goal_m(st: &MatchState, id: i32) -> f64 {
+ /// P9 射门分桶：(goal%, saved%) 按起脚距离。禁区内 15/30、禁区弧 7/22、远射 4/11。
+ /// 禁区弧对齐真实 xG 5-10%（取 7%）、远射对齐禁区外 4.2%（取 4%）。加权（58/27/15）：
+ /// 射正率 ~36%、转化 ~11%、禁区内进球 ~82%（实测校准，见 design D1）。
+-fn shot_bucket(dist_m: f64) -> (u64, u64) {
+-    if dist_m <= BOX_DIST_M {
+-        (15, 30)
+-    } else if dist_m <= ARC_DIST_M {
+-        (7, 22)
++fn shot_bucket(dist_m: f64, dist_euclid_m: f64) -> (u64, u64) {
++    let _ = dist_m;
++    // 质量 = 引擎既有的 distance_quality 折线，输入换成**欧氏**距离（含 y 角向）。
++    let q = shot_quality_banded(dist_euclid_m);
++    let goal = (18.7 * q).round() as i64;
++    let saved = (27.4 * q).round() as i64;
++    (goal.clamp(0, 100) as u64, saved.clamp(0, 100) as u64)
++}
++
++/// P38 #102：射门质量分。折线结点与 distance_quality 逐字相同
++/// （6→1.0 / 16.5→0.9 / 25→0.45 / 35→0.05 / 105→0），只把输入从「只按纵深」
++/// （dist_to_goal_m）换成**欧氏**距离——真实侧实测同一特征判别力 AUC 0.192 → 0.329
++/// （notes/tradeoff-breaking.md §1.2）。不引入角度维度：真实数据里它 AUC 0.505 = 噪声。
++fn shot_quality_banded(dist_euclid_m: f64) -> f64 {
++    let d = dist_euclid_m;
++    if d <= 6.0 {
++        1.0
++    } else if d <= BOX_DIST_M {
++        lerp(1.0, 0.9, (d - 6.0) / (BOX_DIST_M - 6.0))
++    } else if d <= ARC_DIST_M {
++        lerp(0.9, 0.45, (d - BOX_DIST_M) / (ARC_DIST_M - BOX_DIST_M))
++    } else if d <= 35.0 {
++        lerp(0.45, 0.05, (d - ARC_DIST_M) / (35.0 - ARC_DIST_M))
+     } else {
+-        (4, 11)
++        lerp(0.05, 0.0, (d - 35.0) / (PITCH_LENGTH_M - 35.0))
+     }
+ }
+ 
+@@ -4899,6 +4918,17 @@ fn shot_hazard_probability(score: f64, window: f64) -> f64 {
+ /// 持球者→所攻球门中心 与 进攻方向 的夹角余弦（真实米，含 y 角向）。
+ /// x/y 前向分量：home 攻 x=1、away 攻 x=0，球门中心恒在 y=0.5。
+ /// 退化（持球者恰在球门中心点）→ 1.0（正对，贴门必进形态）。
++/// 球员到所攻球门**中心**的欧氏距离（米）。与 `shot_angle_cos` 同一组 dx/dy——
++/// 两者必须同口径。注意与 `dist_to_goal_m`（只按纵深）的区别：那是 hazard 的
++/// `distance_quality` 口径，本量是**射门质量**口径（P38 #102）。
++fn euclid_to_goal_m(st: &MatchState, id: i32) -> f64 {
++    let home = st.possession == 0;
++    let p = st.pos[id as usize];
++    let dx = if home { (1.0 - p.0) * PITCH_LENGTH_M } else { p.0 * PITCH_LENGTH_M };
++    let dy = if home { (0.5 - p.1) * PITCH_WIDTH_M } else { (p.1 - 0.5) * PITCH_WIDTH_M };
++    dx.hypot(dy)
++}
++
+ fn shot_angle_cos(st: &MatchState, id: i32) -> f64 {
+     let home = st.possession == 0;
+     let p = st.pos[id as usize];

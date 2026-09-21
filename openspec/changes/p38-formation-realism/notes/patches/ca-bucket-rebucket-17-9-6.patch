@@ -1,0 +1,33 @@
+# P38 #102：★ 更简单的竞争解：三桶常数各自重标（17/9/6）——证明「形状自适应是必要的」不成立
+#
+# 由 probes-main/make-conversion-patches.mjs 生成（不手工编辑）。
+# 应用： git apply <本文件>   （在干净 main worktree 里）
+# ⚠️ 引擎行为改动**不是可合入方案**（未走 OpenSpec、L1 九门有红）——见 notes/conversion-adaptive.md
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index 57efe3f..348bde9 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -553,7 +553,7 @@ const SHOT_WINDOW_FREE_M: f64 = 8.0;
+ const OPEN_PLAY_PASS_PRESSURE_M: f64 = 8.0;
+ /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
+ /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
+-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.3;
++const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -3.4;
+ 
+ /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
+ fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
+@@ -4774,11 +4774,11 @@ fn dist_to_goal_m(st: &MatchState, id: i32) -> f64 {
+ /// 射正率 ~36%、转化 ~11%、禁区内进球 ~82%（实测校准，见 design D1）。
+ fn shot_bucket(dist_m: f64) -> (u64, u64) {
+     if dist_m <= BOX_DIST_M {
+-        (15, 30)
++        (17, 30)
+     } else if dist_m <= ARC_DIST_M {
+-        (7, 22)
++        (9, 22)
+     } else {
+-        (4, 11)
++        (6, 11)
+     }
+ }
+ 
