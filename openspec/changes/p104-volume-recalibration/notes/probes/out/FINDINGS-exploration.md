@@ -1,5 +1,7 @@
 # P104 探索实测记录（自动生成，不要手改数字——重跑探针再生成）
 
+> ⚠️ **引用口径**：本文件里的断言位置一律用**测试函数名**，不用行号——
+> 行号在任何源码编辑后都会漂（本 change 自己就把它们推偏过，见 `design.md` §D0b 同族教训）。
 > 全部引擎侧数字来自**本 worktree 从 main 源码重建的 wasm**（干净 main = `901da77b`）。
 > 每个 `run-variant` 的 `finally` 里还原 `lib.rs` 并重编，退出后核对 sha。
 > 探针：`notes/probes/{l1-metrics,run-variant,sweep-tackle,sweep-fine}.mjs`。
@@ -83,9 +85,9 @@
 
 **cargo L1 实测（权威）**：`6 绿 3 红`，红名单 **逐条命中**：
 ```
-realism.rs:684  →  普通射门/场 17.09 ∉ [6,11]
-realism.rs:846  →  主队进球/场 1.188 ∉ [0.38,0.75]
-realism.rs:779  →  单场角球 13 超硬上界 12（数量级漂移）   ← 不是 shot/tackle！
+`l1_shot_result_distributions`  →  普通射门/场 17.09 ∉ [6,11]
+`l1_home_away_goal_asymmetry`  →  主队进球/场 1.188 ∉ [0.38,0.75]
+`l1_tackle_dilution_and_slot_mix`  →  单场角球 13 超硬上界 12（数量级漂移）   ← 不是 shot/tackle！
 ```
 
 > ⚠️ **与任务书预期的一处偏差（如实报出）**：任务书列的第三条必重标是 **shot/tackle `[0.5,1.5]`**。

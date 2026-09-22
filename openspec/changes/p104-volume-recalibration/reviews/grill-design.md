@@ -79,7 +79,7 @@ not ok 9 - 基线：引擎源码指纹与当前一致（P38 #87 的 wasm 来源�
 
 `v2_tackle_frequency_in_target_range` 和 `l2_sent_off_kickoff_seeds` 是设计**完全没预见**的。
 它们的语义与 L1 门不同：前者是 P7 槽位时代的**遗留窄带**（`[3,14]`），在抢断涌现到 30 之后
-必然失效；后者是 P29 起反复出现的**「RNG 重排 → 定向 seed 空跑」**模式（`realism.rs:1047-1058`
+必然失效；后者是 P29 起反复出现的**「RNG 重排 → 定向 seed 空跑」**模式（`l2_sent_off_kickoff_seeds`
 的注释已经写过三次同类历史）。
 
 **建议**：
