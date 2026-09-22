@@ -107,6 +107,13 @@ viewer 可切到「真实比赛（对照）」：公开 tracking 数据 → 帧�
   `engineFingerprint`（`viewer/engine.wasm` 与 `engine/src/lib.rs` 的双哈希），
   `tools/benchmark-baseline.test.mjs` 会在源码变更而基线未重生成时**变红**。
   改引擎做实验请记得 `git checkout engine/src/lib.rs` 还原后重跑测试（那红是预期的）
+- ⚠️ **`engine.wasm` 的文件哈希会随「注释行数」变化**（#104 实测，`design.md` §D0）：
+  不是调试段（wasm 里没有 `.debug_*`），而是 ① `data` 段里 `panic!` 的 `Location{line,col}`
+  静态常量 + ② `name` 段里 Rust 内部符号的 LLVM 内容哈希——注释平移一行，两处都变，
+  **行为一点没变**。`-C strip=symbols` / `-C panic=abort` 都消不掉。
+  → **读数请引「流哈希」或基线 `engineFingerprint`，不要引构建哈希**；
+  **源码注释里也不许引自己的构建哈希**（那是不动点问题：写了哈希就改行号，哈希又变）。
+  行为等价的判据是**事件流哈希**（同 seed 同流），不是 wasm 文件哈希。
 - 口径写死在 `viewer/match-metrics.js` 头部注释与 spec：剔除门将 / 瞬时队形逐帧算再均值 /
   **`q10–q90` 纵深**（P37 用户拍板 β：trim1 是顺序统计量、值依赖人数 n，跳过外推点后两侧
   人数不同 → 不是同一估计量）/ **逐场球场尺寸**（104/105/106 不折算）/ 控球代理（离球最近者，
