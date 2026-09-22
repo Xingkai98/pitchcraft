@@ -228,8 +228,11 @@ impl Event {
 /// v6：P34（#53）同队米制间距分离（`SAME_TEAM_MIN_DIST_M`）——统一分离提交改变 mover/main
 ///     终点与部分事件字段（接球点/门将扑救点/开球落点等先与队友分离），事件流再次改变
 ///     （golden 重基线）。
+/// v7：#104 体积重标定（`OPEN_PLAY_SHOT_ENGAGE_SHIFT` −3.4 / `BASE_DEF_TACKLE` −0.65 /
+///     `BASE_DEF_FOUL` −0.06）——射门与抢断一起抬到真实量级（7.755→17.095、9.41→30.38/场），
+///     事件量级与序列全部改变（golden 重基线）。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 6;
+pub const MODEL_VERSION: u32 = 7;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
@@ -369,7 +372,17 @@ const CONTAIN_PRESS_GAIN: f64 = 0.55;
 const BASE_DEF_JOCKEY: f64 = 0.05;
 const JOCKEY_FIT_GAIN: f64 = 0.45;
 /// 抢断打分基线（log 尺度）：与 `TACKLE_EAGERNESS` 相加构成抢断的「无几何」倾向。
-const BASE_DEF_TACKLE: f64 = -1.10;
+///
+/// **#104 重标定：−1.10 → −0.65**（抢断 9.41 → 30.38/场）。
+/// 依据：干净 main 的 9.41 只有真实的 ~0.26×（StatsBomb `Duel/Tackle` 大五 n=170：
+/// mean 36.90 / sd 8.87）。`Duel/Tackle` 含**成功与失败两态**，与本引擎 `tackle` 事件
+/// （`TACKLE_SUCCESS_RATE`=0.5，两态）**同口径**；WhoScored 的「~30/场」是**成功抢断**口径，
+/// 不是本常量的锚点。
+/// ⚠️ **为什么必须与射门一起抬**：抢断份额与射门无关，但 `shot/tackle` 是 L1 门——
+/// 只抬射门会让它到 1.925 ∉ [0.5,1.5]（`volume-compensation.md` §2.4）。
+/// ⚠️ **悬崖**：本常量响应很陡（−0.70 → 25.6/场、−0.65 → 30.4、−0.30 → 232/场），
+/// 改动前务必重跑 L1 门。
+const BASE_DEF_TACKLE: f64 = -0.65;
 /// 抢断 closeness 增益：把「贴到脚下」放大到能压过 contain/jockey 的量级。必须**大于**
 /// `FOUL_CLOSENESS_GAIN`——两者形状相同，增益差决定「贴身且正面 → 抢断」的分界。
 const TACKLE_CLOSENESS_GAIN: f64 = 1.80;
@@ -383,7 +396,14 @@ const TACKLE_CD_PENALTY: f64 = 0.60;
 /// pair 级冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]）。
 const TACKLE_PAIR_CD_PENALTY: f64 = 0.60;
 /// 犯规打分基线（log 尺度）：犯规是「危险的防守选择」——基线高于抢断，唯有近身缠斗时才胜出。
-const BASE_DEF_FOUL: f64 = -0.10;
+///
+/// **#104 重标定：−0.10 → −0.06**（犯规 23.53 → 20.55/场）。
+/// ⚠️ **语义是「补偿」，不是「把犯规当体积缺口修」**：犯规本来就对（干净 main 23.53 在 `[16,30]` 内，
+/// 真实 ~20–21）。抬 `BASE_DEF_TACKLE` 会**从同一块饼里切走犯规**（tackle/foul 在
+/// `select_defensive_action` 里打分选一）→ 犯规掉到 16.98（**钉在下界上**，三个留出窗口
+/// 16.80–16.98，余量 ~1）。本常量把被切走的那份**还回去**，使犯规回到真实量级且有余量。
+/// 响应同样很陡：+0.1 会让犯规到 ~38/场（`design.md` §D2 的 `T*_F0.1` 行）。
+const BASE_DEF_FOUL: f64 = -0.06;
 const FOUL_DANGER_GAIN: f64 = 0.40;
 /// 犯规的 closeness 增益：**小于** `TACKLE_CLOSENESS_GAIN`（见上）。
 const FOUL_CLOSENESS_GAIN: f64 = 0.55;
@@ -553,7 +573,14 @@ const SHOT_WINDOW_FREE_M: f64 = 8.0;
 const OPEN_PLAY_PASS_PRESSURE_M: f64 = 8.0;
 /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
 /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.3;
+///
+/// **#104 重标定：−4.3 → −3.4**（普通射门 7.755 → 17.095/场）。
+/// 依据：干净 main 的 7.755 只有真实的 ~0.36×（StatsBomb 大五联赛 n=170：mean 21.64 / sd 5.03）。
+/// 该带的**来历**（「引擎无二次进攻链，射门设计上低于真实」）已被证伪——它只是一个可调常量。
+/// **留出窗口**（200 场/窗，`design.md` §D7）：401..600 = 17.095、601..800 = 16.595、
+/// 801..1000 = 17.035，极差 0.500 ≪ 带 `[14,29]` 宽 15（位移/带宽 = 0.033；对比 #102 是 3–5）。
+/// wasm `13b0263a`（与本条同时应用的另两条常量一起）。
+const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -3.4;
 
 /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
 fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
@@ -784,6 +811,15 @@ fn open_play_pass_risk(pass_m: f64, nearest_defender_m: f64, liveness_bonus: f64
 ///   （阶段 3 高达 +0.45）→ 同一 `gain` 下出界偏多（界外球 9.5 → 13.6/场，超 [3,20] 上界余量）。
 ///   下调 `gain` 使 200 场实测回到带内（界外球 8.74/场、角球 1.98/场、门球 11.37/场）。
 ///   这是**通道生效后的重标定**，不是为迁就其他参数。
+///
+/// ⚠️ **#104 观测：角球单场长尾的主要来源是「射门抬升」，不是「抢断抬升」。**
+/// `l1_tackle_dilution_and_slot_mix` 有 `max_single <= 15` 的数量级护栏（原 12，见该测试注释）。
+/// 单变量隔离实测（每档 2000–3000 场，`design.md` §D6）：
+///   干净 main → 角球 max **12**（200 场只有 9）；`BASE_DEF_FOUL`/`BASE_DEF_TACKLE` 单独 → 10；
+///   **只抬射门（`engageShift −3.4`）→ max 14**；加抢断反而回落到 12–13。
+/// 机制：射门变多 → 扑出越线 / 解围出底线的通道变密 → 角球长尾上行。
+/// **别把长尾归因到抢断上**（初版设计就是这么写错的）。另注：极值统计量对样本量敏感——
+/// 用 200 场给上界定值会系统性低估（干净 main 200 场 max=9 但 3000 场 max=12）。
 const OUT_CHANNEL_BASE: f64 = 0.012;
 const OUT_CHANNEL_RISK_GAIN: f64 = 0.062;
 
@@ -5973,7 +6009,21 @@ mod tests {
 
     #[test]
     fn v2_tackle_frequency_in_target_range() {
-        // P7 槽位：tackle 槽 22% × 32 ≈ 7 槽/场（检查失败 force_fail 仍产），多 seed 平均 4-12
+        // ⚠️ **#104 语义已重写。** 原注释与断言是 **P7 槽位时代**的产物：
+        //   「tackle 槽 22% × 32 ≈ 7 槽/场」→ 带 `[3,14]`。
+        // 槽位层已在 **P31 删除**，抢断改由「防守接触竞争」涌现（P30/P31）——
+        // 原带的前提**已不存在**，它断言的「7 槽/场」在引擎里没有任何对应物。
+        // #104 把抢断抬到真实量级后实测 30.2/场，原带 `[3,14]` 必然红。
+        //
+        // **这不是「放宽上界以通过改动」**：原带守的是一条**已被删除的机制**，
+        // 保留它等于让本测试守护一个不存在的设计。改法是**换成语义正确的体量断言**，
+        // 口径与 `tests/realism.rs::l1_tackle_dilution_and_slot_mix` 的抢断体量带**同源**：
+        // 真实侧 StatsBomb Open Data 大五联赛子集 n=170 的 `Duel/Tackle`（含成功+失败两态，
+        // 与本引擎 `tackle` 同口径）mean 36.90 / sd 8.87，`mean ± 1.5·sd` = `[24, 50]`。
+        //
+        // 分层：本测试是**默认套件**里的快速体量哨兵（20 seed，~2s），L1 那条是 200 seed 的统计门。
+        // ⚠️ 20 seed 的均值标准误实测 ~1.3（200 seed sd 5.80）→ 本带的判别力弱于 L1 那条，
+        // **定位是「机制塌缩/爆炸」的粗粒度哨兵**，不是拟合度判据。
         let cfg = MatchConfig::default_();
         let mut total = 0usize;
         let n = 20usize;
@@ -5982,8 +6032,16 @@ mod tests {
             total += c.get("tackle").unwrap_or(&0);
         }
         let avg = total as f64 / n as f64;
-        assert!(avg >= 3.0, "tackle 频率过低（平均 {:.1}/场），应 ~7 槽/场", avg);
-        assert!(avg <= 14.0, "tackle 频率过高（平均 {:.1}/场），应 ~7 槽/场", avg);
+        assert!(
+            avg >= 24.0,
+            "tackle 频率过低（平均 {:.1}/场），应在真实量级（#104 体量带下界 24）",
+            avg
+        );
+        assert!(
+            avg <= 50.0,
+            "tackle 频率过高（平均 {:.1}/场），应在真实量级（#104 体量带上界 50）",
+            avg
+        );
     }
 
     #[test]
@@ -8081,12 +8139,22 @@ mod tests {
     /// **不产 Shot**。与抢断打断同构（D4 犯规并入竞争后的窗口落点）。
     #[test]
     fn p30_window_foul_cancels_without_shot() {
-        // carrier 中圈附近（远射、禁区外 → 犯规有资格），防守者贴身且落后（depth_lead < 0 →
+        // carrier 中圈附近（远射、禁区外 → 犯规有资格），防守者落后（depth_lead < 0 →
         // 抢断被 bad_angle 压、犯规胜出）。
+        //
+        // ⚠️ **#104 几何已重选。** 原几何是 `d ≈ 1.05m`（0.57 vs 0.58），在**旧的**
+        // `BASE_DEF_TACKLE = -1.10` 下是「犯规带」；#104 把基线抬到 `-0.65` 后，
+        // `score_tackle` 整体上移 → **同一几何现在选 `Tackle`**（实测 t=0.806 > fo=0.650），
+        // 前置断言失败。**这是打分基线变更的正常后果，不是缺陷**——
+        // 本测试要守的是「窗口 tick 上犯规取消射门」这条**机制**，与具体距离无关。
+        // 重扫后的犯规带（两防守动作的序在 `score_foul > max(tackle, contain, jockey)` 处翻转）：
+        //   d ≈ 2.1–3.2m 且 depth_lead < 0 → Foul（实测 0.02/0.03 back 两点均选 Foul）。
+        // 取 d ≈ 3.15m（0.03 back）：`score_foul = 0.505` 显著高于 `score_tackle = -0.413`，
+        // 离两侧翻转点都有余量，不贴边界。
         let build = || {
-            let mut st = window_state(&[(11, 0.57, 0.5)]);
+            let mut st = window_state(&[(11, 0.55, 0.5)]);
             st.pos[9] = (0.58, 0.5);  // carrier 在防守者前方
-            st.pos[11] = (0.57, 0.5); // 约 1.05m，略在身后 → 犯规带（P31 重标定后）
+            st.pos[11] = (0.55, 0.5); // 约 3.15m，在身后 → 犯规带（#104 重扫后）
             st.shot_setup = Some(ShotSetup::new(30.0, true));
             st
         };

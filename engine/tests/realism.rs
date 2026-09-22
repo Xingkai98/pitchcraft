@@ -676,12 +676,25 @@ fn l1_shot_result_distributions() {
     let far45: usize = stats.iter().map(|s| s.n_shot_far45).sum();
     assert_eq!(far45, 0, "存在距门 >45m 射门（{}），应已消除", far45);
 
-    // 射门/场。P29 起射门由 hazard 涌现（不再由槽位 35% 直接决定），这条带是**经验体量带**
-    // （「集锦不塌缩 / 不爆炸」），不是配额断言——射门数由几何 + hazard 掷定产生。
+    // 射门/场。P29 起射门由 hazard 涌现（不再由槽位 35% 直接决定），这条带是**体量带**，
+    // 不是配额断言——射门数由几何 + hazard 掷定产生。
     // 方向性断言（「近门/无压更易起脚」）在引擎内：`p29_window_commit_rate_falls_with_pressure`
     // 与 `p29_hazard_factor_directions`（D4：断言方向而非固定数量）。
+    //
+    // **#104 重标定：`[6,11]` → `[14,29]`。** 原带的来历（「引擎没有二次进攻链，射门**设计上**
+    // 就低于真实」）已被证伪——#104 实测它只是一个可调常量（`OPEN_PLAY_SHOT_ENGAGE_SHIFT`
+    // 一处 0.9 的平移就把 7.755 抬到 17.095）。
+    // 新带**按真实侧分布推导，不照引擎现状配**：StatsBomb Open Data 大五联赛子集 n=170，
+    // 普通射门（非头球、按 90min 归一、逐场算再平均）mean 21.64 / sd 5.03，`mean ± 1.5·sd`
+    // = [14.09, 29.18] → 取整 `[14, 29]`（change `p104-volume-recalibration` design §D5.1）。
+    // ⚠️ **引擎当前读数 17.095 落在带的下沿**（距下界 3.1）——这是**如实结果**，
+    // 不得为了让读数居中而下压带的界（那正是本 requirement 要消除的「按现状标定」）。
     let shots_per = regular as f64 / n;
-    assert!((6.0..=11.0).contains(&shots_per), "普通射门/场 {:.2} ∉ [6,11]", shots_per);
+    assert!(
+        (14.0..=29.0).contains(&shots_per),
+        "普通射门/场 {:.2} ∉ [14,29]（#104 重标定：真实侧 StatsBomb 大五 n=170 mean 21.64 sd 5.03 的 ±1.5sd）",
+        shots_per
+    );
 
     // 头球射门（emit_header_shot）：对齐禁区桶 goal 15 / saved 30 / off 55
     let (hg, hsv, hoff) = (
@@ -707,10 +720,28 @@ fn l1_shot_result_distributions() {
 #[ignore]
 fn l1_tackle_dilution_and_slot_mix() {
     let stats = l1_stats();
+    let n = SEEDS_L1 as f64;
     let tackles: usize = stats.iter().map(|s| s.n_tackle).sum();
     let successes: usize = stats.iter().map(|s| s.n_tackle_success).sum();
     assert!(tackles >= 400, "tackle 样本不足：{}", tackles);
     let overall = successes as f64 / tackles as f64;
+
+    // **#104 新增：抢断体量带 `[24, 50]`/场。** 原测试只有射门 vs 抢断的**比值**带，
+    // 没有抢断的**绝对体量**带——比值带对「两类一起塌缩」是盲的（#104 之前引擎的抢断
+    // 只有 9.41/场 = 真实的 0.26×，却因为射门同样压缩而比值正常）。
+    // 新带**按真实侧分布推导，不照引擎现状配**：StatsBomb Open Data 大五联赛子集 n=170，
+    // 事件 = `Duel` 中 `type=="Tackle"`，按 90min 归一、逐场算再平均，mean 36.90 / sd 8.87，
+    // `mean ± 1.5·sd` = [23.60, 50.21] → 取整 `[24, 50]`（change `p104-volume-recalibration` §D5.2）。
+    // ⚠️ **口径对齐**：StatsBomb 的 `Duel/Tackle` 的 outcome 含
+    // `Success In Play`/`Success Out`/`Lost In Play`/`Lost Out`，即**成功与失败两态的全部尝试**；
+    // 本引擎的 `tackle` 事件也含两态（`TACKLE_SUCCESS_RATE`=0.5）→ **同口径、可比**。
+    // ⚠️ WhoScored 的「~30/场（15-17/队）」是**成功抢断**口径，**不是**本带的依据（混口径会低估）。
+    let tackles_per = tackles as f64 / n;
+    assert!(
+        (24.0..=50.0).contains(&tackles_per),
+        "抢断/场 {:.2} ∉ [24,50]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）",
+        tackles_per
+    );
     // P30（D3，2C）：`same_pair`/`far` 补丁已删，抢断结果只有 success/fail 两态，
     // 成功按 `TACKLE_SUCCESS_RATE`(0.5) 掷定 → 整体 success 应 ≈ 0.5。
     // 旧稀释模型（贴防 eager 50% / not-eager 15% / same_pair 0% → ~28-32%）是补丁时代的产物，
@@ -741,6 +772,21 @@ fn l1_tackle_dilution_and_slot_mix() {
     let far: usize = stats.iter().map(|s| s.n_tackle_far).sum();
     // 事件内 dist>12m 的抢断在 P30 后恒为 0（打分资格要求 ≤ 阈值，超阈值直接 NEG_INFINITY）——
     // 这是 D3「资格在打分阶段判定」在事件层的可见证据（旧的 `far` 降成功率已被删除）。
+    //
+    // ⚠️ **#104 已知技术债（本 change 记录、未修）——本断言「量错了东西」，不是「精度不够」。**
+    // 它要测的不变量（D3 资格在打分阶段判定）在**未序列化的内部几何**上严格成立：
+    // `score_tackle` 在 `dist_m > 12.0` 时返回 `f64::NEG_INFINITY`（`lib.rs`），
+    // 且**该不变量已被正确守护在引擎内**——见 `p30_tackle_score_directions` 断言
+    // `score_tackle(13.0) == NEG_INFINITY`。
+    // 而本行的 `far`（`aggregate` 里算的）是**从序列化后的事件字段（4 位小数）重新求距离**，
+    // 测的是**舍入后的另一个量**。故它是一条**冗余且脆弱的重复断言**，不是唯一守护。
+    // 实测三个配置在 3000 场上的越界（干净 main 0 / 当前配置 15 / 被否决的备选 25）
+    // 最大距离都只有 12.0076m——**是舍入 + 临界几何抽样，不是机制破裂**。
+    // 本 change **保持断言不变**（它现在不红；在已重标多条门的 change 里再动一条会加重
+    // 「把门调松」的风险），**但换任何抬高事件量的方案都会踩到**（当前配置只是**碰巧**
+    // 没落在冻结窗口 401..600 内——是运气，不是它更干净）。
+    // 后续处置方向：**删掉它或加 ε 容差**（真守卫已在，ε 低风险）——
+    // 不要用「浮点不可避免」把这条冗余断言长期合理化。
     assert_eq!(far, 0, "事件内 dist>12m 抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：{}", far);
 
     // 射门 vs 抢断的经验体量比。**P29 起不再是槽位配额比**（旧：「声明 35/22≈1.59」——2B 后
@@ -756,9 +802,16 @@ fn l1_tackle_dilution_and_slot_mix() {
     // → 200 场实测 ratio = 0.855（旧引擎 1.12）。**方向是对的**：真实比赛射门 ~13/场、
     // 抢断 ~25/场 → ratio ~0.52；旧 [1.0,1.8] 是槽位配额（35%/22%≈1.59）的产物，偏虚高。
     // 本带只守「某一类塌缩/爆炸」的数量级，不是配额断言（D6：不给防守竞争补强制来源）。
+    //
+    // **#104：本带不需要重标（实测确认）。** #104 把射门与抢断**一起**抬到真实量级
+    // （7.755→17.095、9.41→30.38）→ ratio = 0.563，**落在原带 [0.5,1.5] 内**。
+    // ⚠️ **只抬射门会让它到 1.925（越界）**——这正是本带挡住的那类改动，
+    // 也是 `volume-compensation.md` §2.4「体积是一组缺口，射门与抢断必须一起抬」的机器证据。
+    // （#104 任务书把本带列为「必然重标」，其依据的红值 1.785 来自**只抬射门**的 #102 配置；
+    //  本 change 走的是「一起抬」那条路，故本带不动。）
     assert!(
         (0.5..=1.5).contains(&ratio),
-        "shot/tackle 比值 {:.3} ∉ [0.5,1.5]（P31 D6 重标定：实测 0.855，真实比赛 ~0.52）",
+        "shot/tackle 比值 {:.3} ∉ [0.5,1.5]（P31 D6 重标定：实测 0.855；#104 一起抬后 0.563；真实比赛 ~0.52）",
         ratio
     );
 
@@ -776,7 +829,17 @@ fn l1_tackle_dilution_and_slot_mix() {
     // P34 再标定：同队间距分离改变 RNG 流与落点/出界分布，200 场实测均值 2.15/场，
     // 单场峰值触及 9（界外球/扑出越线的长尾），上界放宽到 12——仍守住「不塌缩到 0 /
     // 不爆炸」的数量级护栏（旧槽位时代峰值 18）。
-    assert!(max_single <= 12, "单场角球 {} 超硬上界 12（数量级漂移）", max_single);
+    //
+    // **#104 重标定：`≤12` → `≤15`。** ⚠️ 这条界的**语义是数量级护栏**（「不塌缩/不爆炸」），
+    // **不是**真实拟合——真实角球均值 ~10/场（StatsBomb 356 场实测 mean 10.27），
+    // 引擎 3.44 仍远低于真实，本界不承诺向真实收敛。
+    // 依据**必须用 3000 场定**（上界是极值统计量，200 场的 max 会系统性低估：
+    // 干净 main 200 场 max=9，但 3000 场 max=**12**）。
+    // 实测 3000 场：干净 main **12**、#104 交付配置 **13**（P(>12)=0.067%、P(>15)=0%）。
+    // ⚠️ **余量很薄，如实记录**：干净 main 自己就已 max=12（对原界 `≤12` 余量 0）——
+    // 故任何抬高事件量级的方案都会顶到这条界（`design.md` §D6：长尾来自**射门抬升本身**，
+    // 只抬射门 `engageShift −3.4` 单跑 max 就到 14；不是抢断造成的）。
+    assert!(max_single <= 15, "单场角球 {} 超硬上界 15（数量级漂移）", max_single);
 
     // **P31 D2 承重守卫**：界外球是「pass_risk 调制出界通道」的**直接产物**（边线侧出界
     // → 界外球），删槽位后其唯一来源。实测 200 场 9.54/场；把 `open_play_out_probability`
@@ -825,13 +888,19 @@ fn l1_pass_completion_rate() {
 /// L1：主客进球不对称（pilot 3 home-advantage）。口径：600 场聚合主/客进球分桶
 /// （n_goal_home/n_goal_away，= shot[result=goal] 射手队归属，与比分同源）。
 /// 真实参考（research/l3-gap-analysis.md §五，Kopacak）：主 1.53 / 客 1.22，主客比 ~1.25。
-/// 引擎在 L3 体积压缩缺口下总进球 ~0.9-1.1/场（本任务不做 B 档体积扩展，只做**主客比例**），
-/// 单场 0-1 球居多、主客各 ~0.4-0.6/场 → 比率统计误差大（600 场 ratio 95% CI 半宽 ~0.10）。
 /// 断言设计（#63 三层重构后 = 短窗口方向 sanity，非精细 ratio 下界）：
 ///   - 主队进球 > 客队进球（严格方向——抓「主场优势消失/反向」，不再设 1.08 精细下界；
 ///     精确 ratio 校准交给 `l3_home_away_goal_calibration` report-only）；
-///   - 主队进球/场 ∈ [0.38, 0.75]（体积只允许轻微浮动，防总量暴涨/崩塌）；
+///   - 主队进球/场 ∈ **[0.85, 1.60]**；
 ///   - 客队进球/场 ≥ 0.30（主场优势不得机械压低客队——优势来自主队更强，客队不背压）。
+///
+/// **#104 重标定：`[0.38, 0.75]` → `[0.85, 1.60]`。** 原带的注释自写「体积只允许轻微浮动，
+/// 防总量暴涨/崩塌」——那是**按压缩态标定的**（当时引擎总量 ~1.06/场，本任务不做体积扩展）。
+/// #104 把射门抬到真实量级后总量 ~2.18/场（主 1.188 / 客 0.993）。
+/// 新带按**原带的相对容差**套到新中心：原带中心 0.565、半宽 0.185（±33%）；
+/// 新中心 ~1.22（引擎实测，与真实主 1.53 同量级）按同一相对容差 → `[0.82, 1.62]`，取整 `[0.85, 1.60]`。
+/// ⚠️ **方向语义完全不变**：`gh > ga` 与 `ga_pm >= 0.30` 两条断言**不动**——
+/// 只有那条**绝对量带**随体积重标（#104 任务书明令）。
 #[test]
 #[ignore]
 fn l1_home_away_goal_asymmetry() {
@@ -844,8 +913,8 @@ fn l1_home_away_goal_asymmetry() {
     assert!(gh >= 60, "主队进球样本不足：{}（600 场应 ~320+）", gh);
     assert!(ga >= 40, "客队进球样本不足：{}（600 场应 ~300+）", ga);
     assert!(
-        (0.38..=0.75).contains(&gh_pm),
-        "主队进球/场 {:.3} ∉ [0.38,0.75]",
+        (0.85..=1.60).contains(&gh_pm),
+        "主队进球/场 {:.3} ∉ [0.85,1.60]（#104 重标定：体积已抬到真实量级，原带 [0.38,0.75] 是按压缩态标定的）",
         gh_pm
     );
     // **这是「主场优势消失/反向」的短窗口方向 sanity，不是「用 600 场精确证明 ratio ≥ 1.08」。**
@@ -948,7 +1017,15 @@ fn l3_shot_ratios() {
     let conv_r = goals as f64 / shots as f64;
     let inside_r = box_goals as f64 / goals as f64;
     // 真实参考带（report.md §五）：射正率 ~33%、转化 ~10%、禁区内进球 ~85%。
-    // 实测（200 场）：38.3% / 13.1% / 86.9%，带留余量。
+    // 实测（200 场，干净 main）：38.3% / 13.1% / 86.9%，带留余量。
+    //
+    // **#104：三条带都不需要重标（实测确认）。** #104 把射门抬到真实量级后实测
+    // sot 0.369 / conv 0.126 / inside 0.753 —— **三条全过**。
+    // ⚠️ **这是比率带，与体积无关**：转化率是 `shot_bucket` 的固定桶常数
+    // （15/30、7/22、4/11，见 `shot_bucket` 注释），不随射门数量变化——#104 不动它。
+    // （#104 任务书把这三条列为「需与射门带一起重标」，那是在 #102 的**质量自适应变体**
+    //  上下文里说的——那个变体改坏了 `shot_bucket` 的取值使 inside 破带（0.705），
+    //  是它自己的参数取值问题；P38 `conversion-adaptive.md` §5.3 已撤回「互斥」判定。）
     assert!((0.28..=0.39).contains(&sot_r), "射正率 {:.3} ∉ [0.28,0.39]", sot_r);
     assert!((0.08..=0.14).contains(&conv_r), "射门转化率 {:.3} ∉ [0.08,0.14]", conv_r);
     assert!((0.72..=0.92).contains(&inside_r), "禁区内进球占比 {:.3} ∉ [0.72,0.92]", inside_r);
@@ -1054,9 +1131,18 @@ fn l2_cross_event_invariants() {
 /// RNG 消费序列，原钉死 seed 又失效。按当前引擎重新扫描（1..=3000）取「红牌 + 进球」的
 /// seed：18 / 59 / 94 / 95。（扫掠中发现 loose 球滚动未 clamp 场内的潜在越界，
 /// 同 P34 一并修复；同队间距阈值与分离算法定稿后重扫。）
+///
+/// #104 再更新：体积重标定（射门与抢断一起抬到真实量级）第三次改写 RNG 消费序列，
+/// 原钉死 seed 再次失效（实测 seed 18/94/95 已**零红牌** → 守卫空跑）。
+/// 按当前引擎重新扫描（1..=3000，红牌 190 张）取「**红牌在进球之前**」的 seed：
+/// **29 / 35 / 59 / 84**。
+/// ⚠️ 口径比「红牌 + 进球」更严：本测试的意图是「进球后开球/接球的硬编码 id（9/12 开球、
+/// 10/11 接球）恰为**罚下者**时最易暴露退化」——故必须**红牌先于进球**才有意义
+/// （实测 42/69/93/103/118 虽同时含红牌与进球，但红牌发生在进球**之后**，对本路径无覆盖）。
+/// 引擎确定性 → 永不 flaky；`n_foul_red > 0` 的前置断言保证将来引擎改动让它们再次空跑时会红。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [18u64, 59, 94, 95] {
+    for seed in [29u64, 35, 59, 84] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1101,6 +1187,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         4 => "tests/golden-v4",
         5 => "tests/golden-v5",
         6 => "tests/golden-v6",
+        7 => "tests/golden-v7",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1262,7 +1349,7 @@ fn gm_canary_seeds() {
     }
 }
 
-/// P29 D4 / P31 D5 / P34 D4 硬验收：旧 golden 基线（v1..v5）**保留不覆盖**，且当前引擎与它们**确实不同**。
+/// P29 D4 / P31 D5 / P34 D4 / #104 硬验收：旧 golden 基线（v1..v6）**保留不覆盖**，且当前引擎与它们**确实不同**。
 ///
 /// 2B 改变可观测行为（射门由 hazard 涌现 + 起脚窗口可被抢断），因此：
 /// - v1/v2 目录必须仍然存在且自洽（可读、字段非负）——不得被重基线覆盖（D4「v1/v2 保留」）；
@@ -1279,12 +1366,13 @@ fn gm_legacy_baselines_preserved_and_differs() {
         let gold_v3 = read_golden(3, seed);
         let gold_v4 = read_golden(4, seed);
         let gold_v5 = read_golden(5, seed);
+        let gold_v6 = read_golden(6, seed);
         // 1. 旧基线仍在、字段自洽（未被覆盖成空/异常）——P31 D5「v1..v4 保留不覆盖」+
-        //    P34 D4「v1..v5 保留不覆盖」。
+        //    P34 D4「v1..v5 保留不覆盖」+ #104「v1..v6 保留不覆盖」。
         assert!(
             gold_v1.n_events > 0 && gold_v2.n_events > 0 && gold_v3.n_events > 0
-                && gold_v4.n_events > 0 && gold_v5.n_events > 0,
-            "seed {} 旧基线读取异常（v1..v5 应都存在且非空）",
+                && gold_v4.n_events > 0 && gold_v5.n_events > 0 && gold_v6.n_events > 0,
+            "seed {} 旧基线读取异常（v1..v6 应都存在且非空）",
             seed
         );
         // 2. P27 历史对：v1 与 v2 计数一致、只有出界字段值不同（旧对自洽，非本 change 引入）
@@ -1296,11 +1384,11 @@ fn gm_legacy_baselines_preserved_and_differs() {
         );
         assert_eq!(gold_v1.n_out_goal_line, gold_v2.n_out_goal_line, "seed {} v1/v2 出底线计数", seed);
         assert_eq!(gold_v1.n_out_sideline, gold_v2.n_out_sideline, "seed {} v1/v2 出边线计数", seed);
-        // 3. 当前（v6）必须与五个旧基线都不同——P34 真的改了行为（否则本 change 名不副实）。
-        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3), ("v4", &gold_v4), ("v5", &gold_v5)] {
+        // 3. 当前（v7）必须与六个旧基线都不同——#104 真的改了行为（否则本 change 名不副实）。
+        for (lv, g) in [("v1", &gold_v1), ("v2", &gold_v2), ("v3", &gold_v3), ("v4", &gold_v4), ("v5", &gold_v5), ("v6", &gold_v6)] {
             assert!(
                 g.stream_hash != st.stream_hash,
-                "seed {}：当前流哈希与 {} 相同——P34 应改变可观测行为（同队米制分离未生效？）",
+                "seed {}：当前流哈希与 {} 相同——#104 应改变可观测行为（体积重标定未生效？）",
                 seed, lv
             );
         }
@@ -1318,6 +1406,11 @@ fn gm_legacy_baselines_preserved_and_differs() {
         assert!(
             gold_v4.stream_hash != gold_v5.stream_hash,
             "seed {}：v5 与 v4 流哈希相同——P31 行为改变未落到基线",
+            seed
+        );
+        assert!(
+            gold_v5.stream_hash != gold_v6.stream_hash,
+            "seed {}：v6 与 v5 流哈希相同——P34 行为改变未落到基线",
             seed
         );
         if gold_v1.n_out_goal_line + gold_v1.n_out_sideline > 0 {
