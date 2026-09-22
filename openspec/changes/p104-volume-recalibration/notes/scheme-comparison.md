@@ -8,7 +8,7 @@
 | | **方案 ③（3 常量）** | **方案 deadline（2 常量）** |
 |---|---|---|
 | 变体 | `engageShift −3.4` + `BASE_DEF_TACKLE −0.65` + `BASE_DEF_FOUL −0.06` | `engageShift −3.4` + `BASE_ACTION_DEADLINE_TICKS 6` + `BASE_DEF_TACKLE −0.70` |
-| wasm sha8 | `13b0263a` | `a2fca522` |
+| wasm sha8（读数所属构建，见 `design.md` §D0） | `13b0263a` | `a2fca522` |
 | **射门/场** | 17.095 | 18.695 |
 | **抢断/场** | 30.38 | 30.07 |
 | **shot/tackle** | 0.5627 | 0.6217 |

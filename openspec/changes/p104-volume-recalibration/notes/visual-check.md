@@ -3,7 +3,7 @@
 > 图：`/tmp/p104-{real,clean,cand}-120.png`、`/tmp/p104-side.png`（三方并排 120s）、
 > `/tmp/p104-{clean,cand}-3600.png`、`/tmp/p104-side-3600.png`（两方并排全场）。
 > 渲染源：`notes/probes-main/render-trajectories.mjs`（从脚本位置上溯仓库根，不硬编码）。
-> wasm：干净 main `901da77b` / 候选 `b12fa58c`。
+> wasm：干净 main `901da77b` / 候选读数所属构建 `b12fa58c`（见 `design.md` §D0）。
 
 ## 1. 120s 窗三方并排（真实 / 干净 main / 候选）
 

@@ -3,7 +3,7 @@
 > 用户第 2 轮决定 5（M5）：把原「判据组不恶化」改成「逐条对照并如实记录」——
 > `swarm` 确实恶化了。本文件是实测结果。
 > 跑法：`node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs`
-> （**报告期、不阻塞**；verify.sh 第 9 步）。wasm：干净 main `901da77b` / 候选 `b12fa58c`。
+> （**报告期、不阻塞**；verify.sh 第 9 步）。wasm：干净 main `901da77b` / 候选读数所属构建 `b12fa58c`（见 `design.md` §D0）。
 
 | 判据 | 目标带 | 干净 main | 候选 | Δ | 判定 |
 |---|---|---|---|---|---|

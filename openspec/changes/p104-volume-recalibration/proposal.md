@@ -45,10 +45,10 @@ P38 #102 的教训（同一族最简解没试完就下结论）在本票的直�
 |---|---|---|
 | 普通射门/场 | **`[14, 29]`** | StatsBomb 大五 n=170：mean 21.64 / sd 5.03，`±1.5·sd` = [14.09, 29.18] |
 | 抢断/场（**新立**） | **`[24, 50]`** | 同上子集 `Duel/Tackle`：mean 36.90 / sd 8.87，`±1.5·sd` = [23.60, 50.21] |
-| 主队进球/场 | **`[0.85, 1.60]`** | 原带相对容差 ±33% 套到新中心 ~1.22（`gh > ga`、`ga_pm ≥ 0.30` **方向断言不动**） |
+| 主队进球/场 | **`[0.85, 1.60]`** | **原带相对容差保留法**（非真实侧分布推导）：原带中心 0.565/半宽 0.185 套到**引擎实测新中心 1.188** → `[0.80,1.59]`，取整沿用拍板值（`gh > ga`、`ga_pm ≥ 0.30` **方向断言不动**） |
 | 单场角球上界 | **`≤15`** | 3000 场定值；干净 main max=12、本方案 max=13 |
 
-实测（cargo L1 权威，方案 ③ wasm `13b0263a`）：**6 绿 3 红**，红名单逐条：
+实测（cargo L1 权威，方案 ③ 读数实测于 wasm `13b0263a`，见 `design.md` §D0）：**6 绿 3 红**，红名单逐条：
 ```
 realism.rs:684  →  普通射门/场 17.09 ∉ [6,11]           ← 按压缩态标定的体量带
 realism.rs:846  →  主队进球/场 1.188 ∉ [0.38,0.75]     ← 按压缩态标定的绝对量带
@@ -95,9 +95,9 @@ realism.rs:779  →  单场角球 13 超硬上界 12               ← 射门抬
 ## Impact
 
 - `engine/src/lib.rs`：3 个常量 + `MODEL_VERSION` 6→7
-- `engine/tests/realism.rs`：3 条断言的带 + `golden_dir` 加 v7 + legacy 测试扩 v1–v6
+- `engine/tests/realism.rs`：3 条体量带重标 + 1 条新带 + 3 条中断测试修复 + `golden_dir` 加 v7 + legacy 扩 v1–v6
 - `engine/tests/golden-v7/`：新增（`ACCEPT_GOLDEN=1` 生成，提交前人工审查 diff）
-- `openspec/specs/match-engine/spec.md`：3 条 requirement 的门槛文本
+- `openspec/specs/match-engine/spec.md`：**4 条** requirement（2 ADDED + 2 MODIFIED），与 delta 逐字一致
 - **不改** `viewer/` 任何 JS（无浏览器缓存版本号需要更新）
 
 ## 关联
