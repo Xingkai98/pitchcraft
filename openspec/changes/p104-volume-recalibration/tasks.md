@@ -4,8 +4,8 @@
 > `notes/user-decision-round2-2026-09-22.md`）。**无阻塞门槛。**
 > 方案已按第 2 轮判定原则选定：**方案 ③（3 常量）**（依据 `design.md` §D3.4）。
 >
-> **当前状态**：P1–P5 全部完成（commit `d71f7b0` + `01db87a`），
-> `./verify.sh` 9 步全绿、`cargo test` 129p/0f。**只剩 P6 审阅闭环。**
+> **当前状态**：P1–P5 全部完成，审阅已过两轮（round1 0B/3M/4m → round2 **0B/0M/7m**）。
+> `./verify.sh` 9 步全绿、`cargo test` 129p/0f、L1 九门 9 绿。**只剩收尾轮审阅确认。**
 
 ## P1. 探针与证据落盘（已完成）
 
@@ -95,9 +95,12 @@
 
 ## P6. 审阅闭环（强制收尾）
 
-- [ ] P6.1 独立零记忆 subagent 审阅实现（`reviews/review-round1.md`）
-- [ ] P6.2 修复发现的问题
-- [ ] P6.3 再审，直到无遗留问题（`reviews/review-round2.md` …）
+- [x] P6.1 独立零记忆 subagent 审阅实现（`reviews/review-round1.md`：0B/3M/4m，建议交付）
+- [x] P6.2 修复轮1 发现的问题（`review-response.md`；commit `b244bab`）
+- [x] P6.3 再审（`reviews/review-round2.md`：**0B/0M/7m**，建议交付）
+- [x] P6.4 修复轮2 发现的问题（`review-response-round2.md`；commit `a9eb958`）——
+      含 **§D0b** 记录的源码扫描陷阱（注释里的字面 `#[cfg(test)]` 会打断 3 条测试）
+- [ ] P6.5 收尾轮审阅确认无遗留（`reviews/review-round3.md`）
 
 ## 关联
 

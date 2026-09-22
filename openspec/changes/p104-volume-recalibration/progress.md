@@ -5,8 +5,10 @@
 ## 状态：**已实现 + 全套门绿，进入审阅闭环（P6）**
 
 - 分支 `p104-volume-recalibration/2026-09-21`，基于 main `6f5827f`
-- commit：`d71f7b0`（实现）、`01db87a`（主 spec 对齐）
-- 干净 main wasm sha8 = `901da77b`；**交付 wasm sha8 = `b12fa58c`**
+- commit：`d71f7b0`（实现）→ `01db87a`（主 spec 对齐）→ `668a208` → `b244bab`（round1 修复）
+  → `807abe7`（§D0 机制更正）→ `cb2fbaf`（README）→ **`a9eb958`（round2 修复，当前）**
+- 干净 main wasm sha8 = `901da77b`；**交付 wasm sha8 = `fb201b59`**
+  （⚠️ wasm 文件哈希随注释行数变，见 `design.md` §D0；**行为**由流哈希 `44599dcead734d86` 见证）
 
 ## 阶段记录
 
@@ -37,7 +39,9 @@
 | P5.4 `./verify.sh` 9 步全绿 | ✅ | 「=== 全部验证通过 ===」exit 0 |
 | P5.5 看图 | ✅ | `notes/visual-check.md`（三方并排 + 全场窗 + 量化直线度） |
 | P5.6 判据组逐条对照 | ✅ | `notes/criteria-comparison.md`（swarm **确实恶化**，如实记录） |
-| **P6 审阅闭环** | 🔄 **进行中** | `reviews/review-round1.md` |
+| P6 审阅 round1 | ✅ | `reviews/review-round1.md`（0B/3M/4m）+ `review-response.md` |
+| P6 审阅 round2 | ✅ | `reviews/review-round2.md`（**0B/0M/7m**）+ `review-response-round2.md` |
+| P6 审阅 round3（收尾） | 🔄 **进行中** | `reviews/review-round3.md` |
 
 ## 关键实测数字（可复现）
 
