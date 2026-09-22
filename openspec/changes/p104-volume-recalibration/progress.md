@@ -41,7 +41,8 @@
 | P5.6 判据组逐条对照 | ✅ | `notes/criteria-comparison.md`（swarm **确实恶化**，如实记录） |
 | P6 审阅 round1 | ✅ | `reviews/review-round1.md`（0B/3M/4m）+ `review-response.md` |
 | P6 审阅 round2 | ✅ | `reviews/review-round2.md`（**0B/0M/7m**）+ `review-response-round2.md` |
-| P6 审阅 round3（收尾） | 🔄 **进行中** | `reviews/review-round3.md` |
+| P6 审阅 round3（收尾） | ✅ | `reviews/review-round3.md`（**0B/0M/5m**，可以交付）+ commit `4173bee` |
+| P6 审阅闭环**完成** | ✅ | 三轮：0B/3M/4m → 0B/0M/7m → 0B/0M/5m |
 
 ## 关键实测数字（可复现）
 

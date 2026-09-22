@@ -100,7 +100,8 @@
 - [x] P6.3 再审（`reviews/review-round2.md`：**0B/0M/7m**，建议交付）
 - [x] P6.4 修复轮2 发现的问题（`review-response-round2.md`；commit `a9eb958`）——
       含 **§D0b** 记录的源码扫描陷阱（注释里的字面 `#[cfg(test)]` 会打断 3 条测试）
-- [ ] P6.5 收尾轮审阅确认无遗留（`reviews/review-round3.md`）
+- [x] P6.5 收尾轮审阅确认（`reviews/review-round3.md`：**0B/0M/5m**，可以交付；
+      5 条文档层 MINOR 已修，commit `4173bee`）
 
 ## 关联
 
