@@ -68,7 +68,12 @@ deadline 引入**结构性红门** → 选方案 ③ 并写明理由；两者各
 **两条后果（都已落到本票）**：
 1. **源码文件不能引用自己的构建哈希**——那是不动点问题（写了哈希就改了行号，哈希又变）。
    → `engine/src/lib.rs` 的注释改为**只引「读数实测于哪个哈希」+ 流哈希作行为见证**，
-   明确写出「本文件不引用自己的构建哈希」，指纹以基线的 `engineFingerprint` 为准。
+   明确写出「本文件不引用自己的构建哈希」。
+   ⚠️ **精确定位**（审阅 round2 指出本处初版措辞过度声称）：基线 `engineFingerprint` 里
+   **真正被强制的是 `sourceSha256` + 行为比对**；`wasmSha256` 在
+   `tools/benchmark-baseline.mjs` 里被标注为**取证信息、不作判据**——这恰好与本条新认识一致
+   （文件哈希随注释变、不能当身份）。所以「指纹以基线为准」应读作
+   **「以 `sourceSha256` + 行为为准，`wasmSha256` 只留痕」**。
 2. **跨文档的哈希表必须标明它指的是哪一次构建**。本票 §D3.4/§D4 的读数实测于 `13b0263a`
    （无注释构建）；交付构建的读数与之**逐位相同**（流哈希为证）。
    **不要**把「读数所属构建」与「交付产物」当成同一个哈希。
@@ -84,6 +89,25 @@ deadline 引入**结构性红门** → 选方案 ③ 并写明理由；两者各
 > **所以「源码不引自身哈希 + 基线指纹为准」是正确且唯一可行的应对**——
 > 不要去关 debuginfo（本来就没开）或试 `strip`。
 >
+### D0b. ⚠️ 同类坑：**注释里不能出现源码扫描测试盯的字面量**
+
+`lib.rs` / `realism.rs` 里有几条测试**扫描自己的源文件文本**（`include_str!("lib.rs")` +
+`src.split("#[cfg(test)]").next()`）来守「删干净、无残留」。
+
+本 session 在修 M1 时，在注释里写了**字面量 `#[cfg(test)]`**（解释「那两条改动在测试模块内」）——
+结果 `split` **提前截断**，三条测试在生产段里扫不到东西、全红：
+```
+p31_landing_error_only_in_open_play_passes   （sample_pass_landing 命中数 0，应为 2）
+p31_liveness_section_never_emits_events
+p31_slot_layer_is_gone
+```
+**注释里的字面量会被算进扫描**——这是「源码扫描型测试」的固有脆弱性。
+处置：注释改写成「**测试模块内**」（不写字面 token）；并审计了本票新增注释是否含
+其它被扫 token（`events.push` / `emit_` / `Vec<Event>` / `Event {` / 各 slot 符号）——**均无**。
+
+> **教训（与 §D0 同族）**：本仓用「读自己源码」的方式立守卫，**任何写进源码的文本都可能被守卫吃到**。
+> 改注释后**必须重跑默认套件**——它不只是「行为没变所以会过」。
+
 > **不需要为本坑新立哨兵**：`benchmark-baseline.test.mjs` 的 `engineFingerprint`
 > **已经就是**它的哨兵（靠源码哈希漂移发现）。已在 `CLAUDE.md`「比赛标尺」一节加一句
 > 文档级提示（改注释也会改 wasm 哈希 → 读数请引流哈希/基线指纹、勿引构建哈希）。
@@ -192,7 +216,7 @@ contain/jockey 不产事件，所以**主要的切法**是切犯规。
 1. **★ merit-based：角球单场 max 16 > 用户拍板的 `≤15`**（方案 ③ = 13，在带内）。
    这是**机制性**的——3000 场实测（seed 2707），与冻结窗口选哪一段无关。
 2. **★ merit-based：默认 `cargo test` 3 红 vs 2 红**（方案 ④ 多 `p28_action_deadline_formula`，
-   `lib.rs:7514` 硬编码 `== 5`）。同样是机制性的、与种子无关。
+   ``p28_action_deadline_formula`（断言 `compute_action_deadline(9.0,9.0,9.0)==5`）` 硬编码 `== 5`）。同样是机制性的、与种子无关。
 3. **⚠️ luck-based：`far==0` 在冻结窗口上的 0 vs 2。** 见下——**这一条最弱，列在最后**。
 
 > ⚠️ **为什么 `far==0` 是 luck-based（grill 指出，接受）**：两个方案共享**同一个**潜在缺陷
@@ -246,13 +270,16 @@ BASE_DEF_FOUL:              -0.10 → -0.06  // 犯规倾向（补偿被抢断�
 
 ⚠️ **口径必须先说清**（审阅 round1 的 m3：初版把两个种子口径混在一列）：
 下表**统一用 200 场（seeds 401..600，= L1 门同窗口）**；括号里给 3000 场的对照。
-出处：`notes/probes/out/*.jsonl`（`p13_side_effect_snapshot` 的 println 亦可见）。
+出处：`notes/probes/big-sample.mjs` 在 **200 场**上的扫描（门球口径 = `pass` 无 `to` 且无 `lead`
+且 `subject∈{0,21}`）。
+⚠️ **别拿 `p13_side_effect_snapshot` 的 println 对账**：那是**宽松口径**（只查无 `to`），
+交付侧打的是 **16.47**、不是 16.38；归档 jsonl 里的 `goalKicksPerMatch` 又都是 **3000 场**的 16.42。
 
 | 量 | 干净 main | 方案 ③ | 变化 | 读法 |
 |---|---|---|---|---|
 | 门球/场（200 场） | **10.98**（3000 场 11.27） | **16.38**（3000 场 16.42） | **+49.2%** | 射门 off_target 变多 → 门将开大脚变多。**机制的必然**，量级不小 |
 | 传球/场（200 场） | **418.1** | **395.9** | −5.3% | 与真实 ~900 的缺口**本来就大**，本改动**略为恶化**（不是本票目标） |
-| 角球/场（200 场） | **2.08** | **3.19** | +53% | 均值门 `[1.0,7.0]` 仍过 |
+| 角球/场（200 场） | **2.145** | **3.19** | +48.7% | 均值门 `[1.0,7.0]` 仍过 |
 
 **如实结论**：本票**抬了射门与抢断，但传球体积缺口未被修、且被轻微恶化**。
 传球体积需要另一条独立机制（`BASE_ACTION_DEADLINE_TICKS` 是全局速率杠杆，
@@ -261,9 +288,9 @@ BASE_DEF_FOUL:              -0.10 → -0.06  // 犯规倾向（补偿被抢断�
 ### D4.3 cargo L1 权威读数（方案 ③）
 
 ```
-realism.rs:684  →  普通射门/场 17.09 ∉ [6,11]
-realism.rs:846  →  主队进球/场 1.188 ∉ [0.38,0.75]
-realism.rs:779  →  单场角球 13 超硬上界 12（数量级漂移）
+l1_shot_result_distributions  →  普通射门/场 17.09 ∉ [6,11]
+l1_home_away_goal_asymmetry  →  主队进球/场 1.188 ∉ [0.38,0.75]
+l1_tackle_dilution_and_slot_mix  →  单场角球 13 超硬上界 12（数量级漂移）
 test result: FAILED. 6 passed; 3 failed
 ```
 
@@ -277,7 +304,7 @@ test result: FAILED. 6 passed; 3 failed
    实测**三条全过**（0.369 / 0.126 / 0.753）。#102 里 `inside` 破带是**那个变体自己的参数取值问题**，
    `conversion-adaptive.md` §5.3 已撤回「互斥」判定。
 
-**真正被顶破的第三条是「角球单场上界 12」**（`realism.rs:779`），任务书未列。
+**真正被顶破的第三条是「角球单场上界 12」**（`l1_tackle_dilution_and_slot_mix` 的 `max_single`），任务书未列。
 
 ---
 
@@ -423,12 +450,12 @@ grill 做的**单变量隔离实测**（本 session 独立复现一致）：
 
 | # | 门 | 位置 | 性质 | 处理 |
 |---|---|---|---|---|
-| 1 | `l1_shot_result_distributions` 射门带 `[6,11]` | `realism.rs:684` | 体量带（压缩态标定） | **重标 `[14,29]`** |
-| 2 | `l1_home_away_goal_asymmetry` 主队 `[0.38,0.75]` | `realism.rs:846` | 体量带（压缩态标定） | **重标 `[0.85,1.60]`**；两条方向断言不动 |
-| 3 | `l1_tackle_dilution_and_slot_mix` 角球单场上界 `≤12` | `realism.rs:779` | 数量级护栏 | **重标 `≤15`** |
-| 4 | `v2_tackle_frequency_in_target_range` 抢断 `[3,14]` | `lib.rs:5986` | **P7 槽位时代遗留**（非 ignored，默认套件跑） | **改语义**：槽位层 P31 已删，断言注释自己写「应 ~7 槽/场」已失效 → 改为与 L1 同口径的体量/方向断言（**不是**放宽） |
-| 5 | `p30_window_foul_cancels_without_shot` | `lib.rs:8097` | 机制测试（前置几何断言） | `BASE_DEF_TACKLE` 改了打分序 → 构造几何现在选 Tackle 而非 Foul。**重构造几何**使前提重新成立（**不是**放宽断言） |
-| 6 | `l2_sent_off_kickoff_seeds` | `realism.rs:1061` | 定向 seed（红牌+进球） | RNG 流被改写 → 钉死的 4 seed 不再含红牌。**按既有维护惯例重扫 seed**（`realism.rs:1047-1058` 注释已记三次同类历史） |
+| 1 | `l1_shot_result_distributions` 射门带 `[6,11]` | `l1_shot_result_distributions`（射门带断言） | 体量带（压缩态标定） | **重标 `[14,29]`** |
+| 2 | `l1_home_away_goal_asymmetry` 主队 `[0.38,0.75]` | `l1_home_away_goal_asymmetry`（主队带断言） | 体量带（压缩态标定） | **重标 `[0.85,1.60]`**；两条方向断言不动 |
+| 3 | `l1_tackle_dilution_and_slot_mix` 角球单场上界 `≤12` | `l1_tackle_dilution_and_slot_mix`（`max_single`） | 数量级护栏 | **重标 `≤15`** |
+| 4 | `v2_tackle_frequency_in_target_range` 抢断 `[3,14]` | `v2_tackle_frequency_in_target_range` | **P7 槽位时代遗留**（非 ignored，默认套件跑） | **改语义**：槽位层 P31 已删，断言注释自己写「应 ~7 槽/场」已失效 → 改为与 L1 同口径的体量/方向断言（**不是**放宽） |
+| 5 | `p30_window_foul_cancels_without_shot` | `p30_window_foul_cancels_without_shot`（几何前置断言） | 机制测试 | `BASE_DEF_TACKLE` 改了打分序 → 构造几何现在选 Tackle 而非 Foul。**重构造几何**使前提重新成立（**不是**放宽断言） |
+| 6 | `l2_sent_off_kickoff_seeds` | `l2_sent_off_kickoff_seeds` | 定向 seed（红牌先于进球） | RNG 流被改写 → 钉死的 4 seed 不再含红牌。**按既有维护惯例重扫 seed**（该测试的注释已记四次同类历史） |
 | 7 | benchmark 指纹哨兵 | `tools/benchmark-baseline.test.mjs` | 基线陈旧性 | **Q6 确认：重生成基线** |
 
 > ⚠️ **#4/#5/#6 必须「改语义/重构造/重扫」，SHALL NOT「放宽断言或删测试」**——
@@ -444,8 +471,8 @@ grill 做的**单变量隔离实测**（本 session 独立复现一致）：
 - **二次进攻链**：本票是常量抬升，不是结构修复。
 - **★ `far==0` 断言：不是「精度不够」，是「量错了东西」**（grill 第 2 轮读码后的更锐利表述，采纳）。
   它要测的不变量——「D3 资格在打分阶段判定」——**在未序列化的内部几何上严格成立**
-  （`score_tackle` 在 `dist_m > 12.0` 时返回 `f64::NEG_INFINITY`，`lib.rs:5018-5021`），
-  且**该不变量已被正确守护在引擎内**：`p30_tackle_score_directions`（`lib.rs:8232`）
+  （`score_tackle` 在 `dist_m > TACKLE_DISTANCE_THRESHOLD_METERS` 时返回 `f64::NEG_INFINITY`），
+  且**该不变量已被正确守护在引擎内**：`p30_tackle_score_directions`
   断言 `score_tackle(13.0) == NEG_INFINITY`。
   而 `realism.rs` 的 `far` 是**从序列化后的事件字段（4 位小数）重新求距离**——
   测的是**舍入后的另一个量**。**所以它是一条冗余且脆弱的重复断言，不是该不变量的唯一守护。**

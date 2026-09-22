@@ -15,7 +15,7 @@
 | 2 | deadline `far==0`：冻结窗口 **2**、3000 场 **25**、max 距 **12.00755** | 冻结窗口 **2**、3000 场 **25**、max **12.00755** | ✅ 完全吻合 |
 | 3 | 方案③ `far==0`：冻结窗口 **0**、3000 场 **15**（**技术债**） | 冻结窗口 **0**、3000 场 **15**，max **12.006105** | ✅ 完全吻合 |
 | 4 | 干净 main `far==0` = 0 | **0**（3000 场无一例越界） | ✅ 吻合 |
-| 5 | deadline 多出的第 3 条默认套件红 = `p28_action_deadline_formula` | 确认：`engine/src/lib.rs:7514` 硬编码 `assert_eq!(compute_action_deadline(9.0,9.0,9.0), 5)`（`7−4−3+5`）；BASE→6 后应为 4 → 红 | ✅ 吻合 |
+| 5 | deadline 多出的第 3 条默认套件红 = `p28_action_deadline_formula` | 确认：`engine/src/`p28_action_deadline_formula`（断言 `compute_action_deadline(9.0,9.0,9.0)==5`）` 硬编码 `assert_eq!(compute_action_deadline(9.0,9.0,9.0), 5)`（`7−4−3+5`）；BASE→6 后应为 4 → 红 | ✅ 吻合 |
 
 **结论：实施者没有虚报。** 全部数字我复现到逐位，包括那条对己方不利的「方案③也不免疫」的技术债。
 
@@ -60,9 +60,9 @@
 
 - 它断言的不变量（D3：「资格在打分阶段判定」）在**未序列化的内部几何**上是**严格成立**的：
   `score_tackle` 在 `dist_m > TACKLE_DISTANCE_THRESHOLD_METERS` 时返回 `f64::NEG_INFINITY`
-  （`engine/src/lib.rs:5018-5021`），`select_defensive_action` 绝不会选中 Tackle。
+  （`score_tackle` 的阈值守卫），`select_defensive_action` 绝不会选中 Tackle。
 - **该不变量已经被正确地守护在引擎内**：`p30_tackle_score_directions`
-  （`engine/src/lib.rs:8232`）断言 `score_tackle(dist_m=13.0) == NEG_INFINITY`。
+  （`p30_tackle_score_directions`）断言 `score_tackle(dist_m=13.0) == NEG_INFINITY`。
 - 而 `realism.rs:544-548` 的 `far` 是**从 4 位小数序列化后的事件字段重新求距离**得到的——
   它测的是**另一个量**（舍入后的距离），所以它不是该不变量的有效检验，只是一条**冗余且脆弱的重述**。
 

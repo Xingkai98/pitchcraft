@@ -43,13 +43,13 @@
 
 > ⚠️ **SHALL NOT 放宽断言或删测试**——必须改语义/重构造/重扫，并写明**为什么改**。
 
-- [x] P3b.1 `v2_tackle_frequency_in_target_range`（改后 `lib.rs:6011`，**非 ignored**）：
+- [x] P3b.1 `v2_tackle_frequency_in_target_range`（**非 ignored**）：
       断言 `[3,14]` 是 **P7 槽位时代遗留**（注释自写「应 ~7 槽/场」，而槽位层 P31 已删）。
       改为与当前机制一致的**体量断言** `[24,50]`（与 L1 抢断带同源），注释写明「原带语义已死」+ 依据
-- [x] P3b.2 `p30_window_foul_cancels_without_shot`（改后 `lib.rs:8141`）：
+- [x] P3b.2 `p30_window_foul_cancels_without_shot`（**非 ignored**）：
       `BASE_DEF_TACKLE` 改了打分序 → 原几何（d≈1.05m）现在选 `Tackle` 而非 `Foul` → **前置几何断言失败**。
       **重扫并重构造几何**（d≈3.15m，`0.55 vs 0.58`）使 `Foul` 重新胜出（注释写明「打分基线变更，几何需重选」）
-- [x] P3b.3 `l2_sent_off_kickoff_seeds`（改后 `realism.rs:1144`）：钉死的 4 seed（18/59/94/95）不再含红牌。
+- [x] P3b.3 `l2_sent_off_kickoff_seeds`（**非 ignored**）：钉死的 4 seed（18/59/94/95）不再含红牌。
       按该测试已有的**既定维护惯例**重扫 1..=3000 取「**红牌先于进球**」的新 seed
       （29/35/59/84——比「红牌+进球」更严，因为测试意图是「进球后开球的硬编码 id 恰为罚下者」），
       并把「RNG 重排会再次失效」写进注释
