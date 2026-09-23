@@ -1,9 +1,11 @@
 //! #15A 比赛行为观察（Match Behavior Observation）
 //!
-//! 语义来源：`.scratch/notes/match-behavior-observation-design.md`（Approved for implementation，2026-09-23）。
-//! 本模块**只**交付 Slice 1 的范围：闭集类型、recorder 骨架、opt-in 构造路径与不变量。
-//! 引擎状态提交点的接入（kickoff/传球/抢断/射门 finalize/犯规/出界/哨声）属于 Slice 2，
-//! 本文件不引用 `MatchState`、不读取事件文本、不做任何推断。
+//! 语义来源：`.scratch/notes/match-behavior-observation-design.md`（Approved for implementation，2026-09-23，
+//! 实现增量见 §14 = Slice 1、§15 = Slice 2）。
+//! 本模块交付闭集类型、recorder 骨架、opt-in 构造路径与不变量（Slice 1），以及引擎状态提交点
+//! 的接入所依赖的命令集（Slice 2：`goal_kick_started` / `EventIndexTarget` /
+//! `suspend_event_index_binding`）。**本文件不引用 `MatchState`**——提交点在 `lib.rs` 调用，
+//! 本模块不读取事件文本、不做任何推断。
 //!
 //! 硬约束（本模块的设计边界，逐条可审计）：
 //!
@@ -31,15 +33,21 @@
 //! 4. 事件下标绑定规则 + 尾部压缩边界（`source_event_index` / `event_indexes`），见下文
 //!    「事件下标绑定规则」。
 //!
-//! 另有两处**设计缺口**已在代码中就地标注（未自行发明语义）：
+//! Slice 1 记录的两处**设计缺口**已按 §15 A9 补齐（见 design §15）：
 //!
-//! - `FlightAction` 闭集（§10.1）没有 kickoff 成员 → [`flight_action_for`] 记 `Unknown`。
-//! - `RestartEndReason` 闭集（§10.1）没有「被新死球顶掉」成员 → `dead_ball_started` 顶掉未完成的
-//!   旧 sequence 时以 `RestartEndReason::Unknown` 结束。这是**正常**引擎路径（§5 第二张表），
-//!   故不记 `observation_gap`；代价是 `gap_count() == 0` **不蕴含**所有 restart 都有明确结束原因
-//!   （须看 `restart_sequences` 的 `end_reason`）。见 [`BehaviorObservationRecorder::dead_ball_started`]。
+//! - `FlightAction` 闭集补上 `Kickoff` 成员 → 开球拨球不再退化成 `Unknown`（§15 A9-1）；
+//! - `RestartEndReason` 闭集补上 `SupersededByDeadBall` → 被新死球顶掉的重开有了具名结束原因，
+//!   `Unknown` 恢复原义「证据不足」（§15 A9-2）。该路径**不**记 `observation_gap`
+//!   （§5 第二张表列为正常转场）。见 [`BehaviorObservationRecorder::dead_ball_started`]。
 //!
-//! # Slice 2 的接入对照表（本模块已就绪，Slice 2 只需在引擎提交点调用）
+//! # Slice 2 的接入对照表（**已接线**，2026-09-23）
+//!
+//! 下表是 `lib.rs` 各提交点**实际**调用的命令。接线原理：`match_events` 接收一个
+//! `&mut BehaviorObservationRecorder`（正式路径传
+//! [`BehaviorObservationRecorder::disabled`]，全部命令空操作 → `simulate()` 行为不变、
+//! 开销近零（**不作绝对性能承诺**，见 §15 A9-9）），
+//! 并把它按值透传给 `tick` / `finalize_highlight` / `advance_*` 一族。**recorder 只被调用，
+//! 不参与任何判定**：没有任何分支读它的状态来决定产什么事件。
 //!
 //! 三条**开球专线**（发动机把「球已交出」和「比赛已恢复」分在不同时刻，最容易接错）：
 //!
@@ -50,9 +58,12 @@
 //!   （实测：`t=1.0 Beat main.subject=10`）。该事件的 `speed = 14.0` 只是装饰——拨球距离
 //!   `distance_meters((0.5,0.5),(0.55,0.5)) = 5.25m`，除以 `speed` 得 0.375s < `TICK_SECONDS`(1s)，
 //!   引擎从未进入飞行态。
-//!   所以这里应记 `restart_taken(EngineState)` **紧跟** `control_established(Home, 10, Kickoff)`
+//!   所以这里记 `restart_taken(EngineState)` **紧跟** `control_established(Home, 10, Kickoff)`
 //!   （同一提交点 t=0），basis 用 `EngineState`（不是 `FinalizedOutcome`——没有高亮 finalize）。
 //!   **不要**为它等 `kickoff_end`、也不要记 `BallInFlight`：那会记录一个引擎里不存在的飞行段。
+//!   ⚠️ 这里 `restart_taken` 会把 `state` 置成 `BallInFlight`，随后 `control_established`
+//!   立刻收束 restart 并开 episode——**同一个 t 上两条事实、三次状态转场**是设计允许的
+//!   （`control_established` 是唯一负责「进入 `Controlled`」的入口，见 §5）。
 //! - **进球后的开球**（`advance_dead_ball` 的 `kicked` 段，`lib.rs`）：**与首开球不同，这里真有飞行**。
 //!   `restart_taken(RestartRule)` 在 kickoff emit 处；`control_established` 必须等 `kickoff_end`
 //!   ——引擎在 `t >= kickoff_end` 才 `st.dead_ball = None` 并产 `main`（`emit_beat_with_main`），
@@ -75,50 +86,71 @@
 //!   **犯规路径不同**：`emit_foul_and_free_kick` 之后引擎走 `restart_prep`，没有对应的哨声或
 //!   事件提交点，所以那里必须显式补一次（见下表该行与坑 1）。
 //!
+//! **统一生命周期规则（§15 A9-6，2026-09-23 定案；2026-09-24 更正第 2 条）**：所有重开
+//! **一律**在真实的 award / foul / out finalize 提交点先记 `dead_ball_started`（由它创建
+//! `RestartSequence`），再由准备期提交点记 `restart_preparation_started`。recorder 侧对应
+//! **一条硬规则 + 一条书写约定**：
+//!
+//! - **【硬规则】** `restart_preparation_started` 要求**已有开放 sequence**，否则记
+//!   `IllegalInput(RestartPreparationWithoutScheduledRestart)` gap——**不**凭空造一条
+//!   （「没有死球来源的重开」在 §6.2 下没有合法入口，补出来就是猜）；
+//! - **【书写约定】** 犯规路径的观察提交（`dead_ball_started` + prep）按**领域事实顺序**写在
+//!   `MatchState.restart_prep = Some(..)` 赋值之前——这是**书写约定，没有行为判别力**
+//!   （2026-09-24 mutation：调换该行序全量测试仍全绿，因为 tick 顶部的 1b 分支在本函数被调用
+//!   **之前**就已判定 `restart_prep`，接管恒发生在下一 tick；见 design §15 A9-6 第 2 条）。
+//!   ⚠️ **不要**把该行序写成「反过来会让『未完成重开被新死球顶掉』这条转场在引擎里永不出现、
+//!   把设计缺口掩盖掉」——那是**错误因果**。
+//!
+//! `RestartEndReason::SupersededByDeadBall` 是**recorder 层契约，当前生产引擎不可达**，依据是
+//! **结构理由**（不是上面那条行序）：引擎的每个死球结果都在同一 tick 内建立对应重开、且每次
+//! 死球之间必有一次控制建立或流结束。见 §15 A9-2 与测试
+//! `superseded_by_dead_ball_is_a_recorder_level_contract_not_engine_reachable`（两条结构性
+//! 理由 + 2800 场 0 例）。
+//!
 //! | 引擎提交点（`lib.rs`） | 调用的命令 | 关键参数 |
 //! |---|---|---|
-//! | `simulate` 起点 | [`BehaviorObservationRecorder::match_started`] | `kicking = Home`（引擎开球恒主队）；时间当前为 `event_emit(0.0)`——Slice 2 若改在 `MatchState::new` 后按 `state_commit` 提交，须同步改本行、调用点与 `match_started_time_basis_is_event_emit_at_zero`（见 design §14 A3.1） |
-//! | — | — | **本引擎没有中场休息**，无「下半场重新开球」提交点（见疑问 5） |
+//! | `simulate_with_behavior_observations` 起点 | [`BehaviorObservationRecorder::match_started`] | `kicking = Home`（引擎开球恒主队）；时间为 `event_emit(0.0)`（design §14 A3.1 的要求未变——引擎开赛没有独立状态提交点） |
+//! | — | — | **本引擎没有中场休息**，无「下半场重新开球」提交点（见坑 5） |
 //! | 首开球 kickoff emit（t=0.0） | `restart_taken` **+ `control_established`** | 同在 t=0：`EngineState`（引擎已在 `MatchState::new` 提交 `carrier=10`）；**没有飞行等待**（见开球专线 1） |
 //! | `advance_dead_ball` 的 `kickoff_again` whistle | `restart_preparation_started` | `(对方队, Kickoff)` + `RestartRule`；**不是哨声边界**（见开球专线 3） |
 //! | `advance_dead_ball` 的 kickoff 段（emit） | `restart_taken` | `RestartRule` |
 //! | `advance_dead_ball` 的 kickoff `kickoff_end` 时刻 | `control_established` | 开球接收者 + `Kickoff`；basis `EngineState`，时间 `DeterministicFlightEnd`（**只此一处等飞行**） |
-//! | `advance_restart_prep` 的发球高亮 | `restart_taken` | `RestartRule`；准备期由 `start_corner` / `start_throw_in` 的 `restart_prep` 设立 |
-//! | `finalize_highlight` `PassCaught` | `control_established` | 同队 → 延续；异队 → `prior_episode_end = Some(ControlLost)` |
-//! | ~~`finalize_highlight` `PassIntercepted`（明确控制）~~ | **不存在该分支** | 引擎的 `PassIntercepted` 只启动松散球（`st.carrier = -1`）；拦截者控制一律经 `advance_loose` pickup 提交 → 按下一行处理 |
-//! | `finalize_highlight` `PassIntercepted` | `contest_started` | `InterceptionLoose` + `ControlLost` |
-//! | `finalize_highlight` `PassLost` | `contest_started` | `PassLost` + `ControlLost` |
+//! | `advance_restart_prep` 的发球高亮（角球/界外球/任意球） | `restart_taken` | `RestartRule`；准备期由 `start_corner` / `start_throw_in` / `emit_foul_and_free_kick` 的 `restart_prep` 设立 |
+//! | `finalize_highlight` `PassCaught` | `control_established` | 同队 → 延续；异队 → `prior_episode_end = Some(ControlLost)`；basis `FinalizedOutcome`。start_reason 恒传 `SuccessfulReceive`（开放比赛传接语义），**交付控制由 recorder 按开放 restart 归一**——原先靠 `Highlight::restart_delivery` 在调用点分流，只覆盖了 throw-in/free-kick 那一半 |
+//! | ~~`finalize_highlight` `PassIntercepted`（明确控制）~~ | **不存在该分支** | 引擎的 `PassIntercepted` 只启动松散球（`st.carrier = -1`）；拦截者控制一律经 `advance_loose` pickup 提交 → 按 `advance_loose` 行处理 |
+//! | `finalize_highlight` `PassIntercepted` | `contest_started` | `InterceptionLoose` + `ControlLost`；随后同刻 `advance_loose` |
+//! | `finalize_highlight` `PassLost` | `contest_started` | `PassLost` + `ControlLost`；随后同刻 `advance_loose` |
 //! | `finalize_highlight` `ShotGoal` | `dead_ball_started`（**只此一条**） | `Goal` + (对方, `Kickoff`) + `Goal`；准备期由后面的 `kickoff_again` whistle 记（见开球专线 3），此处**不得**再补 prep |
 //! | `finalize_highlight` `ShotSavedCaught` | `control_established` | 门将队 + `SavedCaught`（无重开） |
 //! | `finalize_highlight` `ShotSavedRebound` | `contest_started` | `ShotRebound` + `ShotRebound` |
-//! | `finalize_highlight` `ShotOffTarget` | `dead_ball_started` | `Unknown` 或按重开结果，`Out` |
-//! | `finalize_highlight` `PassOutOfPlay` | `dead_ball_started` | `OutSideline` / `OutGoalLine` + `out_restart_for` |
-//! | `finalize_highlight` `CornerAward`（射门扑出越线） | `dead_ball_started` | 引擎在 `start_corner` 内隐式进重开 → 需**补报** `dead_ball_started(OutGoalLine/Goal, (进攻方, Corner), Out)` |
-//! | `finalize_highlight` `TackleSuccess` | `contest_started` | `TackleLoose` + `ControlLost` |
+//! | `finalize_highlight` `ShotOffTarget` | `start_goal_kick`（= `dead_ball_started` + `restart_taken`） | `OutGoalLine` + (对方, `GoalKick`) + `Out`；门球**无准备期**（见坑 4 / §15 A9-3） |
+//! | `finalize_highlight` `PassOutOfPlay` | `dead_ball_started`（门球走 `goal_kick_started`） | `OutSideline` / `OutGoalLine` + `out_restart_for`；按重开类型分派 |
+//! | `finalize_highlight` `CornerAward`（射门扑出越线） | `dead_ball_started` | 引擎在 `start_corner` 内隐式进重开 → 在 `start_corner` 处**补报** `dead_ball_started(OutGoalLine, (进攻方, Corner), Out)` |
+//! | `finalize_highlight` `TackleSuccess` | `contest_started` | `TackleLoose` + `ControlLost`；随后同刻 `advance_loose` |
 //! | `finalize_highlight` `TackleFail` | 不调用（episode 延续） | — |
-//! | `advance_loose` 拾取 | `control_established` | `Pickup` / `RestartControl` |
-//! | `emit_shot_highlight` / 各类 pass 高亮 | `control_released_into_flight` | 对应 `FlightAction` |
-//! | `advance_restart_prep` 触发的发球 | `restart_taken` | 已在重开准备期，直接 taken |
-//! | `emit_foul_and_free_kick` | `dead_ball_started` **+ `restart_preparation_started`** | `Foul` + (被犯规方, `FreeKick`) + `Foul`；引擎随后进入 `restart_prep`，必须显式准备 |
-//! | `start_corner` / `start_throw_in` | `restart_preparation_started` | 二者都设 `restart_prep`（有准备期）；归属可 `Unknown`，后续细化。**若此前没过 `dead_ball_started`，先补一条** |
-//! | `start_goal_kick` | **待设计确认**，见下方疑问 | 引擎**没有准备期**（同步产 pass 高亮，不设 `restart_prep`），见疑问 4 |
-//! | 流末 whistle（`detail = "half_time"`，`lib.rs` 循环结束后唯一一条尾推哨） | [`commit_stream_end_boundary`]（内部调 `full_time`） | `t` **取自该 whistle 事件本身**（[`stream_end_boundary`]）；该提交函数**不接收任何时长参数**，`config.match_duration_seconds` 结构上成不了第二来源（见坑 6）；**该 whistle 是流边界，不是中场哨**（见疑问 5） |
+//! | `advance_loose` 拾取（含 battle 落点） | `control_established` | 恒传 `Pickup`；**开放重开存在**时 recorder 归一为 `RestartControl`（交付控制），否则保留 `Pickup`（真 loose 拾取） |
+//! | `emit_shot_highlight` / 各类 pass 高亮 / 开球 | `control_released_into_flight` | 对应 `FlightAction`（开球走 `restart_taken` 而非本命令） |
+//! | `emit_foul_and_free_kick` | `dead_ball_started` **+ `restart_preparation_started`** | `Foul` + (被犯规方, `FreeKick`) + `Foul`；引擎随后进入 `restart_prep`，必须显式准备（无哨声提交点）。**观察提交早于 `st.restart_prep = Some(..)` 的赋值**（见 §15 A9-6） |
+//! | 出界 `OutRestart::{ThrowIn,Corner}` / `CornerAward` | `dead_ball_started` **+ `restart_preparation_started`** | 二者都设 `restart_prep`（有准备期）；**先记死球再记 prep**（`dead_ball_started` 才是 sequence 的创建点——`CornerAward` 路径原先漏了死球、靠 prep 侧的兜底补，已按 §15 A9-6 改正） |
+//! | `start_goal_kick` | `goal_kick_started` | 一次提交完成 `dead_ball_started` + `restart_taken`；**刻意没有** `restart_preparation_started`（引擎里没有准备期），见 §15 A9-3 |
+//! | 流末 whistle（`detail = "half_time"`，`lib.rs` 循环结束后唯一一条尾推哨） | [`commit_stream_end_boundary`]（内部调 `full_time`） | `t` **取自该 whistle 事件本身**（[`stream_end_boundary`]）；该提交函数**不接收任何时长参数**，`config.match_duration_seconds` 结构上成不了第二来源（见坑 6）；**该 whistle 是流边界，不是中场哨**（见坑 5） |
 //!
 //! ## 事件下标绑定规则（`source_event_index` / `event_indexes`）
 //!
 //! 下标一律指 [`DiagnosticMatch::events`] 的**最终**下标（不是记录时刻的临时长度）。绑定必须经
-//! [`BehaviorObservationRecorder::bind_event_index`]，它会拒绝落在尾部压缩区间内的下标。
+//! [`BehaviorObservationRecorder::bind_event_index`]，它按 [`EventIndexTarget`] 寻址：
+//! `Fact(i)` / `OpenEpisode` / `OpenRestart` / `UnattributedFacts`（水位：本提交点新产出的
+//! **全部**事实）/ `LastFactOfKind(k)`（按 kind 找最近一条），并拒绝落在尾部压缩区间内的下标。
+//! **不得**绕过它直接往 `episode.event_indexes` / `restart.event_indexes` 里下标。
+//! 后两个 target 是**为「接线层不读观察状态」而存在**的：把「本提交点新产出了哪些事实」与
+//! 「按 kind 找最近一条」这两类查找都收敛进 recorder，`lib.rs` 侧就不必调 `.facts()`。
 //!
-//! **Slice 1 现状**：`bind_event_index` 只写 `ControlFact.source_event_index`；
-//! `PossessionEpisode.event_indexes` / `RestartSequence.event_indexes` **还没有绑定入口**
-//! （保持空数组）。Slice 2 为它们接线时需扩展本接口——**不得**绕过它直接下标入数组，
-//! 否则尾部压缩的错位会静默进入 episode/restart 分析对象。
-//!
-//! **边界登记尚未生效（勿读成 guard 已在生产路径上生效）**：生产 opt-in 路径上
-//! `stable_event_prefix` 恒为 `None`（= 全部下标视为稳定），因为 `match_events` 拿不到 recorder
-//! 句柄，`events_note_compaction_boundary` 目前是空实现。所以 `bind_event_index` 的拒绝分支在生产
-//! 路径上一次也不会触发——它只在测试里被真边界验证过。Slice 2 要在排空期绑定下标，**必须先接通
-//! 那个登记点**；在那之前排空期提交点一律传 `None`（靠 `t` + `detail` 定位事实）。
+//! **归属正确性**（「绑到哪条事件」）与「能不能绑」是两件事，前者由接线层的
+//! `Highlight::obs_event` 负责：动作事件在 emit 时入流、结果在若干 tick 后的 `finalize_highlight`
+//! 才提交，那时最后一条事件已是飞行期的 beat。故每条高亮在创建时把**产生它的那条事件**
+//! 记进 `obs_event`（落点类高亮记的就是它自己的**交付**事件），finalize 与落点争抢都读它。
+//! 一个提交点常同时产出多条事实（`dead_ball_started` 顺带 `control_released` / `contest_ended`），
+//! 它们同刻同源 → 用 `UnattributedFacts` 水位一次绑完，而不是只绑「最后一条」。
 //!
 //! 原因：`match_events` 在循环结束后对 `events[drain_start..]` 做 `drain` → `filter`（同时间戳
 //! beat 去重）→ `extend` 回填，**该区间内的下标会被重排**；`drain_start` 之前的元素位置不变。
@@ -126,45 +158,42 @@
 //!
 //! - 循环体内（`tick` / `advance_*` 提交点）绑定 `events.len() - 1` 是安全的；
 //! - 排空期（`while st.highlight.is_some()` 里的 `finalize_highlight`）绑定**不安全**——该区间的
-//!   beat 可能被去重丢弃，下标会前移。Slice 2 在这些提交点上应传 `None`（事实仍有 `t` 与
-//!   `detail` 可定位），或在压缩完成后再补绑定；
-//! - 引擎在压缩点调用 `events_note_compaction_boundary(drain_start)` 登记边界（**Slice 1 是
-//!   无副作用占位**：`match_events` 没有 recorder 句柄，见 `lib.rs` 该函数的文档）；
-//!   recorder 侧 [`BehaviorObservationRecorder::note_event_stream_compaction`] 据此拒绝
-//!   越界绑定并记 `observation_gap`（不静默错位）。
+//!   beat 会被去重丢弃、下标前移，而**全部**排空完成前无法确定任何最终下标。故接线层在进入排空
+//!   循环**之前**先登记边界、再 [`BehaviorObservationRecorder::suspend_event_index_binding`]`(true)`：
+//!   暂停期内 `bind_event_index` 一律不生效且**不记 gap**（事实仍有 `t` 与 `detail` 可定位）。
+//! - 登记边界也要**在排空循环之前**（`note_event_stream_compaction(drain_start)`）：
+//!   此后落在 `[drain_start, ..)` 的绑定被拒绝并记 `observation_gap`（不静默错位）。
+//!   把登记推迟到循环之后（Slice 2 的第一版）等于装饰——排空期不受保护，且此后没有任何绑定
+//!   会去查该边界。两道防线的分工：**暂停管排空期的正确性、边界管更晚/将来引入的绑定**。
 //!
 //! 未登记边界时（如 demo 路径、无尾部压缩）视为「全部下标稳定」。
 //!
-//! 易踩的坑（Round 4/5/6 审阅对 `lib.rs` 控制流实测；编号沿用历史，第 3 条已并入疑问 5）：
+//! 易踩的坑（Round 4/5/6 审阅对 `lib.rs` 控制流实测；编号沿用历史，第 3 条已并入坑 5）：
 //!
 //! 1. **`dead_ball_started` 之后必须进入准备期**再 `restart_taken`，但**谁来记 prep 取决于路径**：
 //!    goal 由 `kickoff_again` whistle 记一次（庆祝结束、`preparing = true` 的同一刻，见开球专线 3）；
-//!    foul 没有对应提交点，必须在 `emit_foul_and_free_kick` 处显式补一条。
-//!    两条路径都缺 prep 时 `restart_taken` 会被判非法（记 gap）；但 goal 路径**多记一次**同样错
-//!    （见开球专线 3 的告警）。（**例外见疑问 4**：门球连准备期都没有。）
-//! 2. **`CornerAward` 没有 `dead_ball_started`**（引擎在 `finalize_highlight` 里直接 `start_corner`）→
-//!    必须补报死球，否则重开序列缺死球来源。
-//! 3. （已并入疑问 5：本引擎没有中场休息，无可接线的半场提交点。）
-//! 4. **门球（`start_goal_kick`）与 design §6.2 的统一生命周期冲突——待设计确认，本 slice 不擅自决定。**
-//!    引擎 `start_goal_kick` 同步发 pass 高亮、**不设 `restart_prep`**，因此没有 `restart_taken`
-//!    提交点；而 §6.2 要求所有重开走 `dead_ball_started → restart_preparation_started →
-//!    restart_taken → open_play_resumed`。两条路径都不能靠猜：
-//!    (a) 补记一个零长度的 `restart_preparation_started` + `restart_taken` = 记录一个引擎里
-//!        不存在的阶段（发明事实）；
-//!    (b) 直接 `control_established` 收束 = 门球后 `state` 仍是 `DeadBall`，该调用会被判非法
-//!        （记 gap），sequence 的 `taken_t` / `open_play_resumed_t` 都留 `None`、`end_reason` 留空。
-//!    纯从 recorder 侧无法两全 → 需要设计明确「门球是否属于 §6.2 的例外」§6.2 已为半场/终场开了
-//!    例外先例。**Slice 2 遇到门球前先解决此疑问**，不要临时选一条。
-//!
-//!    Round 6 实测两条（别按想象接线）：选项 (b) 只是**让该 sequence 一直悬着**，直到
-//!    `full_time()`（或后续合法的 `dead_ball_started`）才补上 `end_reason`——它**不会**触发
-//!    不变量 5（`taken_t == None` 且 `open_play_resumed_t == Some` 这个组合经公开 API 不可达）。
-//!    不要指望不变量 5 替你兜住门球路径。
+//!    foul 没有对应提交点，必须在 `emit_foul_and_free_kick` 处显式补一条；
+//!    corner / throw-in 由 `start_corner` / `start_throw_in` 记（它们自己建 `restart_prep`）。
+//!    缺 prep 时 `restart_taken` 会被判非法（记 gap）；但 goal 路径**多记一次**同样错
+//!    （见开球专线 3 的告警）。（**例外见坑 4**：门球连准备期都没有。）
+//! 2. **角球的死球来源不在 `start_corner` 里**：`start_corner` 只设 `restart_prep`，不产事件、
+//!    不推进观察状态。死球与 prep 两条事实都由**调用它的 `finalize_highlight` 分支**
+//!    （`CornerAward` / 出界 `OutRestart::Corner`）提交，顺序是
+//!    `dead_ball_started` → `start_corner` → `restart_preparation_started`（§15 A9-6）。
+//!    若只报 prep 不报死球，prep 会被 `RestartPreparationWithoutScheduledRestart` 拒掉。
+//! 3. （已并入坑 5：本引擎没有中场休息，无可接线的半场提交点。）
+//! 4. **门球（`start_goal_kick`）没有准备期**——按 §15 A9-3 定为 §6.2 统一生命周期的**结构性例外**
+//!    （与半场/终场同类）。引擎 `start_goal_kick` 同步发 pass 高亮、**不设** `restart_prep`，
+//!    因此没有 `restart_preparation_started` 提交点。处理：走专用入口
+//!    [`BehaviorObservationRecorder::goal_kick_started`]（`dead_ball_started` + `restart_taken`
+//!    同刻），**不**补记 prep——补记等于发明一个引擎里不存在的阶段。
+//!    门球的 `taken_t` 必须落上：否则门球交付后的首次明确控制会造出「有 `open_play_resumed_t`
+//!    但无 `taken_t`」，直接违反不变量 5。
 //! 5. **本引擎没有中场休息——design §5.1 的「下半场重新进入 `RestartPreparation(kickoff)`」没有对应提交点。**
 //!    `match_events` 是单段循环 `while t < dur`，结束后只在 `dur` 推一条 `detail = "half_time"`
 //!    的 whistle（lib.rs）；没有中场哨复位、没有第二段循环、没有下半场开球。那条 whistle 是
-//!    **流边界**，opt-in 路径因此把它映射为 `full_time`。`half_time()` 在 Slice 1 无调用点，
-//!    是留给引擎将来真正实现中场休息时的骨架。**Slice 2 不得按本表想象一个中场提交点。**
+//!    **流边界**，opt-in 路径因此把它映射为 `full_time`。`half_time()` 至今**无调用点**，
+//!    是留给引擎将来真正实现中场休息时的骨架。**不得按本表想象一个中场提交点。**
 //! 6. **终场时间只有一个来源：正式事件流里的那条尾哨。** opt-in 路径从事件流本身取
 //!    （[`stream_end_boundary`]），与 `simulate()` 看到的 `events` 同源；若改成在读 config 的
 //!    `match_duration_seconds`（引擎恰好也用它推哨），两个来源一旦漂移（例如将来引擎改为在
@@ -179,15 +208,21 @@
 //!    （见 `full_time_time_comes_from_the_formal_whistle_not_config`），
 //!    接线层另有源码守卫（`lib.rs` `p15_full_time_source_is_the_stream_not_the_config_duration`）。
 //!
-//! `kickoff_again` whistle（坑外的第三条专线，见上文）：**不调用任何 whistle 命令**。它既不是
-//! 半场也不是终场，而是进球庆祝结束、开球准备开始的转场（同一条 kickoff `RestartSequence`
-//! 仍在进行中）。
+//! 7. **哨声打断的边界：`kickoff_again` 不是流边界。** `advance_dead_ball` 会在流中间产
+//!    `detail = "kickoff_again"` 的 whistle（进球庆祝结束的转场），它**不得**触发
+//!    `full_time` / `half_time`。`stream_end_boundary` 取**最后一条** whistle，其判别力由
+//!    observation.rs 的手工双哨流测试提供（`[150.0, 123.0]` → 取 123.0）。
+//!    在真实流里，若整场比赛恰好在某次 `kickoff_again` 之后被 `dur` 截断（循环条件 `t < dur`），
+//!    则「最后一条 whistle」可能是那条**转场哨**而非终场哨——**本引擎当前不可达**：
+//!    庆祝期（`remaining` 2 tick）+ 准备期（开球者走向中圈）+ kickoff 飞行都在 `dur` 之前完成，
+//!    且截断只可能发生在死球/高亮中途，此时尾哨尚未产出。这条推理若将来失效（例如引入补时），
+//!    `stream_end_boundary` 必须改成按 `detail` 区分转场哨与终场哨。
 //!
 //! 未列动作（design §5「未列动作视为冲突输入」）走 [`BehaviorObservationRecorder::note_gap`]，
 //! **不要**自己猜测一个 team / kind / 时间填进去。
 //!
-//! 本表是**候选映射**：每一行在 Slice 2 接线时都必须对照 `lib.rs` 的实际控制流复核一遍
-//! （Round 4/5 两轮都在本表里查到过错行）。
+//! 接线层另有源码守卫（`lib.rs` 的 `p15_...` 系列测试）扫描函数体，防止 recorder 被写进
+//! 决策路径（例如 `simulate()` / `match_events` 出现 `.is_enabled()` 分支）或终场时间第二来源。
 
 use crate::Event;
 
@@ -516,6 +551,10 @@ pub enum ObservationGapReason {
     EventIndexOutOfStableRange,
     /// 绑定目标 fact 下标越界（调用方传错），与压缩无关——分开报以便按原因定位。
     IllegalFactIndex,
+    /// 重绑把某条事实的 `source_event_index` **改小**（来源倒退）。见
+    /// [`BehaviorObservationRecorder::bind_event_index`] 第 ③ 步：当前接线依赖「覆写总是发生在
+    /// 更晚的下标上」（门球的 taken 从死球事件改绑到更晚的交付事件），倒退会让来源错位。
+    EventIndexRegressed,
 }
 
 impl ObservationGapReason {
@@ -525,9 +564,13 @@ impl ObservationGapReason {
         ObservationGapReason::MissingStreamEndBoundary,
         ObservationGapReason::EventIndexOutOfStableRange,
         ObservationGapReason::IllegalFactIndex,
+        ObservationGapReason::EventIndexRegressed,
         ObservationGapReason::IllegalInput(IllegalInput::MatchStartedOutsideUninitialized),
         ObservationGapReason::IllegalInput(IllegalInput::DeadBallStartedInIllegalState),
         ObservationGapReason::IllegalInput(IllegalInput::RestartPreparationOutsideDeadBall),
+        ObservationGapReason::IllegalInput(
+            IllegalInput::RestartPreparationWithoutScheduledRestart,
+        ),
         ObservationGapReason::IllegalInput(
             IllegalInput::RestartPreparationContradictsScheduledRestart,
         ),
@@ -552,6 +595,7 @@ impl ObservationGapReason {
             ObservationGapReason::MissingStreamEndBoundary => "missing_stream_end_boundary",
             ObservationGapReason::EventIndexOutOfStableRange => "event_index_out_of_stable_range",
             ObservationGapReason::IllegalFactIndex => "illegal_fact_index",
+            ObservationGapReason::EventIndexRegressed => "event_index_regressed",
         }
     }
 }
@@ -564,6 +608,7 @@ pub enum IllegalInput {
     MatchStartedOutsideUninitialized,
     DeadBallStartedInIllegalState,
     RestartPreparationOutsideDeadBall,
+    RestartPreparationWithoutScheduledRestart,
     RestartPreparationContradictsScheduledRestart,
     RestartTakenOutsideRestartPreparation,
     ControlEstablishedInIllegalState,
@@ -579,6 +624,7 @@ impl IllegalInput {
         IllegalInput::MatchStartedOutsideUninitialized,
         IllegalInput::DeadBallStartedInIllegalState,
         IllegalInput::RestartPreparationOutsideDeadBall,
+        IllegalInput::RestartPreparationWithoutScheduledRestart,
         IllegalInput::RestartPreparationContradictsScheduledRestart,
         IllegalInput::RestartTakenOutsideRestartPreparation,
         IllegalInput::ControlEstablishedInIllegalState,
@@ -595,6 +641,9 @@ impl IllegalInput {
             IllegalInput::DeadBallStartedInIllegalState => "dead_ball_started_in_illegal_state",
             IllegalInput::RestartPreparationOutsideDeadBall => {
                 "restart_preparation_outside_dead_ball"
+            }
+            IllegalInput::RestartPreparationWithoutScheduledRestart => {
+                "restart_preparation_without_scheduled_restart"
             }
             IllegalInput::RestartPreparationContradictsScheduledRestart => {
                 "restart_preparation_contradicts_scheduled_restart"
@@ -693,7 +742,7 @@ impl DeadBallReason {
     }
 }
 
-/// 球在飞行中的出球类型（design §10.1、§5）。
+/// 球在飞行中的出球类型（design §10.1、§5；`Kickoff` 为 Slice 2 增量，见 §15 A9-1）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum FlightAction {
     Pass,
@@ -703,6 +752,10 @@ pub enum FlightAction {
     ThrowIn,
     FreeKick,
     GoalKick,
+    /// 开球（中圈拨球）。§10.1 初版闭集没有该成员，Slice 1 把开球记成 `Unknown`；
+    /// Slice 2 按 §15 A9-1 补上——开球拨球**不是** `Pass`（不代设计做等价映射），
+    /// 但它确实是一种确定的出球方式，不该退化成「证据不足」。
+    Kickoff,
     Unknown,
 }
 
@@ -716,6 +769,7 @@ impl FlightAction {
         Self::ThrowIn,
         Self::FreeKick,
         Self::GoalKick,
+        Self::Kickoff,
         Self::Unknown,
     ];
 
@@ -728,17 +782,25 @@ impl FlightAction {
             FlightAction::ThrowIn => "throw_in",
             FlightAction::FreeKick => "free_kick",
             FlightAction::GoalKick => "goal_kick",
+            FlightAction::Kickoff => "kickoff",
             FlightAction::Unknown => "unknown",
         }
     }
 }
 
-/// 重开片段的结束方式（design §10.1）。
+/// 重开片段的结束方式（design §10.1；`SupersededByDeadBall` 为 Slice 2 增量，见 §15 A9-2）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RestartEndReason {
     OpenPlayResumed,
     TerminatedByWhistle,
     MatchEnd,
+    /// 重开尚未完成就被**新的死球**顶掉（design §5 第二张表列为**正常**转场）。
+    ///
+    /// §10.1 初版闭集没有该成员，Slice 1 只能以 `Unknown` 结束这类 sequence——代价是
+    /// `gap_count() == 0` **不蕴含**所有 restart 都有明确结束原因，且把「正常转场」与
+    /// 「证据不足」混成同一个值。Slice 2 按 §15 A9-2 补上，使 `Unknown` 恢复其原义
+    /// （仅表示输入证据不足）。
+    SupersededByDeadBall,
     Unknown,
 }
 
@@ -748,6 +810,7 @@ impl RestartEndReason {
         Self::OpenPlayResumed,
         Self::TerminatedByWhistle,
         Self::MatchEnd,
+        Self::SupersededByDeadBall,
         Self::Unknown,
     ];
 
@@ -756,12 +819,35 @@ impl RestartEndReason {
             RestartEndReason::OpenPlayResumed => "open_play_resumed",
             RestartEndReason::TerminatedByWhistle => "terminated_by_whistle",
             RestartEndReason::MatchEnd => "match_end",
+            RestartEndReason::SupersededByDeadBall => "superseded_by_dead_ball",
             RestartEndReason::Unknown => "unknown",
         }
     }
 }
 
 /// 开放 episode 的开启原因（design §10.1）。
+///
+/// **各成员在生产接线里的归属**（只写事实，避免「成员存在 = 生产可达」的误读）：
+///
+/// - `Kickoff`：**只**由首开球路径传（`lib.rs` 首开球提交点，t=0）。有开放 restart，但 recorder
+///   的交付归一显式排除它（开赛 ≠ 重开交付），故它是唯一能以 `Kickoff` 开 episode 的路径。
+/// - `Pickup`：`advance_loose` 普通拾取与 battle 落点胜方**传入**的值。开放比赛里即为真
+///   loose 拾取；存在开放重启时被归一为 `RestartControl`。
+/// - `RestartControl`：**交付控制的最终值**——所有「开放 restart 存在时的首次明确控制」都归一
+///   到它（角球/门球落点 pickup、界外球/任意球 `PassCaught`、进球后开球恢复）。因此它同时是
+///   调用方传入值（进球后开球那处显式传）与归一结果。
+/// - `SuccessfulReceive`：**开放比赛传球接住**（`PassCaught`）的语义值；**当前生产路径上不可达**
+///   ——原因在 `control_established` 内部：开放比赛的 `PassCaught` 确实**传入**该值
+///   （`lib.rs` 的 `PassCaught` 提交点），且它不属 throw-in / free-kick 交付（那两者有开放
+///   restart → 归一为 `RestartControl`）；但接球方与当前 episode 同队（传球不切 possession），
+///   于是走 `same_team_open`分支**延续** episode、`start_reason` 根本不被消费
+///   （只有 `open_new_episode` 读它）。实测：1600 场里 0 条；在临时副本里把 `same_team_open`
+///   强制为 `false` 会立刻产出 23 万条——证明「抑制点是同队延续」，不是「接球控制走了
+///   `advance_loose` pickup」。
+///   保留该成员是因为它是 design §10.1 的闭集成员且语义明确（「开放比赛成功接球但**不**新建
+///   episode」这一情形将来若接线就落到它），但**不得**据此声称生产路径已产出该值。
+/// - `ControlChange`：门将扑救接住（`ShotSavedCaught`）开启新 episode（无重开安排）。
+/// - `Unknown`：证据不足，生产路径不用。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EpisodeStartReason {
     Kickoff,
@@ -841,13 +927,19 @@ impl EpisodeEndReason {
     }
 }
 
-/// 进入争抢的原因（design §10.1）。
+/// 进入争抢的原因（design §10.1；`DeliveryLoose` 为 Slice 2 增量，见 §15 A9-3）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContestStartReason {
     PassLost,
     InterceptionLoose,
     TackleLoose,
     ShotRebound,
+    /// **定位球 / 解围发出后落点变松散球**（角球落点 battle、门球落点、解围落点）。
+    ///
+    /// §10.1 初版闭集没有该成员：这几种落地争抢既不是 `pass_lost`（开放比赛传球失准），
+    /// 也不是其余任何一项，若强行套用会把「定位球交付的落点争抢」伪装成开放比赛事实
+    /// （与 §6.2「定位球不伪装成普通开放比赛 possession」同一条原则）。故补一个具名成员。
+    DeliveryLoose,
     Unknown,
 }
 
@@ -858,6 +950,7 @@ impl ContestStartReason {
         Self::InterceptionLoose,
         Self::TackleLoose,
         Self::ShotRebound,
+        Self::DeliveryLoose,
         Self::Unknown,
     ];
 
@@ -867,6 +960,7 @@ impl ContestStartReason {
             ContestStartReason::InterceptionLoose => "interception_loose",
             ContestStartReason::TackleLoose => "tackle_loose",
             ContestStartReason::ShotRebound => "shot_rebound",
+            ContestStartReason::DeliveryLoose => "delivery_loose",
             ContestStartReason::Unknown => "unknown",
         }
     }
@@ -1096,9 +1190,9 @@ impl DiagnosticMatch {
 
     /// `observation_gap` 事实数量。非 0 说明 recorder 遇到了未覆盖或矛盾输入。
     ///
-    /// **0 不等于「一切都有明确证据」**：`RestartSequence` 被新死球顶掉时以
-    /// `RestartEndReason::Unknown` 结束（闭集无对应成员，属 §10.1 允许的「证据不足」），
-    /// 该路径不产 gap。判断重开闭合质量须同时看 `restart_sequences` 的 `end_reason`。
+    /// **0 不等于「一切都有明确证据」**：`RestartSequence` 可以合法地以 `SupersededByDeadBall`
+    /// 结束（新死球顶掉未完成的重开，§15 A9-2），该路径不产 gap。判断重开闭合质量须同时看
+    /// `restart_sequences` 的 `end_reason`。
     pub fn gap_count(&self) -> usize {
         self.control_facts
             .iter()
@@ -1180,16 +1274,53 @@ pub fn commit_stream_end_boundary(
 
 // ============================== recorder ==============================
 
+/// 事件下标绑定的**目标**（[`BehaviorObservationRecorder::bind_event_index`] 的入参）。
+///
+/// 三种目标共用一个入口，是为了让「尾部压缩区间内不得绑定」这条守卫**只写一次**——
+/// §14 A4 明令禁止绕开该接口直接往 `episode.event_indexes` / `restart.event_indexes` 里
+/// 下标（否则 drain/filter/extend 的重排会静默进入 episode/restart 分析对象）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EventIndexTarget {
+    /// 指定事实下标（越界 = 调用方传错 → `IllegalFactIndex` gap）。
+    Fact(usize),
+    /// 当前开放的 [`PossessionEpisode`]。**无开放 episode 时是合法空操作**：
+    /// 并非每个正式事件都归属某个 episode（死球、哨声、重开交付期间的事件就没有），
+    /// 把「此刻没有归属对象」当成错误会逼调用方到处预判，反而更容易漏绑或错绑。
+    OpenEpisode,
+    /// 当前开放的 [`RestartSequence`]。无开放 restart 时同样是合法空操作。
+    OpenRestart,
+    /// **最近一条该 kind 的事实**（按 `facts` 顺序取最后一条）。
+    ///
+    /// 给「同一提交点产出多条事实，其中**只有某一条**要绑到别的事件」的场合用
+    /// （门球：一次提交记 `dead_ball_started` + `restart_taken`，前者归死球来源事件、
+    /// 后者归门球交付事件）。让 recorder 自己按 kind 查找，调用方就不必读 `facts()`
+    /// ——比赛逻辑函数读观察层状态正是 `p15_recorder_stays_out_of_the_decision_path` 要禁的形态。
+    ///
+    /// 该 kind 一条都没有时是合法空操作（返回 `false`）。
+    LastFactOfKind(ControlFactKind),
+    /// **自上次归属扫描以来新增的全部事实**（水位由 recorder 自己维护）。
+    ///
+    /// 一个引擎提交点往往一次产出多条事实（`dead_ball_started` 顺带记 `control_released`、
+    /// `contest_ended`；`control_established` 顺带记 `open_play_resumed`），它们同刻、同源。
+    /// 让调用方逐个传事实下标既啰嗦又容易漏（实测只绑「最后一条」时覆盖率仅 47%）。
+    ///
+    /// 水位语义：只有**尚未经历过一次归属扫描**的事实会被绑定。因此「这个提交点没有任何
+    /// 可归属事件」不会把事实永久留成待绑——它会在下一次扫描时被绑到**那个**事件上，
+    /// 所以调用方**只在确实有事件来源时**才发起扫描（`None` 时走 `Open*` 两个目标即可）。
+    UnattributedFacts,
+}
+
 /// 只读观察器：接收引擎状态提交点提交的事实，维护 episode / restart / contest 的开闭。
 ///
 /// **它不是第二个比赛状态机**：不参与决策、不持有 RNG、不读写 `MatchState`。
 ///
 /// `enabled == false` 时所有命令都是空操作，且不分配任何事实。
-/// **现状（Slice 1，勿按计划读）**：`simulate()` 目前根本不构造 recorder——它直接走
-/// `match_events` + `events_to_json`，因此正式路径的零成本是**结构性的**（没有被观察代码调用），
-/// 不是靠这里的分支做到的。`disabled()` 是为 Slice 2 准备的：届时若把 recorder 接进
-/// `match_events` 的公共路径，用 `disabled()` 就能保住正式路径零成本。
-/// `disabled_recorder_is_a_no_op` 只验证「关闭时命令无效」这一个契约，**不**证明正式路径已用它。
+///
+/// **正式路径的开销是结构性的**：`simulate()` 虽然把 recorder 传进 `match_events`（公共路径
+/// 共用），但传的是 `disabled()`——每条命令都在第一个分支返回，因此正式事件流与 `simulate()`
+/// 行为逐字节不变、开销近零。**这不是性能承诺**（不作绝对百分比保证，见 design §15 A9-9）；
+/// `disabled_recorder_is_a_no_op` 验证「关闭时命令无效」这个契约，
+/// `observation_api_leaves_formal_events_byte_identical` 验证两条路径事件流完全相同。
 #[derive(Debug, Clone)]
 pub struct BehaviorObservationRecorder {
     enabled: bool,
@@ -1222,6 +1353,12 @@ pub struct BehaviorObservationRecorder {
     /// 尾部压缩边界（见模块头「事件下标绑定规则」）：`[0, n)` 的最终下标稳定，`[n, ..)` 会被
     /// drain/filter/extend 重排。`None` = 全部稳定。
     stable_event_prefix: Option<usize>,
+    /// 尾部压缩**排空期**开关：本期间的提交点一律不绑定事件下标
+    /// （见 [`BehaviorObservationRecorder::suspend_event_index_binding`]）。
+    event_index_binding_suspended: bool,
+    /// 事件归属水位：`[0, attributed_upto)` 的事实已经历过一次归属扫描
+    /// （见 [`EventIndexTarget::UnattributedFacts`]）。
+    attributed_upto: usize,
     next_episode_id: u64,
     next_restart_id: u64,
 }
@@ -1241,6 +1378,8 @@ impl BehaviorObservationRecorder {
             stale_state_snapshot: None,
             deferred_violations: Vec::new(),
             stable_event_prefix: None,
+            event_index_binding_suspended: false,
+            attributed_upto: 0,
             next_episode_id: 0,
             next_restart_id: 0,
         }
@@ -1736,8 +1875,9 @@ impl BehaviorObservationRecorder {
     /// 开放 episode」决定；无开放 episode 时（例如重开准备期又出死球）该值不被消费。
     ///
     /// 顶掉未完成的旧 restart 是 §5 第二张表列的**正常**转场：该 sequence 以
-    /// `RestartEndReason::Unknown` 结束（§10.1 闭集没有对应成员，属「证据不足」），
-    /// **不**记 `observation_gap`——正常路径上记 gap 会把该信号稀释成噪声。
+    /// `RestartEndReason::SupersededByDeadBall` 结束（Slice 2 按 §15 A9-2 补的具名成员；
+    /// Slice 1 因闭集缺该成员只能用 `Unknown`），**不**记 `observation_gap`
+    /// ——正常路径上记 gap 会把该信号稀释成噪声。
     pub fn dead_ball_started(
         &mut self,
         t: ObservedTime,
@@ -1757,16 +1897,13 @@ impl BehaviorObservationRecorder {
             _ => {}
         }
         // 新死球终止旧 sequence（design §5 第二张表 `DeadBall` / `RestartPreparation` 行，
-        // 该表把它列为**正常**转场）。§6.2 只为重开给了 `open_play_resumed` /
-        // `terminated_by_whistle` / `match_end` 三种结束方式，没有「被新死球顶掉」这一成员 →
-        // 结束原因只能用 `RestartEndReason::Unknown`。这属于 §10.1 允许的用法（「输入证据不足」：
-        // 闭集里根本没有对应成员），故**不**记 `observation_gap`——gap 表示 recorder 遇到未覆盖
-        // 或矛盾输入，而在引擎正常路径上记 gap 会把该信号稀释成噪声。
+        // 该表把它列为**正常**转场）。结束原因用 `SupersededByDeadBall`（§15 A9-2），
+        // 故**不**记 `observation_gap`——gap 表示 recorder 遇到未覆盖或矛盾输入，
+        // 而在引擎正常路径上记 gap 会把该信号稀释成噪声。
         //
-        // 该重开状态可由记录本身区分：`end_reason == Some(Unknown)` 且没有 `open_play_resumed_t`
-        // 的 sequence 就是被顶掉的那条。**因此 `gap_count() == 0` 不蕴含所有 restart 都有明确的
-        // 结束原因**——Slice 4 的基线若要断言重开闭合质量，须同时看 `restart_sequences`。
-        self.close_restart(t, RestartEndReason::Unknown);
+        // 该重开状态可由记录本身区分：`end_reason == Some(SupersededByDeadBall)` 且没有
+        // `open_play_resumed_t` 的 sequence 就是被顶掉的那条。
+        self.close_restart(t, RestartEndReason::SupersededByDeadBall);
         // 离开持球：释放事实只在「当前确实持有控制」时记录，避免与出球时的释放重复。
         if matches!(self.state, BehaviorControlState::Controlled { .. }) {
             let team = match self.state {
@@ -1809,6 +1946,18 @@ impl BehaviorObservationRecorder {
 
     /// `DeadBall` → `RestartPreparation`（design §5 第二张表 `DeadBall` 行）。
     /// 已存在重开安排时 `team`/`kind` 必须与之一致（`Unknown` 可被细化）；否则记 gap 不猜。
+    ///
+    /// **必须已有重开安排**（`open_restart.is_some()`）：design §6.2 的统一生命周期是
+    /// `dead_ball_started → restart_preparation_started → …`，而 sequence 由**死球来源矩阵**
+    /// （§6.3）在 `dead_ball_started` 时创建（无重开安排的死球——半场/终场——`restart` 为
+    /// `None`）。因此「进了准备期却没有 sequence」在 §6.2 下没有合法入口，是 §5「未列动作视为
+    /// 矛盾输入」。
+    ///
+    /// 早先版本在这里**凭空造一条 sequence**（`None => open_new_restart(...)`）。那是「猜」：
+    /// 它给一个没有死球来源的重开补出 `start_t`（= prep 时刻），把 §6.2 的首环节悄悄抹掉，
+    /// 且让规则「**重开一律先在真实提交点记 `dead_ball_started`**」变成可选——生产接线若漏了
+    /// 死球提交，观察层会安静地自愈而不是当场记 gap（实测该分支从未被生产路径触达，
+    /// 是纯兜底代码）。
     pub fn restart_preparation_started(
         &mut self,
         t: ObservedTime,
@@ -1823,43 +1972,37 @@ impl BehaviorObservationRecorder {
             self.reject(t, IllegalInput::RestartPreparationOutsideDeadBall);
             return;
         }
-        match self.open_restart {
-            Some(i) => {
-                let (have_team, have_kind) = (self.restarts[i].team, self.restarts[i].kind);
-                // 只有「两边都已确定却互不相同」才是矛盾。任一侧为 `Unknown` 时不拒绝——
-                // spec 的「未知重开归属」场景要求**继续等待可确认的状态提交**（不推断具体球队），
-                // 在此细化类型/归属正是该要求；若直接拒绝，该 sequence 会永久卡在 unknown。
-                let kind_conflict = have_kind != RestartKind::Unknown
-                    && kind != RestartKind::Unknown
-                    && have_kind != kind;
-                let team_conflict =
-                    have_team.known().is_some() && team.known().is_some() && have_team != team;
-                if kind_conflict || team_conflict {
-                    self.reject(
-                        t,
-                        IllegalInput::RestartPreparationContradictsScheduledRestart,
-                    );
-                    return;
-                }
-                if have_team.known().is_none() {
-                    self.restarts[i].team = team;
-                }
-                if have_kind == RestartKind::Unknown {
-                    self.restarts[i].kind = kind;
-                }
-            }
-            None => {
-                self.open_new_restart(team, kind, t);
-            }
+        if self.open_restart.is_none() {
+            self.reject(t, IllegalInput::RestartPreparationWithoutScheduledRestart);
+            return;
+        }
+        // 上面的 `is_none()` 提前返回后，这里一定有开放 sequence（`expect` 不是兜底）。
+        let i = self.open_restart.expect("前面已确认存在开放 restart");
+        let (have_team, have_kind) = (self.restarts[i].team, self.restarts[i].kind);
+        // 只有「两边都已确定却互不相同」才是矛盾。任一侧为 `Unknown` 时不拒绝——
+        // spec 的「未知重开归属」场景要求**继续等待可确认的状态提交**（不推断具体球队），
+        // 在此细化类型/归属正是该要求；若直接拒绝，该 sequence 会永久卡在 unknown。
+        let kind_conflict =
+            have_kind != RestartKind::Unknown && kind != RestartKind::Unknown && have_kind != kind;
+        let team_conflict =
+            have_team.known().is_some() && team.known().is_some() && have_team != team;
+        if kind_conflict || team_conflict {
+            self.reject(
+                t,
+                IllegalInput::RestartPreparationContradictsScheduledRestart,
+            );
+            return;
+        }
+        if have_team.known().is_none() {
+            self.restarts[i].team = team;
+        }
+        if have_kind == RestartKind::Unknown {
+            self.restarts[i].kind = kind;
         }
         // 事实与派生状态都取**细化后**的权威值：本次调用可能带着 `Unknown` 来，而记录里已有
         // 更明确的证据（或反之）。若把调用参数直接写进 `state`，`state.kind` 会**比记录更差**，
         // 后续 `restart_taken` 就会把已知的重开方式降级成 `Unknown`（「不猜」的反面：丢掉已知事实）。
-        let (team, kind) = match self.open_restart {
-            Some(i) => (self.restarts[i].team, self.restarts[i].kind),
-            // `open_new_restart` 刚创建，记录即本次传参。
-            None => (team, kind),
-        };
+        let (team, kind) = (self.restarts[i].team, self.restarts[i].kind);
         self.push(
             ControlFactKind::RestartPreparationStarted,
             t,
@@ -1902,6 +2045,60 @@ impl BehaviorObservationRecorder {
         });
     }
 
+    /// **门球专线**（design §15 A9-3）：一次提交完成死球 → 重开 → 发出的全生命周期。
+    ///
+    /// 引擎的 `start_goal_kick` **同步**产 pass 高亮、**不设** `restart_prep`（对比角球/界外球/
+    /// 任意球都经 `RestartPrep` 走位后再发）——因此门球路径上**不存在** `restart_preparation_started`
+    /// 与 `restart_taken` 的独立提交点。§6.2 的统一生命周期为半场/终场开过例外先例，
+    /// 门球按 A9-3 同属**结构性例外**：这一段引擎里没有准备期，两条路都不能靠猜：
+    ///
+    /// - 补记零长度的 `restart_preparation_started` + `restart_taken` = 发明一个引擎里不存在的阶段；
+    /// - 只记 `dead_ball_started` 然后等 `control_established` = 门球后 `state` 仍是 `DeadBall`，
+    ///   该控制声明会被判非法（记 gap），sequence 的 `taken_t` / `open_play_resumed_t` 全留 `None`。
+    ///
+    /// 故新增本入口：记 `dead_ball_started` + sequence，**紧接**同刻记 `restart_taken`
+    /// （门将开大脚在同一刻把球交出——同「首开球」的 `restart_taken` + `control_established`
+    /// 同刻情形，事实本身是真的），然后进入 `BallInFlight`。刻意**缺**的是
+    /// `restart_preparation_started`：引擎里没有准备期，不补记。
+    ///
+    /// 不变量 5 要求「有 `open_play_resumed_t` 就必须先有 `taken_t`」，故这里的 `taken_t`
+    /// 必须落上（否则门球交付后的首次明确控制会造出一条无法区分真假的违规）。
+    pub fn goal_kick_started(
+        &mut self,
+        t: ObservedTime,
+        reason: DeadBallReason,
+        restart: (TeamRef, RestartKind),
+        episode_end: EpisodeEndReason,
+        basis: ControlFactBasis,
+    ) {
+        self.dead_ball_started(t, reason, Some(restart), episode_end, basis);
+        if !self.enabled {
+            return;
+        }
+        // `dead_ball_started` 若被判非法（`state` = Ended/Uninitialized）则不推进——门球事实
+        // 仍以 gap 收束，不在这里复用已被拒绝的输入（诊断上 gap 比「照记事实」有用）。
+        if !matches!(self.state, BehaviorControlState::DeadBall { .. }) {
+            return;
+        }
+        let (team, kind) = restart;
+        self.push(
+            ControlFactKind::RestartTaken,
+            t,
+            team.known(),
+            None,
+            None,
+            ControlFactBasis::RestartRule,
+            None,
+        );
+        if let Some(i) = self.open_restart {
+            self.restarts[i].taken_t = Some(t);
+        }
+        self.set_state(BehaviorControlState::BallInFlight {
+            originating_team: team,
+            action: flight_action_for(kind),
+        });
+    }
+
     /// 首次明确控制（design §5：`match_started`/`restart_taken` 之后的唯一入口）。
     ///
     /// - 有开放 restart 且球在飞行 → 记 `open_play_resumed` 并关闭该 sequence；
@@ -1909,6 +2106,10 @@ impl BehaviorObservationRecorder {
     /// - 有开放 episode 且异队 → 关闭旧 episode（`prior_episode_end`，`None` 时按 `control_lost`）
     ///   并开启新 episode；
     /// - 无开放 episode（重开后的首次控制 / pickup）→ 开启新 episode。
+    ///
+    /// **`start_reason` 是调用方的语义声明，不是最终值**：存在开放 restart 时（除首开球的
+    /// `Kickoff`）本命令一律归一为 [`EpisodeStartReason::RestartControl`]——判定放这里而不是
+    /// 调用点，见函数体内「交付控制归一」的说明。
     ///
     /// `ControlEstablished` 从 `Controlled` 状态跨队建立属于表中未列的矛盾输入 → 记 gap，不自行推进。
     // 参数对应 design §4 的 `ControlFact` 字段，逐个显式传递以保证调用点可读（同 lib.rs 既有先例）。
@@ -1919,7 +2120,7 @@ impl BehaviorObservationRecorder {
         team: TeamId,
         player: Option<i32>,
         location: Option<(f64, f64)>,
-        start_reason: EpisodeStartReason,
+        mut start_reason: EpisodeStartReason,
         prior_episode_end: Option<EpisodeEndReason>,
         basis: ControlFactBasis,
     ) {
@@ -1942,6 +2143,23 @@ impl BehaviorObservationRecorder {
                 return;
             }
             _ => {}
+        }
+        // **交付控制归一**：本次控制是否在收束一个开放重开——必须在 `close_restart` **之前**判定。
+        //
+        // 判据是**记录侧的事实**（此刻是否有开放 restart），不是调用方声明的 `start_reason`。
+        // 理由：同一个 `control_established` 入口被三类路径共用，其中「重开交付后的首次控制」
+        // 在引擎里是**三种不同的落点形态**（角球/门球的落点 pickup 走 `advance_loose` 与
+        // battle 分支、界外球/任意球走 `PassCaught`），调用方无法用一个参数把它们统一标成
+        // 交付控制——早先版本靠 `Highlight::restart_delivery` 只覆盖了 `PassCaught` 那一半，
+        // 角球与门球因此被标成 `Pickup`（实测 120 seed：角球 229 条、门球 1397 条错标）。
+        //
+        // 规则：
+        // - 有开放 restart 且调用方**未**显式声明 `Kickoff` → `RestartControl`
+        //   （首开球是唯一以 `Kickoff` 开 episode 的路径，它的语义是「开赛」而非「重开交付」，
+        //   而它同样有开放 restart，故必须显式区分，否则会被这里吞成 `RestartControl`）；
+        // - 无开放 restart → 保留调用方声明（开放比赛接球 / 真 loose pickup / 门将接球）。
+        if self.open_restart.is_some() && start_reason != EpisodeStartReason::Kickoff {
+            start_reason = EpisodeStartReason::RestartControl;
         }
         // 争抢收束（pickup）。
         self.settle_contest(t, ContestEndReason::Pickup, basis);
@@ -2224,31 +2442,83 @@ impl BehaviorObservationRecorder {
         });
     }
 
-    /// 给最后一条 fact 绑定正式事件下标（见模块头「事件下标绑定规则」）。
+    /// 暂停 / 恢复事件下标绑定（`true` = 暂停）。
     ///
-    /// 下标落在压缩区间内时**不绑定**并记一条 `observation_gap`
-    /// （[`ObservationGapReason::EventIndexOutOfStableRange`]）——静默错位比不绑定更糟，
-    /// 因为下游无法察觉。返回是否绑定成功。
+    /// `match_events` 在**尾部压缩排空期**（`while st.highlight.is_some()` 里反复
+    /// `finalize_highlight`）打开暂停：该区间内产出的 beat 会被随后的 drain/filter 去重丢弃，
+    /// 下标**在全部排空完成前无法确定**。此时绑定真实下标（`events.len() - 1`）并不等于最终
+    /// 下标，绑定它是**静默错位**；而绑定 `[0, drain_start)` 里的假下标更糟。
+    ///
+    /// 因此暂停期内的 [`Self::bind_event_index`] 一律**不绑定且不记 gap**（合法空操作，返回
+    /// `false`）——事实仍有 `t` 与 `detail` 可定位，而排空期的事实本来就无法可靠归属事件
+    /// （`note_event_stream_compaction` 的越界拒绝才是「不该出现的绑定」）。
+    ///
+    /// 只影响下标绑定，不影响事实记录本身：排空期仍照常产出 `dead_ball_started` /
+    /// `control_established` 等事实（否则 episode/restart 会缺收束点）。
+    pub fn suspend_event_index_binding(&mut self, suspended: bool) {
+        if !self.enabled {
+            return;
+        }
+        self.event_index_binding_suspended = suspended;
+    }
+
+    pub fn event_index_binding_suspended(&self) -> bool {
+        self.event_index_binding_suspended
+    }
+
+    /// 给**指定目标**绑定正式事件下标（见模块头「事件下标绑定规则」）。
+    ///
+    /// 三种目标（`ControlFact.source_event_index` / `PossessionEpisode.event_indexes` /
+    /// `RestartSequence.event_indexes`）共用本入口——下标一律指
+    /// [`DiagnosticMatch::events`] 的**最终**下标，落在尾部压缩区间内时**不绑定**并记一条
+    /// `observation_gap`（[`ObservationGapReason::EventIndexOutOfStableRange`]）：
+    /// 静默错位比不绑定更糟，因为下游无法察觉。返回是否绑定成功。
+    ///
+    /// 空操作（返回 `false` 且**不记 gap**）的两种情况——都是「此刻无法归属」而非缺陷：
+    /// ① `OpenEpisode` / `OpenRestart` 而当前没有对应开放对象；
+    /// ② 处于排空期暂停（见 [`Self::suspend_event_index_binding`]）。
     ///
     /// `t` 是失败时那条 gap 事实的时间（调用方知道当前时刻，故不需要 `Unknown` 兜底）。
     pub fn bind_event_index(
         &mut self,
         t: ObservedTime,
-        fact_index: usize,
+        target: EventIndexTarget,
         event_index: usize,
     ) -> bool {
-        if !self.enabled {
+        if !self.enabled || self.event_index_binding_suspended {
             return false;
         }
-        // 先校验下标本身，再校验目标 fact 存在——失败时不留半个绑定。
-        if fact_index >= self.facts.len() {
-            self.note_gap(
-                t,
-                ObservationGapReason::IllegalFactIndex,
-                ControlFactBasis::EngineState,
-            );
-            return false;
-        }
+        // ① 目标存在性：`Fact` 下标越界 = 调用方传错（记 gap）；`Open*` 当前无归属对象 =
+        //    合法空操作（见方法文档）。必须在压缩校验**之前**判定，否则越界 fact 会被
+        //    误报成压缩问题（两种原因在诊断上必须可区分）。
+        let unattributed: Option<(usize, usize)> = match target {
+            EventIndexTarget::Fact(i) if i < self.facts.len() => None,
+            EventIndexTarget::Fact(_) => {
+                self.note_gap(
+                    t,
+                    ObservationGapReason::IllegalFactIndex,
+                    ControlFactBasis::EngineState,
+                );
+                return false;
+            }
+            EventIndexTarget::OpenEpisode if self.open_episode.is_none() => return false,
+            EventIndexTarget::OpenRestart if self.open_restart.is_none() => return false,
+            EventIndexTarget::LastFactOfKind(kind)
+                if !self.facts.iter().any(|f| f.kind == kind) =>
+            {
+                return false
+            }
+            EventIndexTarget::UnattributedFacts => {
+                let range = (self.attributed_upto, self.facts.len());
+                if range.0 == range.1 {
+                    return false; // 没有待归属的事实：合法空操作
+                }
+                Some(range)
+            }
+            EventIndexTarget::LastFactOfKind(_) => None,
+            _ => None,
+        };
+        // ② 尾部压缩区间内不绑定（静默错位比不绑定更糟）。失败不留半个绑定。
         if let Some(bound) = self.stable_event_prefix {
             if event_index >= bound {
                 self.note_gap(
@@ -2259,7 +2529,67 @@ impl BehaviorObservationRecorder {
                 return false;
             }
         }
-        self.facts[fact_index].source_event_index = Some(event_index);
+        // ③ 写入。同一下标只入一次：同一提交点或相邻提交点重复报告同一个事件时不该重复入数组。
+        //
+        // **重绑不得让来源倒退**：`Fact` / `LastFactOfKind` 会**覆写**已有的
+        // `source_event_index`，而当前接线依赖「覆写总是发生在更晚（更大）的下标上」——
+        // `obs_goal_kick_delivered` 先用 `UnattributedFacts` 把死球类事实绑到**产生死球的**
+        // 事件，再用 `LastFactOfKind(RestartTaken)` 把 taken 改绑到**更晚的**门球交付事件。
+        // 若将来调用顺序被调换，事实的来源会静默倒退到更早的事件，而所有现有断言（都只查
+        // 「不晚于事实时刻」）仍全绿——所以这个守卫必须在这里、而不是靠调用方自律。
+        // 拒绝时记 gap（不静默忽略）：倒退本身是接线错误，应当可见。
+        if let Some(prev) = match target {
+            EventIndexTarget::Fact(i) => self.facts[i].source_event_index,
+            EventIndexTarget::LastFactOfKind(kind) => self
+                .facts
+                .iter()
+                .rposition(|f| f.kind == kind)
+                .and_then(|i| self.facts[i].source_event_index),
+            _ => None,
+        } {
+            if event_index < prev {
+                self.note_gap(
+                    t,
+                    ObservationGapReason::EventIndexRegressed,
+                    ControlFactBasis::EngineState,
+                );
+                return false;
+            }
+        }
+        match target {
+            EventIndexTarget::Fact(i) => {
+                self.facts[i].source_event_index = Some(event_index);
+            }
+            EventIndexTarget::LastFactOfKind(kind) => {
+                let i = self
+                    .facts
+                    .iter()
+                    .rposition(|f| f.kind == kind)
+                    .expect("①已确认存在该 kind");
+                self.facts[i].source_event_index = Some(event_index);
+            }
+            EventIndexTarget::UnattributedFacts => {
+                let (from, to) = unattributed.expect("①已确认非空");
+                for f in from..to {
+                    self.facts[f].source_event_index = Some(event_index);
+                }
+                // 水位只在**成功绑定**后推进：被压缩拒绝时不推进，避免把待归属事实静默丢给
+                // 下一个事件（那会让来源张冠李戴）。
+                self.attributed_upto = self.attributed_upto.max(to);
+            }
+            EventIndexTarget::OpenEpisode => {
+                let i = self.open_episode.expect("①已确认存在开放 episode");
+                if !self.episodes[i].event_indexes.contains(&event_index) {
+                    self.episodes[i].event_indexes.push(event_index);
+                }
+            }
+            EventIndexTarget::OpenRestart => {
+                let i = self.open_restart.expect("①已确认存在开放 restart");
+                if !self.restarts[i].event_indexes.contains(&event_index) {
+                    self.restarts[i].event_indexes.push(event_index);
+                }
+            }
+        }
         true
     }
 
@@ -2424,15 +2754,18 @@ impl BehaviorObservationRecorder {
 
 /// 重开方式 → 飞行出球类型（design §10.1 的 `FlightAction` 闭集）。
 ///
-/// `Kickoff` 在 `FlightAction` 闭集中没有对应项——开球拨球在语义上是最短传出球，但 recorder 不代
-/// 设计做等价映射（不猜），记为 `unknown`。这是一处**待设计确认的缺口**（见模块头注释）。
+/// `Kickoff` 在 §10.1 的初版闭集里没有对应项，故 Slice 1 记成 `unknown` 并标注为待确认缺口。
+/// Slice 2 按 §15 A9-1 补了具名成员 `FlightAction::Kickoff`——开球拨球**不是** `Pass`
+/// （不代设计做等价映射），但它是一种确定的出球方式，不该退化成「证据不足」。
+/// 只剩 `RestartKind::Unknown` 映射到 `FlightAction::Unknown`（真正的证据不足）。
 fn flight_action_for(kind: RestartKind) -> FlightAction {
     match kind {
         RestartKind::Corner => FlightAction::Corner,
         RestartKind::ThrowIn => FlightAction::ThrowIn,
         RestartKind::FreeKick => FlightAction::FreeKick,
         RestartKind::GoalKick => FlightAction::GoalKick,
-        RestartKind::Kickoff | RestartKind::Unknown => FlightAction::Unknown,
+        RestartKind::Kickoff => FlightAction::Kickoff,
+        RestartKind::Unknown => FlightAction::Unknown,
     }
 }
 
@@ -2551,6 +2884,7 @@ mod tests {
                 FlightAction::ThrowIn.as_str(),
                 FlightAction::FreeKick.as_str(),
                 FlightAction::GoalKick.as_str(),
+                FlightAction::Kickoff.as_str(),
                 FlightAction::Unknown.as_str(),
             ],
         );
@@ -2560,6 +2894,7 @@ mod tests {
                 RestartEndReason::OpenPlayResumed.as_str(),
                 RestartEndReason::TerminatedByWhistle.as_str(),
                 RestartEndReason::MatchEnd.as_str(),
+                RestartEndReason::SupersededByDeadBall.as_str(),
                 RestartEndReason::Unknown.as_str(),
             ],
         );
@@ -2596,6 +2931,7 @@ mod tests {
                 ContestStartReason::InterceptionLoose.as_str(),
                 ContestStartReason::TackleLoose.as_str(),
                 ContestStartReason::ShotRebound.as_str(),
+                ContestStartReason::DeliveryLoose.as_str(),
                 ContestStartReason::Unknown.as_str(),
             ],
         );
@@ -2645,6 +2981,7 @@ mod tests {
                 IllegalInput::MatchStartedOutsideUninitialized.as_str(),
                 IllegalInput::DeadBallStartedInIllegalState.as_str(),
                 IllegalInput::RestartPreparationOutsideDeadBall.as_str(),
+                IllegalInput::RestartPreparationWithoutScheduledRestart.as_str(),
                 IllegalInput::RestartPreparationContradictsScheduledRestart.as_str(),
                 IllegalInput::RestartTakenOutsideRestartPreparation.as_str(),
                 IllegalInput::ControlEstablishedInIllegalState.as_str(),
@@ -2665,6 +3002,7 @@ mod tests {
                 ObservationGapReason::MissingStreamEndBoundary.as_str(),
                 ObservationGapReason::EventIndexOutOfStableRange.as_str(),
                 ObservationGapReason::IllegalFactIndex.as_str(),
+                ObservationGapReason::EventIndexRegressed.as_str(),
             ],
         );
         // design §9.1 的两条 episode 结束原因不得与 `EpisodeStartReason` 的串名混淆。
@@ -2973,6 +3311,201 @@ mod tests {
             "{:?}",
             rec.invariant_violations()
         );
+    }
+
+    /// §6.2 一致性规则：**「进了准备期却没有重开安排」是矛盾输入，不凭空造 sequence。**
+    ///
+    /// 生命周期首环节是 `dead_ball_started`（sequence 由 §6.3 死球来源矩阵在那一刻创建），
+    /// 故「没有 sequence 的 prep」没有合法入口。旧实现在这里 `open_new_restart` 补一条——
+    /// 那是「猜」：给没有死球来源的重开造出 `start_t`，把首环节抹掉，并让「生产接线漏记
+    /// `dead_ball_started`」这件事**静默自愈**而不是当场记 gap。
+    ///
+    /// 判别力（目标变异必红）：把 `is_none()` 分支改回 `open_new_restart` → 第 1 条断言
+    /// （期望 1 条 gap）红、第 3 条（期望无开放 restart）红。
+    #[test]
+    fn restart_preparation_without_a_scheduled_restart_is_rejected_not_invented() {
+        // 直接构造「半场哨造成的无重开安排死球」（§6.3 half time 行：不创建 sequence）。
+        let mut rec = kicked_off();
+        rec.half_time(tc(50.0));
+        assert_eq!(
+            *rec.state(),
+            BehaviorControlState::DeadBall {
+                reason: DeadBallReason::HalfTime,
+                restart_team: TeamRef::Unknown,
+            },
+            "半场哨后应停在无重开安排的死球"
+        );
+        assert_eq!(rec.restarts().len(), 1, "半场哨不得创建 sequence（只有首开球那条）");
+        rec.restart_preparation_started(
+            tc(51.0),
+            TeamRef::Home,
+            RestartKind::Kickoff,
+            ControlFactBasis::RestartRule,
+        );
+        assert_eq!(
+            rec.gap_count(),
+            1,
+            "没有重开安排却报准备期 = 矛盾输入，必须记 gap 而不是补一条 sequence"
+        );
+        assert!(
+            rec.facts()
+                .last()
+                .map(|f| f.detail == Some(ControlFactDetail::Gap(
+                    ObservationGapReason::IllegalInput(
+                        IllegalInput::RestartPreparationWithoutScheduledRestart
+                    )
+                )))
+                .unwrap_or(false),
+            "gap 原因必须是具名的 `restart_preparation_without_scheduled_restart`：{:?}",
+            rec.facts().last()
+        );
+        assert_eq!(
+            rec.restarts().len(),
+            1,
+            "被拒绝的 prep 不得凭空造出第二条 sequence"
+        );
+        assert!(
+            !rec.restarts().iter().any(|r| r.end_reason.is_none()),
+            "不得留下悬空（开放）的 restart：{:?}",
+            rec.restarts()
+        );
+    }
+
+    /// **P0 回归门**：重开交付后的首次明确控制，episode `start_reason` 必须由**开放 restart 的
+    /// 事实**决定，与调用方传进来的原始值无关。
+    ///
+    /// 为什么这是 P0：`control_established` 被三类落点形态共用，调用方能声明的只是「这是接球 /
+    /// 这是拾取」，声明不了「这是交付」——早先版本靠 `Highlight::restart_delivery` 在**调用点**
+    /// 分流，只覆盖 `PassCaught` 那一半，角球（`advance_loose` / battle 分支）与门球
+    /// （`advance_loose`）因此被标成 `Pickup`。实测 120 seed：角球 229 条、门球 1397 条错标。
+    ///
+    /// 判别力：本测试对每种 restart kind 传**生产实际会传的那个原始值**（角球/门球传
+    /// `Pickup`、界外球/任意球传 `SuccessfulReceive`），因此「把归一逻辑硬编码成 `Pickup`」
+    /// 会让界外球/任意球那两行变红，「删掉归一逻辑」会让角球/门球那两行变红。
+    #[test]
+    fn restart_delivery_control_start_reason_is_decided_by_the_open_restart() {
+        // (restart kind, 是否走门球专线, 生产实际传的原始 start_reason)
+        let cases = [
+            (RestartKind::Corner, false, EpisodeStartReason::Pickup),
+            (RestartKind::GoalKick, true, EpisodeStartReason::Pickup),
+            (RestartKind::ThrowIn, false, EpisodeStartReason::SuccessfulReceive),
+            (RestartKind::FreeKick, false, EpisodeStartReason::SuccessfulReceive),
+        ];
+        for (kind, goal_kick_line, raw_reason) in cases {
+            let mut rec = kicked_off();
+            let t_dead = tc(100.0);
+            if goal_kick_line {
+                // 门球：dead ball + taken 同刻（§15 A9-3，无准备期）。
+                rec.goal_kick_started(
+                    t_dead,
+                    DeadBallReason::OutGoalLine,
+                    (TeamRef::Away, kind),
+                    EpisodeEndReason::Out,
+                    ControlFactBasis::FinalizedOutcome,
+                );
+            } else {
+                rec.dead_ball_started(
+                    t_dead,
+                    if kind == RestartKind::Corner {
+                        DeadBallReason::OutGoalLine
+                    } else {
+                        DeadBallReason::OutSideline
+                    },
+                    Some((TeamRef::Away, kind)),
+                    EpisodeEndReason::Out,
+                    ControlFactBasis::FinalizedOutcome,
+                );
+                rec.restart_preparation_started(
+                    tc(101.0),
+                    TeamRef::Away,
+                    kind,
+                    ControlFactBasis::RestartRule,
+                );
+                rec.restart_taken(tc(102.0), ControlFactBasis::RestartRule);
+            }
+            rec.control_established(
+                tc(105.0),
+                TeamId::Away,
+                Some(15),
+                Some((0.4, 0.5)),
+                raw_reason,
+                None,
+                ControlFactBasis::EngineState,
+            );
+            let ep = rec.episodes().last().unwrap();
+            assert_eq!(
+                ep.start_reason,
+                EpisodeStartReason::RestartControl,
+                "{:?} 交付后的首次控制必须记为交付控制（调用方原始值 {:?} 不得直接落到 episode）",
+                kind,
+                raw_reason
+            );
+            assert_eq!(
+                rec.restarts().last().unwrap().end_reason,
+                Some(RestartEndReason::OpenPlayResumed),
+                "{:?} 交付后 open_play_resumed 收束",
+                kind
+            );
+            assert!(
+                rec.invariant_violations().is_empty(),
+                "{:?}: {:?}",
+                kind,
+                rec.invariant_violations()
+            );
+        }
+    }
+
+    /// **P0 的反证面**：没有开放 restart 时，`start_reason` 必须**保留调用方的语义声明**——
+    /// 归一不得把开放比赛的成功接球 / 真 loose 拾取也吞成 `RestartControl`。
+    ///
+    /// 同时钉住首开球的**明确语义**：它也有开放 restart，但 `Kickoff` 是「开赛」而不是
+    /// 「重开交付」，故必须被显式豁免（否则 120 个 seed 的第一条 episode 全变 `RestartControl`）。
+    #[test]
+    fn open_play_control_keeps_its_declared_start_reason() {
+        // ① 开放比赛传接（无开放 restart）：声明什么就是什么。
+        for raw in [
+            EpisodeStartReason::SuccessfulReceive,
+            EpisodeStartReason::Pickup,
+            EpisodeStartReason::ControlChange,
+        ] {
+            let mut rec = kicked_off();
+            // 先让当前 episode 收束，才能观察「新开 episode 的 start_reason」。
+            rec.contest_started(
+                tc(10.0),
+                ContestStartReason::PassLost,
+                Some((0.5, 0.5)),
+                EpisodeEndReason::ControlLost,
+                ControlFactBasis::EngineState,
+            );
+            rec.control_established(
+                tc(11.0),
+                TeamId::Away,
+                Some(15),
+                Some((0.5, 0.5)),
+                raw,
+                None,
+                ControlFactBasis::EngineState,
+            );
+            assert_eq!(
+                rec.episodes().last().unwrap().start_reason,
+                raw,
+                "无开放 restart 时不得改写调用方声明（{:?}）",
+                raw
+            );
+            assert!(
+                rec.invariant_violations().is_empty(),
+                "{:?}",
+                rec.invariant_violations()
+            );
+        }
+        // ② 首开球：有开放 restart，但 `Kickoff` 豁免归一。
+        let rec = kicked_off();
+        assert_eq!(
+            rec.episodes()[0].start_reason,
+            EpisodeStartReason::Kickoff,
+            "首开球必须以 `Kickoff` 开 episode（开赛 ≠ 重开交付）"
+        );
+        assert_eq!(rec.episodes()[0].start_t, tc(0.5), "首开球 episode 起于首次控制提交那刻");
     }
 
     #[test]
@@ -3304,9 +3837,9 @@ mod tests {
 
     #[test]
     fn superseding_an_unfinished_restart_is_normal_and_records_no_gap() {
-        // design §5 第二张表把「新死球终止旧 sequence」列为**正常**转场；`RestartEndReason` 闭集
-        // 没有对应成员，故以 `Unknown` 结束（§10.1 允许的「证据不足」），**不**记 gap
-        // ——在正常路径上记 gap 会把该信号稀释成噪声。
+        // design §5 第二张表把「新死球终止旧 sequence」列为**正常**转场。Slice 1 因闭集缺
+        // 「被顶掉」成员只能用 `Unknown`；Slice 2 按 §15 A9-2 补了 `SupersededByDeadBall`，
+        // 使 `Unknown` 恢复原义（仅表示证据不足），且该路径**不**记 gap。
         let mut rec = kicked_off();
         rec.dead_ball_started(
             tc(10.0),
@@ -3333,18 +3866,131 @@ mod tests {
         let superseded = &rec.restarts()[1];
         assert_eq!(superseded.kind, RestartKind::ThrowIn);
         assert_eq!(superseded.taken_t, None);
-        assert_eq!(superseded.end_reason, Some(RestartEndReason::Unknown));
+        assert_eq!(
+            superseded.end_reason,
+            Some(RestartEndReason::SupersededByDeadBall),
+            "被新死球顶掉的 sequence 必须有具名结束原因（不再退化成 Unknown）"
+        );
         assert_eq!(rec.gap_count(), 0, "被顶掉的重开是正常转场，不得记 gap");
-        // 代价明示：gap_count == 0 不蕴含重开都有明确结束原因——这是本测试要钉住的语义，
-        // 防止 Slice 4 把 gap_count==0 当成「重开闭合质量」的充分证据。
-        assert!(rec
-            .restarts()
-            .iter()
-            .any(|r| r.end_reason == Some(RestartEndReason::Unknown)));
+        // `Unknown` 现在只留给真正的「证据不足」——被顶掉的路径不得再产出它，
+        // 否则「end_reason == Unknown」这条诊断线索会重新变成两类混一起。
+        assert!(
+            !rec.restarts()
+                .iter()
+                .any(|r| r.end_reason == Some(RestartEndReason::Unknown)),
+            "正常转场不得以 Unknown 结束重开：{:?}",
+            rec.restarts()
+                .iter()
+                .map(|r| r.end_reason)
+                .collect::<Vec<_>>()
+        );
         assert!(
             rec.invariant_violations().is_empty(),
             "{:?}",
             rec.invariant_violations()
+        );
+    }
+
+    #[test]
+    fn goal_kick_has_no_preparation_phase_and_binds_taken_at_delivery() {
+        // §15 A9-3：门球路径在引擎里**没有**准备期（`start_goal_kick` 同步发高亮，不设
+        // `restart_prep`）。事实层的如实表达 = `dead_ball_started` + `restart_taken`
+        // **同刻**，**没有** `restart_preparation_started`。
+        //
+        // 反证：若接线层误用统一生命周期（补记 prep），本测试第一条断言就红；
+        // 若只记 `dead_ball_started` 而不记 taken，则交付后的首次控制会被不变量 5 拦下。
+        let mut rec = kicked_off();
+        rec.goal_kick_started(
+            tc(100.0),
+            DeadBallReason::OutGoalLine,
+            (TeamRef::Away, RestartKind::GoalKick),
+            EpisodeEndReason::Out,
+            ControlFactBasis::FinalizedOutcome,
+        );
+        let kinds: Vec<&str> = rec.facts().iter().map(|f| f.kind.as_str()).collect();
+        assert_eq!(
+            kinds[kinds.len() - 2..],
+            ["dead_ball_started", "restart_taken"]
+        );
+        // 只在**门球这一段**里查准备期：`kicked_off()` 的开球本身有
+        // `restart_preparation_started`（开球专线 1），扫全表会把它误当成门球的准备期。
+        let gk_segment = kinds[kinds.len() - 2..].to_vec();
+        assert!(
+            !gk_segment.contains(&"restart_preparation_started"),
+            "门球路径不得记准备期（引擎里没有这一刻）；实际分段 = {:?}",
+            gk_segment
+        );
+        assert_eq!(
+            *rec.state(),
+            BehaviorControlState::BallInFlight {
+                originating_team: TeamRef::Away,
+                action: FlightAction::GoalKick,
+            }
+        );
+        let gk = &rec.restarts()[1];
+        assert_eq!(gk.kind, RestartKind::GoalKick);
+        assert_eq!(gk.taken_t, Some(tc(100.0)));
+        assert_eq!(gk.end_reason, None, "交付后仍在飞行，sequence 未收束");
+        // 门球交付后首次明确控制 → open_play_resumed 收束（不变量 5 要求的 taken_t 已落上）。
+        rec.control_established(
+            tc(104.0),
+            TeamId::Away,
+            Some(15),
+            Some((0.4, 0.5)),
+            EpisodeStartReason::RestartControl,
+            None,
+            ControlFactBasis::EngineState,
+        );
+        assert_eq!(
+            rec.restarts()[1].end_reason,
+            Some(RestartEndReason::OpenPlayResumed)
+        );
+        assert_eq!(rec.restarts()[1].open_play_resumed_t, Some(tc(104.0)));
+        assert!(
+            rec.invariant_violations().is_empty(),
+            "{:?}",
+            rec.invariant_violations()
+        );
+    }
+
+    #[test]
+    fn kickoff_flight_action_is_named_not_unknown() {
+        // §15 A9-1：开球拨球是**确定**的出球方式，不得退化成 Unknown。
+        let mut rec = BehaviorObservationRecorder::enabled();
+        rec.match_started(t0(), TeamRef::Home);
+        rec.restart_taken(tc(0.0), ControlFactBasis::RestartRule);
+        assert_eq!(
+            *rec.state(),
+            BehaviorControlState::BallInFlight {
+                originating_team: TeamRef::Home,
+                action: FlightAction::Kickoff,
+            },
+            "开球 taken 后的飞行动作必须是具名的 kickoff"
+        );
+        // 反证另一侧：真正的证据不足（未知重开方式）仍必须落到 Unknown。
+        let mut rec = BehaviorObservationRecorder::enabled();
+        rec.match_started(t0(), TeamRef::Home);
+        rec.dead_ball_started(
+            tc(5.0),
+            DeadBallReason::OutSideline,
+            Some((TeamRef::Unknown, RestartKind::Unknown)),
+            EpisodeEndReason::Out,
+            ControlFactBasis::FinalizedOutcome,
+        );
+        rec.restart_preparation_started(
+            tc(6.0),
+            TeamRef::Unknown,
+            RestartKind::Unknown,
+            ControlFactBasis::RestartRule,
+        );
+        rec.restart_taken(tc(7.0), ControlFactBasis::RestartRule);
+        assert_eq!(
+            *rec.state(),
+            BehaviorControlState::BallInFlight {
+                originating_team: TeamRef::Unknown,
+                action: FlightAction::Unknown,
+            },
+            "未知重开方式仍必须表达为 Unknown（不得被具名成员掩盖）"
         );
     }
 
@@ -3864,6 +4510,47 @@ mod tests {
     }
 
     #[test]
+    fn recorder_on_off_consumes_identical_rng() {
+        // design §13「recorder on/off 的正式 events 完全一致」的**更强**版本。
+        //
+        // 上面那条比的是 JSON 字符串，理论上可以被「两边都错成一样」骗过。这里改比 RNG 的
+        // **原始输出**：把同一 seed 前 N 个数抽出来，分别在「跑过一场带观察的比赛」与
+        // 「跑过一场 simulate()」之后抽一次——recorder 若在任一路径上多/少消费了 RNG
+        // （或改了消费顺序），后续序列必然分叉。
+        //
+        // 判别力来源：事件流是**下游产物**（路由变化会同时改事件与 RNG），而 RNG 序列只反映
+        // 消费点，是「决策与 RNG 都没被观察层影响」的直接证据。
+        fn draw(seed: u64, skip: usize) -> Vec<u64> {
+            let mut r = crate::rng::SeededRng::new(seed);
+            for _ in 0..skip {
+                r.next_u64();
+            }
+            (0..16).map(|_| r.next_u64()).collect()
+        }
+        for seed in [1u64, 42, 97] {
+            let cfg = MatchConfig {
+                match_duration_seconds: 600.0,
+                ..MatchConfig::default_()
+            };
+            let _ = simulate(seed, cfg);
+            let after_plain = draw(seed, 0);
+            let _ = simulate_with_behavior_observations(seed, cfg);
+            let after_observed = draw(seed, 0);
+            assert_eq!(
+                after_plain, after_observed,
+                "seed {}：抽取序列必须与观察开关无关",
+                seed
+            );
+            // 反证（防空转）：`skip` 必须真的生效，否则两边的 `draw` 都返回同一串常量。
+            assert_ne!(
+                draw(seed, 0),
+                draw(seed, 1),
+                "反证失败：skip 参数没有生效，上面的断言是空转"
+            );
+        }
+    }
+
+    #[test]
     fn observation_sidecar_is_deterministic_and_has_no_gaps_on_a_full_match() {
         let cfg = MatchConfig::default_();
         let a = simulate_with_behavior_observations(97, cfg);
@@ -3874,7 +4561,7 @@ mod tests {
         );
         assert_eq!(a.possession_episodes, b.possession_episodes);
         assert_eq!(a.restart_sequences, b.restart_sequences);
-        assert_eq!(a.gap_count(), 0, "Slice 1 的最小事实路径不产 gap");
+        assert_eq!(a.gap_count(), 0, "本 seed（默认时长）不该产 gap；\n                 注意：这只是**本样本内**的 0，不是「任何真实路径都无 gap」的全称命题——\n                 终场哨落在未决飞行中途时会合法产 `full_time_during_ball_in_flight`\n                 （实测 seed 470 @ dur 120、seed 1228 @ dur 400；触发与时长无关，见\n                 truncated_stream_produces_a_full_time_gap_by_design 的文档）");
         assert!(
             a.phase_segments.is_empty(),
             "#15B 之前 phase_segments 必须为空"
@@ -4089,37 +4776,849 @@ mod tests {
     }
 
     #[test]
-    fn slice1_lifecycle_facts_start_and_close_the_match() {
-        // **Slice 1 生命周期占位**（不是「完整比赛已被观察」的承诺）：opt-in API 此刻只提交
-        // 比赛生命周期端点（match_started / match_ended，加上开球自身的
-        // restart_preparation_started）。引擎各状态提交点的接入是 Slice 2 的工作。
-        // 此处钉死该最小契约，防止 Slice 2 前误以为已接入；Slice 2 完成后本测试必须改写成
-        // 真实比赛路径断言（否则会挡住新事实）。
-        // 旧名 `minimal_slice1_facts_start_and_close_the_match` 读起来像「比赛已被完整观察」，
-        // 属于虚假承诺，故改名。
+    fn real_match_sidecar_has_control_facts_and_closes_all_objects() {
+        // **Slice 2 的门**（旧 `slice1_lifecycle_facts_start_and_close_the_match` 只钉了
+        // 三条生命周期占位事实，Slice 2 接上引擎提交点后必须改写成真实路径断言，
+        // 否则它会挡住所有新事实——正是那个测试自己的注释预警的情形）。
+        //
+        // 本测试证明 opt-in sidecar 在真实 seed 上是**非占位**的：控制事实覆盖了传球/争抢/
+        // 死球/重开，且所有 episode / restart 都被收束。
         let cfg = MatchConfig::default_();
         let dm = simulate_with_behavior_observations(1, cfg);
         let kinds: Vec<&str> = dm.control_facts.iter().map(|f| f.kind.as_str()).collect();
+
+        // 起点仍是那三条（match_started + 开球自身 prep），终点是 match_ended。
         assert_eq!(
-            kinds,
-            vec![
+            &kinds[..3],
+            [
                 "match_started",
                 "restart_preparation_started",
-                "match_ended"
+                "restart_taken"
             ]
         );
-        // 开球重开未 taken 就被终场哨终止（design §6.2 的例外路径）。
-        assert_eq!(dm.restart_sequences.len(), 1);
+        assert_eq!(*kinds.last().unwrap(), "match_ended");
+        assert!(
+            dm.control_facts.len() > 100,
+            "真实比赛应有大量事实；实际 {}",
+            dm.control_facts.len()
+        );
+
+        // **非占位**：各类控制事实都出现过（每一项都由不同的引擎提交点产出）。
+        for required in [
+            "control_established",
+            "control_released",
+            "dead_ball_started",
+            "restart_preparation_started",
+            "restart_taken",
+            "open_play_resumed",
+        ] {
+            assert!(
+                kinds.contains(&required),
+                "真实比赛路径应产出 {:?}；实际 kinds = {:?}",
+                required,
+                kinds
+            );
+        }
+        // episode / restart 都是**可闭合**的：没有 end_t/end_reason 为空的残留。
+        assert!(
+            !dm.possession_episodes.is_empty(),
+            "应有 possession episode"
+        );
+        assert!(!dm.restart_sequences.is_empty(), "应有 restart sequence");
+        for e in &dm.possession_episodes {
+            assert!(e.end_t.is_some(), "episode {} 未闭合", e.id);
+            assert!(e.end_reason.is_some(), "episode {} 无结束原因", e.id);
+        }
+        for r in &dm.restart_sequences {
+            assert!(r.end_reason.is_some(), "restart {} 未闭合", r.id);
+        }
+        // 开球那条 sequence 被正常交付并恢复开放比赛。
         assert_eq!(dm.restart_sequences[0].kind, RestartKind::Kickoff);
-        assert_eq!(dm.restart_sequences[0].taken_t, None);
         assert_eq!(
             dm.restart_sequences[0].end_reason,
-            Some(RestartEndReason::MatchEnd)
+            Some(RestartEndReason::OpenPlayResumed)
         );
         assert!(dm
             .events
             .iter()
             .any(|e| e.type_ == crate::EventType::Whistle));
+    }
+
+    #[test]
+    fn fixed_seed_sidecar_binds_event_indexes_and_leaves_no_gaps() {
+        // 需求：固定 seed 集成测试，证明 opt-in sidecar 有非占位控制事实、episode/restart
+        // 可闭合或明确记录 gap，且**事件下标真的绑上了**（不是永远空数组）。
+        for seed in [1u64, 5, 97] {
+            let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
+            assert_eq!(dm.gap_count(), 0, "seed {}：本样本不该产 gap（0 只对本样本成立：终场哨落在未决飞行中途时会合法产 full_time_during_ball_in_flight，见 truncated_stream_produces_a_full_time_gap_by_design）", seed);
+            assert!(
+                dm.is_coherent(),
+                "seed {}：{:?}",
+                seed,
+                dm.invariant_violations
+            );
+            assert_eq!(dm.state, BehaviorControlState::Ended, "seed {}", seed);
+
+            // 下标必须真的入数组（Slice 1 里这两个字段恒空——那正是本测试要证伪的占位）。
+            let ep_with_events = dm
+                .possession_episodes
+                .iter()
+                .filter(|e| !e.event_indexes.is_empty())
+                .count();
+            assert!(
+                ep_with_events > 0,
+                "seed {}：没有任何 episode 绑上事件下标（占位未接线）",
+                seed
+            );
+            let rs_with_events = dm
+                .restart_sequences
+                .iter()
+                .filter(|r| !r.event_indexes.is_empty())
+                .count();
+            assert!(
+                rs_with_events > 0,
+                "seed {}：没有任何 restart 绑上事件下标（占位未接线）",
+                seed
+            );
+            // 绑定的下标必须在范围内、严格递增（append-only 的产物），且不与事实冲突。
+            for e in &dm.possession_episodes {
+                assert!(
+                    e.event_indexes.windows(2).all(|w| w[0] < w[1]),
+                    "seed {}：episode {} 的事件下标非严格递增：{:?}",
+                    seed,
+                    e.id,
+                    e.event_indexes
+                );
+                assert!(
+                    e.event_indexes.iter().all(|i| *i < dm.events.len()),
+                    "seed {}：episode {} 的事件下标越界",
+                    seed,
+                    e.id
+                );
+            }
+            for r in &dm.restart_sequences {
+                assert!(
+                    r.event_indexes.windows(2).all(|w| w[0] < w[1]),
+                    "seed {}：restart {} 的事件下标非严格递增：{:?}",
+                    seed,
+                    r.id,
+                    r.event_indexes
+                );
+            }
+            // 事实层的绑定：绝大多数事实应有事件来源（没有的靠 `t` + `detail` 定位，
+            // 例如 prep-start 这类引擎不产事件的提交点）。
+            let bound = dm
+                .control_facts
+                .iter()
+                .filter(|f| f.source_event_index.is_some())
+                .count();
+            assert!(
+                bound * 2 > dm.control_facts.len(),
+                "seed {}：绑定事件下标的事实过少（{}/{}）",
+                seed,
+                bound,
+                dm.control_facts.len()
+            );
+        }
+    }
+
+    /// **P0 的生产路径门**（多 seed、按 restart kind 断言）：重开交付后的首次控制
+    /// `start_reason` 必须是 `RestartControl`，**唯一例外**是首开球（`Kickoff`）。
+    ///
+    /// 耦合方式：一条 restart 的 `open_play_resumed_t` 与某条 episode 的 `start_t` 相等，
+    /// ⟺ 那条 episode 就是这次交付开出来的。用这个关系把 kind 与 start_reason 对上，
+    /// 不依赖对象顺序。
+    ///
+    /// 需要的 kind 覆盖：实测 seed 1 单场就产出全部 5 种（corner / free_kick / goal_kick /
+    /// kickoff / throw_in，各 ≥ 一次），且 120 seed 全覆盖；断言里用**集合包含**而不是
+    /// 「恰好等于」，避免将来某 seed 少一种时变成脆弱断言。
+    ///
+    /// 判别力（目标变异必红）：把 `control_established` 里的归一去掉 → corner / goal_kick
+    /// 两行变红（它们是 `Pickup`）；把归一写成硬编码 `Pickup` → free_kick / throw_in /
+    /// kickoff-after-goal 三行变红。
+    #[test]
+    fn restart_delivery_start_reason_matches_the_restart_kind_on_real_matches() {
+        const SEEDS: [u64; 6] = [1, 5, 33, 86, 97, 120];
+        let mut seen_kinds: Vec<RestartKind> = Vec::new();
+        let mut checked = 0usize;
+        for seed in SEEDS {
+            let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
+            assert_eq!(dm.gap_count(), 0, "seed {}：本样本不该产 gap（0 只对本样本成立：终场哨落在未决飞行中途时会合法产 full_time_during_ball_in_flight，见 truncated_stream_produces_a_full_time_gap_by_design）", seed);
+            assert!(dm.is_coherent(), "seed {}：{:?}", seed, dm.invariant_violations);
+            for r in &dm.restart_sequences {
+                seen_kinds.push(r.kind);
+                let Some(resumed) = r.open_play_resumed_t else {
+                    continue; // 未完成的重开（流末截断）没有交付控制可查
+                };
+                let ep = dm
+                    .possession_episodes
+                    .iter()
+                    .find(|e| (e.start_t.value - resumed.value).abs() < 1e-9)
+                    .unwrap_or_else(|| {
+                        panic!(
+                            "seed {}：restart {}（{:?}）在 t={} 标记 open_play_resumed，\
+                             却找不到同一时刻开启的 episode",
+                            seed,
+                            r.id,
+                            r.kind,
+                            resumed.value
+                        )
+                    });
+                // 首开球是唯一以 `Kickoff` 开 episode 的路径；其余重开交付一律 `RestartControl`。
+                let first_kickoff = r.kind == RestartKind::Kickoff && r.start_t.value == 0.0;
+                let expected = if first_kickoff {
+                    EpisodeStartReason::Kickoff
+                } else {
+                    EpisodeStartReason::RestartControl
+                };
+                assert_eq!(
+                    ep.start_reason, expected,
+                    "seed {}：restart {}（{:?}，t={}）交付后的 episode {} start_reason = {} \
+                     （期望 {}；P0 回归：角球/门球曾错标 pickup）",
+                    seed,
+                    r.id,
+                    r.kind,
+                    r.start_t.value,
+                    ep.id,
+                    ep.start_reason.as_str(),
+                    expected.as_str()
+                );
+                checked += 1;
+            }
+        }
+        for kind in [
+            RestartKind::Corner,
+            RestartKind::GoalKick,
+            RestartKind::ThrowIn,
+            RestartKind::FreeKick,
+            RestartKind::Kickoff,
+        ] {
+            assert!(
+                seen_kinds.contains(&kind),
+                "seed 集合没有覆盖 {:?}（本测试对它的断言变成空转）；实际 kinds = {:?}",
+                kind,
+                seen_kinds
+                    .iter()
+                    .map(|k| k.as_str())
+                    .collect::<Vec<_>>()
+            );
+        }
+        assert!(
+            checked >= 100,
+            "交付控制样本过少（{}），断言接近空转",
+            checked
+        );
+    }
+
+    /// **终场哨可能打断未决飞行 → 合法产 gap**（把「真实路径 0 gap」这条说法的**边界**钉住）。
+    ///
+    /// 本引擎的循环是 `while t < dur`，于是**可能**在未决飞行中途到点推终场哨——此时按
+    /// design §5 第二张表与 §10，必须记 `full_time_during_ball_in_flight` gap，并把 episode
+    /// 结束原因固定为 `whistle_interrupt`（**不**伪造动作结果）。
+    ///
+    /// 触发机制与时长**无关**：只要「某一 tick 以飞行中（`Pass` / `Shot` 等）结束、球尚未落地」
+    /// 而 `t + 1 == dur`，终场哨就落在飞行中途。短时长只是让**开球飞行**更容易撞上哨（`dur 120`
+    /// 时开球刚发出就被截），长时长则需要比赛尾段恰有一脚未落地的球——**罕见，但会发生**。
+    ///
+    /// 已复核示例（旧表述曾断言「dur ≥ 300 时 0 例」，**该全称已被证伪**，勿退回）：
+    ///
+    /// - `seed 470 @ dur 120`：kickoff restart 在 t=119 发出、飞行被 t=120 的终场哨截断；
+    /// - `seed 1228 @ dur 400`：t=399 的 kickoff **飞行中**撞上 t=400 终场哨——**更长时长同样产 gap**。
+    ///
+    /// 所以「真实路径 0 gap」**只在**未被截断的干净比赛上成立，不是全称命题——
+    /// `gap_count() == 0` 的几处断言各自限定了样本（本测试用 `dur 120` 只是取一个**稳定复现**的
+    /// 样本，不表示更长时长不会产）。
+    ///
+    /// 判别力（防空转）：若把 `full_time` 里的未决飞行分支删掉，本测试第 2 条断言红。
+    #[test]
+    fn truncated_stream_produces_a_full_time_gap_by_design() {
+        let config = MatchConfig {
+            match_duration_seconds: 120.0,
+            ..MatchConfig::default_()
+        };
+        let dm = simulate_with_behavior_observations(470, config);
+        assert_eq!(
+            dm.gap_count(),
+            1,
+            "该样本必须在终场哨上截断一条未决飞行；实际 gaps = {}",
+            dm.gap_count()
+        );
+        assert!(
+            dm.control_facts.iter().any(|f| {
+                f.kind == ControlFactKind::ObservationGap
+                    && f.detail
+                        == Some(ControlFactDetail::Gap(
+                            ObservationGapReason::FullTimeDuringBallInFlight,
+                        ))
+            }),
+            "gap 原因必须是具名的 `full_time_during_ball_in_flight`：{:?}",
+            dm.control_facts
+                .iter()
+                .filter(|f| f.kind == ControlFactKind::ObservationGap)
+                .collect::<Vec<_>>()
+        );
+        // 该样本的形态是「进球 → 开球 → 开球飞行被终场哨截断」：episode 早在进球时就以
+        // `goal` 收束，故**没有**开放 episode 可被 `whistle_interrupt` 关闭——这正说明
+        // 「未决飞行被哨声打断」不一定伴随一条 episode 收束，判定必须看 gap 本身而不是
+        // episode 的 end_reason（早先我按 `whistle_interrupt` 断言，实测红：episodes =
+        // [Out, Goal]）。这里改为钉住真正该成立的形态：
+        // ① 被截断的 restart 以 `match_end` 收束且**没有** `open_play_resumed_t`；
+        // ② 比赛终态是 `Ended`（哨声确实把观察收束了）。
+        assert_eq!(dm.state, BehaviorControlState::Ended, "终场哨后应进入 Ended");
+        let truncated_restart = dm
+            .restart_sequences
+            .iter()
+            .find(|r| r.end_reason == Some(RestartEndReason::MatchEnd))
+            .expect("应有被 match_end 收束的 restart（截断的那条）");
+        assert!(
+            truncated_restart.open_play_resumed_t.is_none(),
+            "被截断的重开不得有 open_play_resumed_t（比赛没恢复）：{:#?}",
+            truncated_restart
+        );
+    }
+
+    /// **P1 事实核查门**：`SupersededByDeadBall` 是 **recorder 层契约**，当前**生产引擎不可达**。
+    ///
+    /// 这不是「功能缺失」而是如实记录模型边界。不可达的机制（两条，都是**结构性**的）：
+    ///
+    /// 1. 引擎的每个死球结果都在**同一 tick 内**建立对应重开——goal 由 `advance_dead_ball`
+    ///    推进到 kickoff、out 在 `finalize_highlight` 里立刻 `start_throw_in` / `start_corner`、
+    ///    foul 在 `emit_foul_and_free_kick` 里立刻建 `restart_prep`、shot off target /
+    ///    out goal line 由 `start_goal_kick` **同步**发球；
+    /// 2. **一次 `finalize_highlight` 至多产一个死球结果**（`match h.outcome` 的每个分支各产
+    ///    一个），而两次死球之间必有一次控制建立或流结束——即：`tick` 体内每个分支都提前
+    ///    `return`，同一 tick 不可能在 `dead_ball` / `restart_prep` / `highlight` 三条路里
+    ///    各产一个死球。
+    ///
+    ///    ⚠️ **不要**把这条写成「一个 tick 至多 `finalize_highlight` 一次」——那是**错的**：
+    ///    尾部排空循环（`while st.highlight.is_some()`）会在同一 `t = dur` 上**反复**
+    ///    `finalize_highlight`（链式高亮），且 `truncated_stream_produces_a_full_time_gap_by_design`
+    ///    实测它确实在 `dur` 上产事实。正确的表述是「每个死球结果都在其自身 tick 内闭环，
+    ///    且排空链上的死球之间必然隔着一次控制建立」。
+    ///
+    /// 于是「上一个重开还没完成就被新死球顶掉」没有可执行路径。
+    ///
+    /// 本测试固定**当前口径**并断言 0 条 + 两条更强的结构不变量：
+    ///
+    /// - ① `restart_sequences.len() == dead_ball_started 事实数 + 1`——第一条 restart 由
+    ///   `match_started` 创建，其余**严格一一对应**死球事实。这证明 recorder 不会凭空造
+    ///   restart（同时是 §6.2「重开一律由死球创建」在真实路径上的机器化表述）；
+    /// - ② 每条 restart 的 `end_reason` ∈ {`OpenPlayResumed`, `MatchEnd`}——即：没有一条以
+    ///   `SupersededByDeadBall` / `TerminatedByWhistle` / `Unknown` 结束。
+    ///
+    /// **这条 0 是真在测东西，还是口径没覆盖到？**（2026-09-23 实测，勿删）：
+    /// 把 `advance_restart_prep` 的发球点改成「先报一条新死球、再 taken」，本测试立刻变红
+    /// （`end_reason = Some(SupersededByDeadBall)`），说明死球事实一多、断言就能看见；
+    /// 而当前口径下 2800 场真实比赛（seed 1..=400 × dur {120,300,600,1200,2700,5400,9000}）
+    /// 一条都没有。故这是**观测结果**，不是断言写错。
+    ///
+    /// 将来若引擎引入「重开中途再死球」（例如犯规打断准备期），本测试会**变红并提醒**：
+    /// 那时应把 `SupersededByDeadBall` 从「recorder-level contract」升级为
+    /// 「生产已覆盖」，并补针对性的生产断言（见 design §15 A9-2 的同名结论）。
+    #[test]
+    fn superseded_by_dead_ball_is_a_recorder_level_contract_not_engine_reachable() {
+        const SEEDS: [u64; 5] = [1, 5, 86, 97, 120];
+        const DURATIONS: [f64; 2] = [300.0, 5400.0];
+        let mut restarts = 0usize;
+        for dur in DURATIONS {
+            let config = MatchConfig {
+                match_duration_seconds: dur,
+                ..MatchConfig::default_()
+            };
+            for seed in SEEDS {
+                let dm = simulate_with_behavior_observations(seed, config);
+                assert_eq!(
+                    dm.gap_count(),
+                    0,
+                    "seed {} dur {}：本样本不该产 gap（0 只对本样本成立——终场哨落在未决飞行\
+                     中途时会合法产 `full_time_during_ball_in_flight`，且**与时长无关**：\
+                     已复核 seed 470 @ dur 120、seed 1228 @ dur 400。若本行变红先查它是不是\
+                     那一类合法缺口，再查 SupersededByDeadBall 口径）",
+                    seed,
+                    dur
+                );
+                assert!(
+                    dm.is_coherent(),
+                    "seed {} dur {}：{:?}",
+                    seed,
+                    dur,
+                    dm.invariant_violations
+                );
+                // ① restart 与死球事实严格一一对应（+ 首开球那条）。
+                let dead_balls = dm
+                    .control_facts
+                    .iter()
+                    .filter(|f| f.kind == ControlFactKind::DeadBallStarted)
+                    .count();
+                assert_eq!(
+                    dm.restart_sequences.len(),
+                    dead_balls + 1,
+                    "seed {} dur {}：restart 数 {} ≠ 死球事实数 {} + 1——recorder 凭空造了 \
+                     restart（§6.2 要求每个 sequence 都有死球来源）",
+                    seed,
+                    dur,
+                    dm.restart_sequences.len(),
+                    dead_balls
+                );
+                // ② 没有任何 restart 以「被新死球顶掉」结束（当前生产引擎不可达）。
+                for r in &dm.restart_sequences {
+                    assert!(
+                        matches!(
+                            r.end_reason,
+                            Some(RestartEndReason::OpenPlayResumed)
+                                | Some(RestartEndReason::MatchEnd)
+                        ),
+                        "seed {} dur {}：restart {}（{:?}）以 {:?} 结束——`SupersededByDeadBall` \
+                         是 recorder 层契约，当前引擎不可达；若它真的出现了，说明引擎新引入了\
+                         「重开中途再死球」，须同步升级本断言与 design §15 A9-2",
+                        seed,
+                        dur,
+                        r.id,
+                        r.kind,
+                        r.end_reason
+                    );
+                }
+                restarts += dm.restart_sequences.len();
+            }
+        }
+        // 防空转：真的跑了不少 restart 才敢说「一条都没有」。实测本 seed × dur 组合共 261 条
+        // restart（dur=300 的短场贡献较少，dur=5400 是主力）——阈值取 200 留一点余量，
+        // 但离 261 很近，故 seed 或 dur 被误删时会当场红。
+        assert!(
+            restarts >= 200,
+            "restart 样本过少（{}），断言接近空转",
+            restarts
+        );
+    }
+
+    /// **P2.1**：每个 episode / restart 对象都必须有至少一条 `event_indexes`，
+    /// **或**落在**唯一**一条有据可依的例外上——不能靠「别的对象有下标」蒙混（这正是旧集成
+    /// 测试只看「存在至少一个非空对象」的漏洞）。
+    ///
+    /// **例外（唯一条）**：对象**在流截断时刻 `dur` 才被创建**（`start_t == 尾哨 t == dur`）。
+    /// 其原因正是 design §14 A4.1 / §15.2 设计的行为：`match_events` 出循环后立刻
+    /// `note_event_stream_compaction(drain_start)` + `suspend_event_index_binding(true)`，
+    /// 排空期的提交点**不绑定**事件下标（靠 `t` + `detail` 定位）。故此刻新建的对象没有下标，
+    /// 是**设计后果**而非遗漏。
+    ///
+    /// 为什么用「`start_t == dur`」这一个谓词而不是按对象类型列举形态：实测它**统一覆盖**了
+    /// 三种实际形态，且**零反例**——2800 场（seed 1..=400 × dur {120,300,600,1200,2700,5400,9000}）
+    /// 里 29 条空 restart + 63 条空 episode **全部**满足该谓词（数字为 2026-09-25 在 main 基线
+    /// `MODEL_VERSION=7` 上重测；旧 v6 基线为 22 + 55，谓词本身不变）。三个形态是：
+    /// ① `dur` 时刻由终场哨开启的 episode（`start_t == end_t == dur`）；
+    /// ② `dur` 时刻创建、未 `taken` 就被 `match_end` 收束的 restart；
+    /// ③ `dur` 时刻由射门 off-target 触发、**已 `taken`** 的门球 restart（在排空期内
+    ///    `finalize_highlight` 里创建并同步 taken——`taken` 本身不豁免绑定，是排空期暂停豁免的）。
+    ///
+    /// ⚠️ **本测试的第一版曾漏掉形态 ③**：它按 `end_reason == MatchEnd && taken_t.is_none()`
+    /// 判定例外，于是对形态 ③ 会误判为「已 taken 却无下标 = 缺陷」。当时的 seed 集合
+    /// （1/5/15/33/86/97/100/120 @ 5400）恰好**没有**命中形态 ③，测试照样全绿——正是
+    /// 「只在自选 seed 上闭合」的典型。现在 seed 集合里**显式**包含命中形态 ③ 的 seed
+    /// （见下 `SEEDS`），且下面的防空转断言要求三种形态**都**被覆盖。
+    ///
+    /// **seed 集合随基线重标定（2026-09-25）**：本测试原用的 seed 是在 `MODEL_VERSION=6` 分支上
+    /// 选的；P15A 移植到 main（`MODEL_VERSION=7`，含 P104 体积重标定）后，任何 seed 集合都不再命中
+    /// 三种形态（防空转断言直接变红）。按同一判据在 5400 默认时长下重扫 seed 1..=400，
+    /// 换用 [1, 9, 24, 36, 53, 86, 100, 317, 5]（形态①②③ 计数 1/1/2）。**换的是样本，不是判据**——
+    /// 谓词、豁免条款与防空转断言都未改。
+    #[test]
+    fn every_episode_and_restart_object_has_event_indexes_or_a_documented_exception() {
+        // 选种依据（实测）：5400 默认时长下命中三种形态的最小集合。
+        // 形态 ①②③ 分别由 truncated_* 三个计数器证明覆盖。
+        const SEEDS: [u64; 9] = [1, 9, 24, 36, 53, 86, 100, 317, 5];
+        let mut truncated_episode = 0usize;
+        let mut truncated_restart_untaken = 0usize;
+        let mut truncated_restart_taken = 0usize;
+        for seed in SEEDS {
+            let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
+            let whistle_t = dm
+                .events
+                .iter()
+                .rev()
+                .find(|e| e.type_ == crate::EventType::Whistle)
+                .map(|e| e.t)
+                .expect("正式流应有尾哨");
+            for e in &dm.possession_episodes {
+                if !e.event_indexes.is_empty() {
+                    continue;
+                }
+                assert!(
+                    (e.start_t.value - whistle_t).abs() < 1e-9,
+                    "seed {}：episode {}（start_t={}）无事件下标，且不在流截断时刻（尾哨 t={}）：\
+                     只有「截断时刻才创建」的对象允许没有可归属事件；{:#?}",
+                    seed,
+                    e.id,
+                    e.start_t.value,
+                    whistle_t,
+                    e
+                );
+                truncated_episode += 1;
+            }
+            for r in &dm.restart_sequences {
+                if !r.event_indexes.is_empty() {
+                    continue;
+                }
+                assert!(
+                    (r.start_t.value - whistle_t).abs() < 1e-9,
+                    "seed {}：restart {}（{:?}，start_t={}）无事件下标，且不在流截断时刻\
+                     （尾哨 t={}）：{:#?}",
+                    seed,
+                    r.id,
+                    r.kind,
+                    r.start_t.value,
+                    whistle_t,
+                    r
+                );
+                if r.taken_t.is_none() {
+                    truncated_restart_untaken += 1;
+                } else {
+                    truncated_restart_taken += 1;
+                }
+            }
+            // 首开球 sequence 必须在**每个** seed 上都有下标（它是唯一曾被系统性漏绑的对象：
+            // 旧接线的唯一一次归属扫描在 `control_established` **之后**，那时 restart 已被
+            // `open_play_resumed` 收束 → `OpenRestart` 目标落空，120/120 seed 全空）。
+            // **判别力实测**：把 lib.rs 首开球那处「先绑一次」删掉（退回单次后置扫描）→ 本断言红。
+            assert!(
+                !dm.restart_sequences[0].event_indexes.is_empty(),
+                "seed {}：首开球 sequence 无事件下标（首开球提交点缺少收束前的那次绑定？）",
+                seed
+            );
+        }
+        // 防空转：三种形态**都**必须在 seed 集合里真的出现，否则豁免条款无人验证
+        // （第一版就是漏了形态 ③ 还照样全绿）。
+        assert!(
+            truncated_episode > 0
+                && truncated_restart_untaken > 0
+                && truncated_restart_taken > 0,
+            "seed 集合没有覆盖全部三种截断形态（episode {} / restart 未 taken {} / \
+             restart 已 taken {}）——豁免条款有分支是空转的；请在 SEEDS 里补命中该形态的 seed",
+            truncated_episode,
+            truncated_restart_untaken,
+            truncated_restart_taken
+        );
+    }
+
+    #[test]
+    fn every_bound_fact_event_index_is_not_after_the_fact() {
+        // 空转断言的反证面：绑定下标若全部指向「随便一条事件」，上面的覆盖门依然全绿。
+        // 这里守一条**真的**归属判据——绑定的事件必须是**事实那一刻（或紧随其后第一条）**的
+        // 事件，而不是事后随便一条 beat。
+        //
+        // **为什么不是相等**（实测被锤过两次）：design §8 明确区分「动作 / 高亮开始」
+        // （`event.t`）与「引擎提交 carrier 的时刻」（`state_commit`）——传球在 t=9 发出、
+        // t=10 才被接住并提交控制，两者**本来就不同**。相等断言会在所有正常传球路径上红。
+        //
+        // 两类基准分开判（这是本测试判别力的来源）：
+        // - `DeterministicFlightEnd`：事实时刻是引擎**自己算出的飞行结束**（tick 中间的小数），
+        //   报告它的那条 beat 落在**下一个 tick 边界** → 允许「不早于事实、且落在同一 tick 内」，
+        //   并要求它是事实之后的第一条事件（中间不得跳过别的 beat）。
+        // - 其余 basis（动作 emit / 状态提交 / 结局确认）：事件必须**不晚于**事实时刻。
+        //
+        // **本测试只守「不晚于」这半边**（见 `action_facts_never_bind_to_a_beat` 守另外半边：
+        // 「不能绑到无关的更早事件」）。单靠本测试抓不到「绑到上一拍 beat」这类错位——
+        // 实测：抢断的 `contest_started` 曾被绑到上一拍的 beat 而本测试全绿。
+        // 多 seed：`deterministic_flight_end` 只出现在「进球后开球恢复」这条较罕见的路径上，
+        // 单个 seed 可能一条都没有（实测 seed 1 就是），那样本测试的第二条分支会变成空转。
+        let mut bound = 0;
+        let mut flight_bound = 0;
+        for seed in [1u64, 5, 97] {
+            let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
+            for (i, f) in dm.control_facts.iter().enumerate() {
+                let Some(ei) = f.source_event_index else {
+                    continue;
+                };
+                let ev = &dm.events[ei];
+                if f.t.basis == TimeBasis::DeterministicFlightEnd {
+                    flight_bound += 1;
+                    assert!(
+                    ev.t >= f.t.value - 1e-9,
+                    "fact[{}] {} 的 t={} 晚于其绑定事件 events[{}].t={}（飞行结束提交不得绑更早的事件）",
+                    i,
+                    f.kind.as_str(),
+                    f.t.value,
+                    ei,
+                    ev.t
+                );
+                    assert!(
+                    ev.t - f.t.value <= 1.0 + 1e-9,
+                    "fact[{}] {} 的 t={} 与绑定事件 events[{}].t={} 相距超过一个 tick（绑错事件）",
+                    i,
+                    f.kind.as_str(),
+                    f.t.value,
+                    ei,
+                    ev.t
+                );
+                    assert!(
+                        ei == 0 || dm.events[ei - 1].t < f.t.value,
+                        "fact[{}] {} 的绑定事件不是其时刻之后的第一条（跳过了中间的 beat）",
+                        i,
+                        f.kind.as_str()
+                    );
+                } else {
+                    assert!(
+                        ev.t <= f.t.value + 1e-9,
+                        "fact[{}] {} 的 t={} 早于其绑定事件 events[{}].t={}（绑到了未来的事件）",
+                        i,
+                        f.kind.as_str(),
+                        f.t.value,
+                        ei,
+                        ev.t
+                    );
+                }
+                bound += 1;
+            }
+            // 反面：同一条事实绑定的**必须**是它那一侧的事件——`dead_ball_started` 的来源应是
+            // 射门/出界事件（而不是随后重开期里的某个 beat）。用「重开序列首事件不得早于
+            // 死球事实」这层关系间接印证：重开的 `taken_t` 不可能早于它自己的死球。
+            for r in &dm.restart_sequences {
+                if let Some(taken) = r.taken_t {
+                    assert!(
+                        taken.value >= r.start_t.value,
+                        "restart {} 的 taken_t={} 早于 start_t={}",
+                        r.id,
+                        taken.value,
+                        r.start_t.value
+                    );
+                }
+            }
+        }
+        assert!(bound > 0, "真实比赛应有事实绑定事件下标");
+        assert!(
+            flight_bound > 0,
+            "三个 seed 里应有确定性飞行结束的提交（否则上面那条分支是空转）"
+        );
+    }
+
+    #[test]
+    fn drain_period_bindings_are_suspended_not_gap_reported() {
+        // 排空期（尾部压缩）内的绑定必须被**静默暂停**，不能变成
+        // `EventIndexOutOfStableRange` gap。
+        //
+        // 这条是 Slice 2 两个防线里的**行为**门（另一条是源码守卫
+        // `p15_compaction_boundary_is_actually_registered`）：实测**删掉**排空期前的
+        // `suspend_event_index_binding(true)` 后，seed 33 会产出 2 条
+        // `event_index_out_of_stable_range` gap——因为边界现在真的在排空循环**之前**
+        // 登记了（旧实现把它推迟到循环之后，那时没有任何绑定会去查它，删掉暂停也全绿）。
+        //
+        // **seed 33 是必需的**：其余常见 seed（1/5/97/11/544）在排空期恰好不产绑定，
+        // 删掉暂停照样 0 gap。样本里漏掉这一个 seed，本测试就退化成空转
+        // ——这正是审阅指出的「暂停只有源码守卫覆盖」的补法。
+        for seed in [33u64, 1, 5, 97] {
+            let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
+            let unstable = dm
+                .gap_reason_counts()
+                .into_iter()
+                .find(|(r, _)| *r == ObservationGapReason::EventIndexOutOfStableRange)
+                .map(|(_, n)| n)
+                .unwrap_or(0);
+            assert_eq!(
+                unstable, 0,
+                "seed {}：排空期绑定必须是静默暂停（不产 gap）；实际 {} 条——\
+                 若删了 `suspend_event_index_binding(true)` 会变成非 0",
+                seed, unstable
+            );
+            assert_eq!(dm.gap_count(), 0, "seed {}：真实路径不该有任何 gap", seed);
+        }
+    }
+
+    #[test]
+    fn goal_kick_sequence_team_is_the_taking_side() {
+        // 门球的重开归属必须 = **开球那一方**（`start_goal_kick` 提交 possession 之后的值），
+        // 而不是产生死球那一方。
+        //
+        // 为什么单独测：接线层曾在 `start_goal_kick` **之前**取 `1 - st.possession` ——
+        // 今天恰好等价（`start_goal_kick` 就是把 possession 切成门将所属队），但**没有任何
+        // 测试区分**：把它改成 `st.possession`（不取反）也全绿（审阅实测突变存活）。
+        // 现在 `goal_kick_started` 内部直接读提交后的 `st.possession`，本测试钉住这条语义。
+        //
+        // 判据：门球 sequence 的 `team` 必须与**门球交付事件**（那条 `result=contested` 的
+        // Pass）的 `subject`（门将 id）同队——门将开的球，重开方就是门将那队。
+        let mut checked = 0;
+        for seed in 1u64..=40 {
+            let dm = simulate_with_behavior_observations(
+                seed,
+                MatchConfig {
+                    match_duration_seconds: 1200.0,
+                    ..MatchConfig::default_()
+                },
+            );
+            for r in &dm.restart_sequences {
+                if r.kind != RestartKind::GoalKick {
+                    continue;
+                }
+                // 门球交付事件 = 门将开大脚那条 pass：`to = None`（落点是争抢点）、
+                // `result = contested`、`subject` 是门将 id（0 / 21）。
+                // **不能**取 `event_indexes.first()`——那可能是**产生死球的**出界/射门事件
+                // （它也属于这条 sequence，但主体不是门将）。
+                let Some(ev) = r
+                    .event_indexes
+                    .iter()
+                    .map(|i| &dm.events[*i])
+                    .find(|e| {
+                        e.type_ == crate::EventType::Pass
+                            && e.to.is_none()
+                            && e.result.as_deref() == Some("contested")
+                    })
+                else {
+                    continue;
+                };
+                let Some(team) = r.team.known() else { continue };
+                let gk_team = TeamId::from_player(ev.subject)
+                    .unwrap_or_else(|| panic!("seed {}：门球事件 subject={} 越界", seed, ev.subject));
+                assert_eq!(
+                    team,
+                    gk_team,
+                    "seed {}：restart {} 的 team={:?} 与门将 {}（属 {:?}）不符——\
+                     门球归属必须是开球那一方",
+                    seed,
+                    r.id,
+                    r.team,
+                    ev.subject,
+                    gk_team
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked > 10,
+            "只检查了 {} 条门球 sequence——样本太少，本测试可能空转",
+            checked
+        );
+    }
+
+    #[test]
+    fn control_facts_never_contradict_their_own_player() {
+        // 一条事实的 `team` 与 `player` **必须同队**——两者出自同一个提交点，
+        // 自相矛盾就说明队别取错了源（不是「证据不足」，`Unknown` 才是那种情形）。
+        //
+        // 这条抓到了一个真 bug：`obs_contest_pickup` 在 battle 分支**之前**读
+        // `st.possession`（那时还是争抢前的旧值），120 seed 里有 100 条事实的 team 与
+        // player 矛盾，并沿 `PossessionEpisode.team` 污染整条 episode。
+        // 之前的测试只看「有没有 gap / 违不违规 / t 对不对」，全都看不见队别错。
+        //
+        // 多 seed 是必需的：矛盾只在 battle 胜方**跨过某条球门线**时出现，
+        // 单 seed 命中不到（seed 1/5/97 恰好 0 条）。
+        let mut checked = 0;
+        for seed in 1u64..=40 {
+            let dm = simulate_with_behavior_observations(
+                seed,
+                MatchConfig {
+                    match_duration_seconds: 1200.0,
+                    ..MatchConfig::default_()
+                },
+            );
+            for (i, f) in dm.control_facts.iter().enumerate() {
+                let (Some(team), Some(player)) = (f.team, f.player) else {
+                    continue;
+                };
+                let expected = TeamId::from_player(player)
+                    .unwrap_or_else(|| panic!("player {} 越出引擎 id 方案", player));
+                assert_eq!(
+                    team,
+                    expected,
+                    "seed {}：fact[{}] {} 的 team={:?} 与其 player={}（属 {:?}）矛盾",
+                    seed,
+                    i,
+                    f.kind.as_str(),
+                    team,
+                    player,
+                    expected
+                );
+                checked += 1;
+            }
+            // episode 的 team 也必须与它引用的持球事实一致。
+            for e in &dm.possession_episodes {
+                for idx in &e.control_fact_indexes {
+                    if let Some(p) = dm.control_facts[*idx].player {
+                        assert_eq!(
+                            e.team,
+                            TeamId::from_player(p).expect("player in range"),
+                            "seed {}：episode {} 的 team={:?} 与其持球 player={} 矛盾",
+                            seed,
+                            e.id,
+                            e.team,
+                            p
+                        );
+                    }
+                }
+            }
+        }
+        assert!(
+            checked > 1000,
+            "只检查了 {} 条事实——样本太少，本测试可能空转",
+            checked
+        );
+    }
+
+    #[test]
+    fn action_facts_never_bind_to_a_beat() {
+        // **归属判据的另外半边**（上一测试只守「不晚于」）。
+        //
+        // 事实可以合法地绑到 Beat 的只有两类，且都必须是**同一 tick** 的那记 beat：
+        // ① `deterministic_flight_end`（开球飞行恢复：引擎自算的时刻落在 tick 中间，
+        //    报告它的 beat 在下一个 tick 边界）；
+        // ② `state_commit` 的拾取类提交（`advance_loose` 里「本拍 beat 就是拾取」）。
+        //
+        // 其余情形绑到 Beat 一律是错位：动作型事实（`control_released` / 死球 / 争抢）的来源
+        // 必须是**产生它的动作事件**（Pass / Shot / Tackle / 传出界…），
+        // 而不是随便一拍移动 beat。实测这条抓到了真 bug——抢断的 `contest_started`
+        // 曾因 `Highlight.obs_event` 在动作事件 push **之前**取值而绑到上一拍 beat。
+        let mut checked = 0;
+        for seed in [1u64, 5, 97] {
+            let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
+            for (i, f) in dm.control_facts.iter().enumerate() {
+                let Some(ei) = f.source_event_index else {
+                    continue;
+                };
+                let ev = &dm.events[ei];
+                if ev.type_ != crate::EventType::Beat {
+                    continue;
+                }
+                // ① **绑定的 Beat 绝不能早于事实**——这条判据本身就杀掉了「绑到上一拍 beat」
+                //    这个错误类（旧实现用 `|ev.t - f.t| < 1.0` 的对称窗口，恰好 1.0s 的
+                //    上一拍 beat 能溜过去，只有靠 kind 白名单兜底；审阅实测：在拾取点注入
+                //    偏移一拍的错误绑定，旧实现全绿）。
+                assert!(
+                    ev.t >= f.t.value - 1e-9,
+                    "fact[{}] {}（t={}）绑到了 events[{}] 这条更早的 Beat（t={}）——\
+                     绑定的事件不得早于事实",
+                    i,
+                    f.kind.as_str(),
+                    f.t.value,
+                    ei,
+                    ev.t
+                );
+                // ② 允许绑 Beat 的两类：`deterministic_flight_end`（Beat 落在下一个 tick
+                //    边界，晚于事实）与同一 tick 的拾取/恢复类提交。其余动作型事实必须绑
+                //    动作事件。
+                let same_tick = (ev.t - f.t.value).abs() < 1e-9;
+                let allowed = f.t.basis == TimeBasis::DeterministicFlightEnd
+                    || (same_tick
+                        && matches!(
+                            f.kind,
+                            ControlFactKind::ControlEstablished
+                                | ControlFactKind::OpenPlayResumed
+                                | ControlFactKind::ContestEnded
+                        ));
+                assert!(
+                    allowed,
+                    "fact[{}] {}（t={}, basis={:?}）绑到了 events[{}] 这条 Beat（t={}）——\
+                     只有飞行结束提交与同 tick 的拾取/恢复类允许绑 Beat",
+                    i,
+                    f.kind.as_str(),
+                    f.t.value,
+                    f.t.basis.as_str(),
+                    ei,
+                    ev.t
+                );
+                checked += 1;
+            }
+        }
+        assert!(
+            checked > 0,
+            "三个 seed 里应有事实绑到 Beat（否则本测试是空转——判据没被执行过）"
+        );
     }
 
     #[test]
@@ -4352,6 +5851,7 @@ mod tests {
                 FlightAction::ThrowIn,
                 FlightAction::FreeKick,
                 FlightAction::GoalKick,
+                FlightAction::Kickoff,
                 FlightAction::Unknown,
             ]
         );
@@ -4362,6 +5862,7 @@ mod tests {
                 RestartEndReason::OpenPlayResumed,
                 RestartEndReason::TerminatedByWhistle,
                 RestartEndReason::MatchEnd,
+                RestartEndReason::SupersededByDeadBall,
                 RestartEndReason::Unknown,
             ]
         );
@@ -4401,6 +5902,7 @@ mod tests {
                 ContestStartReason::InterceptionLoose,
                 ContestStartReason::TackleLoose,
                 ContestStartReason::ShotRebound,
+                ContestStartReason::DeliveryLoose,
                 ContestStartReason::Unknown,
             ]
         );
@@ -4473,9 +5975,13 @@ mod tests {
                 ObservationGapReason::MissingStreamEndBoundary,
                 ObservationGapReason::EventIndexOutOfStableRange,
                 ObservationGapReason::IllegalFactIndex,
+                ObservationGapReason::EventIndexRegressed,
                 ObservationGapReason::IllegalInput(IllegalInput::MatchStartedOutsideUninitialized),
                 ObservationGapReason::IllegalInput(IllegalInput::DeadBallStartedInIllegalState),
                 ObservationGapReason::IllegalInput(IllegalInput::RestartPreparationOutsideDeadBall),
+                ObservationGapReason::IllegalInput(
+                    IllegalInput::RestartPreparationWithoutScheduledRestart
+                ),
                 ObservationGapReason::IllegalInput(
                     IllegalInput::RestartPreparationContradictsScheduledRestart
                 ),
@@ -4530,7 +6036,7 @@ mod tests {
         // 每个 `IllegalInput` 成员都非空且唯一（串名唯一性由既有测试覆盖）。
         assert_eq!(
             IllegalInput::ALL.len(),
-            11,
+            12,
             "IllegalInput 成员数变化时须同步本断言与真实调用点"
         );
     }
@@ -4597,20 +6103,20 @@ mod tests {
         // 目标 fact 是最后一条 `control_established`（`kicked_off` 的最后一条事实）。
         let last = rec.facts().len() - 1;
         // 未登记边界 → 全部稳定，正常绑定。
-        assert!(rec.bind_event_index(tc(0.5), last, 0));
+        assert!(rec.bind_event_index(tc(0.5), EventIndexTarget::Fact(last), 0));
         assert_eq!(rec.facts()[last].source_event_index, Some(0));
         assert_eq!(rec.gap_count(), 0);
         // 登记边界：`[0, 5)` 稳定，`[5, ..)` 会被重排。
         rec.note_event_stream_compaction(5);
         assert!(
-            rec.bind_event_index(tc(0.6), last, 4),
+            rec.bind_event_index(tc(0.6), EventIndexTarget::Fact(last), 4),
             "稳定区间内必须可绑定"
         );
         // 目标 fact 的绑定必须更新（而不是绑到别的 fact 上——接口按 fact 下标寻址）。
         assert_eq!(rec.facts()[last].source_event_index, Some(4));
         assert_eq!(rec.facts().last().unwrap().source_event_index, Some(4));
         assert!(
-            !rec.bind_event_index(tc(0.7), last, 5),
+            !rec.bind_event_index(tc(0.7), EventIndexTarget::Fact(last), 5),
             "压缩区间内必须拒绝绑定"
         );
         // 拒绝时**不覆盖**原来绑定的下标（失败不留半个绑定）。
@@ -4628,7 +6134,7 @@ mod tests {
                 ))
         );
         // 越界 fact 下标同样拒绝（不留半个绑定、也不 panic），且原因可区分（不是压缩造成）。
-        assert!(!rec.bind_event_index(tc(0.75), 9999, 0));
+        assert!(!rec.bind_event_index(tc(0.75), EventIndexTarget::Fact(9999), 0));
         assert_eq!(rec.gap_count(), 2);
         assert_eq!(
             rec.facts().last().unwrap().detail,
@@ -4639,20 +6145,216 @@ mod tests {
         // 多次压缩取最小边界（更早的边界波及更长区间）。
         rec.note_event_stream_compaction(10); // 10 > 已登记的 5 → 仍取 5
         assert!(
-            !rec.bind_event_index(tc(0.8), last, 7),
+            !rec.bind_event_index(tc(0.8), EventIndexTarget::Fact(last), 7),
             "取最小边界后 [5,..) 仍应被拒绝"
         );
         rec.note_event_stream_compaction(2); // 2 < 5 → 边界收紧
         assert!(
-            !rec.bind_event_index(tc(0.9), last, 4),
+            !rec.bind_event_index(tc(0.9), EventIndexTarget::Fact(last), 4),
             "新登记的更早边界 2 会波及 4 → 应拒绝"
         );
+        // 「边界 2 内的 1 仍可绑定」用一个**尚未绑定**的事实（0 号）来验：
+        // `last` 当前已绑到 4，再绑 1 属**倒退重绑**，会被
+        // `event_index_regressed` 守卫拦下（那是另一条规则，见
+        // `rebinding_a_fact_event_index_must_not_move_it_backwards`）——两条规则混在同一个
+        // fact 上会互相遮蔽，故此处换 fact。
+        let unbound = 0usize;
+        assert_eq!(rec.facts()[unbound].source_event_index, None);
         assert!(
-            rec.bind_event_index(tc(1.0), last, 1),
+            rec.bind_event_index(tc(1.0), EventIndexTarget::Fact(unbound), 1),
             "边界 2 内的 1 仍可绑定"
         );
-        assert_eq!(rec.facts()[last].source_event_index, Some(1));
+        assert_eq!(rec.facts()[unbound].source_event_index, Some(1));
         assert_eq!(rec.gap_count(), 4);
+        assert!(
+            rec.invariant_violations().is_empty(),
+            "{:?}",
+            rec.invariant_violations()
+        );
+    }
+
+    /// 重绑不得让一条事实的事件来源**倒退**（`event_index_regressed` gap）。
+    ///
+    /// 为什么需要：当前接线**依赖**「覆写总是发生在更晚的下标上」——
+    /// `obs_goal_kick_delivered` 先用批量水位把死球类事实绑到**产生死球的**事件，再用
+    /// `LastFactOfKind(RestartTaken)` 把 taken 改绑到**更晚的**门球交付事件。调用顺序若被
+    /// 调换，事实来源会静默倒退，而所有现有断言都只查「不晚于事实时刻」→ 全绿。
+    ///
+    /// 判别力：删掉 `bind_event_index` 里的倒退检查，第 2 条断言（期望 gap）即红。
+    #[test]
+    fn rebinding_a_fact_event_index_must_not_move_it_backwards() {
+        let mut rec = kicked_off();
+        // 先绑到一个较晚的事件……（用 `Fact` 目标精确指定一条事实）
+        let target = rec.facts().len() - 1;
+        assert!(rec.bind_event_index(tc(0.1), EventIndexTarget::Fact(target), 9));
+        assert_eq!(rec.gap_count(), 0);
+        // ……再绑到更早的事件 → 必须拒绝并记 gap（不静默改写来源）。
+        assert!(
+            !rec.bind_event_index(tc(0.2), EventIndexTarget::Fact(target), 4),
+            "倒退重绑必须被拒绝"
+        );
+        assert_eq!(rec.facts()[target].source_event_index, Some(9), "来源不得被改小");
+        assert_eq!(rec.gap_count(), 1);
+        assert_eq!(
+            rec.facts().last().unwrap().detail,
+            Some(ControlFactDetail::Gap(
+                ObservationGapReason::EventIndexRegressed
+            )),
+            "gap 原因必须是具名的 `event_index_regressed`"
+        );
+        // 反证另一侧：**同值**重绑与**更晚**重绑都必须放行（否则正常接线会被误伤——
+        // 门球那处正是「绑到更晚的交付事件」）。
+        assert!(
+            rec.bind_event_index(tc(0.3), EventIndexTarget::Fact(target), 9),
+            "同值重绑应放行（幂等）"
+        );
+        assert!(
+            rec.bind_event_index(tc(0.4), EventIndexTarget::Fact(target), 11),
+            "绑到更晚的事件应放行"
+        );
+        assert_eq!(rec.gap_count(), 1, "放行的两次重绑不得再记 gap");
+        assert!(
+            rec.invariant_violations().is_empty(),
+            "{:?}",
+            rec.invariant_violations()
+        );
+    }
+
+    #[test]
+    fn episode_and_restart_event_indexes_go_through_the_same_guard() {
+        // §14 A4：`event_indexes` 不得绕过 `bind_event_index` 直接入数组——否则尾部压缩的
+        // 静默错位会进入分析对象。本测试钉住三件事：三条目标都能绑、压缩区间内一律拒绝、
+        // 重复下标只入一次。
+        let mut rec = kicked_off(); // 开放 episode(Home) + 已收束的 kickoff restart
+                                    // kickoff sequence 已收束 → `OpenRestart` 是合法空操作（不是错误、不记 gap）。
+        assert!(
+            !rec.bind_event_index(tc(0.6), EventIndexTarget::OpenRestart, 3),
+            "无开放 restart 时是合法空操作"
+        );
+        assert_eq!(rec.gap_count(), 0, "合法空操作不得记 gap");
+        assert!(rec.bind_event_index(tc(0.7), EventIndexTarget::OpenEpisode, 3));
+        assert!(rec.bind_event_index(tc(0.8), EventIndexTarget::OpenEpisode, 4));
+        assert_eq!(rec.episodes()[0].event_indexes, vec![3, 4]);
+        // 重复下标不重复入数组（同一提交点/相邻提交点重复报告同一事件）。
+        assert!(rec.bind_event_index(tc(0.9), EventIndexTarget::OpenEpisode, 4));
+        assert_eq!(
+            rec.episodes()[0].event_indexes,
+            vec![3, 4],
+            "同一下标只入一次"
+        );
+        // 目标 fact 与 episode 各自独立：绑 fact 不写 episode 数组，反之亦然。
+        assert_eq!(rec.facts().last().unwrap().source_event_index, None);
+
+        // 开一条新 restart（界外球）→ `OpenRestart` 变成可绑目标。
+        rec.dead_ball_started(
+            tc(10.0),
+            DeadBallReason::OutSideline,
+            Some((TeamRef::Away, RestartKind::ThrowIn)),
+            EpisodeEndReason::Out,
+            ControlFactBasis::FinalizedOutcome,
+        );
+        assert!(rec.bind_event_index(tc(10.1), EventIndexTarget::OpenRestart, 5));
+        assert_eq!(rec.restarts().last().unwrap().event_indexes, vec![5]);
+
+        // 压缩边界登记后，可绑目标一律拒绝（守卫只写一次，不可能漏掉某一条）。
+        // 注意 `OpenEpisode` 此刻**是**合法空操作：上面这次 `dead_ball_started` 已关闭了
+        // 那个开放 episode，所以「没有开放对象」先于压缩校验生效——它不产 gap。
+        rec.note_event_stream_compaction(5);
+        assert!(!rec.bind_event_index(tc(11.0), EventIndexTarget::OpenEpisode, 5));
+        assert!(!rec.bind_event_index(tc(11.1), EventIndexTarget::OpenRestart, 5));
+        assert!(!rec.bind_event_index(tc(11.2), EventIndexTarget::Fact(rec.facts().len() - 1), 5));
+        // 两条**有归属对象**的拒绝各留一条 gap，且原因都是「越出稳定区间」。
+        assert_eq!(rec.gap_count(), 2, "只有目标存在的绑定才可能因压缩被拒");
+        for f in rec.facts().iter().rev().take(2) {
+            assert_eq!(
+                f.detail,
+                Some(ControlFactDetail::Gap(
+                    ObservationGapReason::EventIndexOutOfStableRange
+                ))
+            );
+        }
+        assert!(
+            rec.invariant_violations().is_empty(),
+            "{:?}",
+            rec.invariant_violations()
+        );
+    }
+
+    #[test]
+    fn suspended_binding_is_a_silent_no_op_not_a_gap() {
+        // 排空期（尾部压缩）内下标尚未确定：绑定一律不生效，但**不记 gap**——
+        // 排空期的事实本来就无法可靠归属事件，记 gap 会把正常路径稀释成噪声。
+        let mut rec = kicked_off();
+        rec.suspend_event_index_binding(true);
+        assert!(rec.event_index_binding_suspended());
+        assert!(!rec.bind_event_index(tc(1.0), EventIndexTarget::OpenEpisode, 7));
+        assert!(!rec.bind_event_index(tc(1.1), EventIndexTarget::Fact(0), 7));
+        assert_eq!(rec.gap_count(), 0, "暂停期绑定不得记 gap");
+        assert!(rec.episodes()[0].event_indexes.is_empty());
+        // 恢复后可正常绑定（暂停不是「永久关闭」）。
+        rec.suspend_event_index_binding(false);
+        assert!(rec.bind_event_index(tc(1.2), EventIndexTarget::OpenEpisode, 7));
+        assert_eq!(rec.episodes()[0].event_indexes, vec![7]);
+    }
+
+    #[test]
+    fn unattributed_facts_watermark_binds_exactly_the_new_facts() {
+        // `UnattributedFacts` 的判别力：水位必须**只覆盖新增事实**，不能把已有事实刷成
+        // 本次事件，也不能漏掉本批中的任何一条（一个提交点常产出多条），且**只推进一次**
+        // （第二次扫描无事可做 → 合法空操作，否则会把事实反复改绑到更晚的事件上）。
+        let mut rec = BehaviorObservationRecorder::enabled();
+        rec.match_started(t0(), TeamRef::Home); // 2 条事实
+        rec.restart_taken(tc(0.0), ControlFactBasis::RestartRule); // 1 条
+                                                                   // **第一次**扫描把自开赛以来的全部事实绑到开球事件（真实路径正是这么做的：
+                                                                   // `match_started` / prep / taken 都由那条 kickoff 事件触发）。
+        assert!(rec.bind_event_index(tc(0.0), EventIndexTarget::UnattributedFacts, 1));
+        let before = rec.facts().len();
+        assert_eq!(before, 3);
+        assert!(rec.facts().iter().all(|f| f.source_event_index == Some(1)));
+        // 一次提交产出两条事实（`control_established` + `open_play_resumed`）。
+        rec.control_established(
+            tc(1.0),
+            TeamId::Home,
+            Some(10),
+            None,
+            EpisodeStartReason::Kickoff,
+            None,
+            ControlFactBasis::EngineState,
+        );
+        assert_eq!(rec.facts().len(), before + 2, "前提：这次提交产出两条事实");
+        assert!(
+            rec.bind_event_index(tc(1.0), EventIndexTarget::UnattributedFacts, 11),
+            "有未归属事实时必须绑定"
+        );
+        // 本批**两条**都绑上（不是只绑最后一条——那正是覆盖率只有 47% 的旧行为）。
+        for i in before..rec.facts().len() {
+            assert_eq!(
+                rec.facts()[i].source_event_index,
+                Some(11),
+                "fact[{}] 未被绑定",
+                i
+            );
+        }
+        // 早前的事实**不得**被改写（水位只覆盖新增）。
+        for i in 0..before {
+            assert_eq!(
+                rec.facts()[i].source_event_index,
+                Some(1),
+                "fact[{}] 属于更早的提交点，不得被本次扫描改写",
+                i
+            );
+        }
+        // 第二次扫描：没有新事实 → 合法空操作（不返回成功、不改写任何绑定）。
+        assert!(
+            !rec.bind_event_index(tc(1.5), EventIndexTarget::UnattributedFacts, 12),
+            "无未归属事实时必须是空操作"
+        );
+        assert_eq!(
+            rec.facts()[before].source_event_index,
+            Some(11),
+            "空操作不得改绑"
+        );
+        assert_eq!(rec.gap_count(), 0, "空操作不得记 gap");
         assert!(
             rec.invariant_violations().is_empty(),
             "{:?}",

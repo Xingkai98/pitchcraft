@@ -2042,6 +2042,7 @@ fn execute_action_resolution(
     events: &mut Vec<Event>,
     t: f64,
     plan: Option<ActionPlan>,
+    obs: &mut observation::BehaviorObservationRecorder,
 ) {
     let plan = match plan {
         Some(p) => p,
@@ -2083,7 +2084,7 @@ fn execute_action_resolution(
         ActionResolution::InterruptedByTackle => match plan.defensive_exec {
             DefensiveExecution::Tackle { defender } => {
                 st.opportunity_tally.exec_tackle += 1;
-                emit_tackle_highlight_impl(st, rng, events, t, defender);
+                emit_tackle_highlight_impl(st, rng, events, t, defender, obs);
             }
             // 抢断结算必须有执行绑定（否则「结算说是抢断、执行却什么都没做」= 空转）。
             // 与 `assert_resolution_consistent` 同层的发布态硬守卫。
@@ -2097,31 +2098,38 @@ fn execute_action_resolution(
                 st.opportunity_tally.exec_foul += 1;
                 let carrier = st.carrier;
                 let spot = st.pos[carrier as usize];
-                emit_foul_and_free_kick(st, rng, events, t, carrier, spot, defender);
+                emit_foul_and_free_kick(st, rng, events, t, carrier, spot, defender, obs);
             }
-            _ => unreachable!("InterruptedByFoul 的执行绑定应为 Foul：{:?}", plan.defensive_exec),
+            _ => unreachable!(
+                "InterruptedByFoul 的执行绑定应为 Foul：{:?}",
+                plan.defensive_exec
+            ),
         },
         ActionResolution::CarrierAction(_) => match plan.carrier.exec {
             CarrierExecution::Shoot => {
                 st.module_shot_pending = true;
-                emit_shot_highlight(st, rng, events, t);
+                emit_shot_highlight(st, rng, events, t, obs);
             }
             CarrierExecution::Pass { allow_out } => {
                 st.opportunity_tally.exec_pass += 1;
-                emit_pass_highlight_inner(st, rng, events, t, allow_out);
+                let target = match plan.carrier.action {
+                    Some(CarrierAction::Pass { target }) => target,
+                    _ => None,
+                };
+                emit_pass_highlight_inner(st, rng, events, t, allow_out, target, obs);
             }
             CarrierExecution::ForwardPass => {
                 st.opportunity_tally.exec_forward_pass += 1;
                 // P29（D1）：向前传球只是**推进**到射程的手段，不再预置射门归因——落点
                 // 接起脚窗口，射门由 hazard 决定（窗口可能转/被抢断，序列未必产 Shot）。
-                emit_forward_pass_highlight(st, rng, events, t);
+                emit_forward_pass_highlight(st, rng, events, t, obs);
             }
             CarrierExecution::DriveThenShoot { target_dist } => {
                 st.opportunity_tally.exec_drive_then_shoot += 1;
                 // P29（D1）：不再「到射程即射」——带球推进只是**推进**到射程的手段，
                 // 落点接起脚窗口（`module_shot_pending` 只在窗口 hazard 提交时置位）。
                 st.shot_setup = Some(ShotSetup::new(target_dist, false));
-                advance_shot_setup(st, rng, events, t);
+                advance_shot_setup(st, rng, events, t, obs);
             }
             // P29 起脚窗口：已到射程 → 进入窗口（本 tick 只带球一拍，不射）。hazard 掷定
             // 推迟到下一 tick 的窗口相（`shot_window_plan`）——掷两次会重复消费 RNG，也违反
@@ -2129,7 +2137,7 @@ fn execute_action_resolution(
             CarrierExecution::EnterShotWindow { target_dist } => {
                 st.opportunity_tally.exec_enter_shot_window += 1;
                 st.shot_setup = Some(ShotSetup::new(target_dist, false));
-                advance_shot_setup(st, rng, events, t);
+                advance_shot_setup(st, rng, events, t, obs);
             }
             CarrierExecution::ContinueDribble => {
                 st.opportunity_tally.exec_continue += 1;
@@ -2335,15 +2343,281 @@ impl MatchState {
     }
 }
 
+// ===== P15 观察接线辅助 =====
+//
+// 全部为**只读观察**：只接收已提交的引擎状态，不返回任何影响决策的值、不消费 RNG、
+// 不修改 `MatchState`。唯一例外是 `Highlight::obs_event`（观察层自己新增的字段），
+// 它只存「产生这次高亮的动作事件下标」，任何比赛决策都不读。
+//
+// 「不读 recorder 状态」这条约束由 `p15_recorder_stays_out_of_the_decision_path` 机器守卫：
+// 除了 `obs_*` 这一族辅助函数，其它函数一律不得调用 `.is_enabled()` / `.state()` / `.facts()`
+// / `.episodes()` / `.restarts()` 等读方法。见 `observation` 模块头的接入对照表。
+
+/// 事件下标 → 观察时间（`event_emit` basis，design §8：动作 / 高亮开始）。
+///
+/// `events` 为空或下标越界时返回 `None`——调用方据此不绑定，**不猜**时间。
+fn obs_time_of(events: &[Event], event_index: usize) -> Option<observation::ObservedTime> {
+    events
+        .get(event_index)
+        .map(|e| observation::ObservedTime::event_emit(e.t))
+}
+
+/// P15：`events.len() - 1` 的**饱和**版本（空流返回 `None`）。
+///
+/// 不能直接写 `events.len() - 1`：真实路径的第一个提交点（首开球）发生在任何 beat 之前，
+/// 而 `disabled` 路径下事件流照常推进——但**空流**在手工构造的 fixture 上可达，
+/// `usize` 减法会 panic（debug 下 overflow abort）。观察层**不允许 panic**（模块头硬约束）。
+fn obs_last_event(events: &[Event]) -> Option<usize> {
+    events.len().checked_sub(1)
+}
+
+/// P15：把**尚未归属的事实**（自上次扫描以来新增的）与所有开放对象绑到同一条事件。
+///
+/// 一律经 [`observation::BehaviorObservationRecorder::bind_event_index`]：它按
+/// [`observation::EventIndexTarget::UnattributedFacts`] 的水位取「本提交点新产出的事实」，
+/// 并拒绝落在尾部压缩区间内的下标（记 `observation_gap`）。**不得**在别处直接 push 下标。
+///
+/// `OpenEpisode` / `OpenRestart` 在「当前没有该开放对象」时是合法空操作，因此死球期的事件
+/// 自然只落进 restart、开放比赛的事件自然只落进 episode，调用方无需判断有没有归属对象。
+///
+/// `event_index` = 这次事实的**动作事件**下标，必须是**显式给出**的真实来源；`None` = 不给事实
+/// 编造来源（只绑对象）。**不存在「缺省退回最后一条事件」**：控制建立 / 死球确认等提交点常
+/// 发生在 emit **之前**（`advance_loose` 的拾取、`advance_restart_prep` 的交付都先改状态），
+/// 此时最后一条事件还是**上一拍**的，绑上去会造出一条来源不符的假事实（实测：门球交付路径
+/// 曾把随后的 movers beat 绑进重开序列，产出 `[goal_event, beat, delivery]` 这种非单调序列）。
+fn obs_bind(
+    events: &[Event],
+    obs: &mut observation::BehaviorObservationRecorder,
+    event_index: Option<usize>,
+) {
+    let Some(event_index) = event_index else {
+        obs_bind_objects(events, obs, None);
+        return;
+    };
+    let Some(t) = obs_time_of(events, event_index) else {
+        return;
+    };
+    obs.bind_event_index(
+        t,
+        observation::EventIndexTarget::UnattributedFacts,
+        event_index,
+    );
+    obs_bind_objects(events, obs, Some(event_index));
+}
+
+/// P15：把一条事件的**最终**下标绑到所有当前开放的分析对象（episode / restart）。
+///
+/// `event_index` 同样是**显式**的（`None` = 不绑），理由见 [`obs_bind`]。
+fn obs_bind_objects(
+    events: &[Event],
+    obs: &mut observation::BehaviorObservationRecorder,
+    event_index: Option<usize>,
+) {
+    let Some(event_index) = event_index else {
+        return;
+    };
+    let Some(t) = obs_time_of(events, event_index) else {
+        return;
+    };
+    obs.bind_event_index(t, observation::EventIndexTarget::OpenEpisode, event_index);
+    obs.bind_event_index(t, observation::EventIndexTarget::OpenRestart, event_index);
+}
+
+/// P15：`obs_bind` 的「本拍事件」版本——事件 = 刚刚产出的最后一条事件。
+///
+/// 只用于提交点**确实**与最后一条事件同源的场合：`advance_dead_ball` 的 `kickoff_end`
+/// （本拍那记 `main` beat 就是比赛恢复）、`advance_loose` 的普通拾取（本拍 beat 就是拾取）。
+/// 这两种情形里最后一条事件就是正确来源，而不是「找不到来源时的兜底」。
+fn obs_bind_last(events: &[Event], obs: &mut observation::BehaviorObservationRecorder) {
+    obs_bind(events, obs, obs_last_event(events));
+}
+
+/// P15：只把最后一条事件绑进开放对象（不给事实绑来源——这条路径没有产出事实）。
+fn obs_bind_last_objects(events: &[Event], obs: &mut observation::BehaviorObservationRecorder) {
+    obs_bind_objects(events, obs, obs_last_event(events));
+}
+
+/// P15：出球（pass / clearance / shot）提交 —— 记 `control_released_into_flight` **并**把该事实
+/// 绑到刚刚产出的出球事件。
+///
+/// 必须在 `emit_*` 推完事件、`obs_mark_action_event` 记下下标**之后**调用：出球事实的来源
+/// 就是那条 pass/shot 事件本身（在它之前调用会拿不到下标，事实只能留空 `source_event_index`）。
+/// 只适用于「从开放控球出球」的 emit；定位球交付（`restart_taken` 之后）状态已是
+/// `BallInFlight`，绝不能走这里（会被判非法并记 gap）。
+fn obs_release_into_flight(
+    events: &[Event],
+    obs: &mut observation::BehaviorObservationRecorder,
+    t: f64,
+    action: observation::FlightAction,
+    event_index: usize,
+) {
+    obs.control_released_into_flight(
+        observation::ObservedTime::state_commit(t),
+        action,
+        observation::ControlFactBasis::EngineState,
+    );
+    obs_bind(events, obs, Some(event_index));
+}
+
+/// P15：当前高亮的动作事件来源（见 `Highlight::obs_event`）。
+///
+/// 高亮在**动作事件入流的同一刻**创建，因此它的 `obs_event` 就是这次结算所产出事实的来源；
+/// 落点类高亮的 `obs_event` 是它自己那记**交付**（同样正确：落点争抢与交付同源）。
+fn obs_highlight_event(st: &MatchState) -> Option<usize> {
+    st.highlight.as_ref().and_then(|h| h.obs_event)
+}
+
+/// P15：球员 id → 队伍归属（非法 id 返回 `Unknown`，不猜）。
+fn obs_team_of(player: i32) -> observation::TeamRef {
+    observation::TeamRef::from(observation::TeamId::from_player(player))
+}
+
+/// P15：球员 id → 引擎的 side 编码（`0 = home` / `1 = away`）。
+///
+/// 这是**引擎自己的 id 方案**（`battle_*_wins`、`advance_loose` 等处都写同一规则），
+/// 用于「权威的 `st.possession` 此刻还没提交，但胜方 id 已确定」的极少数场合。
+/// 注意它**不是**猜测：没有默认分支，也不需要 `unwrap_or`。
+fn obs_side_of_player(id: i32) -> u32 {
+    if id <= 10 {
+        0
+    } else {
+        1
+    }
+}
+
+/// P15：`0 = home / 1 = away` 的引擎编码 → 观察层**确定**队伍。
+///
+/// **不要**用 `TeamId::from_player(id).unwrap_or(Home)` 来推球队：那是在「**猜**」——
+/// 球员 id 非法时静默按主队记账，正是 design 明令禁止的「回填 team」。
+/// 引擎自己的 `st.possession` 在所有这些提交点上都是权威的（它刚刚被提交），用它。
+fn obs_team_id(side: u32) -> observation::TeamId {
+    if side == 0 {
+        observation::TeamId::Home
+    } else {
+        observation::TeamId::Away
+    }
+}
+
+/// P15：`0 = home / 1 = away` 的引擎编码 → 观察层队伍（可 unknown）。
+fn obs_team(side: u32) -> observation::TeamRef {
+    if side == 0 {
+        observation::TeamRef::Home
+    } else {
+        observation::TeamRef::Away
+    }
+}
+
+/// P15：门球交付后的观察提交（§15 A9-3）。
+///
+/// 门球没有准备期，走专用入口 `goal_kick_started`（一次提交记 `dead_ball_started` +
+/// `restart_taken`，**不**补 prep 事实）。必须在 `start_goal_kick` **之后**调用：这样绑到
+/// 重开序列的就是 `start_goal_kick` 推的那条门球 pass 事件（重开交付的正式事件来源），
+/// 而不是产生这次死球的射门/出界事件。
+///
+/// `goal_event` 是产生这次死球的那条事件（射门或出界）的下标，绑给这次提交产出的**死球类**
+/// 事实；`restart_taken` 则另绑到门球交付事件本身（两者是不同的事件，见函数体注释）。
+/// `t` 用调用点传入的提交时刻——死球确认与门球交付在同一次 `finalize_highlight` 内完成。
+fn obs_goal_kick_delivered(
+    st: &mut MatchState,
+    events: &[Event],
+    obs: &mut observation::BehaviorObservationRecorder,
+    goal_event: Option<usize>,
+    t: f64,
+) {
+    // **必须在本函数里读 `st.possession`**：`start_goal_kick`（调用方刚跑完）才提交门球的
+    // 开球方（它把 possession 切成门将所属队）。调用方在 `start_goal_kick` **之前**取
+    // `1 - st.possession` 只是「碰巧等价」——没有测试区分，改错也全绿（审阅实测突变存活）。
+    // 这里取提交后的权威值，`1 - possession` 这层反推就不必存在了。
+    let taking = obs_team(st.possession);
+    // 门球交付事件 = `start_goal_kick` 刚建的那个 `GoalKick` 高亮自身的 `obs_event`。
+    let delivery_event = obs_highlight_event(st);
+    obs.goal_kick_started(
+        observation::ObservedTime::state_commit(t),
+        observation::DeadBallReason::OutGoalLine,
+        (taking, observation::RestartKind::GoalKick),
+        observation::EpisodeEndReason::Out,
+        observation::ControlFactBasis::FinalizedOutcome,
+    );
+    // **顺序要紧**：先用批量归属把这次提交产出的全部事实（可能含 `control_released` /
+    // `contest_ended` / `dead_ball_started`）绑到**产生这次死球的**射门/出界事件，并推进水位；
+    // 再针对性地把 `restart_taken` 改绑到**门球交付事件**（两者是不同的事件）。
+    //
+    // 反过来（先按 Fact 下标精确绑定、再批量归属）会静默出错：`Fact(i)` 写不推进水位，
+    // 随后的批量扫描会把这两个事实**覆盖**成它的那个事件——实测产出
+    // 「`dead_ball_started` t=213 绑到 events[237] t=217」这种来源在未来的绑定。
+    obs_bind(events, obs, goal_event);
+    if let Some(de) = delivery_event {
+        if let Some(t_de) = obs_time_of(events, de) {
+            // 由 recorder 自己按 kind 查最近一条 `restart_taken`——**不**在比赛逻辑里读 `facts()`。
+            obs.bind_event_index(
+                t_de,
+                observation::EventIndexTarget::LastFactOfKind(
+                    observation::ControlFactKind::RestartTaken,
+                ),
+                de,
+            );
+        }
+    }
+    obs_bind_objects(events, obs, delivery_event);
+}
+
+/// P15：角球/落点 battle 决出胜方时的观察提交。
+///
+/// battle 的胜方**立即**成为 carrier（`battle_attack_wins` / `battle_defend_wins` 开头就写
+/// `st.carrier`），所以这是明确的控制建立提交点——先收束争抢（`Contested` → `Controlled`），
+/// 再由控制建立开启/延续 episode。
+fn obs_contest_pickup(
+    st: &mut MatchState,
+    obs: &mut observation::BehaviorObservationRecorder,
+    t: f64,
+    winner: i32,
+    location: (f64, f64),
+) {
+    // **不能**在这里读 `st.possession`：本函数必须在 `battle_*_wins` **之前**调用（那两支会
+    // 立刻 emit 射门/摆渡/解围，而 emit 里的 `control_released_into_flight` 要求观察状态已是
+    // `Controlled`），所以此刻 `st.possession` 还是**争抢前**的旧值——实测 120 seed 里有
+    // 100 条事实的 `team` 与 `player` 所属队互相矛盾（seed 2 t=550：player 2 属 Home，
+    // 却记成 Away），并沿 `PossessionEpisode.team` 污染整条 episode。
+    //
+    // 胜方的队伍用**引擎自己的 id→side 规则**（`battle_*_wins` 里写的就是
+    // `if id <= 10 { 0 } else { 1 }`）——与 `st.possession` 在构造上恒等，不是「猜」：
+    // 这里没有 `unwrap_or(默认值)` 这种静默回填，id 落在 0..=21 由引擎的 id 方案保证。
+    let team = obs_team_id(obs_side_of_player(winner));
+    obs.control_established(
+        observation::ObservedTime::state_commit(t),
+        team,
+        Some(winner),
+        Some(location),
+        observation::EpisodeStartReason::Pickup,
+        Some(observation::EpisodeEndReason::ControlLost),
+        observation::ControlFactBasis::EngineState,
+    );
+    let _ = st;
+}
+
 /// 飞行中高亮注册表（任意时刻至多一条）
 struct Highlight {
     t_end: f64,
     participants: Vec<(i32, (f64, f64))>, // (id, 高亮结束位置)
     outcome: HighlightOutcome,
+    /// **P15 观察专用（零决策影响）**：产生这次高亮的**动作事件**下标
+    /// （pass / shot / tackle / 定位球交付 / 门球交付）。
+    ///
+    /// 存这里而不是 `MatchState` 上，因为**生命周期天然吻合**：高亮在动作事件入流的同一刻
+    /// 创建、在若干 tick 后的 `finalize_highlight` 里被 `take`。放在 `MatchState` 上需要自己
+    /// 安排清空时机，实测两版都在这上面出 bug——标记跨 tick 存活（或被 `tick()` 顶部提前清掉），
+    /// 事实就被绑到**更晚**的事件上（`control_established` t=10 绑到 t=18 的传球）。
+    ///
+    /// 落点类高亮（`CornerKick` / `GoalKick` / `Clearance`）的这个值就是**它自己那记交付事件**
+    /// ——所以「交付落点争抢」与「交付」同源这件事也由本字段自然表达，无需第二个标记。
+    obs_event: Option<usize>,
 }
 
 enum HighlightOutcome {
-    PassCaught { receiver: i32, catch_pos: (f64, f64) },
+    PassCaught {
+        receiver: i32,
+        catch_pos: (f64, f64),
+    },
     // P13 fix（失败传球）：拦截者断下传球（球停拦截者处，进入松散球/直接持球）
     PassIntercepted { interceptor: i32, at: (f64, f64) },
     // P13 fix：传失（失准）——球到落点变松散球（双方可争）
@@ -2416,7 +2690,10 @@ struct DeadBall {
 /// 引擎主入口：模拟一场比赛，返回事件流 JSON。
 /// v2 非 demo：固定 tick + beat 节拍；demo_mode：v1 精简序列。
 pub fn simulate(seed: u64, config: MatchConfig) -> String {
-    events_to_json(&match_events(seed, config))
+    // 正式路径不建 recorder：传 `disabled()`，所有观察命令都是空操作。**行为与正式事件流
+    // 不变**（观察关闭路径的开销近零），但不作绝对性能承诺——见 design §15 A9-9。
+    let mut obs = observation::BehaviorObservationRecorder::disabled();
+    events_to_json(&match_events(seed, config, &mut obs))
 }
 
 /// #15A（P15）opt-in 入口：跑同一场比赛，并在**不改动 `simulate()` 任何行为**的前提下返回
@@ -2446,7 +2723,7 @@ pub fn simulate_with_behavior_observations(
     if observable {
         recorder.match_started(observation::ObservedTime::event_emit(0.0), observation::TeamRef::Home);
     }
-    let events = match_events(seed, config);
+    let events = match_events(seed, config, &mut recorder);
     if observable {
         observation::commit_stream_end_boundary(&mut recorder, &events);
     }
@@ -2461,7 +2738,16 @@ fn events_to_json(events: &[Event]) -> String {
 
 /// 跑一场比赛并返回事件向量（不序列化）。`simulate()` 与 opt-in 观察路径共用，
 /// 保证两条路径产出的事件流逐字节同源。
-fn match_events(seed: u64, config: MatchConfig) -> Vec<Event> {
+///
+/// **P15 观察参数**：`obs` 为行为观察 recorder。正式路径传
+/// [`observation::BehaviorObservationRecorder::disabled`] —— 所有命令都是空操作，因此
+/// `simulate()` 的事件流、RNG 消耗与决策路径**逐字节不变**（守卫：
+/// `p15_recorder_stays_out_of_the_decision_path`）。opt-in 路径传 `enabled()`。
+fn match_events(
+    seed: u64,
+    config: MatchConfig,
+    obs: &mut observation::BehaviorObservationRecorder,
+) -> Vec<Event> {
     if config.demo_mode {
         return match_events_demo(seed, config);
     }
@@ -2486,10 +2772,40 @@ fn match_events(seed: u64, config: MatchConfig) -> Vec<Event> {
     st.pos[9] = (0.5, 0.5);
     st.pos[10] = (0.55, 0.5);
     st.carrier_from = (0.55, 0.5);
+    // P15（开球专线 1）：**首开球在引擎里没有飞行**。`MatchState::new` 已经把
+    // `carrier = 10` / `possession = 0` / `ball_pos = (0.55,0.5)` 提交好了，上面的 `pos[10]`
+    // 又把球与接收者放同位——首个 tick 的 beat 直接给 10 号 `main`（实测 `t=1.0 main.subject=10`）。
+    // kickoff 事件的 `speed = 14.0` 只是装饰：拨球距离 5.25m / 14.0 = 0.375s < `TICK_SECONDS`，
+    // 引擎从未进入飞行态。故 `restart_taken` 与 `control_established` **同在 t=0**，
+    // basis 用 `EngineState`（没有高亮 finalize）。**不要**为它等 `kickoff_end`、也不要记
+    // `BallInFlight`——那会记录一个引擎里不存在的飞行段。
+    {
+        let kickoff_t = observation::ObservedTime::event_emit(0.0);
+        obs.restart_taken(kickoff_t, observation::ControlFactBasis::EngineState);
+        // **绑定必须跨这一步分成两次**：`control_established` 会**收束**这条开球 restart
+        // （`open_play_resumed`），此后 `OpenRestart` 目标就成了合法空操作——只在那之后绑一次
+        // 会让排第一的开球 sequence **永远空 `event_indexes`**（实测 120/120 seed 全空）。
+        // 故先在 `restart_taken` 之后绑一次（此刻 restart 仍开放 → 拿到正式 `Kickoff` 事件），
+        // 再在 `control_established` 之后绑一次（此刻 episode 已开 → 拿到同一个事件）。
+        // 两次都指向同一条事件：它同时是「重开发出」与「比赛恢复」的事实来源，本就该双归属。
+        obs_bind(&events, obs, obs_last_event(&events));
+        obs.control_established(
+            kickoff_t,
+            observation::TeamId::Home,
+            Some(10),
+            Some((0.55, 0.5)),
+            observation::EpisodeStartReason::Kickoff,
+            None,
+            observation::ControlFactBasis::EngineState,
+        );
+        // 第二次扫描：把 `control_established` 顺带产出的 `open_play_resumed` 也绑到同一条
+        // `Kickoff` 事件（不能用只绑对象的版本——那会让这两条事实留到下一拍被绑错事件）。
+        obs_bind(&events, obs, obs_last_event(&events));
+    }
 
     let mut t = TICK_SECONDS;
     while t < dur {
-        tick(&mut st, &mut rng, &mut events, t);
+        tick(&mut st, &mut rng, &mut events, t, obs);
         t += TICK_SECONDS;
     }
     // 终场前若高亮未 finalize（射门/传球飞行跨过 dur）：在 dur 时刻强制交接，比分按结局确认。
@@ -2503,14 +2819,23 @@ fn match_events(seed: u64, config: MatchConfig) -> Vec<Event> {
     // 重排把触发 seed 移进了 L2 窗口（1..=300）才暴露。比赛已结束（紧接 whistle），排空期的
     // **重复时间戳** beat 不表达任何进程 → 每个时间戳只保留第一拍。
     let drain_start = events.len();
-    // P15：`[0, drain_start)` 的最终下标不变，`[drain_start, ..)` 会被下面的 drain/filter/extend
-    // 重排。观察 sidecar 若在排空期绑定事件下标会静默错位——把边界交给 recorder，越界绑定改记
-    // `observation_gap`（见 `observation` 模块头「事件下标绑定规则」）。下面这个函数当前是
-    // 空实现（零成本），`match_events` 拿不到 recorder 句柄——见其文档里的 Slice 2 契约。
-    events_note_compaction_boundary(drain_start);
+    // P15：`[0, drain_start)` 的最终下标不变（drain/filter/extend 只重排 `[drain_start, ..)`）。
+    //
+    // 这里**先登记边界**再进排空循环：`drain_start` 此刻已确定，登记之后任何落在
+    // `[drain_start, ..)` 的绑定都会被 `bind_event_index` 拒绝并记
+    // `EventIndexOutOfStableRange` gap（静默错位比报错更糟）。若把登记推迟到循环之后
+    // （Slice 2 的第一版就是那样），整段排空期从未受边界保护——审阅实测那版实现里
+    // 「边界登记」在生产路径上一次也没被查到，属装饰性接线。
+    //
+    // 再叠加**暂停**：排空期的 beat 会被去重丢弃，此时也不该报 gap（那些事实本来就无法
+    // 归属事件，靠 `t` + `detail` 定位），所以暂停期一律静默不绑。两道防线分工是
+    // 「暂停管正确性、边界管将来改动」——详见 `observation` 模块头「事件下标绑定规则」。
+    obs.note_event_stream_compaction(drain_start);
+    obs.suspend_event_index_binding(true);
     while st.highlight.is_some() {
-        finalize_highlight(&mut st, &mut rng, &mut events, dur);
+        finalize_highlight(&mut st, &mut rng, &mut events, dur, obs);
     }
+    obs.suspend_event_index_binding(false);
     {
         let mut seen_t: Vec<f64> = Vec::new();
         let tail: Vec<Event> = events
@@ -2529,22 +2854,14 @@ fn match_events(seed: u64, config: MatchConfig) -> Vec<Event> {
         events.extend(tail);
     }
 
-    events.push(whistle_event(dur, st.home_score, st.away_score, "half_time"));
+    events.push(whistle_event(
+        dur,
+        st.home_score,
+        st.away_score,
+        "half_time",
+    ));
     events
 }
-
-/// P15：把尾部压缩边界交给观察 recorder（见 `observation` 模块头「事件下标绑定规则」）。
-///
-/// **Slice 1 升级契约**：本函数目前是**无副作用**的占位（recorder 实例只在
-/// `simulate_with_behavior_observations` 内存在，`match_events` 没有它的句柄，故暂时无法真正登记）。
-/// Slice 2 若要在排空期绑定事件下标，必须把 recorder 传进 `match_events`（或改成返回
-/// 「事件 + 压缩边界」），再在此调用
-/// [`observation::BehaviorObservationRecorder::note_event_stream_compaction`]。
-///
-/// **在那之前，不得在排空期的提交点绑定事件下标**——规则与理由已写在模块头；
-/// `event_index_binding_is_guarded_against_tail_compaction` 用真边界证明了拒绝逻辑本身有效，
-/// Slice 2 只需把边界真的接上。
-fn events_note_compaction_boundary(_stabilized_prefix_len: usize) {}
 
 /// 构造 beat 事件（tick 节拍）
 fn beat_event(t: f64, main: Option<MainAction>, ball: Option<BallState>, movers: Vec<Mover>) -> Event {
@@ -2565,7 +2882,16 @@ fn whistle_event(t: f64, home: u32, away: u32, detail: &str) -> Event {
 }
 
 /// 单个 tick：推进状态 + 产事件（beat 或高亮）
-fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+///
+/// `obs` 只被**透传**给下游 emit/finalize 提交点，本函数自身不读它做任何判断
+/// （P15：recorder 不得参与决策）。
+fn tick(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     // P31 D3 liveness：「距上次 meaningful action 的 tick 数」——本行在 tick 最顶无条件 +1，
     // 任何 meaningful action（见 `note_meaningful_action` 的调用点）把计时归零。因此：
     // 产 meaningful 事件的 tick 结束于 0，其余 tick 结束于「上一 tick + 1」。
@@ -2589,21 +2915,21 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     if st.dead_ball.is_some() {
         st.ball_pos = (0.5, 0.5); // 死球/准备/kickoff：球在中圈附近（队形目标用）
         assert_opportunity_not_leaked(st, OpportunityReason::DeadBall); // D1 防御网：死球
-        advance_dead_ball(st, rng, events, t);
+        advance_dead_ball(st, rng, events, t, obs);
         return;
     }
     // 1b. 重开准备期（RestartPrep，非 DeadBall）：角球/界外球发球者走位 + 球停固定点
     if st.restart_prep.is_some() {
         st.ball_pos = st.restart_prep.as_ref().unwrap().target; // 球停固定点（角旗/出界点），队形目标用
         assert_opportunity_not_leaked(st, OpportunityReason::Restart); // D1 防御网：重开
-        advance_restart_prep(st, rng, events, t);
+        advance_restart_prep(st, rng, events, t, obs);
         return;
     }
     // 1c. P9 射门推进：carrier 向球门带球推进，到射程或步数上限后射门（推进期间 slot 时钟暂停）
     if st.shot_setup.is_some() {
         // D1：推进期间持球段被打断，机会失效（推进结束接射门 → 新持球段重新开机会）
         invalidate_action_opportunity(st, OpportunityReason::PlayBroken);
-        advance_shot_setup(st, rng, events, t);
+        advance_shot_setup(st, rng, events, t, obs);
         return;
     }
     // transition 窗口统一递减（高亮/松散球/开放比赛都走，窗口从武装 tick 起算不延长）：
@@ -2621,7 +2947,7 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
         // D1：高亮飞行/交接都是持球段的打断 → 机会失效（须在高亮分支内，否则会每 tick 误杀）
         invalidate_action_opportunity(st, OpportunityReason::PlayBroken);
         if t >= t_end {
-            finalize_highlight(st, rng, events, t);
+            finalize_highlight(st, rng, events, t, obs);
         } else {
             // 高亮飞行中：beat 只含 movers（参与者排除，无 main/ball）
             st.ball_pos = highlight_ball_end(st.highlight.as_ref().unwrap());
@@ -2635,7 +2961,7 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
     if st.loose.is_some() {
         st.ball_pos = st.loose.as_ref().unwrap().pos;
         assert_opportunity_not_leaked(st, OpportunityReason::PlayBroken);
-        advance_loose(st, rng, events, t);
+        advance_loose(st, rng, events, t, obs);
         return;
     }
     // 4. 开放比赛：**自然 deadline 是唯一节拍源**（P31 D1：槽位时钟 / 持球超时触发源已删）。
@@ -2648,7 +2974,7 @@ fn tick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f6
         // P30：犯规不再独立判定——它并入自然 deadline 的防守动作打分（`maybe_open_foul` 已删），
         // 与抢断同窗口竞争（D4）。自然 deadline 结算可能是抢断/犯规/封堵/跟防（D2/D5）。
         let plan = advance_action_opportunity(st, rng);
-        execute_action_resolution(st, rng, events, t, plan);
+        execute_action_resolution(st, rng, events, t, plan, obs);
     }
 }
 
@@ -3034,11 +3360,32 @@ fn interception_distance_bucket(def_dist_m: f64) -> usize {
 /// 误差（σ 随 `pass_risk` 与传球距离增长），`raw` 越界 → 出界 pass。误差未致越界 → 照常走
 /// 拦截/传失/成功三分支。发球重开（角球/界外球/任意球/门球/头球 battle）**不走此函数**，
 /// 故 D2「重开不走出界误差」由「唯一调用点」结构性保证（见 `p31_landing_error_only_in_open_play_passes`）。
-fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, allow_out: bool) {
+fn emit_pass_highlight_inner(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    allow_out: bool,
+    target_override: Option<i32>,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
     let home = st.possession == 0;
-    let (to, to_pos) = nearest_teammate(st, from_pos, home, from);
+    // P15 §9.1：出球记 `control_released` 并进入 `BallInFlight`，**不关闭 episode**
+    // （episode 处于 pending_outcome，直到 finalize 提交点按结果收束）。
+    // 实际提交在各分支 `obs_mark_action_event` 之后（`obs_release_into_flight`）——
+    // 出球事实的来源就是那条 pass 事件本身，先 emit 才能拿到它的下标。
+    let (to, to_pos) = target_override
+        .filter(|target| {
+            *target >= 0
+                && *target <= 21
+                && *target != from
+                && (*target <= 10) == home
+                && !st.sent_off[*target as usize]
+        })
+        .map(|target| (target, st.pos[target as usize]))
+        .unwrap_or_else(|| nearest_teammate(st, from_pos, home, from));
     let rx = st.pos[to as usize].0;
     let ry = st.pos[to as usize].1;
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
@@ -3113,12 +3460,22 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
                 result: Some("out".to_string()), speed: Some(speed), lead: Some(lead),
                 h: Some(pass_h(distance_meters(from_pos, (x2, y2)), rng)),
                 // out_pos 存真实越界坐标（不 clamp）；x2/y2 是 viewer 渲染用的场内投影。
-                out_pos: Some((raw_x, raw_y)), out_side: Some(out_side_of(detail).to_string()),
+                out_pos: Some((raw_x, raw_y)),
+                out_side: Some(out_side_of(detail).to_string()),
                 detail: Some(detail.to_string()),
                 ..Event::default()
             });
+            let action_event_index = events.len() - 1;
+            obs_release_into_flight(
+                events,
+                obs,
+                t,
+                observation::FlightAction::Pass,
+                action_event_index,
+            );
             st.highlight = Some(Highlight {
-                t_end,
+                obs_event: obs_last_event(events),
+                        t_end,
                 participants: vec![(from, from_pos)],
                 outcome: HighlightOutcome::PassOutOfPlay {
                     detail: detail.to_string(),
@@ -3145,12 +3502,12 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
     // 只写 `OpportunityTally`，故事件流逐字节不变（golden-v5 守卫）。
     st.opportunity_tally.note_interception_roll(def_dist_m, meters, interception_p, fail_roll);
     if (fail_roll as f64) < interception_p {
-        return intercept_pass_highlight(st, rng, events, t, from, from_pos, to, rx, ry, lead, def_id);
+        return intercept_pass_highlight(st, rng, events, t, from, from_pos, to, rx, ry, lead, def_id, obs);
     }
     if (fail_roll as f64) < interception_p + PASS_MISS_P {
-        return lost_pass_highlight(st, rng, events, t, from, from_pos, to, rx, ry, lead, lx, ly);
+        return lost_pass_highlight(st, rng, events, t, from, from_pos, to, rx, ry, lead, lx, ly, obs);
     }
-    normal_pass_highlight(st, rng, events, t, from, from_pos, home, to, to_pos, rx, ry, lead, lx, ly);
+    normal_pass_highlight(st, rng, events, t, from, from_pos, home, to, to_pos, rx, ry, lead, lx, ly, obs);
 }
 
 /// 传球被拦截：球飞向拦截者（落点 = 拦截者当前位置，不瞬移球），拦截者断球后进入松散球
@@ -3158,7 +3515,8 @@ fn emit_pass_highlight_inner(st: &mut MatchState, rng: &mut SeededRng, events: &
 /// to=原目标、interceptor=拦截者。高亮 = 飞行 [t, t+flight]，结束后 finalize 对账拦截者 pos。
 #[allow(clippy::too_many_arguments)]
 fn intercept_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
-    from: i32, from_pos: (f64, f64), to: i32, rx: f64, ry: f64, lead: f64, interceptor: i32) {
+    from: i32, from_pos: (f64, f64), to: i32, rx: f64, ry: f64, lead: f64, interceptor: i32,
+    obs: &mut observation::BehaviorObservationRecorder) {
     let (ix, iy) = st.pos[interceptor as usize];
     let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
     let flight = distance_meters(from_pos, (ix, iy)) / speed;
@@ -3166,16 +3524,34 @@ fn intercept_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &m
     events.push(Event {
         t, type_: EventType::Pass, subject: from, from: Some(from), to: Some(to),
         interceptor: Some(interceptor),
-        x: from_pos.0, y: from_pos.1, x2: Some(ix), y2: Some(iy),
-        result: Some("intercepted".to_string()), speed: Some(speed), lead: Some(lead),
-        receiver_x: Some(rx), receiver_y: Some(ry),
+        x: from_pos.0,
+        y: from_pos.1,
+        x2: Some(ix),
+        y2: Some(iy),
+        result: Some("intercepted".to_string()),
+        speed: Some(speed),
+        lead: Some(lead),
+        receiver_x: Some(rx),
+        receiver_y: Some(ry),
         h: Some(pass_h(distance_meters(from_pos, (ix, iy)), rng)),
         ..Event::default()
     });
+    let action_event_index = events.len() - 1;
+    obs_release_into_flight(
+        events,
+        obs,
+        t,
+        observation::FlightAction::Pass,
+        action_event_index,
+    );
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants: vec![(from, from_pos), (interceptor, (ix, iy))],
-        outcome: HighlightOutcome::PassIntercepted { interceptor, at: (ix, iy) },
+        outcome: HighlightOutcome::PassIntercepted {
+            interceptor,
+            at: (ix, iy),
+        },
     });
     let movers = beat_movers(st, rng, t, &[from, interceptor], &[from, interceptor]);
     events.push(beat_event(t, None, None, movers));
@@ -3187,7 +3563,8 @@ fn intercept_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &m
 /// 只有传球者冻结在起点，接收者照常跑位，使 loose 争抢对双方真实开放（不是接收者必拿）。
 #[allow(clippy::too_many_arguments)]
 fn lost_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
-    from: i32, from_pos: (f64, f64), to: i32, rx: f64, ry: f64, lead: f64, lx: f64, ly: f64) {
+    from: i32, from_pos: (f64, f64), to: i32, rx: f64, ry: f64, lead: f64, lx: f64, ly: f64,
+    obs: &mut observation::BehaviorObservationRecorder) {
     let (x2, y2) = (clamp01(lx), clamp01(ly));
     let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
     let flight = distance_meters(from_pos, (x2, y2)) / speed;
@@ -3198,17 +3575,39 @@ fn lost_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     let len = dx.hypot(dy);
     let dir = if len < 1e-9 { (1.0, 0.0) } else { (dx / len, dy / len) };
     events.push(Event {
-        t, type_: EventType::Pass, subject: from, from: Some(from), to: Some(to),
-        x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some("lost".to_string()), speed: Some(speed), lead: Some(lead),
-        receiver_x: Some(rx), receiver_y: Some(ry),
+        t,
+        type_: EventType::Pass,
+        subject: from,
+        from: Some(from),
+        to: Some(to),
+        x: from_pos.0,
+        y: from_pos.1,
+        x2: Some(x2),
+        y2: Some(y2),
+        result: Some("lost".to_string()),
+        speed: Some(speed),
+        lead: Some(lead),
+        receiver_x: Some(rx),
+        receiver_y: Some(ry),
         h: Some(pass_h(distance_meters(from_pos, (x2, y2)), rng)),
         ..Event::default()
     });
+    let action_event_index = events.len() - 1;
+    obs_release_into_flight(
+        events,
+        obs,
+        t,
+        observation::FlightAction::Pass,
+        action_event_index,
+    );
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants: vec![(from, from_pos)],
-        outcome: HighlightOutcome::PassLost { land: (x2, y2), dir },
+        outcome: HighlightOutcome::PassLost {
+            land: (x2, y2),
+            dir,
+        },
     });
     let movers = beat_movers(st, rng, t, &[from], &[from]);
     events.push(beat_event(t, None, None, movers));
@@ -3218,7 +3617,8 @@ fn lost_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 #[allow(clippy::too_many_arguments)]
 fn normal_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
     from: i32, from_pos: (f64, f64), home: bool, to: i32, to_pos: (f64, f64),
-    rx: f64, ry: f64, lead: f64, lx: f64, ly: f64) {
+    rx: f64, ry: f64, lead: f64, lx: f64, ly: f64,
+    obs: &mut observation::BehaviorObservationRecorder) {
     // P34（#53）：接球点 = 接球者的终点 → 先与队友（含传球者）当前位置做米制分离，
     // 再用于事件字段/参与者/outcome（三处同值，避免事件与状态不一致）。零 RNG，不影响下方抽取顺序。
     let (x2, y2) = separate_target_point(st, to, (clamp01(lx), clamp01(ly)));
@@ -3230,18 +3630,41 @@ fn normal_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut 
     let meters = distance_meters(from_pos, (x2, y2));
     let h = pass_h(meters, rng);
     let event = Event {
-        t, type_: EventType::Pass, subject: from, from: Some(from), to: Some(to),
-        x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
-        receiver_x: Some(rx), receiver_y: Some(ry), h: Some(h),
+        t,
+        type_: EventType::Pass,
+        subject: from,
+        from: Some(from),
+        to: Some(to),
+        x: from_pos.0,
+        y: from_pos.1,
+        x2: Some(x2),
+        y2: Some(y2),
+        result: Some("success".to_string()),
+        speed: Some(speed),
+        lead: Some(lead),
+        receiver_x: Some(rx),
+        receiver_y: Some(ry),
+        h: Some(h),
         ..Event::default()
     };
     events.push(event);
+    let action_event_index = events.len() - 1;
+    obs_release_into_flight(
+        events,
+        obs,
+        t,
+        observation::FlightAction::Pass,
+        action_event_index,
+    );
     let participants = vec![(from, from_pos), (to, (x2, y2))];
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants,
-        outcome: HighlightOutcome::PassCaught { receiver: to, catch_pos: (x2, y2) },
+        outcome: HighlightOutcome::PassCaught {
+            receiver: to,
+            catch_pos: (x2, y2),
+        },
     });
     let movers = beat_movers(st, rng, t, &[from, to], &[from, to]);
     events.push(beat_event(t, None, None, movers));
@@ -3261,7 +3684,13 @@ fn pass_h(meters: f64, rng: &mut SeededRng) -> f64 {
 /// `execute_action_resolution` 的 `CarrierExecution::Shoot`），执行点紧邻置 `module_shot_pending`
 /// 并在本函数消费 → 计入 `exec_shoot`；未归因 = 有射门绕过模块（守卫会红）。
 /// 头球射门走 `emit_header_shot`（角球 battle 派生），不经此处、不计入。
-fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn emit_shot_highlight(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     if st.module_shot_pending {
         st.module_shot_pending = false;
         st.opportunity_tally.exec_shoot += 1;
@@ -3305,6 +3734,16 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
         ..Event::default()
     };
     events.push(event);
+    let action_event_index = events.len() - 1;
+    // P15 §9.1：射门出球记 `control_released` 并进入 `BallInFlight`，但**暂不关闭 episode**
+    // （`pending_outcome`）——结局由 finalize 的 goal / saved caught / rebound / off target 决定。
+    obs_release_into_flight(
+        events,
+        obs,
+        t,
+        observation::FlightAction::Shot,
+        action_event_index,
+    );
     let participants = vec![(shooter, shooter_pos), (gk_id, (x2, y2))];
     let outcome = if result == "goal" {
         let kickoff_id = kickoff_pick(st, if home { 12 } else { 9 }, -1);
@@ -3329,11 +3768,24 @@ fn emit_shot_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
             let dx = loose_x - x2;
             let dy = loose_y - y2;
             let len = dx.hypot(dy);
-            let dir = if len < 1e-9 { (-1.0, 0.0) } else { (dx / len, dy / len) };
-            HighlightOutcome::ShotSavedRebound { gk: gk_id, rebound_from: (x2, y2), dir }
+            let dir = if len < 1e-9 {
+                (-1.0, 0.0)
+            } else {
+                (dx / len, dy / len)
+            };
+            HighlightOutcome::ShotSavedRebound {
+                gk: gk_id,
+                rebound_from: (x2, y2),
+                dir,
+            }
         }
     };
-    st.highlight = Some(Highlight { t_end, participants, outcome });
+    st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
+        t_end,
+        participants,
+        outcome,
+    });
     let movers = beat_movers(st, rng, t, &[shooter, gk_id], &[shooter, gk_id]);
     events.push(beat_event(t, None, None, movers));
 }
@@ -3380,9 +3832,15 @@ fn emit_shot_window_beat(st: &mut MatchState, rng: &mut SeededRng, events: &mut 
 ///   1. hazard 命中（`committed = true`）→ 立即产 Shot（防守侧不再评估，D1 不可回溯）；
 ///   2. 未提交且被抢断 → 取消射门（内部 `shot_setup = None`）→ tackle（→ 松散球），不产 Shot；
 ///   3. 未提交且无人抢 → 窗口计时；耗尽 `SHOT_WINDOW_TICKS` → 「转」（放弃射门，继续带球）。
-fn advance_shot_setup(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn advance_shot_setup(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     if st.shot_setup.as_ref().map_or(false, |s| s.in_window) {
-        shot_window_plan(st, rng, events, t);
+        shot_window_plan(st, rng, events, t, obs);
         return;
     }
     let (ticks_left, target) = {
@@ -3420,13 +3878,19 @@ fn advance_shot_setup(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
 /// 分支按**结算**分派（不是按候选），保证每种结算都被如实执行——包括 D2 的背向球门转死球
 /// （`DeadBall`）、抢断（`InterruptedByTackle`）、以及「等待 / 转」。任何未列出的结算走
 /// 「等待」并把窗口计时推进（保持 total、不幻觉事件）。
-fn shot_window_plan(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn shot_window_plan(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     let plan = build_action_plan(st, rng, OpportunityTrigger::ShotWindow);
     match plan.resolution {
         // D1 提交：hazard 判定命中 → 本 tick 就地起脚（`emit_shot_highlight` 读当前位置为起脚点）
         ActionResolution::CarrierAction(CarrierAction::Shoot) => {
             st.shot_setup = None;
-            execute_action_resolution(st, rng, events, t, Some(plan));
+            execute_action_resolution(st, rng, events, t, Some(plan), obs);
         }
         // D3：起脚窗口内被抢断 → 取消射门序列（内部状态 canceled），产 tackle（→ 松散球），
         // 不产 Shot。抢断**成败都取消射门**（高亮占用该 tick，起脚节奏丢失）；成败只决定
@@ -3434,14 +3898,14 @@ fn shot_window_plan(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
         ActionResolution::InterruptedByTackle => {
             st.shot_setup = None;
             st.opportunity_tally.shot_window_tackles += 1;
-            execute_action_resolution(st, rng, events, t, Some(plan));
+            execute_action_resolution(st, rng, events, t, Some(plan), obs);
         }
         // P30（D4）：起脚窗口内打分选中犯规（被过掉的防守者拉人）→ 取消射门序列，产 foul
         // （哨停 + 任意球重开）——与抢断同构：犯规也打断起脚节奏。**不产 Shot**。
         ActionResolution::InterruptedByFoul => {
             st.shot_setup = None;
             st.opportunity_tally.shot_window_fouls += 1;
-            execute_action_resolution(st, rng, events, t, Some(plan));
+            execute_action_resolution(st, rng, events, t, Some(plan), obs);
         }
         // 未提交、未被抢断：本 tick 持球等待，窗口计时推进
         _ => {
@@ -3463,7 +3927,8 @@ fn shot_window_plan(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
 }
 
 /// P9 射门推进（远段）：向前传球给进攻方向最靠前队友，完成后接射门/带球（shot_pending_after_pass 桥接）。
-fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
+    obs: &mut observation::BehaviorObservationRecorder) {
     let from = st.carrier;
     let from_pos = st.pos[from as usize];
     let home = st.possession == 0;
@@ -3502,17 +3967,41 @@ fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events:
     let t_end = t + flight;
     let h = pass_h(distance_meters(from_pos, (x2, y2)), rng);
     events.push(Event {
-        t, type_: EventType::Pass, subject: from, from: Some(from), to: Some(to),
-        x: from_pos.0, y: from_pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
-        receiver_x: Some(to_pos.0), receiver_y: Some(to_pos.1), h: Some(h),
+        t,
+        type_: EventType::Pass,
+        subject: from,
+        from: Some(from),
+        to: Some(to),
+        x: from_pos.0,
+        y: from_pos.1,
+        x2: Some(x2),
+        y2: Some(y2),
+        result: Some("success".to_string()),
+        speed: Some(speed),
+        lead: Some(lead),
+        receiver_x: Some(to_pos.0),
+        receiver_y: Some(to_pos.1),
+        h: Some(h),
         ..Event::default()
     });
+    let action_event_index = events.len() - 1;
+    // P15 §9.1：向前传球也是出球 → 记 `control_released` 进 `BallInFlight`，episode 不关闭。
+    obs_release_into_flight(
+        events,
+        obs,
+        t,
+        observation::FlightAction::Pass,
+        action_event_index,
+    );
     let participants = vec![(from, from_pos), (to, (x2, y2))];
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants,
-        outcome: HighlightOutcome::PassCaught { receiver: to, catch_pos: (x2, y2) },
+        outcome: HighlightOutcome::PassCaught {
+            receiver: to,
+            catch_pos: (x2, y2),
+        },
     });
     st.shot_pending_after_pass = true;
     let movers = beat_movers(st, rng, t, &[from, to], &[from, to]);
@@ -3528,6 +4017,7 @@ fn emit_tackle_highlight_impl(
     events: &mut Vec<Event>,
     t: f64,
     defender: i32,
+    obs: &mut observation::BehaviorObservationRecorder,
 ) {
     let victim = st.carrier;
     let victim_pos = st.pos[victim as usize];
@@ -3548,10 +4038,19 @@ fn emit_tackle_highlight_impl(
     // 硬门（`tackle_stream_participants_not_overlapping`）冲突。
     let t_end = t + TICK_SECONDS;
     st.highlight = Some(Highlight {
+        // P15：抢断的**动作事件**（`EventType::Tackle`）在本函数**末尾**才 push（先出 beat
+        // 再出事件），故此刻无法取到它的下标——占位 `None`，push 之后显式回填。
+        // 若在这里写 `obs_last_event(events)`，绑到的是**上一拍**的事件（实测：13 次 tackle
+        // 全部没绑到任何 Tackle 事件，而把 `contest_started` 绑到了更早的 beat）。
+        obs_event: None,
         t_end,
         participants: vec![(victim, carrier_end), (def_id, subject_end)],
         outcome: if success {
-            HighlightOutcome::TackleSuccess { def: def_id, loose: (loose_x, loose_y), contact: victim_pos }
+            HighlightOutcome::TackleSuccess {
+                def: def_id,
+                loose: (loose_x, loose_y),
+                contact: victim_pos,
+            }
         } else {
             HighlightOutcome::TackleFail { victim, contact: victim_pos }
         },
@@ -3592,6 +4091,13 @@ fn emit_tackle_highlight_impl(
         ..Event::default()
     };
     events.push(event);
+    // P15 §7「tackle success / fail」：**动作本身不是控制权事实**——`success` 只表示球被捅走，
+    // 控制是否易主取决于 finalize 之后球进 loose（→ `Contested`）还是原 carrier 仍控制
+    // （→ episode 延续）。故这里只回填「动作事件 = 刚 push 的那条 Tackle」，供 finalize 归属。
+    if let Some(h) = st.highlight.as_mut() {
+        h.obs_event = obs_last_event(events);
+    }
+    let _ = obs;
     // P30（D1）：设置三层 cooldown 中的两层——defender 级（同一防守者不连抢）+ pair 级
     // （同一对不立即重复接触）。全局 foul 冷却由犯规路径设置。cooldown 只改变后续打分。
     st.tackle_cooldown[def_id as usize] = TACKLE_COOLDOWN_TICKS;
@@ -3605,11 +4111,20 @@ fn emit_tackle_highlight_impl(
 }
 
 /// 高亮结束 → 球权交接（D12）：pos[] 对账到高亮结束位置，按结局设置后继
-fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn finalize_highlight(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     // P31 D3：每个高亮的结算都是一次 meaningful action（传球交接 / 拦截 / 传失 / 射门 /
     // 抢断 / 出界重开 / 角球 / 门球）——统一在此归零停滞计时。
     note_meaningful_action(st);
     let h = st.highlight.take().unwrap();
+    // P15：本次结算归属的那条**动作事件** = 高亮自己创建时记下的下标（见 `Highlight::obs_event`）。
+    // **不能**用 `events.len() - 1`：那已是飞行期的 beat，不是产生这次结算的动作事件。
+    let action_event = h.obs_event;
     // 对账参与者 pos + last_emitted 到高亮结束位置（回归 movers 不回弹）
     for (id, end_pos) in &h.participants {
         st.pos[*id as usize] = *end_pos;
@@ -3620,6 +4135,25 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.ball_pos = catch_pos;
             st.carrier = receiver;
             st.carrier_from = catch_pos;
+            // P15 §7：高亮 finalize、receiver 已成为 carrier —— 这才是「控制已建立」的提交点
+            // （不是 pass emit：动作成功 ≠ 控制建立）。
+            //
+            // start_reason 恒传 `SuccessfulReceive`（本路径的语义就是「接住一次传/交付」）：
+            // **是否是定位球交付的控制不由这里判断**——那要读观察层状态，正是
+            // `p15_recorder_stays_out_of_the_decision_path` 要禁的形态。判定已搬进
+            // `control_established` 自己（开放 restart 存在 → 归一为 `RestartControl`），
+            // 于是 throw-in / free-kick 交付与开放比赛传球在这条路径上共用同一个参数。
+            obs.control_established(
+                observation::ObservedTime::state_commit(t),
+                // 接球方 = 引擎当前球权方（普通传球不切 possession）——不靠 id 反推。
+                obs_team_id(st.possession),
+                Some(receiver),
+                Some(catch_pos),
+                observation::EpisodeStartReason::SuccessfulReceive,
+                None,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             if st.shot_pending_after_pass {
                 // P9：射门槽的向前传球完成 → 接射门（到目标距离直接射，否则进入带球推进）
                 st.shot_pending_after_pass = false;
@@ -3640,24 +4174,73 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.ball_pos = at;
             st.possession = if interceptor <= 10 { 0 } else { 1 };
             st.carrier = -1;
+            // P15 §9.1「pass intercepted」：引擎这里**只启动松散球**（`st.carrier = -1`），
+            // 拦截者并未获得控制 → 记 `Contested(InterceptionLoose)`，旧 episode 以 `control_lost`
+            // 关闭。拦截者的控制一律经同刻 `advance_loose` 的 pickup 提交才建立。
+            obs.contest_started(
+                observation::ObservedTime::state_commit(t),
+                observation::ContestStartReason::InterceptionLoose,
+                Some(at),
+                observation::EpisodeEndReason::ControlLost,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             let dir = (0.0, 0.0); // 拦截球停住（不滚动），追逐者（拦截者）立即拾取
             start_loose_ball(st, at, dir, Some(if interceptor <= 10 { 0 } else { 1 }));
-            advance_loose(st, rng, events, t);
+            advance_loose(st, rng, events, t, obs);
         }
         HighlightOutcome::PassLost { land, dir } => {
             // 传失：落点松散球（普通单追逐，双方可争——攻方可能追回 / 防方断下）
             st.ball_pos = land;
             st.carrier = -1;
+            // P15 §9.1「pass lost」：失准**不是**对手获得控制——记 `Contested(PassLost)`，
+            // 旧 episode 立即以 `control_lost` 关闭，等 pickup 才开新 episode。
+            obs.contest_started(
+                observation::ObservedTime::state_commit(t),
+                observation::ContestStartReason::PassLost,
+                Some(land),
+                observation::EpisodeEndReason::ControlLost,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             start_loose_ball(st, land, dir, None);
-            advance_loose(st, rng, events, t);
+            advance_loose(st, rng, events, t, obs);
         }
-        HighlightOutcome::ShotGoal { kickoff_id, ball_end } => {
+        HighlightOutcome::ShotGoal {
+            kickoff_id,
+            ball_end,
+        } => {
             // 比分在高亮结束（finalize）时确认——不在射门时刻递增（避免比赛在飞行中结束仍计分）
             st.ball_pos = ball_end;
             if kickoff_id <= 10 { st.away_score += 1; } else { st.home_score += 1; }
             let receiver = kickoff_pick(st, if st.possession == 0 { 11 } else { 10 }, kickoff_id);
             st.carrier = -1;
-            st.dead_ball = Some(DeadBall { goal: true, remaining: 2, preparing: false, kickoff_id, kicked: false, receiver, kickoff_end: 0.0 });
+            st.dead_ball = Some(DeadBall {
+                goal: true,
+                remaining: 2,
+                preparing: false,
+                kickoff_id,
+                kicked: false,
+                receiver,
+                kickoff_end: 0.0,
+            });
+            // P15 §6.3：goal finalize 是**唯一**记 `dead_ball_started` 的地方（重开归属 = 对方队）。
+            // 准备期由后面的 `kickoff_again` whistle 记一次（开球专线 3）——此处**不得**再补 prep，
+            // 否则第二次调用会因 `state` 已是 `RestartPreparation` 被判非法、每个进球白送一条 gap。
+            let scoring_team = obs_team(st.possession);
+            obs.dead_ball_started(
+                observation::ObservedTime::state_commit(t),
+                observation::DeadBallReason::Goal,
+                Some((
+                    scoring_team.known().map(|t| t.opponent()).into(),
+                    observation::RestartKind::Kickoff,
+                )),
+                observation::EpisodeEndReason::Goal,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            // 死球期的事件不属于任何 episode（episode 已被 goal 关闭），`obs_bind` 里
+            // `OpenEpisode` 目标会自动落空 → 只归 restart。
+            obs_bind(events, obs, action_event);
             let movers = beat_movers(st, rng, t, &[kickoff_id], &[kickoff_id]);
             events.push(beat_event(t, None, None, movers));
         }
@@ -3666,23 +4249,64 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.carrier = gk;
             st.possession = if gk <= 10 { 0 } else { 1 };
             st.carrier_from = save_pos;
+            // P15 §7「saved caught」：原 episode 以 `saved_caught` 结束，门将队建立新控制 episode
+            // （无重开安排）——两条事实都由 `control_established` 一次提交完成
+            // （`prior_episode_end` 负责旧 episode 的结局）。
+            obs.control_established(
+                observation::ObservedTime::state_commit(t),
+                // 门将队 = 引擎刚在上面提交的 possession。
+                obs_team_id(st.possession),
+                Some(gk),
+                Some(save_pos),
+                observation::EpisodeStartReason::ControlChange,
+                Some(observation::EpisodeEndReason::SavedCaught),
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             // save-caught 触发 transition（球权易主）：save 高亮终点 tick 后的首个整数 tick 边界武装
-            st.transition = Some(Transition { ticks_left: TRANSITION_TICKS, attacking: st.possession, source: TransitionSource::SaveCaught });
+            st.transition = Some(Transition {
+                ticks_left: TRANSITION_TICKS,
+                attacking: st.possession,
+                source: TransitionSource::SaveCaught,
+            });
             emit_beat_with_main(st, rng, events, t);
+            // 门将持球后的这记带球 beat 属于新 episode（控制已在上面的提交点建立）。
+            obs_bind_last(events, obs);
         }
-        HighlightOutcome::ShotSavedRebound { gk, rebound_from, dir } => {
+        HighlightOutcome::ShotSavedRebound {
+            gk,
+            rebound_from,
+            dir,
+        } => {
             let _ = gk;
             st.ball_pos = rebound_from;
             // save-rebound 不触发 transition（普通松散球，双方可争，拾取后按拾取方刷新）
             st.carrier = -1;
+            // P15 §7「saved rebound」：原 episode 以 `shot_rebound` 结束 → `Contested`，等 pickup。
+            obs.contest_started(
+                observation::ObservedTime::state_commit(t),
+                observation::ContestStartReason::ShotRebound,
+                Some(rebound_from),
+                observation::EpisodeEndReason::ShotRebound,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             start_loose_ball(st, rebound_from, dir, None);
-            advance_loose(st, rng, events, t);
+            advance_loose(st, rng, events, t, obs);
         }
         HighlightOutcome::ShotOffTarget => {
-            // 门球（goal kick）：possession 切对方，对方门将开大脚
+            // 门球（goal kick）：possession 切对方，对方门将开大脚。
+            // 射门 off-target 在引擎里**必然**导出对方门球（`ShotOffTarget` 的唯一后继），
+            // 故死球来源为 `OutGoalLine`、重开为对方 `GoalKick`（§6.3 的 shot off target 行）。
             start_goal_kick(st, rng, events, t);
+            obs_goal_kick_delivered(st, events, obs, action_event, t);
         }
-        HighlightOutcome::PassOutOfPlay { detail, out_pos, source, own_goal_line } => {
+        HighlightOutcome::PassOutOfPlay {
+            detail,
+            out_pos,
+            source,
+            own_goal_line,
+        } => {
             // 出界重开（P31 D2）：不设 carrier，重开类型由**纯函数** `out_restart_for`
             // （`out_side` + 最后触球方）决定。
             // out_pos 存真实越界值；重开锚（角旗/掷球点）与球位必须留在场内 → 在此 clamp
@@ -3692,43 +4316,134 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             st.ball_pos = out_pos;
             st.carrier = -1;
             let side = if detail == "out_sideline" { OutSide::Sideline } else { OutSide::GoalLine };
+            // P15 §6.3：出界**结果确认**时创建重开（死球来源按 `out_restart_for` 的判定走）。
             match out_restart_for(source, side, own_goal_line) {
-                // 门球：对方门将开大脚（`start_goal_kick` 内部切 possession）
-                OutRestart::GoalKick => start_goal_kick(st, rng, events, t),
+                // 门球：对方门将开大脚（`start_goal_kick` 内部切 possession）。
+                // 归属与门将相同：`st.possession` 是「出界方」，门球归**对方**。
+                OutRestart::GoalKick => {
+                    start_goal_kick(st, rng, events, t);
+                    obs_goal_kick_delivered(st, events, obs, action_event, t);
+                }
                 // 界外球：普通传球 → 对方掷；防方解围出边线 → 进攻方掷（= 1 − 防方）
                 OutRestart::ThrowIn => {
-                    start_throw_in(st, rng, events, t, out_pos, 1 - st.possession)
+                    let throwing = 1 - st.possession;
+                    obs.dead_ball_started(
+                        observation::ObservedTime::state_commit(t),
+                        observation::DeadBallReason::OutSideline,
+                        Some((obs_team(throwing), observation::RestartKind::ThrowIn)),
+                        observation::EpisodeEndReason::Out,
+                        observation::ControlFactBasis::FinalizedOutcome,
+                    );
+                    start_throw_in(st, rng, events, t, out_pos, throwing);
+                    // `start_throw_in` 立刻建 `restart_prep`（有准备期）→ 同刻补 prep 事实。
+                    obs.restart_preparation_started(
+                        observation::ObservedTime::state_commit(t),
+                        obs_team(throwing),
+                        observation::RestartKind::ThrowIn,
+                        observation::ControlFactBasis::RestartRule,
+                    );
+                    // 本次出界确认产出的**全部**事实（死球 + prep）同源 = 那条出界事件；
+                    // 归属扫描放在 prep 之后，否则 prep 事实会留到下一次扫描被绑到
+                    // 一个**更晚**的事件上（实测：`restart_preparation_started` t=279
+                    // 被绑到 t=283 的 throw-in 交付事件）。
+                    obs_bind(events, obs, action_event);
                 }
                 // 角球：防方解围出底线 → 进攻方发（possession 此时 = 防方）
-                OutRestart::Corner => start_corner(st, rng, events, t, out_pos, 1 - st.possession),
+                OutRestart::Corner => {
+                    let attacking = 1 - st.possession;
+                    obs.dead_ball_started(
+                        observation::ObservedTime::state_commit(t),
+                        observation::DeadBallReason::OutGoalLine,
+                        Some((obs_team(attacking), observation::RestartKind::Corner)),
+                        observation::EpisodeEndReason::Out,
+                        observation::ControlFactBasis::FinalizedOutcome,
+                    );
+                    start_corner(st, rng, events, t, out_pos, attacking);
+                    obs.restart_preparation_started(
+                        observation::ObservedTime::state_commit(t),
+                        obs_team(attacking),
+                        observation::RestartKind::Corner,
+                        observation::ControlFactBasis::RestartRule,
+                    );
+                    // 同 throw-in 分支：归属扫描必须在 prep 之后（见那里的说明）。
+                    obs_bind(events, obs, action_event);
+                }
             }
         }
         HighlightOutcome::CornerAward { rebound_from } => {
             // 射门扑出越线 → 角球（进攻方发，possession 保持射门方）
+            // P15 坑 2：`CornerAward` 路径上引擎**没有** `dead_ball_started`（它直接
+            // `start_corner`），故在此补报死球——否则重开序列缺死球来源。
+            obs.dead_ball_started(
+                observation::ObservedTime::state_commit(t),
+                observation::DeadBallReason::OutGoalLine,
+                Some((obs_team(st.possession), observation::RestartKind::Corner)),
+                observation::EpisodeEndReason::Out,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
             start_corner(st, rng, events, t, rebound_from, st.possession);
+            obs.restart_preparation_started(
+                observation::ObservedTime::state_commit(t),
+                obs_team(st.possession),
+                observation::RestartKind::Corner,
+                observation::ControlFactBasis::RestartRule,
+            );
+            // 同 throw-in 分支：归属扫描必须在 prep 之后。
+            obs_bind(events, obs, action_event);
         }
         HighlightOutcome::CornerKick { land, dir } => {
             // 角球发球到达落点：落点松散球（battle 双追逐争抢）
             st.ball_pos = land;
             st.carrier = -1;
+            // P15 §6.2：定位球发出并由某队明确控制后，才开启新的 PossessionEpisode——
+            // 交付的落点争抢记 `Contested`（`delivery_loose`），**不**伪装成普通 possession。
+            obs.contest_started(
+                observation::ObservedTime::state_commit(t),
+                observation::ContestStartReason::DeliveryLoose,
+                Some(land),
+                observation::EpisodeEndReason::ControlLost,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             start_battle_loose(st, land, dir);
-            advance_loose(st, rng, events, t);
+            advance_loose(st, rng, events, t, obs);
         }
         HighlightOutcome::Clearance { land, dir } => {
             // 防方头球解围落点：禁区外松散球（普通单追逐，重新争）
             st.ball_pos = land;
             st.carrier = -1;
+            obs.contest_started(
+                observation::ObservedTime::state_commit(t),
+                observation::ContestStartReason::DeliveryLoose,
+                Some(land),
+                observation::EpisodeEndReason::ControlLost,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             start_loose_ball(st, land, dir, None);
-            advance_loose(st, rng, events, t);
+            advance_loose(st, rng, events, t, obs);
         }
         HighlightOutcome::GoalKick { land, dir } => {
-            // 门将开大脚球到达落点：沿飞行方向滚一段（滚动减速），进入松散球（双方可争），拾取恢复 main
+            // 门将开大脚球到达落点：沿飞行方向滚动（滚动减速），进入松散球（双方可争），拾取恢复 main
             st.ball_pos = land;
             st.carrier = -1;
+            // 门球的交付落点：同上，落点争抢 = `Contested(DeliveryLoose)`。
+            obs.contest_started(
+                observation::ObservedTime::state_commit(t),
+                observation::ContestStartReason::DeliveryLoose,
+                Some(land),
+                observation::EpisodeEndReason::ControlLost,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             start_loose_ball(st, land, dir, None);
-            advance_loose(st, rng, events, t);
+            advance_loose(st, rng, events, t, obs);
         }
-        HighlightOutcome::TackleSuccess { def, loose, contact } => {
+        HighlightOutcome::TackleSuccess {
+            def,
+            loose,
+            contact,
+        } => {
             st.ball_pos = loose;
             // transition 已在 emit_tackle_highlight（tackle 起点 tick）武装 + possession 已切
             // 滚动方向：沿接触点 → 弹开点方向
@@ -3737,19 +4452,44 @@ fn finalize_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
             let len = dx.hypot(dy);
             let dir = if len < 1e-9 { (1.0, 0.0) } else { (dx / len, dy / len) };
             st.carrier = -1;
+            // P15 §9.1「tackle success」：抢断动作在 `emit_tackle_highlight_impl` 记（不自动释放控制）；
+            // finalize 确认球进入 loose → `Contested(TackleLoose)`，旧 episode 以 `control_lost` 关闭。
+            // 只有后续 pickup 才建立控制。
+            obs.contest_started(
+                observation::ObservedTime::state_commit(t),
+                observation::ContestStartReason::TackleLoose,
+                Some(loose),
+                observation::EpisodeEndReason::ControlLost,
+                observation::ControlFactBasis::FinalizedOutcome,
+            );
+            obs_bind(events, obs, action_event);
             start_loose_ball(st, loose, dir, Some(if def <= 10 { 0 } else { 1 }));
-            advance_loose(st, rng, events, t);
+            advance_loose(st, rng, events, t, obs);
         }
         HighlightOutcome::TackleFail { victim, contact } => {
             st.ball_pos = contact;
             st.carrier = victim;
             st.carrier_from = contact;
+            // P15 §9.1「tackle fail」：finalize 后原 carrier 仍控制 → **原 episode 延续**。
+            // 这里**不记任何控制权事实**，也**不绑** `action_event`（那是 tackle 事件，属于
+            // 失败的抢断动作，而不是本 episode 的进展）——绑上去会把 do-nothing 的事件
+            // 混进 episode 的事件序列。
+            let _ = action_event;
             emit_beat_with_main(st, rng, events, t);
+            // 原 carrier 继续带球：本拍 beat 是 episode 的进展事件，故**只绑对象**。
+            // 不能用 `obs_bind_last`——它会把自上次扫描以来的遗留事实一并绑到这条 beat 上，
+            // 而 Beat 并不是它们的动作来源（tackle 事件才是）。
+            obs_bind_last_objects(events, obs);
         }
     }
 }
 
 /// 门球开大脚（goal kick）：possession 切对方门将，门将开大脚 → 落点松散球（P6 首批先例，P6 批次1 复用）
+///
+/// P15（§15 A9-3）：门球在引擎里**没有准备期**（本函数同步发 pass 高亮、不设 `restart_prep`），
+/// 故观察侧走专用入口 [`observation::BehaviorObservationRecorder::goal_kick_started`]
+/// （一次提交记 `dead_ball_started` + `restart_taken`，**不**补 prep 事实），由调用方在本函数
+/// 返回后提交——这样门球交付事件（本函数推的那条 pass）才是重开事实的事件来源。
 fn start_goal_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
     let gk_id = if st.possession == 0 { 21 } else { 0 };
     st.possession = if gk_id <= 10 { 0 } else { 1 };
@@ -3768,12 +4508,18 @@ fn start_goal_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Ev
         result: Some("contested".to_string()), speed: Some(speed), h: Some(h),
         ..Event::default()
     });
+    // P15（§15 A9-3）：门球交付事件 = 重开序列的 `restart_taken` 来源（本函数没有准备期）。
     // 落点滚动方向 = 飞行方向（门线 → 落点），球落地沿此方向滚一段减速停（不是突然停）
     let dx = land.0 - gk_pos.0;
     let dy = land.1 - gk_pos.1;
     let len = dx.hypot(dy);
-    let dir = if len < 1e-9 { (1.0, 0.0) } else { (dx / len, dy / len) };
+    let dir = if len < 1e-9 {
+        (1.0, 0.0)
+    } else {
+        (dx / len, dy / len)
+    };
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants: vec![(gk_id, gk_pos)],
         outcome: HighlightOutcome::GoalKick { land, dir },
@@ -3824,7 +4570,13 @@ fn throw_in_spot(out_pos: (f64, f64)) -> (f64, f64) {
 
 /// 重开准备期 tick：发球者/掷球者走位到固定点（球停固定点，产 beat.ball 静止锚点）。
 /// 角球：发球者到角旗后继续等攻方包抄到位（CORNER_SETUP_MIN_TICKS）再发球——发球时攻方已在禁区。
-fn advance_restart_prep(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn advance_restart_prep(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     let (player, target, kind, ticks) = {
         let r = st.restart_prep.as_ref().unwrap();
         (r.player, r.target, r.kind, r.ticks)
@@ -3863,15 +4615,32 @@ fn advance_restart_prep(st: &mut MatchState, rng: &mut SeededRng, events: &mut V
     st.restart_prep = None;
     // P31 D3：发球重开（角球 / 界外球 / 任意球）＝ meaningful action。
     note_meaningful_action(st);
+    // P15 §5：`restart_taken` 统一负责 `RestartPreparation → BallInFlight`。
+    // 三条路径都在这里发球，故在此一次提交（准备期已由 start_corner / start_throw_in /
+    // emit_foul_and_free_kick 记过）。
+    obs.restart_taken(
+        observation::ObservedTime::state_commit(t),
+        observation::ControlFactBasis::RestartRule,
+    );
     match kind {
-        RestartKind::Corner => emit_corner_kick(st, rng, events, t),
-        RestartKind::ThrowIn => emit_throw_in(st, rng, events, t),
-        RestartKind::FreeKick => emit_free_kick(st, rng, events, t),
+        RestartKind::Corner => emit_corner_kick(st, rng, events, t, obs),
+        RestartKind::ThrowIn => emit_throw_in(st, rng, events, t, obs),
+        RestartKind::FreeKick => emit_free_kick(st, rng, events, t, obs),
     }
+    // `restart_taken` 的产出事件就是这次**发球事件本身**：`emit_*` 建的交付高亮把它记在
+    // 自己的 `obs_event` 上，落点争抢 / 首次控制（可能在后续 tick）读同一个值即可。
+    let delivery_event = obs_highlight_event(st);
+    obs_bind(events, obs, delivery_event);
 }
 
 /// 角球发球高亮：角旗 → 禁区附近落点（pass detail=corner、to=None、h>0），落点松散球 battle 双追逐
-fn emit_corner_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn emit_corner_kick(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     let flag = st.ball_pos; // 角旗（发球者已走位到角旗）
     let attacking = st.possession;
     let home = attacking == 0;
@@ -3894,18 +4663,24 @@ fn emit_corner_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     let dx = land.0 - flag.0;
     let dy = land.1 - flag.1;
     let len = dx.hypot(dy);
-    let dir = if len < 1e-9 { (1.0, 0.0) } else { (dx / len, dy / len) };
+    let dir = if len < 1e-9 {
+        (1.0, 0.0)
+    } else {
+        (dx / len, dy / len)
+    };
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants: vec![(kicker, flag)],
         outcome: HighlightOutcome::CornerKick { land, dir },
     });
     let movers = beat_movers(st, rng, t, &[kicker], &[kicker]);
-    events.push(beat_event(t, None, None, movers));
+    events.push(beat_event(t, None, None, movers));    let _ = obs; // P15：交付的观察提交在 finalize（落点争抢 / 接球控制）
 }
 
 /// 界外球掷球高亮：出界点（边线）→ 附近队友（pass 短传 h=0），接球者持球（复用 PassCaught）
-fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
+    obs: &mut observation::BehaviorObservationRecorder) {
     let out_pos = st.ball_pos; // 出界点（掷球者已走位到边线）
     let throwing = st.possession;
     let home = throwing == 0;
@@ -3925,22 +4700,28 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
         result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
         h: Some(0.0), // 界外球无高度
         detail: Some("throw_in".to_string()), // P7：viewer 识别界外球掷球（跳过机制）
-        receiver_x: Some(rx), receiver_y: Some(ry),
+        receiver_x: Some(rx),
+        receiver_y: Some(ry),
         ..Event::default()
     });
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants: vec![(thrower, out_pos), (to, (x2, y2))],
-        outcome: HighlightOutcome::PassCaught { receiver: to, catch_pos: (x2, y2) },
+        outcome: HighlightOutcome::PassCaught {
+            receiver: to,
+            catch_pos: (x2, y2),
+        },
     });
     let movers = beat_movers(st, rng, t, &[thrower, to], &[thrower, to]);
-    events.push(beat_event(t, None, None, movers));
+    events.push(beat_event(t, None, None, movers));    let _ = obs; // P15：交付的观察提交在 finalize（`PassCaught` 建立控制）
 }
 
 /// 任意球发球高亮（犯规后重开）：犯规点 → 就近队友（pass 短传 h=0、detail=free_kick、subject=发球者），
 /// 接球者持球（复用 PassCaught）。发球者 = 重开方离犯规点最近外场球员（已走位到犯规点）。
 /// 语义对齐"快发任意球"：不发不可见的摆球/等待，直接短传恢复比赛，保持节奏。
-fn emit_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn emit_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
+    obs: &mut observation::BehaviorObservationRecorder) {
     let spot = st.ball_pos; // 犯规点（发球者已走位到犯规点）
     let kicking = st.possession; // 犯规后球权方（被犯规方）
     let home = kicking == 0;
@@ -3960,16 +4741,21 @@ fn emit_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
         result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
         h: Some(0.0), // 任意球短传无高度
         detail: Some("free_kick".to_string()),
-        receiver_x: Some(rx), receiver_y: Some(ry),
+        receiver_x: Some(rx),
+        receiver_y: Some(ry),
         ..Event::default()
     });
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants: vec![(kicker, spot), (to, (x2, y2))],
-        outcome: HighlightOutcome::PassCaught { receiver: to, catch_pos: (x2, y2) },
+        outcome: HighlightOutcome::PassCaught {
+            receiver: to,
+            catch_pos: (x2, y2),
+        },
     });
     let movers = beat_movers(st, rng, t, &[kicker, to], &[kicker, to]);
-    events.push(beat_event(t, None, None, movers));
+    events.push(beat_event(t, None, None, movers));    let _ = obs; // P15：交付的观察提交在 finalize（`PassCaught` 建立控制）
 }
 
 /// 开始松散球（D11）：选追逐者，记录滚动方向
@@ -3994,7 +4780,13 @@ fn start_battle_loose(st: &mut MatchState, from: (f64, f64), dir: (f64, f64)) {
 }
 
 /// 松散球 tick：球滚动（阻尼递减）→ 追逐者接近 → 拾取回 main / 继续 beat.ball
-fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn advance_loose(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     // 拷贝必要字段，避免借用冲突
     let (loose_pos, chaser) = {
         let l = st.loose.as_ref().unwrap();
@@ -4015,10 +4807,25 @@ fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
             let attack_win = if atk_home { BATTLE_ATTACK_WIN_HOME } else { BATTLE_ATTACK_WIN_AWAY };
             if roll < attack_win {
                 // 攻方胜：攻方 chaser 就地分支（头球射门/摆渡/拿球）
-                battle_attack_wins(st, rng, events, t, atk_chaser, lp);
+                obs_contest_pickup(st, obs, t, atk_chaser, lp);
+                battle_attack_wins(st, rng, events, t, atk_chaser, lp, obs);
             } else {
                 // 防方胜：防方 chaser 移动到位（拾取语义）→ 就地头球解围
-                battle_defend_wins(st, rng, events, t, def_chaser, lp);
+                obs_contest_pickup(st, obs, t, def_chaser, lp);
+                battle_defend_wins(st, rng, events, t, def_chaser, lp, obs);
+            }
+            // 分支内已 emit 完（射门/摆渡/解围/带球），绑归属对象 + 本次争抢结算的事实。
+            //
+            // 事件来源分两种，都**不是**「找不到来源时的兜底」：
+            // ① 射门 / 摆渡 / 解围：刚建的高亮自己记着那条动作事件（`Highlight::obs_event`）；
+            // ② 「拿球组织」分支：只 `emit_beat_with_main` 产了一记带球 beat，**没有动作事件**
+            //    ——拾取本身就是那一拍，beat 就是它的正式事件（与 `advance_loose` 的普通拾取
+            //    同源）。故这里读**本拍最后一条事件**是「本拍提交」的正确来源，不是猜。
+            // 不能用交付事件：交付在若干 tick 之前，绑它会把争抢结果说成交付时刻的事实。
+            let branch_event = obs_highlight_event(st);
+            obs_bind(events, obs, branch_event);
+            if branch_event.is_none() {
+                obs_bind_last(events, obs);
             }
             return;
         }
@@ -4034,6 +4841,25 @@ fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
         st.last_emitted[chaser as usize] = snap;
         st.loose = None;
         emit_beat_with_main(st, rng, events, t);
+        // P15 §7「loose-ball pickup」：`advance_loose` 提交新 carrier = 明确控制建立。
+        // 有开放重开时它是定位球/开球的交付控制（→ `open_play_resumed`）；
+        // 否则是争抢后的 pickup。开放 episode 若属于别队 → 旧 episode 以 `control_lost` 关闭
+        // （由 `control_established` 的 `prior_episode_end` 负责）。
+        //
+        // 放在 `emit_beat_with_main` **之后**：拾取事件就是本拍那记带球 beat，
+        // 这样绑给 episode/restart 的下标才是本拍而不是上一拍（单调性）。
+        // 拾取方 = 引擎刚提交的 possession。
+        let pickup_team = obs_team_id(st.possession);
+        obs.control_established(
+            observation::ObservedTime::state_commit(t),
+            pickup_team,
+            Some(chaser),
+            Some(snap),
+            observation::EpisodeStartReason::Pickup,
+            Some(observation::EpisodeEndReason::ControlLost),
+            observation::ControlFactBasis::EngineState,
+        );
+        obs_bind_last(events, obs);
         return;
     }
     // 追逐者向球移动
@@ -4079,7 +4905,8 @@ fn advance_loose(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
 // ---- P6 批次1：角球争抢结果分支（battle 攻/防胜）----
 
 /// 攻方胜：就地争抢结果分支（攻方 chaser 即胜者，起点=落点）——头球射门（55%）/ 摆渡（30%）/ 拿球（15%）
-fn battle_attack_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, atk: i32, loose_pos: (f64, f64)) {
+fn battle_attack_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, atk: i32, loose_pos: (f64, f64),
+    obs: &mut observation::BehaviorObservationRecorder) {
     st.carrier = atk;
     st.possession = if atk <= 10 { 0 } else { 1 };
     let snap = separate_target_point(st, atk, loose_pos);
@@ -4091,10 +4918,10 @@ fn battle_attack_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     // 否则分离被丢弃、viewer 仍按未分离的落点渲染（实测残留 finding 来源）。
     if roll < 55 {
         // 头球射门（shot 高亮 detail=header、h=0）
-        emit_header_shot(st, rng, events, t, atk, snap);
+        emit_header_shot(st, rng, events, t, atk, snap, obs);
     } else if roll < 85 {
         // 头球摆渡（pass 给队友，无 detail、h=0）
-        emit_header_flick(st, rng, events, t, atk, snap);
+        emit_header_flick(st, rng, events, t, atk, snap, obs);
     } else {
         // 拿球组织（main 恢复）
         emit_beat_with_main(st, rng, events, t);
@@ -4102,7 +4929,8 @@ fn battle_attack_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
 }
 
 /// 头球射门：shot 高亮（subject=攻方 chaser，detail=header、h=0），result=goal 15% / saved 30% / off_target 55%（对齐禁区桶）
-fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, header: i32, pos: (f64, f64)) {
+fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, header: i32, pos: (f64, f64),
+    obs: &mut observation::BehaviorObservationRecorder) {
     let home = st.possession == 0;
     let speed = 15.0 + (rng.next_u64() % 50) as f64 / 10.0;
     let score_roll = rng.next_u64() % 100;
@@ -4131,10 +4959,25 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
         keeper_x: Some(gk_pos.0), keeper_y: Some(gk_pos.1),
         ..Event::default()
     });
+    // P15：头球射门同普通射门——出球进 `BallInFlight`，结局等 finalize。
+    // 走到这里观察状态必是 `Controlled`：角球 battle 的胜方已由 `obs_contest_pickup` 提交控制。
+    // **不**在这里读 recorder 状态来判断合法性（那会让比赛逻辑依赖观察层，见
+    // `p15_recorder_stays_out_of_the_decision_path`）。
+    let action_event_index = events.len() - 1;
+    obs_release_into_flight(
+        events,
+        obs,
+        t,
+        observation::FlightAction::Shot,
+        action_event_index,
+    );
     let participants = vec![(header, pos), (gk_id, (x2, y2))];
     let outcome = if result == "goal" {
         let kickoff_id = kickoff_pick(st, if home { 12 } else { 9 }, -1);
-        HighlightOutcome::ShotGoal { kickoff_id, ball_end: (x2, y2) }
+        HighlightOutcome::ShotGoal {
+            kickoff_id,
+            ball_end: (x2, y2),
+        }
     } else if result == "off_target" {
         HighlightOutcome::ShotOffTarget
     } else if caught {
@@ -4149,17 +4992,31 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
             let dx = loose_x - x2;
             let dy = loose_y - y2;
             let len = dx.hypot(dy);
-            let dir = if len < 1e-9 { (-1.0, 0.0) } else { (dx / len, dy / len) };
-            HighlightOutcome::ShotSavedRebound { gk: gk_id, rebound_from: (x2, y2), dir }
+            let dir = if len < 1e-9 {
+                (-1.0, 0.0)
+            } else {
+                (dx / len, dy / len)
+            };
+            HighlightOutcome::ShotSavedRebound {
+                gk: gk_id,
+                rebound_from: (x2, y2),
+                dir,
+            }
         }
     };
-    st.highlight = Some(Highlight { t_end, participants, outcome });
+    st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
+        t_end,
+        participants,
+        outcome,
+    });
     let movers = beat_movers(st, rng, t, &[header, gk_id], &[header, gk_id]);
     events.push(beat_event(t, None, None, movers));
 }
 
 /// 头球摆渡：pass 给队友（subject=攻方 chaser，无 detail、h=0），接球者持球
-fn emit_header_flick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, header: i32, pos: (f64, f64)) {
+fn emit_header_flick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, header: i32, pos: (f64, f64),
+    obs: &mut observation::BehaviorObservationRecorder) {
     let home = st.possession == 0;
     let (to, to_pos) = nearest_teammate(st, pos, home, header);
     let rx = st.pos[to as usize].0;
@@ -4171,23 +5028,49 @@ fn emit_header_flick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
     let flight = distance_meters(pos, (x2, y2)) / speed;
     let t_end = t + flight;
     events.push(Event {
-        t, type_: EventType::Pass, subject: header, from: Some(header), to: Some(to),
-        x: pos.0, y: pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some("success".to_string()), speed: Some(speed), lead: Some(lead),
-        h: Some(0.0), receiver_x: Some(rx), receiver_y: Some(ry),
+        t,
+        type_: EventType::Pass,
+        subject: header,
+        from: Some(header),
+        to: Some(to),
+        x: pos.0,
+        y: pos.1,
+        x2: Some(x2),
+        y2: Some(y2),
+        result: Some("success".to_string()),
+        speed: Some(speed),
+        lead: Some(lead),
+        h: Some(0.0),
+        receiver_x: Some(rx),
+        receiver_y: Some(ry),
         ..Event::default()
     });
+    let action_event_index = events.len() - 1;
     st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
         t_end,
         participants: vec![(header, pos), (to, (x2, y2))],
-        outcome: HighlightOutcome::PassCaught { receiver: to, catch_pos: (x2, y2) },
+        outcome: HighlightOutcome::PassCaught {
+            receiver: to,
+            catch_pos: (x2, y2),
+        },
     });
+    // P15：摆渡是从控球出球（battle 胜方已由 `obs_contest_pickup` 建立控制）→ 记释放；
+    // 接收者的控制建立等 finalize 的 `PassCaught`。
+    obs_release_into_flight(
+        events,
+        obs,
+        t,
+        observation::FlightAction::Pass,
+        action_event_index,
+    );
     let movers = beat_movers(st, rng, t, &[header, to], &[header, to]);
     events.push(beat_event(t, None, None, movers));
 }
 
 /// 防方胜：防方 chaser 移动到位（carrier=防方 chaser）→ 就地头球解围分支（解围 70% / 出底线 20% / 出边线 10%）
-fn battle_defend_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, def: i32, loose_pos: (f64, f64)) {
+fn battle_defend_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64, def: i32, loose_pos: (f64, f64),
+    obs: &mut observation::BehaviorObservationRecorder) {
     st.carrier = def;
     st.possession = if def <= 10 { 0 } else { 1 };
     let snap = separate_target_point(st, def, loose_pos);
@@ -4198,19 +5081,66 @@ fn battle_defend_wins(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec
     // 传 `snap`（分离后位置）而非 `loose_pos`——理由同 `battle_attack_wins`。
     if roll < 70 {
         // 头球解围（pass 顶出禁区 detail=clearance、h=0 → 松散球重新争，普通非 battle）
-        emit_clearance(st, rng, events, t, def, snap, false, false);
+        emit_clearance(
+            st,
+            rng,
+            events,
+            t,
+            def,
+            snap,
+            ClearanceDirection::IntoPlay,
+            obs,
+        );
     } else if roll < 90 {
         // 解围出底线（PassOutOfPlay source=Clearance → 角球，攻方进攻端底线）
-        emit_clearance(st, rng, events, t, def, snap, true, false);
+        emit_clearance(
+            st,
+            rng,
+            events,
+            t,
+            def,
+            snap,
+            ClearanceDirection::OutGoalLine,
+            obs,
+        );
     } else {
         // 解围出边线（PassOutOfPlay source=Clearance → 界外球，攻方掷）
-        emit_clearance(st, rng, events, t, def, snap, false, true);
+        emit_clearance(
+            st,
+            rng,
+            events,
+            t,
+            def,
+            snap,
+            ClearanceDirection::OutSideline,
+            obs,
+        );
     }
 }
 
+/// 解围的三种去向（取代两个互斥 `bool`——它们**不可能同时为真**，
+/// 用两个布尔表达会让 `(true, true)` 这个非法组合在类型上可达）。
+#[derive(Clone, Copy, PartialEq)]
+enum ClearanceDirection {
+    /// 顶出禁区 → 落点松散球重新争（普通）
+    IntoPlay,
+    /// 越过自家底线 → 角球
+    OutGoalLine,
+    /// 越出边线 → 界外球
+    OutSideline,
+}
+
 /// 防方头球解围：正常解围顶出禁区（Clearance 高亮 → 普通松散球重新争）/ 出底线（角球）/ 出边线（界外球）
-fn emit_clearance(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
-    def: i32, pos: (f64, f64), out_goal_line: bool, out_sideline: bool) {
+fn emit_clearance(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    def: i32,
+    pos: (f64, f64),
+    direction: ClearanceDirection,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     let def_home = st.possession == 0;
     let attack_home = !def_home;
     let clear_dir = if def_home { 1.0 } else { -1.0 }; // 顶离自家球门（朝中场）
@@ -4221,17 +5151,30 @@ fn emit_clearance(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     let detail;
     let (x2, y2);
     let mut out_pos: Option<(f64, f64)> = None;
-    if out_goal_line {
+    if direction == ClearanceDirection::OutGoalLine {
         // 解围出底线：攻方进攻端底线（home 攻 x>1 / away 攻 x<0）→ 角球
-        let out_x = if attack_home { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
+        let out_x = if attack_home {
+            1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0
+        } else {
+            -0.01 - (rng.next_u64() % 40) as f64 / 1000.0
+        };
         (x2, y2) = (clamp01(out_x), y);
         t_end = t + distance_meters(pos, (x2, y2)) / speed;
         detail = "out_goal_line";
         out_pos = Some((out_x, y));
-        outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (out_x, y), source: PassOutSource::Clearance, own_goal_line: true };
-    } else if out_sideline {
+        outcome = HighlightOutcome::PassOutOfPlay {
+            detail: detail.to_string(),
+            out_pos: (out_x, y),
+            source: PassOutSource::Clearance,
+            own_goal_line: true,
+        };
+    } else if direction == ClearanceDirection::OutSideline {
         // 解围出边线：y 越界（防方半场边线）→ 界外球（攻方掷）
-        let out_y = if y > 0.5 { 1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0 } else { -0.01 - (rng.next_u64() % 40) as f64 / 1000.0 };
+        let out_y = if y > 0.5 {
+            1.0 + 0.01 + (rng.next_u64() % 40) as f64 / 1000.0
+        } else {
+            -0.01 - (rng.next_u64() % 40) as f64 / 1000.0
+        };
         (x2, y2) = (clamp01(pos.0 + clear_dir * 0.15), clamp01(out_y));
         t_end = t + distance_meters(pos, (x2, y2)) / speed;
         detail = "out_sideline";
@@ -4256,20 +5199,42 @@ fn emit_clearance(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
         None => ("contested", None),
     };
     events.push(Event {
-        t, type_: EventType::Pass, subject: def, from: Some(def), to: None,
-        x: pos.0, y: pos.1, x2: Some(x2), y2: Some(y2),
-        result: Some(result_str.to_string()), speed: Some(speed), h: Some(0.0),
-        out_pos, out_side,
+        t,
+        type_: EventType::Pass,
+        subject: def,
+        from: Some(def),
+        to: None,
+        x: pos.0,
+        y: pos.1,
+        x2: Some(x2),
+        y2: Some(y2),
+        result: Some(result_str.to_string()),
+        speed: Some(speed),
+        h: Some(0.0),
+        out_pos,
+        out_side,
         detail: Some(detail.to_string()),
         ..Event::default()
     });
-    st.highlight = Some(Highlight { t_end, participants: vec![(def, pos)], outcome });
+    st.highlight = Some(Highlight {
+        obs_event: obs_last_event(events),
+        t_end,
+        participants: vec![(def, pos)],
+        outcome,
+    });
     let movers = beat_movers(st, rng, t, &[def], &[def]);
     events.push(beat_event(t, None, None, movers));
+    let _ = obs; // P15：解围的观察提交在 finalize（落点松散球 / 出界重开）
 }
 
 /// 死球 tick（进球庆祝 / off_target 后 kickoff 重开）
-fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64) {
+fn advance_dead_ball(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     let (goal, remaining, preparing, kickoff_id, kicked, receiver, kickoff_end) = {
         let d = st.dead_ball.as_ref().unwrap();
         (d.goal, d.remaining, d.preparing, d.kickoff_id, d.kicked, d.receiver, d.kickoff_end)
@@ -4283,7 +5248,24 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
             events.push(beat_event(t, None, None, movers));
         } else {
             st.dead_ball = None;
+            // P15（开球专线 2）：**只有这里等飞行**——`st.dead_ball = None` 是「比赛已恢复」的
+            // 提交点（对比 kickoff emit 处虽已 `carrier = receiver`，但死球仍在）。时间 basis 用
+            // `deterministic_flight_end`（引擎自己算的 `kickoff_end`，不是事件时间）。
+            let resumed_t = observation::ObservedTime::flight_end(kickoff_end);
+            let rx = st.pos[receiver as usize];
+            obs.control_established(
+                resumed_t,
+                // 开球接收方 = 引擎在 kickoff emit 处已提交的 possession。
+                obs_team_id(st.possession),
+                Some(receiver),
+                Some(rx),
+                observation::EpisodeStartReason::RestartControl,
+                None,
+                observation::ControlFactBasis::EngineState,
+            );
             emit_beat_with_main(st, rng, events, t);
+            // 本拍那记 `main` beat 就是比赛恢复的事件来源。
+            obs_bind_last(events, obs);
         }
         return;
     }
@@ -4297,6 +5279,18 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
     if goal && !preparing {
         // 庆祝结束 → whistle → 进入准备阶段
         events.push(whistle_event(t, st.home_score, st.away_score, "kickoff_again"));
+        // P15（开球专线 3）：**这条 whistle 不是流边界**，而是「进球庆祝 → 开球准备」的转场。
+        // 同一条 kickoff `RestartSequence` 早在 goal finalize 的 `dead_ball_started` 就创建了，
+        // 这里只补 `restart_preparation_started`（`preparing = true` 的同一刻）。把它当
+        // half_time/full_time 会直接终止整场比赛的观察。
+        let kickoff_again_t = observation::ObservedTime::event_emit(t);
+        obs.restart_preparation_started(
+            kickoff_again_t,
+            obs_team_of(kickoff_id),
+            observation::RestartKind::Kickoff,
+            observation::ControlFactBasis::RestartRule,
+        );
+        obs_bind(events, obs, obs_last_event(events));
         st.dead_ball.as_mut().unwrap().preparing = true;
         let movers = beat_movers(st, rng, t, &[kickoff_id], &[kickoff_id]);
         events.push(beat_event(t, None, None, movers));
@@ -4335,6 +5329,12 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
         receiver_x: Some(receiver_pos.0), receiver_y: Some(receiver_pos.1),
         ..Event::default()
     });
+    // P15（开球专线 2）：`restart_taken` 在 **kickoff emit 处**（球已交出）。
+    // `control_established` 必须等 `kickoff_end`（见上面 `kicked` 分支）——「球已交出」≠
+    // 「比赛已恢复」，此处若直接记控制建立，就等于把一个引擎里仍在死球态的时段记成开放比赛。
+    let kickoff_t = observation::ObservedTime::event_emit(t);
+    obs.restart_taken(kickoff_t, observation::ControlFactBasis::RestartRule);
+    obs_bind(events, obs, obs_last_event(events));
     // kickoff 球飞行结束时刻：main 在其后首个 tick 边界恢复（避免 beat-main 在球未到落点就开始）
     let kickoff_end = t + distance_meters((0.5, 0.5), (kx2, ky2)) / 12.0;
     st.carrier = receiver;
@@ -5535,8 +6535,20 @@ fn apply_card(st: &mut MatchState, fouler: i32, card: Option<&'static str>) -> O
 /// 犯规主体 = 贴身防守者（def），位置 = 持球者（被犯规方 carrier）脚下（任意球重开点）。
 /// 牌语义：subject 吃牌；红/二黄后 subject 罚下。任意球重开给当前 possession（被犯规方）。
 /// 之后由 restart_prep 驱动：被犯规方就近球员走向犯规点，发短任意球（pass detail=free_kick）。
-fn emit_foul_and_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Event>, t: f64,
-    carrier: i32, spot: (f64, f64), def: i32) {
+// P15：`obs` 是贯穿全引擎提交点的观察 recorder（同 `intercept_pass_highlight` 等既有先例），
+// 它把本函数从 7 个参数顶到 8 个——与文件里既有的三处 `too_many_arguments` 同理，
+// 拆参数包只会让调用点更难读。
+#[allow(clippy::too_many_arguments)]
+fn emit_foul_and_free_kick(
+    st: &mut MatchState,
+    rng: &mut SeededRng,
+    events: &mut Vec<Event>,
+    t: f64,
+    carrier: i32,
+    spot: (f64, f64),
+    def: i32,
+    obs: &mut observation::BehaviorObservationRecorder,
+) {
     let detail = roll_foul_type(rng);
     let card = roll_foul_card(rng);
     let shown = apply_card(st, def, card);
@@ -5565,7 +6577,51 @@ fn emit_foul_and_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mu
     st.carrier = -1;
     st.ball_pos = spot;
     let kicker = nearest_in_team(st, spot, st.possession);
-    st.restart_prep = Some(RestartPrep { player: kicker, target: spot, kind: RestartKind::FreeKick, ticks: 0 });
+    // P15 §7「foul」：判罚确认时释放控制并关闭开放 episode（原因 `foul`），创建任意球重开。
+    // **同时**记 `restart_preparation_started`——犯规路径没有对应的哨声或事件提交点
+    // （引擎在此直接建 `restart_prep`），故必须显式准备（见 observation 模块头坑 1）。
+    // 受益方 = 被犯规方 = `st.possession`（犯规不切球权，球权仍在被犯规方）。
+    //
+    // **本段的书写顺序 = 领域事实顺序**：先 `dead_ball_started`（哨停），再
+    // `restart_preparation_started`（准备），最后才落到 `st.restart_prep`（状态）。读起来与
+    // §6.2 的生命周期表同序，为后续演进留出可读的骨架。
+    //
+    // ⚠️ **但这只是书写约定，没有行为判别力**（2026-09-24 独立 mutation 实测）：把
+    // `st.restart_prep = Some(..)` 整体提到两次 `obs.*` **之前**，全量 `cargo test`
+    // （211 + 7 + 4）**仍全绿**——两次 `obs.*` 与赋值之间没有任何代码读 `restart_prep`，
+    // 而 tick 顶部的 1b 分支（`if st.restart_prep.is_some() { advance_restart_prep(..); return }`）
+    // 早已在本函数被调用**之前**判定过：`restart_prep` 一旦存在，接管发生在**下一 tick**，
+    // 本拍落在哪一行都不产生可观察差异。
+    //
+    // 故**不得**把这里的行序说成「否则会走成 `RestartPreparation → DeadBall →
+    // RestartPreparation`」或「否则让 `SupersededByDeadBall` 永不出现在引擎里、设计缺口被掩盖」
+    // ——那是错误的因果（两句顺序在当前 engine 中不可观测）。`SupersededByDeadBall` 在生产
+    // 不可达的真正依据是 design §15 A9-2 的**结构理由**（每个死球结果都在同一 tick 内建立
+    // 对应重开；一次 `finalize_highlight` 至多产一个死球结果），与赋值行序无关。
+    let foul_team = obs_team(st.possession);
+    obs.dead_ball_started(
+        observation::ObservedTime::state_commit(t),
+        observation::DeadBallReason::Foul,
+        Some((foul_team, observation::RestartKind::FreeKick)),
+        observation::EpisodeEndReason::Foul,
+        observation::ControlFactBasis::EngineState,
+    );
+    obs.restart_preparation_started(
+        observation::ObservedTime::state_commit(t),
+        foul_team,
+        observation::RestartKind::FreeKick,
+        observation::ControlFactBasis::RestartRule,
+    );
+    st.restart_prep = Some(RestartPrep {
+        player: kicker,
+        target: spot,
+        kind: RestartKind::FreeKick,
+        ticks: 0,
+    });
+    // 犯规事件（本函数开头 push 的那条）是这一组事实（死球 + prep）的共同来源。
+    // 用它的下标而不是此刻的 `events.len() - 1`：后者可能已被随后追加的 beat 顶掉。
+    let foul_event = events.iter().rposition(|e| e.type_ == EventType::Foul);
+    obs_bind(events, obs, foul_event);
     // 犯规 tick 不产 beat（同进球后 kickoff 发球 tick）：哨停后走位由 restart_prep beat 表达。
     let _ = rng;
 }
@@ -5627,6 +6683,354 @@ mod tests {
                 forbidden
             );
         }
+    }
+
+    /// P15（Slice 2）接线守卫：**recorder 不得进入任何决策路径**。
+    ///
+    /// design §4 的硬约束是「recorder 不成为第二个比赛状态机、不参与决策」。它没法靠行为测试
+    /// 守——recorder 若只是「读了但没影响输出」，事件流照样逐字节相同；而一旦它开始影响决策，
+    /// 症状是 RNG 流漂移，与「P15 之外的改动」无法区分。
+    ///
+    /// 因此扫源码，钉住三件事：
+    /// ① `simulate()` 传的是 `disabled()`（正式路径零观察、开销近零，见 design §15 A9-9）；
+    /// ② `match_events` 里**没有**读 recorder 状态的分支（`.is_enabled()` /
+    ///    `.state()` / `.facts()` / `.episodes()` / `.restarts()`）——只允许 `obs.<命令>(...)` 与
+    ///    把它按值往下一层传；
+    /// ③ `match_events` / `tick` 里没有 RNG 消费被 recorder 影响（`rng` 与 `obs` 不得出现在
+    ///    同一行的条件表达式里）。
+    #[test]
+    fn p15_recorder_stays_out_of_the_decision_path() {
+        let src = include_str!("lib.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("源文件应有测试段");
+
+        // ① 正式路径必须是 disabled recorder。
+        let sim = prod
+            .find("pub fn simulate(seed: u64, config: MatchConfig) -> String {")
+            .expect("找不到 simulate（函数改名？守卫失效）");
+        let sim_body = &prod[sim..sim + 400];
+        assert!(
+            sim_body.contains("BehaviorObservationRecorder::disabled()"),
+            "`simulate()` 必须传 disabled recorder（正式路径零观察）；实际片段 = {:?}",
+            sim_body
+        );
+
+        // ② `match_events` 不得读 recorder 状态做判断。
+        let me = prod
+            .find("fn match_events(")
+            .expect("找不到 match_events（函数改名？守卫失效）");
+        let me_body = &prod[me..];
+        let me_end = me_body[1..]
+            .find("\nfn ")
+            .map(|k| k + 1)
+            .unwrap_or(me_body.len());
+        let me_body = &me_body[..me_end];
+        for forbidden in [
+            "obs.is_enabled()",
+            "obs.state()",
+            "obs.facts()",
+            "obs.episodes()",
+            "obs.restarts()",
+            "obs.gap_count()",
+            "obs.invariant_violations()",
+        ] {
+            assert!(
+                !me_body.contains(forbidden),
+                "`match_events` 出现 `{}`——recorder 只能被调用、不得参与决策",
+                forbidden
+            );
+        }
+        // 反向定位（防御网）：`match_events` 里**应当**有 recorder 的调用点，否则上面的禁止
+        // 清单在「变量改名」后依旧全绿而在「接线被整体删掉」时也全绿——那是空转守卫。
+        assert!(
+            me_body.contains("obs."),
+            "`match_events` 里找不到任何 `obs.` 调用（接线被删？守卫失效）"
+        );
+
+        // ③ **读 recorder 状态只允许发生在观察层自己的函数里**（`obs_*` 辅助族）。
+        //
+        // 这是能真正守住「recorder 不参与决策」的那条线：把 recorder 当**输出 sink**（调它的
+        // 命令、按值往下一层传）永远是合法的，无所谓在哪个函数里；但**读它的状态**一旦出现在
+        // 比赛逻辑函数里，就具备了「据此改变决策/RNG」的能力。
+        // 实测第一版写成「RNG 与 obs 不得同行」——太粗：`emit_tackle_highlight_impl(st, rng,
+        // events, t, defender, obs)` 这种正常传参会被误报，而真正危险的
+        // `if obs.is_enabled() { rng.next_u64() }` 反而可以靠换行绕过。
+        // 覆盖 recorder 的**全部**读方法（含 `DiagnosticMatch` 侧的同族 API——
+        // `terminal_state` / `invalid_violations` / `gap_reason_counts` 同样是「读观察状态」）。
+        const RECORDER_READS: [&str; 11] = [
+            ".is_enabled()",
+            ".state()",
+            ".facts()",
+            ".episodes()",
+            ".restarts()",
+            ".gap_count()",
+            ".invariant_violations()",
+            ".terminal_state()",
+            ".gap_reason_counts()",
+            ".is_coherent()",
+            ".event_index_binding_suspended()",
+        ];
+        // 按顶层 `fn ` 切块，函数名取紧随其后的标识符。
+        let mut chunks: Vec<(String, String)> = Vec::new();
+        let mut cur_name: Option<String> = None;
+        let mut cur = String::new();
+        for line in prod.lines() {
+            if let Some(rest) = line.strip_prefix("fn ").or_else(|| {
+                // 允许 `pub fn ` / `pub(crate) fn ` 等形式
+                line.find(" fn ").map(|i| &line[i + 4..])
+            }) {
+                if let Some(name) = rest.split(['(', '<', ' ']).next() {
+                    if !name.is_empty() {
+                        if let Some(n) = cur_name.take() {
+                            chunks.push((n, std::mem::take(&mut cur)));
+                        }
+                        cur_name = Some(name.to_string());
+                    }
+                }
+            }
+            cur.push_str(line);
+            cur.push('\n');
+        }
+        if let Some(n) = cur_name {
+            chunks.push((n, cur));
+        }
+        // **判据是「谁在读」，不是「名字像不像观察层」**。
+        //
+        // 旧实现按 `obs_` 前缀豁免，于是 `fn obs_restart_open(obs) -> bool { obs.restarts()... }`
+        // 这种「名字像观察层、实际被 `finalize_highlight` 调用来决定语义」的函数被整体放过
+        // （审阅实测：往 finalize 里插 `if obs_restart_open(obs) { st.home_score += 1 }`，
+        // 守卫与 golden 全绿）。改为**让 `lib.rs` 里除了 `obs_bind*`（纯写入，不读）之外
+        // 没有任何函数读 recorder 状态**——连观察辅助函数也不读。所有需要「按观察状态决定
+        // 记录什么」的逻辑都搬进 recorder 自己（例如 `EventIndexTarget::LastFactOfKind`），
+        // 于是这条守卫变成一句无例外的全量断言。
+        const WRITE_ONLY_HELPERS: [&str; 5] = [
+            "obs_bind",
+            "obs_bind_objects",
+            "obs_bind_last",
+            "obs_bind_last_objects",
+            "obs_last_event",
+        ];
+        for (name, body) in &chunks {
+            if WRITE_ONLY_HELPERS.contains(&name.as_str()) {
+                continue; // 纯写入辅助（不读观察状态）
+            }
+            // **先剥注释**：本守卫自己的文档里就写着 `.is_enabled()` 这些串，
+            // 不剥的话「解释这条规则的注释」会被当成违规代码（实测：`MatchState::new`
+            // 之后的辅助函数注释块让守卫误报）。
+            let code: String = body
+                .lines()
+                .map(|l| l.split("//").next().unwrap_or(""))
+                .collect::<Vec<_>>()
+                .join("\n");
+            for read in RECORDER_READS {
+                assert!(
+                    !code.contains(read),
+                    "函数 `{}` 读取了 recorder 状态（`{}`）——只有 `obs_*` 观察辅助函数可以读；\
+                     比赛逻辑不得据观察层状态改变决策或 RNG 消费",
+                    name,
+                    read
+                );
+            }
+        }
+        // 反证（防空转）：清单里的每个方法都必须**真实存在于 recorder 上**（否则
+        // `RECORDER_READS` 可能是拼错的死字符串——「lib.rs 没读」与「名字写错了」就分不开）。
+        // 查的是**定义**（`pub fn <name>(`）而不是调用点：本约束只针对 `lib.rs`
+        // （比赛逻辑所在），recorder 内部读自己的字段是它的本职。
+        let obs_prod = include_str!("observation.rs")
+            .split("#[cfg(test)]")
+            .next()
+            .expect("observation.rs 应有测试段");
+        for read in RECORDER_READS {
+            let name = read.trim_start_matches('.').trim_end_matches("()");
+            assert!(
+                obs_prod.contains(&format!("pub fn {}(", name)),
+                "`observation.rs` 里没有 `pub fn {}`——`RECORDER_READS` 清单已过期（守卫在空转）",
+                name
+            );
+        }
+        // **反向覆盖（防空转）**：`RECORDER_READS` 是**手写清单**，它只能证明「清单里的这些读
+        // 方法没被 lib.rs 读到」，**不能**证明「将来新增的读方法也会被抓到」。反证方式：把
+        // **recorder 自己**（`impl BehaviorObservationRecorder`）里「读状态」的 `pub fn`
+        // 枚举出来，逐个要求在清单里。
+        //
+        // 只看 recorder 的 impl 块，不看同文件其它类型的 `pub fn`——`ObservedTime::is_finite`
+        // 这类名字同样命中启发式，但它是值对象的方法、lib.rs 读它不构成「读观察状态」
+        // （实测：不限范围会把 `is_finite` 误报成缺口）。
+        //
+        // 判据故意取得很窄，避免误报（本测试的目的是「新增读方法时当场红」，不是完备的接口
+        // 分类器）：凡是返回类型里出现 `&BehaviorControlState` / `&[`（借出内部视图）/
+        // 返回 `bool` 且以 `is_` / `event_index_binding_` 开头 / 方法名以 `_count` 结尾或
+        // 名字里含 `violations`，都算「读」。
+        //
+        // **这条反证本身也不是结构证明**：判据是名字与签名的启发式，一个返回 `Vec<usize>` 的
+        // 新读方法（名字两者都不沾）仍会漏过。因此 §15 A9-7 把「用什么接口隔离」留成了后续
+        // 议题（见 tasks）——本守卫的定位是**回归下限**，不是「所有未来读方法都被捕获」的证明。
+        let impl_start = obs_prod
+            .find("impl BehaviorObservationRecorder {")
+            .expect("找不到 recorder 的 impl 块（改名？守卫失效）");
+        // 该 impl 块没有嵌套块，故第一个行首 `}` 就是它的结尾。
+        let rec_impl = &obs_prod[impl_start..];
+        let impl_end = rec_impl
+            .find("\n}\n")
+            .expect("找不到 recorder impl 块的结尾（结构变了？守卫失效）");
+        let rec_impl = &rec_impl[..impl_end];
+        let mut derived: Vec<String> = Vec::new();
+        for chunk in rec_impl.split("pub fn ").skip(1) {
+            let name = chunk
+                .split(['(', '<', ' '])
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string();
+            if name.is_empty() {
+                continue;
+            }
+            let sig: String = chunk.chars().take_while(|c| *c != '\n').collect();
+            let looks_like_read = sig.contains("-> &BehaviorControlState")
+                || sig.contains("-> &[")
+                || (sig.contains("-> bool")
+                    && (name.starts_with("is_") || name.starts_with("event_index_binding_")))
+                || name.ends_with("_count")
+                || name.contains("violations");
+            if looks_like_read {
+                derived.push(name);
+            }
+        }
+        for name in &derived {
+            let probe = format!(".{}()", name);
+            assert!(
+                RECORDER_READS.contains(&probe.as_str()),
+                "`observation.rs` 的 `pub fn {}` 看起来会读观察状态，但 `RECORDER_READS` 里没有 \
+                 `{}`——新增读方法必须同步登记，否则 lib.rs 将来读它不会被本守卫抓到",
+                name,
+                probe
+            );
+        }
+        // 反证的反证：上面的启发式必须真的枚举出东西（否则 `looks_like_read` 写错也全绿）。
+        assert!(
+            derived.len() >= 8,
+            "反向覆盖只枚举出 {} 个读方法（启发式写错？）：{:?}",
+            derived.len(),
+            derived
+        );
+    }
+
+    /// P15（Slice 2）接线守卫：**尾部压缩边界必须真的登记，且登记早于排空循环**。
+    ///
+    /// Slice 1 的 `events_note_compaction_boundary` 是无副作用空实现，生产 opt-in 路径上
+    /// `stable_event_prefix` 恒为 `None`、拒绝分支一次都不触发。Slice 2 把它接上——但**接线位置
+    /// 同样是判据的一部分**：第一版用返回值把 `drain_start` 带出 `match_events`、在函数**返回之后**
+    /// 才登记，于是排空期全程不受保护、且此后没有任何绑定会去查该边界（审阅实测：把登记改成
+    /// 空操作，全部测试照旧全绿）。故本守卫钉住的是：
+    /// ① `note_event_stream_compaction(drain_start)` 出现在 `while st.highlight.is_some()` **之前**；
+    /// ② 它早于 `suspend_event_index_binding(true)`（暂停不得掩盖边界失效）；
+    /// ③ 循环之后恢复暂停；
+    /// ④ 拒绝分支（`EventIndexOutOfStableRange`）仍在 `observation.rs` 里、且 `lib.rs` 生产段
+    ///    确实调用 `note_event_stream_compaction`。
+    ///
+    /// 行为侧的对应门是 `drain_period_bindings_are_suspended_not_gap_reported`
+    /// （seed 33 上删掉暂停即产出 2 条 gap）——两条一起才既有「位置对」又有「真在跑」。
+    /// P15（#8）：观测开销的口径测量（**不进 gate**，`#[ignore]`）。
+    ///
+    /// design §15 A9-9 只作「正式行为 / 事件流不变 + 观测关闭路径开销近零」这种**非绝对**表述，
+    /// 不作性能承诺。这个 ignored 测试是那句表述背后的**可复现口径**：同 seed 集合、同 config，
+    /// 直接比 `match_events` 在 `disabled()` / `enabled()` 两种 recorder 下的**纯引擎耗时**
+    /// （不含 JSON 序列化——那才是 `simulate()` 的开销大头，`examples/p15_timing.rs` 的比值会被
+    /// 它带偏，勿用它当口径）。
+    ///
+    /// 跑法：`cargo test --release --lib p15_observation_overhead_caliber -- --ignored --nocapture`
+    /// 实测（release，seed 1..=20，dur 5400，2026-09-23）：关闭 913ms / 开启 936ms
+    /// → **比值 ~1.03（+3%）**，产出 19,280 条事实。**不要**把任何阈值写成本测试的断言，
+    /// 也不要把「+3%」当成跨机器承诺——机器/编译选项相关（见 A9-9）。
+    #[test]
+    #[ignore = "口径测量，不是门（见 A9-9）"]
+    fn p15_observation_overhead_caliber() {
+        let config = MatchConfig {
+            match_duration_seconds: 5400.0,
+            ..MatchConfig::default_()
+        };
+        let seeds: Vec<u64> = (1..=20).collect();
+        // 预热
+        for &s in seeds.iter().take(2) {
+            let mut off = observation::BehaviorObservationRecorder::disabled();
+            std::hint::black_box(match_events(s, config, &mut off));
+            let mut on = observation::BehaviorObservationRecorder::enabled();
+            std::hint::black_box(match_events(s, config, &mut on));
+        }
+        let t0 = std::time::Instant::now();
+        for &s in &seeds {
+            let mut off = observation::BehaviorObservationRecorder::disabled();
+            std::hint::black_box(match_events(s, config, &mut off));
+        }
+        let off = t0.elapsed();
+        let t1 = std::time::Instant::now();
+        let mut facts = 0usize;
+        for &s in &seeds {
+            let mut on = observation::BehaviorObservationRecorder::enabled();
+            let ev = match_events(s, config, &mut on);
+            facts += on.facts().len();
+            std::hint::black_box(ev);
+        }
+        let on = t1.elapsed();
+        println!(
+            "match_events 纯引擎耗时：关闭 {:?} / 开启 {:?} → 比值 {:.2}；产出事实 {} 条",
+            off,
+            on,
+            on.as_secs_f64() / off.as_secs_f64(),
+            facts
+        );
+    }
+
+    #[test]
+    fn p15_compaction_boundary_is_actually_registered() {
+        let src = include_str!("lib.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("源文件应有测试段");
+        let me = prod.find("fn match_events(").expect("找不到 match_events");
+        let me_body = &prod[me..];
+        let me_end = me_body[1..]
+            .find("\nfn ")
+            .map(|k| k + 1)
+            .unwrap_or(me_body.len());
+        let me_body = &me_body[..me_end];
+
+        let drain_loop = me_body
+            .find("while st.highlight.is_some()")
+            .expect("找不到排空循环（结构变了？守卫失效）");
+        let (head, tail) = me_body.split_at(drain_loop);
+        assert!(
+            head.contains("suspend_event_index_binding(true)"),
+            "排空期之前必须先暂停事件下标绑定（否则排空期的绑定会被误判为稳定）"
+        );
+        assert!(
+            tail.contains("suspend_event_index_binding(false)"),
+            "排空期结束后必须恢复事件下标绑定"
+        );
+        // **边界必须在排空循环之前登记**——这是本守卫真正的判别力所在。
+        // 旧实现把 `drain_start` 用返回值带出函数、在 `match_events` **返回之后**才登记，
+        // 于是整段排空期从未受边界保护，而边界本身也再没有任何绑定会去查它（装饰性接线，
+        // 审阅实测：把 `register` 改成空操作，全部测试照旧全绿）。
+        assert!(
+            head.contains("note_event_stream_compaction(drain_start)"),
+            "压缩边界必须在**排空循环之前**登记到 recorder（推迟到循环之后 = 排空期不受保护、\
+             且此后没有任何绑定会查它）"
+        );
+        // 顺序断言：登记必须早于暂停（两者都在循环之前，但相对次序也要对——
+        // 先暂停再登记也能工作，但「先登记」让「暂停掩盖了边界失效」这件事不可能发生）。
+        let reg = me_body.find("note_event_stream_compaction(drain_start)").unwrap();
+        let sus = me_body.find("suspend_event_index_binding(true)").unwrap();
+        assert!(reg < sus, "应先登记边界、再暂停绑定");
+        // 反证（防空转）：`bind_event_index` 的压缩拒绝分支必须**存在**且被 `lib.rs` 依赖。
+        // 本测试无法在真实 seed 上触发它（排空期的绑定已被暂停挡掉），所以守住「分支还在、
+        // 且 observation.rs 里仍有它的测试」这一层——真正的行为验证在
+        // `event_index_binding_is_guarded_against_tail_compaction`（手工边界）。
+        let obs_src = include_str!("observation.rs");
+        assert!(
+            obs_src.contains("ObservationGapReason::EventIndexOutOfStableRange"),
+            "`bind_event_index` 的压缩拒绝分支被删了？"
+        );
+        assert!(
+            prod.contains("note_event_stream_compaction"),
+            "`lib.rs` 生产段必须真的调用 `note_event_stream_compaction`（否则边界永不登记）"
+        );
     }
 
     /// 主场优势通道语义（pilot 3）：两个通道都只改比较阈值、不增/减 RNG 消费，且主队方向不弱于客队。
@@ -6930,7 +8334,7 @@ mod tests {
         let mut rng = SeededRng::new(7);
         let mut events = Vec::new();
         // 不应 panic；且产出的 pass to 应是门将 0
-        emit_forward_pass_highlight(&mut st, &mut rng, &mut events, 1.0);
+        emit_forward_pass_highlight(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
         let pass = events.iter().find(|e| e.type_ == EventType::Pass).expect("应产出一条向前传球");
         assert_eq!(pass.to, Some(0), "退化态向前传球应回退门将 0，而非 -1 或罚下球员");
     }
@@ -7878,7 +9282,7 @@ mod tests {
         let mut events = Vec::new();
         let mut t = TICK_SECONDS;
         while t < 5400.0 {
-            tick(&mut st, &mut rng, &mut events, t);
+            tick(&mut st, &mut rng, &mut events, t, &mut observation::BehaviorObservationRecorder::disabled());
             t += TICK_SECONDS;
         }
         let tally = st.opportunity_tally;
@@ -8109,7 +9513,7 @@ mod tests {
         st.shot_setup = Some(ShotSetup::new(5.0, true));
         let mut rng = SeededRng::new(1);
         let mut events = Vec::new();
-        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
         assert!(events.iter().any(|e| e.type_ == EventType::Shot), "贴门应提交射门");
         assert_eq!(st.shot_cooldown_ticks, SHOT_COOLDOWN_TICKS, "射门后应重置冷却");
     }
@@ -8144,7 +9548,7 @@ mod tests {
         st.shot_setup = Some(ShotSetup::new(3.0, false));
         let mut rng = SeededRng::new(11);
         let mut events = Vec::new();
-        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
         // 推进相：仍无 shot_setup 终局、无 shot 事件
         assert!(st.shot_setup.is_some(), "推进相不应清空 shot_setup");
         assert!(!st.shot_setup.as_ref().unwrap().in_window, "距门 7m 尚未进窗口");
@@ -8159,7 +9563,7 @@ mod tests {
         st.shot_setup = Some(ShotSetup::new(10.0, false));
         let mut rng = SeededRng::new(3);
         let mut events = Vec::new();
-        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
         let s = st.shot_setup.as_ref().expect("进窗口后 shot_setup 应存活（等待 hazard）");
         assert!(s.in_window, "到射程应进入起脚窗口");
         assert_eq!(s.window_ticks, 0, "进窗口 tick 尚未消耗窗口决策 tick");
@@ -8218,7 +9622,7 @@ mod tests {
         st.shot_setup = Some(ShotSetup::new(5.0, true));
         let mut rng = SeededRng::new(1);
         let mut events = Vec::new();
-        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+        advance_shot_setup(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
         assert!(st.shot_setup.is_none(), "提交射门后 shot_setup 应清空");
         assert_eq!(
             events.iter().filter(|e| e.type_ == EventType::Shot).count(), 1,
@@ -8244,7 +9648,7 @@ mod tests {
             let mut st = build();
             let mut rng = SeededRng::new(seed);
             let mut events = Vec::new();
-            advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+            advance_shot_setup(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
             let shots = events.iter().filter(|e| e.type_ == EventType::Shot).count();
             let tackles = events.iter().filter(|e| e.type_ == EventType::Tackle).count();
             assert!(shots + tackles <= 1, "seed {}：同一 tick 不得既产 Shot 又产 Tackle", seed);
@@ -8296,7 +9700,7 @@ mod tests {
             let mut st = build();
             let mut rng = SeededRng::new(seed);
             let mut events = Vec::new();
-            advance_shot_setup(&mut st, &mut rng, &mut events, 1.0);
+            advance_shot_setup(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
             let shots = events.iter().filter(|e| e.type_ == EventType::Shot).count();
             let fouls = events.iter().filter(|e| e.type_ == EventType::Foul).count();
             let tackles = events.iter().filter(|e| e.type_ == EventType::Tackle).count();
@@ -8437,7 +9841,7 @@ mod tests {
         let s_before = score_tackle(&defensive_features(&st, 11, vp));
         let mut rng = SeededRng::new(5);
         let mut events = Vec::new();
-        emit_tackle_highlight_impl(&mut st, &mut rng, &mut events, 1.0, 11);
+        emit_tackle_highlight_impl(&mut st, &mut rng, &mut events, 1.0, 11, &mut observation::BehaviorObservationRecorder::disabled());
         // 写：defender 级 + pair 级都被置位
         assert_eq!(st.tackle_cooldown[11], TACKLE_COOLDOWN_TICKS, "抢断后 defender 冷却应被置满");
         assert_eq!(st.last_contact_pair, Some((11, 9)), "抢断后应记接触对");
@@ -8480,17 +9884,35 @@ mod tests {
         st2.foul_cooldown_ticks = 0;
         let mut rng2 = SeededRng::new(5);
         let mut events2 = Vec::new();
-        emit_foul_and_free_kick(&mut st2, &mut rng2, &mut events2, 1.0, 9, (0.62, 0.5), 11);
-        assert_eq!(st2.foul_cooldown_ticks, FOUL_MIN_GAP_TICKS, "犯规后全局冷却应被置满");
-        assert_eq!(st2.tackle_cooldown[11], TACKLE_COOLDOWN_TICKS, "犯规者也应进 defender 冷却（共用数组）");
+        emit_foul_and_free_kick(
+            &mut st2,
+            &mut rng2,
+            &mut events2,
+            1.0,
+            9,
+            (0.62, 0.5),
+            11,
+            &mut observation::BehaviorObservationRecorder::disabled(),
+        );
+        assert_eq!(
+            st2.foul_cooldown_ticks, FOUL_MIN_GAP_TICKS,
+            "犯规后全局冷却应被置满"
+        );
+        assert_eq!(
+            st2.tackle_cooldown[11], TACKLE_COOLDOWN_TICKS,
+            "犯规者也应进 defender 冷却（共用数组）"
+        );
         assert_eq!(st2.last_contact_pair, Some((11, 9)), "犯规后应记接触对");
         // `emit_foul_and_free_kick` 把 carrier 置 -1（死球）→ 读 feature 前钉回 9
         st2.carrier = 9;
         st2.pos[9] = (0.62, 0.5);
         st2.pos[11] = (0.60, 0.5);
         // 读：犯规资格被全局冷却挡住（score_foul = NEG_INFINITY）
-        assert_eq!(score_foul(&defensive_features(&st2, 11, (0.62, 0.5))), f64::NEG_INFINITY,
-            "犯规后全局冷却未过 → 犯规应无资格");
+        assert_eq!(
+            score_foul(&defensive_features(&st2, 11, (0.62, 0.5))),
+            f64::NEG_INFINITY,
+            "犯规后全局冷却未过 → 犯规应无资格"
+        );
         // 到期恢复：只推进 foul 冷却衰减 → 恢复资格（同理由，不跑整场 tick）
         let _ = (rng2, events2);
         while st2.foul_cooldown_ticks > 0 {
@@ -8517,7 +9939,7 @@ mod tests {
         });
         let mut rng = SeededRng::new(1);
         let mut events = Vec::new();
-        tick(&mut st, &mut rng, &mut events, 1.0);
+        tick(&mut st, &mut rng, &mut events, 1.0, &mut observation::BehaviorObservationRecorder::disabled());
         assert_eq!(st.foul_cooldown_ticks, FOUL_MIN_GAP_TICKS - 1,
             "任意球重开 tick 里 foul 冷却也应推进（否则冷永不衰减）");
         // 连续推进任意状态（重开 → 发球 → 高亮 …）→ 必须**每个 tick 都递减**、最终到 0
@@ -8525,7 +9947,7 @@ mod tests {
         // 一旦进入重开/高亮就停住，本循环立刻红。
         let mut prev = st.foul_cooldown_ticks;
         for k in 0..FOUL_MIN_GAP_TICKS {
-            tick(&mut st, &mut rng, &mut events, 2.0 + k as f64);
+            tick(&mut st, &mut rng, &mut events, 2.0 + k as f64, &mut observation::BehaviorObservationRecorder::disabled());
             let want = prev.saturating_sub(1);
             assert_eq!(st.foul_cooldown_ticks, want,
                 "第 {} 个 tick 后 foul 冷却应从 {} 递减到 {}（实得 {}）——未按 tick 推进？",
@@ -8673,7 +10095,7 @@ mod tests {
             let mut t = TICK_SECONDS;
             let mut prev_age = st.contact_age_ticks;
             while t < 5400.0 {
-                tick(&mut st, &mut rng, &mut events, t);
+                tick(&mut st, &mut rng, &mut events, t, &mut observation::BehaviorObservationRecorder::disabled());
                 // defender 级：**逐球员**记录是否曾被置位
                 for (id, &c) in st.tackle_cooldown.iter().enumerate() {
                     if c > 0 { saw_def_cd[id] = true; }
@@ -8768,7 +10190,7 @@ mod tests {
         };
         let mut rng = SeededRng::new(1);
         let mut events = Vec::new();
-        execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan));
+        execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan), &mut observation::BehaviorObservationRecorder::disabled());
         assert_eq!(st.pressure_state_ticks, PRESSURE_STATE_HOLD_TICKS, "contain/jockey 应置压力状态");
         assert!(!events.iter().any(|e| matches!(e.type_,
             EventType::Tackle | EventType::Foul | EventType::Shot | EventType::Pass)),
@@ -9191,11 +10613,11 @@ mod tests {
         let mut st = MatchState::new(&lineup);
         let mut t = TICK_SECONDS;
         while t < dur {
-            tick(&mut st, &mut rng, &mut events, t);
+            tick(&mut st, &mut rng, &mut events, t, &mut observation::BehaviorObservationRecorder::disabled());
             t += TICK_SECONDS;
         }
         while st.highlight.is_some() {
-            finalize_highlight(&mut st, &mut rng, &mut events, dur);
+            finalize_highlight(&mut st, &mut rng, &mut events, dur, &mut observation::BehaviorObservationRecorder::disabled());
         }
         (st, events)
     }
@@ -9422,7 +10844,7 @@ mod tests {
         let mut events = Vec::new();
         let mut t = TICK_SECONDS;
         while t < 5400.0 {
-            tick(&mut st, &mut rng, &mut events, t);
+            tick(&mut st, &mut rng, &mut events, t, &mut observation::BehaviorObservationRecorder::disabled());
             t += TICK_SECONDS;
         }
         let tally = st.opportunity_tally;
@@ -9896,7 +11318,7 @@ mod tests {
         let plan = build_action_plan(&mut st, &mut rng, OpportunityTrigger::NaturalDeadline);
         assert!(matches!(plan.carrier.action, Some(CarrierAction::Pass { .. })), "应为出球档");
         let mut events = Vec::new();
-        execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan));
+        execute_action_resolution(&mut st, &mut rng, &mut events, 1.0, Some(plan), &mut observation::BehaviorObservationRecorder::disabled());
         // 核心断言：emit 内**真的读到了**非零 liveness 加成（时序 bug 形态下恒 0 → 红）
         assert!(
             st.opportunity_tally.liveness_pass_risk_bonus_permille_max > 0,
@@ -10019,7 +11441,7 @@ mod tests {
                 let prev_ticks = st.ticks_since_meaningful_action;
                 let prev_carrier = st.carrier;
                 let start = events.len();
-                tick(&mut st, &mut rng, &mut events, t);
+                tick(&mut st, &mut rng, &mut events, t, &mut observation::BehaviorObservationRecorder::disabled());
                 let batch = &events[start..];
                 if batch.iter().any(meaningful_event_of) {
                     assert_eq!(
@@ -10110,7 +11532,7 @@ mod tests {
         let mut events = Vec::new();
         let mut t = TICK_SECONDS;
         while t < 5400.0 {
-            tick(&mut st, &mut rng, &mut events, t);
+            tick(&mut st, &mut rng, &mut events, t, &mut observation::BehaviorObservationRecorder::disabled());
             t += TICK_SECONDS;
         }
         let tally = st.opportunity_tally;
