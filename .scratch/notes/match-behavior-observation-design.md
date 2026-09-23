@@ -379,3 +379,178 @@ unknown
 - recorder on/off 的正式 `events` 完全一致；
 - 同 seed 诊断 sidecar 完全确定；
 - 任意 sidecar 错误不得改变比赛结果。
+
+## 14. Slice 1 实现 addendum（2026-09-23）
+
+本节是 Slice 1 实现相对 §1–§13 的**增量权威记录**。与前文冲突时以本节为准（前文保持原样以留痕）。
+对应实现：`engine/src/observation.rs`、`engine/src/lib.rs`（`match_events` 抽取 +
+`simulate_with_behavior_observations`）。
+
+### A1. `ControlFact.detail` 是类型安全的闭集联合（不是自由字符串）
+
+§4 的 `ControlFact` 没有承载 `DeadBallReason` / `ContestStartReason` / `ContestEndReason` / 缺口原因
+的字段，而这些闭集枚举必须有落点（`PossessionEpisode` / `RestartSequence` 只覆盖 episode/restart）。
+
+决定：`detail: Option<ControlFactDetail>`，其中
+
+```text
+ControlFactDetail = DeadBall(DeadBallReason)
+                  | ContestStart(ContestStartReason)
+                  | ContestEnd(ContestEndReason)
+                  | Gap(ObservationGapReason)
+
+ObservationGapReason = half_time_during_ball_in_flight | full_time_during_ball_in_flight
+                     | missing_stream_end_boundary | event_index_out_of_stable_range
+                     | illegal_fact_index
+                     | IllegalInput(IllegalInput)
+
+IllegalInput = 引擎提交点发出的、当前状态不允许的输入（11 个成员，见 §5 / §5 第二张表）
+```
+
+**不用 `Option<&'static str>`**：自由字符串等于在 gap / detail 路径上放弃「不猜」——
+任意文本都能塞进任意 kind，基线无法按原因聚合，也无法守护枚举完整性。
+不变量 10 强制 `detail` 与 `kind` 配对；`ObservationGapReason::ALL` 与 `IllegalInput::ALL` 是闭集全成员，
+供按原因聚合使用。守护能力有明确边界：**从 `ALL` 漏掉成员会被测试抓到；给枚举新增成员却未列入
+`ALL` 则抓不到**（Rust 无法反射枚举成员，两侧会一起漏）——新增成员时唯一的强制点是 `as_str`
+的穷尽 `match`（编译错误）。残余后果仅是 `gap_reason_counts()` 少一个计数位（诊断字段）。
+
+### A2. `BallInFlight.originating_team: TeamRef`（§5 写作裸 team）
+
+§6.3 自己要求「无法确定时为 `unknown`，不猜」，故用 `TeamRef` 表达同一规则，而不是让裸 `TeamId` 逼调用方猜。
+
+### A3. `match_started` 同时创建开球 restart preparation
+
+§5.1 只写「创建开球 `RestartSequence`」，但 §6.2 要求所有重开统一走
+`dead_ball_started → restart_preparation_started → restart_taken → open_play_resumed`。
+开球同属重开，故 `match_started` 产出**两条**事实（`match_started` + `restart_preparation_started`）。
+已知副作用：开球处没有 `dead_ball_started`（开球不是死球结果）——与半场/终场同类，属 §6.2
+统一生命周期的例外之一（不是唯一：A9 记的门球没有准备期是另一处结构性例外）。
+
+### A3.1 `match_started` 的时间 basis = `event_emit(0.0)`（Slice 2 若改 `state_commit` 须同步更新）
+
+`match_started` 当前调用的时间是 `ObservedTime::event_emit(0.0)`——依据是 `match_events` 起手就
+`events.push(Kickoff)`（t = 0.0，引擎开球恒主队），开赛事实与该事件同刻。
+
+**为什么不是 `state_commit`**：`MatchState::new` 本身不产事件、也没有独立的「状态已提交」提交点；
+opt-in 路径在调 `match_started` 时尚未跑 `match_events`（拿不到任何事件），0.0 是已知的确定值，
+故用 `event_emit` 表达「该事实的时刻 = 流首事件的时刻」。
+
+**Slice 2 若把提交点移到 `MatchState::new` 之后并改用 `state_commit(0.0)`，必须同步更新**：
+① 该调用点、② 模块头接入对照表的「`simulate` 起点」行、
+③ 测试 `match_started_time_basis_is_event_emit_at_zero`（它钉的就是这两个字段）。
+`ControlFactBasis` 一侧恒为 `EngineState`（两侧互不影响）。
+
+### A4. 事件下标绑定规则（`source_event_index` / `event_indexes`）
+
+下标一律指 `DiagnosticMatch.events` 的**最终**下标。`match_events` 在循环结束后对
+`events[drain_start..]` 做 `drain` → `filter`（同时间戳 beat 去重）→ `extend` 回填，
+**该区间内的下标会被重排**；`drain_start` 之前的元素位置不变。
+
+- 循环体内的提交点绑定 `events.len() - 1` 安全；
+- 排空期（`while st.highlight.is_some()` 里的 `finalize_highlight`）绑定**不安全**：应传 `None`
+  （事实仍有 `t` 与 `detail` 可定位），或在压缩完成后补绑定；
+- 绑定必须经 `BehaviorObservationRecorder::bind_event_index`；下标落在压缩区间内时**拒绝绑定**
+  并记 `ObservationGapReason::EventIndexOutOfStableRange`（静默错位比不绑定更糟）；
+  目标 fact 下标越界记 `IllegalFactIndex`（与压缩无关，分开报以便按原因定位）；
+- **当前接线范围**：`bind_event_index` 只写 `ControlFact.source_event_index`；
+  `PossessionEpisode.event_indexes` / `RestartSequence.event_indexes` 仍为空，Slice 2 为它们接线时
+  须扩展该接口，**不得**绕过它直接入数组。
+
+#### A4.1 压缩边界**尚未真的登记到 recorder**（Slice 2 勿误以为 guard 已生效）
+
+`match_events` 里的 `events_note_compaction_boundary(drain_start)` 当前是**无副作用空函数**——
+`match_events` 拿不到 recorder 句柄，边界值被接收后即丢弃。后果：
+
+- 生产 opt-in 路径上 `recorder.stable_event_prefix` **永远是 `None`**（=「全部下标稳定」），
+  因此 `bind_event_index` 的拒绝逻辑在生产路径上**一次也不会触发**；
+- 该 guard 目前只在测试里被真边界验证过
+  （`event_index_binding_is_guarded_against_tail_compaction` 手工调
+  `note_event_stream_compaction`），**不代表生产路径已受保护**；
+- Slice 2 若要在排空期绑定事件下标，**必须先**把 recorder 接进 `match_events`
+  （或让 `match_events` 返回「事件 + 压缩边界」），在此处真正调用
+  `BehaviorObservationRecorder::note_event_stream_compaction`；**在那之前，排空期的提交点不得绑定
+  事件下标**（传 `None`，靠 `t` + `detail` 定位）。
+
+### A5. sidecar 自带质量信息
+
+`DiagnosticMatch` 除 facts/观察对象外还携带：
+
+- `state: BehaviorControlState`——终态观察状态（`Ended` 才算流收束；demo 模式为 `Uninitialized`）；
+- `invariant_violations: Vec<String>`——在 `into_diagnostic_match` 消费 recorder **之前**求值保存。
+
+理由：不变量 9 的交叉校验以 `state` 为客体，而 `state` 原本只活在 recorder 里；sidecar 不带它，
+调用方就只能看到违规列表而看不到被检查的对象，无法自行判断终态是否可信。
+
+### A6. 终场时间来自正式事件流
+
+opt-in 路径的 `full_time` 时间取自事件流里**最后一条 whistle**（`stream_end_boundary`），
+不另读 `config.match_duration_seconds`：后者只是引擎推哨时恰好用的同一个值，一旦漂移
+（将来改为补时后推哨）sidecar 的终场时间就会与它自己输出的事件流对不上。流里找不到 whistle 时
+**不硬编码**时间，改记 `ObservationGapReason::MissingStreamEndBoundary`。
+
+**实现方式（审阅修订，2026-09-23）**：该约束**不能靠测试区分**——本引擎恰好在
+`config.match_duration_seconds` 处推尾哨，故 `whistle.t == config` 恒成立，正确接线与旧实现
+`recorder.full_time(config.match_duration_seconds)` 在真实路径上观测等价（旧测试的
+`assert_eq!(whistle_t, dur)` 只是把这个巧合再钉一遍，对来源**没有判别力**）。因此：
+
+- 提交收敛到 `commit_stream_end_boundary(recorder, events)`——它**只收 `events`**，
+  调用方结构上递不进任何时长参数；
+- 判别力由**手工构造的流**提供（observation.rs
+  `full_time_time_comes_from_the_formal_whistle_not_config`）：`whistle@123.0` + 若干
+  不等于 123.0 的对照时长，同时断言「等于流里的哨」与「不等于另一个来源」；
+- 接线层另有源码守卫（lib.rs `p15_full_time_source_is_the_stream_not_the_config_duration`）：
+  扫 `simulate_with_behavior_observations` 函数体，禁止 `.full_time(` 与
+  `match_duration_seconds`、要求出现 `commit_stream_end_boundary`。
+- 真实比赛路径仍保留集成断言（`stream_end_boundary_takes_the_last_whistle_and_full_time_uses_it`），
+  但它只钉「接到了流末边界」，**不再**断言 `whistle_t == config`（那会随补时失效）。
+
+### A7. 矛盾输入的免检边界（修订 §5 补充规则在检查器上的落地）
+
+§5 补充规则要求矛盾输入「记 gap、不自行推进状态」，因此 `reject` 之后 `state` 与记录不一致
+是**正确**行为。实现用一个显式快照表达这个窗口：
+
+```text
+reject() → stale_state_snapshot = Some(当前 state)   // 明确不推进 state
+set_state() → stale_state_snapshot = None            // 任何成功转场都清掉
+```
+
+抑制的判定是**按值**的（`state == 快照`）而不是靠字符串前缀猜；一旦 `state` 被任何路径改写，
+快照立刻失配 → 恢复全量校验。在快照仍然匹配时，只抑制**由 gap 必然造成**的子句：
+
+- `Contested` 且争抢已收束（`reject` 按 §10 关了 contest）；
+- `RestartPreparation` 的 kind 降级（已由 `reject` 的 pre-gap 校验抓到）；
+- `Controlled` 但无开放 episode，**且**最近收束的 episode 确实死在 `observation_gap` 上
+  （`reject` 只以 `ObservationGap` 关 episode，故这是它的必然结果）。
+
+**不抑制**其余一切：`Controlled` 队别/持球员别与记录不符、开放 restart 与 `state` 归属不符、
+`RestartPreparation` 无开放 restart、`Controlled` 无开放 episode 而 episode 以**非 gap** 原因关闭
+——这些**不可能**由 gap 造成（gap 只关闭记录侧对象，不会凭空造出开放对象却让 `state` 不指着它）。
+
+反例记录（Slice 1 首版实现被审出的两处逃逸，均已有测试 `reject_does_not_exempt_ill_formed_state`）：
+
+1. 旧实现用 `bool` 整体跳过、又用字符串前缀抑制，于是「gap 之后把 `state` 换成任意损坏值」免检；
+2. 「`Controlled` 无开放 episode」被整体抑制，导致同队/持球员别的损坏一并被放过。
+
+`reject` 在置快照**之前**跑一次 pre-gap 交叉校验并把违规存进 `deferred_violations`（只增不减），
+故「缺陷出现在 gap 之前」不会因为窗口豁免而丢失。
+
+### A8. 时间不可得 vs 算错
+
+`TimeBasis::Unknown` 显式表达 design §8 的「时间不可得」，此时事实的 `t` 允许非有限值
+（例如「流里没有终场哨」这条 gap 没有时间可取）。非有限 `t` + **已知** `basis` 仍判违规——
+豁免绑定在 basis 上，不是无条件放行 NaN。
+
+### A9. 仍待设计确认的缺口（Slice 2 前必须解决，勿临时选一条）
+
+- **进球路径的重开准备记在哪一次**：`ShotGoal` finalize 只记 `dead_ball_started`，准备期由
+  `kickoff_again` whistle 记**一次**；若两处都记，第二次会因 `state` 已是 `RestartPreparation`
+  被判非法（每个进球白送一条 gap）。犯规路径**必须**在 `emit_foul_and_free_kick` 处显式补 prep
+  （引擎没有对应哨声/事件提交点）。
+- **门球（`start_goal_kick`）没有准备期**：引擎同步发 pass 高亮、不设 `restart_prep`，
+  因此没有 `restart_taken` 提交点，与 §6.2 的统一生命周期冲突。§6.2 已为半场/终场开例外先例，
+  需明确门球是否同理例外。
+- **`FlightAction` 闭集没有 kickoff 成员**：开球拨球在语义上是最短传出球，但 recorder 不代设计
+  做等价映射（不猜），记为 `unknown`。
+- **`RestartEndReason` 闭集没有「被新死球顶掉」成员**：该路径（§5 第二张表列为正常转场）以
+  `RestartEndReason::Unknown` 结束。代价是 `gap_count() == 0` **不蕴含**所有 restart 都有明确
+  结束原因——判断重开闭合质量须同时看 `restart_sequences` 的 `end_reason`。

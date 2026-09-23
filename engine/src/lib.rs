@@ -13,6 +13,9 @@ mod rng;
 #[cfg(target_arch = "wasm32")]
 mod wasm;
 
+/// #15A 比赛行为观察 sidecar（独立模块：不改 `simulate()`、不碰 RNG 与模拟决策）。
+pub mod observation;
+
 pub use rng::SeededRng;
 
 /// 事件类型枚举（v2：新增 beat 节拍；v1 类型保留；goal 由 shot.result=goal 表达；
@@ -2413,8 +2416,54 @@ struct DeadBall {
 /// 引擎主入口：模拟一场比赛，返回事件流 JSON。
 /// v2 非 demo：固定 tick + beat 节拍；demo_mode：v1 精简序列。
 pub fn simulate(seed: u64, config: MatchConfig) -> String {
+    events_to_json(&match_events(seed, config))
+}
+
+/// #15A（P15）opt-in 入口：跑同一场比赛，并在**不改动 `simulate()` 任何行为**的前提下返回
+/// 独立的行为观察 sidecar。
+///
+/// **Slice 1 范围**：只提交比赛生命周期端点——`match_started` + 开球自身的
+/// `restart_preparation_started`，以及终场 `match_ended`，用于钉死 sidecar 的数据形状与开闭语义。
+/// 引擎各状态提交点（kickoff 交付 / 传球 / 抢断 / 射门 finalize / 犯规 / 出界 / 半场哨）的接入
+/// 是 **Slice 2**，本函数现在**不**产出那些事实。对照表见 `observation` 模块头。
+///
+/// `events` 与 `simulate(seed, config)` 同源同序——由 [`observation::DiagnosticMatch::events_json`]
+/// 直接比对（测试 `observation_api_leaves_formal_events_byte_identical`）。
+///
+/// **终场时间来自正式事件流本身**：本函数**只**把 `events` 交给
+/// [`observation::commit_stream_end_boundary`]，后者不接收任何时长参数——`config` 结构上
+/// 无法成为终场时间的第二来源（不另读 `config.match_duration_seconds`；后者只是引擎推哨时
+/// 恰好用的同一个值，一旦漂移（将来改为补时后推哨）sidecar 的终场时间就会与它自己输出的事件流
+/// 对不上，见 observation 模块头坑 6）。流里找不到 whistle 时**不硬编码**时间，改记
+/// `observation_gap`。
+pub fn simulate_with_behavior_observations(
+    seed: u64,
+    config: MatchConfig,
+) -> observation::DiagnosticMatch {
+    let mut recorder = observation::BehaviorObservationRecorder::enabled();
+    // demo 是固定动作展示序列，不是可观察的比赛过程：不为其伪造观察事实（见 observation.rs）。
+    let observable = !config.demo_mode;
+    if observable {
+        recorder.match_started(observation::ObservedTime::event_emit(0.0), observation::TeamRef::Home);
+    }
+    let events = match_events(seed, config);
+    if observable {
+        observation::commit_stream_end_boundary(&mut recorder, &events);
+    }
+    recorder.into_diagnostic_match(events)
+}
+
+/// 事件流 → JSON（`simulate` 的唯一序列化点，与观察路径共用同一份 `Event`）。
+fn events_to_json(events: &[Event]) -> String {
+    let json: Vec<String> = events.iter().map(|e| e.to_json()).collect();
+    format!("[{}]", json.join(","))
+}
+
+/// 跑一场比赛并返回事件向量（不序列化）。`simulate()` 与 opt-in 观察路径共用，
+/// 保证两条路径产出的事件流逐字节同源。
+fn match_events(seed: u64, config: MatchConfig) -> Vec<Event> {
     if config.demo_mode {
-        return simulate_demo(seed, config);
+        return match_events_demo(seed, config);
     }
     let mut rng = SeededRng::new(seed);
     let mut events = Vec::new();
@@ -2454,6 +2503,11 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     // 重排把触发 seed 移进了 L2 窗口（1..=300）才暴露。比赛已结束（紧接 whistle），排空期的
     // **重复时间戳** beat 不表达任何进程 → 每个时间戳只保留第一拍。
     let drain_start = events.len();
+    // P15：`[0, drain_start)` 的最终下标不变，`[drain_start, ..)` 会被下面的 drain/filter/extend
+    // 重排。观察 sidecar 若在排空期绑定事件下标会静默错位——把边界交给 recorder，越界绑定改记
+    // `observation_gap`（见 `observation` 模块头「事件下标绑定规则」）。下面这个函数当前是
+    // 空实现（零成本），`match_events` 拿不到 recorder 句柄——见其文档里的 Slice 2 契约。
+    events_note_compaction_boundary(drain_start);
     while st.highlight.is_some() {
         finalize_highlight(&mut st, &mut rng, &mut events, dur);
     }
@@ -2476,9 +2530,21 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     }
 
     events.push(whistle_event(dur, st.home_score, st.away_score, "half_time"));
-    let json: Vec<String> = events.iter().map(|e| e.to_json()).collect();
-    format!("[{}]", json.join(","))
+    events
 }
+
+/// P15：把尾部压缩边界交给观察 recorder（见 `observation` 模块头「事件下标绑定规则」）。
+///
+/// **Slice 1 升级契约**：本函数目前是**无副作用**的占位（recorder 实例只在
+/// `simulate_with_behavior_observations` 内存在，`match_events` 没有它的句柄，故暂时无法真正登记）。
+/// Slice 2 若要在排空期绑定事件下标，必须把 recorder 传进 `match_events`（或改成返回
+/// 「事件 + 压缩边界」），再在此调用
+/// [`observation::BehaviorObservationRecorder::note_event_stream_compaction`]。
+///
+/// **在那之前，不得在排空期的提交点绑定事件下标**——规则与理由已写在模块头；
+/// `event_index_binding_is_guarded_against_tail_compaction` 用真边界证明了拒绝逻辑本身有效，
+/// Slice 2 只需把边界真的接上。
+fn events_note_compaction_boundary(_stabilized_prefix_len: usize) {}
 
 /// 构造 beat 事件（tick 节拍）
 fn beat_event(t: f64, main: Option<MainAction>, ball: Option<BallState>, movers: Vec<Mover>) -> Event {
@@ -4281,7 +4347,9 @@ fn advance_dead_ball(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
     st.dead_ball = Some(DeadBall { goal, remaining: 0, preparing, kickoff_id, kicked: true, receiver, kickoff_end });
 }
 
-fn simulate_demo(seed: u64, config: MatchConfig) -> String {
+/// demo 模式的事件序列（各事件类型独立成段展示；v1 精简序列，非比赛过程）。
+/// 与 `match_events` 同源返回事件向量——序列化统一在 `events_to_json`。
+fn match_events_demo(seed: u64, config: MatchConfig) -> Vec<Event> {
     let _seed = seed;
     let lineup = default_lineup();
     let mut events = Vec::new();
@@ -4395,8 +4463,7 @@ fn simulate_demo(seed: u64, config: MatchConfig) -> String {
         None, None, None, None,
         None, None, Some("1-0".into()), Some("half_time".into()), None));
 
-    let json: Vec<String> = events.iter().map(|e| e.to_json()).collect();
-    format!("[{}]", json.join(","))
+    events
 }
 
 /// 归一化距离 → 真实米（考虑球场长宽比）
@@ -5517,6 +5584,50 @@ pub fn default_lineup_json() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// P15（#8）接线守卫：**终场时间只有一个来源——正式事件流里的尾哨**。
+    ///
+    /// 为什么必须是源码守卫而不是行为测试：本引擎恰好在 `config.match_duration_seconds` 处推
+    /// 尾哨，于是 `whistle.t == config` 在真实路径上恒成立 —— 旧实现
+    /// `recorder.full_time(config.match_duration_seconds)` 与正确接线**观测等价**，任何黑盒断言
+    /// 都区分不了（这正是审阅发现「测试无判别力」的根因）。`commit_stream_end_boundary` 只收
+    /// `events`、不收时长参数，所以「来源」这件事只能靠接线层来守：
+    /// 本测试扫描 `simulate_with_behavior_observations` 的函数体，钉住它
+    /// ① 不直接调 `full_time`（免得绕过那个不接收时长的收敛点）、
+    /// ② 不读 `config.match_duration_seconds`、
+    /// ③ 确实经 `observation::commit_stream_end_boundary` 提交边界。
+    /// 判别力见 observation.rs 里 `full_time_time_comes_from_the_formal_whistle_not_config`
+    /// 的手工 `whistle@123.0` 流。
+    #[test]
+    fn p15_full_time_source_is_the_stream_not_the_config_duration() {
+        let src = include_str!("lib.rs");
+        let prod = src.split("#[cfg(test)]").next().expect("源文件应有测试段");
+        let fname = "pub fn simulate_with_behavior_observations(";
+        let i = prod
+            .find(fname)
+            .unwrap_or_else(|| panic!("找不到 {}（函数改名？守卫失效）", fname));
+        let body = &prod[i..];
+        // 函数体到下一个顶层 `fn ` 或文件末尾（签名多行，故按下一个 `\nfn ` / `\npub fn ` 截取）。
+        let next = body[1..]
+            .find("\nfn ")
+            .map(|k| k + 1)
+            .or_else(|| body[1..].find("\npub fn ").map(|k| k + 1))
+            .unwrap_or(body.len());
+        let body = &body[..next];
+        assert!(
+            body.contains("observation::commit_stream_end_boundary("),
+            "opt-in 路径必须经 `commit_stream_end_boundary` 提交流末边界（它不接收时长参数，\
+             是「终场时间只有一个来源」的结构性保证）"
+        );
+        for forbidden in [".full_time(", "match_duration_seconds"] {
+            assert!(
+                !body.contains(forbidden),
+                "`simulate_with_behavior_observations` 出现 `{}`——终场时间不得绕过事件流取自 \
+                 config 长度，也不得直接调 full_time（见 observation 模块头坑 6）",
+                forbidden
+            );
+        }
+    }
 
     /// 主场优势通道语义（pilot 3）：两个通道都只改比较阈值、不增/减 RNG 消费，且主队方向不弱于客队。
     /// 纯函数/常量断言——不依赖具体 seed（机制偏置是统计性的，单 seed 事件流未必翻转）。
