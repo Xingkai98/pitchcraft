@@ -33,8 +33,8 @@
 //! **口径纪律**（来自 design §15，勿退回）：
 //!
 //! - `gap_count() == 0` **只对本样本成立**，不是全称命题。终场哨落在未决飞行中途时会**合法**
-//!   产 `full_time_during_ball_in_flight`（实测 seed 147 @ dur 120、seed 368 @ dur 400，
-//!   触发与时长无关）。故本文件**不写**「所有 duration 均为 0」这类断言，而按**分类**断言
+//!   产 `full_time_during_ball_in_flight`（实测 seed 470 @ dur 120、seed 1228 @ dur 400，
+//!   触发与时长无关；样本为 2026-09-25 在 main(v7) 基线重扫所得）。故本文件**不写**「所有 duration 均为 0」这类断言，而按**分类**断言
 //!   （见 [`gap_is_a_classified_outcome_not_a_failure`]）。
 //! - `event_indexes` 是**对象↔事件**的归属；因果事件的时间**可以早于** `object.start_t`
 //!   （`event_emit` 早于 `state_commit`，design §15.6）。**不得**断言「事件时间落在对象时间窗内」。
@@ -84,19 +84,29 @@ const DUR: f64 = 5400.0;
 
 /// 默认门的 canary seed 集（覆盖 5 种重开方式 + 三种截断形态，见各测试注释）。
 ///
-/// 这些 seed **不是**随便挑的：`corner` 需要 seed 1 就出现、`goal_kick` 需要 5、形态 ③
-/// （`dur` 时刻已 taken 的门球）需要 157 / 317。改动本集合会让 coverage 防空转断言失效。
-const CANARY_SEEDS: [u64; 10] = [1, 5, 15, 33, 86, 97, 100, 120, 157, 317];
+/// 这些 seed **不是**随便挑的：`corner` 需要 seed 1 就出现、`goal_kick` 需要 5；三种截断形态
+/// 分别需要 24（episode）/ 9（restart 未 taken）/ 36（restart 已 taken）。改动本集合会让
+/// coverage 防空转断言失效。
+///
+/// **2026-09-25 重标定**：原集合 [1,5,15,33,86,97,100,120,157,317] 是在 `MODEL_VERSION=6`
+/// 分支上选的；P15A 移植到 main（`v7`，含 P104 体积重标定）后三种形态**一个都没命中**，
+/// 防空转断言直接变红。按同一判据在 5400 默认时长下重扫 seed 1..=600 后补入 24/9/36
+/// （形态①②③ 计数 1/1/2）。**换的是样本，不是判据。**
+const CANARY_SEEDS: [u64; 13] = [1, 5, 9, 15, 24, 33, 36, 86, 97, 100, 120, 157, 317];
 
 /// 「争抢原因 ↔ 引擎事件」门的 seed 集：canary + 5 个**只为 `shot_rebound` 而加**的 seed。
 ///
-/// `shot_rebound` 是全部 5 类被钉住的争抢原因里最稀疏的（90 分钟 300 seed 仅 35 条，canary 里
-/// **只有 seed 15 出现 1 条**）。只靠那一条会让本门对「该路径整体消失」几近空转，故显式补
-/// 24 / 38 / 49 / 80 / 84——它们在 300 seed 扫描里各含 1 条（实测：`shot_rebound` 出现在
-/// 15, 24, 38, 49, 80, 84, …）。补到 5 个（种子集合上共 6 条）是为了给防空转下限留余量：
-/// 只补 3 个的话下限会**恰好等于**实测值，任何良性缩水都会以误导性消息报红。
-/// 不把 35 个 seed 全加进来，是为了把默认门的引擎模拟次数压住。
-const CONTEST_SEEDS: [u64; 15] = [1, 5, 15, 33, 86, 97, 100, 120, 157, 317, 24, 38, 49, 80, 84];
+/// `shot_rebound` 是全部 5 类被钉住的争抢原因里最稀疏的（90 分钟 300 seed 仅 62 条，canary
+/// 里只有 3 条）。只靠那几条会让本门对「该路径整体消失」几近空转，故显式补
+/// 37 / 41 / 66 / 106 / 107——它们在 5400 全扫里各含 **2** 条（`shot_rebound` 出现在
+/// 1, 6, 11, 12, 27, 37, 41, 66, 106, …）。补到 5 个（种子集合上共 13 条）是为了给防空转
+/// 下限留余量：只补 3 个的话下限会**恰好等于**实测值，任何良性缩水都会以误导性消息报红。
+/// 不把 62 个 seed 全加进来，是为了把默认门的引擎模拟次数压住。
+///
+/// **2026-09-25 重标定**：原补种子 24/38/49/80/84 是 `v6` 基线上选的；移植到 main（`v7`）
+/// 后该集合上 `shot_rebound` 只剩 3 条（低于下限 4），防空转断言变红。按同一判据重扫后换用
+/// 上列 5 个。**换的是样本，不是判据。**
+const CONTEST_SEEDS: [u64; 15] = [1, 5, 15, 33, 86, 97, 100, 120, 157, 317, 37, 41, 66, 106, 107];
 
 /// golden-v6 的 canary seed 集，与 `tests/realism.rs::GOLDEN_SEEDS` **必须一致**
 /// （那条门把当前引擎与磁盘基线绑死；本文件复用它来证明观察开关不改变正式事件流）。
@@ -106,7 +116,6 @@ fn cfg(dur: f64) -> MatchConfig {
     MatchConfig {
         match_duration_seconds: dur,
         demo_mode: false,
-        off_ball_movement_demo: false,
         model_version: MODEL_VERSION,
     }
 }
@@ -1033,7 +1042,7 @@ fn event_indexes_are_non_empty_monotonic_and_in_range() {
     let mut truncated_episode = 0usize;
     let mut truncated_restart_untaken = 0usize;
     let mut truncated_restart_taken = 0usize;
-    // 命中形态 ③（`dur` 时刻已 taken 的门球）的 seed 157 / 317 **已经在** `CANARY_SEEDS` 里
+    // 命中形态 ③（`dur` 时刻已 taken 的门球）的 seed 36 **已经在** `CANARY_SEEDS` 里
     // （见模块头注释），故这里直接用 canary 集合——不要再 chain 一遍，那会重复跑同一批 seed
     // 而让样本数看起来更大（防空转计数器也会被灌水）。
     for seed in CANARY_SEEDS {
@@ -1135,7 +1144,7 @@ fn check_index_list(what: &str, id: u64, idxs: &[usize], n_events: usize, seed: 
 ///
 /// 这条测试的存在理由：`gap_count() == 0` 曾被当成全称命题写进多处断言，而**它是错的**——
 /// 终场哨落在未决飞行的中途时会**合法**产 `full_time_during_ball_in_flight`
-/// （design §15.5：触发与时长**无关**；已复核 seed 147 @ dur 120、seed 368 @ dur 400）。
+/// （design §15.5：触发与时长**无关**；已复核 seed 470 @ dur 120、seed 1228 @ dur 400）。
 ///
 /// 因此本门不写「所有 duration 均为 0」，而是：
 ///
@@ -1168,10 +1177,11 @@ fn gap_is_a_classified_outcome_not_a_failure() {
 
     // ② 截断样本：合法产 gap，且原因**必须**属于设计允许的分类。
     //    两个样本都来自 design §15.5 的已复核记录（不是自选样本）：
-    //    seed 147 @ dur 120（开球在 t=119 发出、被 t=120 哨截断）与
-    //    seed 368 @ dur 400（t=399 的 kickoff 飞行中撞哨——**更长时长同样产**）。
+    //    seed 470 @ dur 120（开球在 t=119 发出、被 t=120 哨截断）与
+    //    seed 1228 @ dur 400（t=399 的 kickoff 飞行中撞哨——**更长时长同样产**）。
+    //    两个样本均为 2026-09-25 在 main(v7) 基线上重扫所得（原 147/368 只对 v6 成立）。
     let mut classified = 0usize;
-    for (seed, dur) in [(147u64, 120.0), (368u64, 400.0)] {
+    for (seed, dur) in [(470u64, 120.0), (1228u64, 400.0)] {
         let dm = simulate_with_behavior_observations(seed, cfg(dur));
         assert!(
             dm.gap_count() >= 1,
@@ -1258,7 +1268,7 @@ fn gap_is_a_classified_outcome_not_a_failure() {
 /// **红**（fail-closed）而不是静默放行，故不构成缺陷信号被漏掉的风险；但它确实是一个漂移面，
 /// 改允许集时要连它一起看。
 ///
-/// **样本含已知产 gap 的流**（`seed 147 @ 120`、`seed 368 @ 400`，design §15.5 已复核），
+/// **样本含已知产 gap 的流**（`seed 470 @ 120`、`seed 1228 @ 400`，2026-09-25 复核），
 /// 因此不是在空集上空转；末尾的防空转断言把这一点钉死。
 #[test]
 fn every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect() {
@@ -1270,7 +1280,7 @@ fn every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect() {
     // 属自我确认断言。
     let mut observed_gaps = 0usize;
     // canary（含短时长） + 两个已复核的截断样本（保证本门真的扫到 gap）。
-    let truncated: [(u64, f64); 2] = [(147, 120.0), (368, 400.0)];
+    let truncated: [(u64, f64); 2] = [(470, 120.0), (1228, 400.0)];
     for seed in CANARY_SEEDS {
         for dur in [DUR, 300.0, 120.0] {
             let dm = simulate_with_behavior_observations(seed, cfg(dur));
@@ -1495,7 +1505,7 @@ fn l3_300_seed_90min_calibration_lands_evidence_on_disk() {
         // seed 上（例如 seed 250 的 `MissingStreamEndBoundary`）。总数守卫（`gaps <= 5`，见下）
         // **不能**代替这一步：一条缺陷 gap 完全可能落在 5 以内而静默通过。
         //
-        // 口径如实记录：90 分钟样本实测 0 gap（`seed 147 @ 120` / `seed 368 @ 400` 才产），
+        // 口径如实记录：90 分钟样本实测 0 gap（`seed 470 @ 120` / `seed 1228 @ 400` 才产），
         // 故**在无缺陷的输入上**这条分类分支是休眠的——它的判别力由「注入缺陷 gap 必红」
         // 证明（2026-09-24 实测：seed 250 注入 `MissingStreamEndBoundary` → 本门红，而
         // `gaps <= 5` 仍绿）。允许集**正向**被扫到的覆盖在
@@ -1529,7 +1539,7 @@ fn l3_300_seed_90min_calibration_lands_evidence_on_disk() {
     //
     // 默认时长下没有合法截断来源（终场哨恰在 dur，且尾段没有未落地的球时），
     // 实测 300 seed 全 0——但**这不是全称命题**：dur 更短或尾段恰有未落地球时会产
-    // （seed 147 @ 120、seed 368 @ 400）。故这里只记录、不把它当通行证。
+    // （seed 470 @ 120、seed 1228 @ 400）。故这里只记录、不把它当通行证。
     assert!(
         gaps <= 5,
         "300 seed × 90min 出现 {} 条 gap（{:?}）——超出「罕见截断」的量级，须逐条查原因",
