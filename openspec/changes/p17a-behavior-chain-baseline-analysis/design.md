@@ -82,7 +82,7 @@ cargo test --test p17a_behavior_chain_baseline
 | 动作数 / 传球数 | 归属该 episode 的动作事件数 / 其中 `pass` 数 |
 | 动作间隔 | episode 内相邻动作事件的时间差（一阶差分的逐场分位，再跨场平均）。**这是"持球-出球节奏"的直接观测** |
 | 结束原因分布 | `end_reason` 计数占比（整体，以及**按 `start_reason` 条件分解**） |
-| 射门前链长 | 对**动作链里含 `shot` 事件**的 episode（= `first_shot_index.is_some()`），射门事件在动作序列中的序号（0-based，即它之前有多少个动作），以及它之前成功传球数。**注意分母口径**：这是"含射门的 episode"，**不是** `end_reason ∈ {goal, saved_caught, shot_rebound}`（两者数量不同，勿互换；300 场实测 2760 vs 572）。**证据样本必须取自同一母体**——A5 原先用后者选回放样本，给"n=2760"的证据配了来自 572 的一小撮（守卫 `a5_evidence_comes_from_the_statistic_population`） |
+| 射门前链长 | 对**动作链里含 `shot` 事件**的 episode（= `first_shot_index.is_some()`），射门事件在动作序列中的序号（0-based，即它之前有多少个动作），以及它之前成功传球数。**注意分母口径**：这是"含射门的 episode"，**不是** `end_reason ∈ {goal, saved_caught, shot_rebound}`（两者数量不同，勿互换；300 场在 main/`MODEL_VERSION=7` 上实测 5741 vs 1226）。**证据样本必须取自同一母体**——A5 原先用后者选回放样本，给前者的证据配了后者的一小撮（守卫 `a5_evidence_comes_from_the_statistic_population`） |
 | 多脚传递深度 | **开放比赛**成功传球（`!is_delivery`）≥2 的 episode 占比。定位球**交付**是重开片段的第一步，不计入；含交付会把「1 次交付 + 1 次开放传球」记成多脚传递（300 场实测差异 2063 个 episode，比例 65.7% vs 57.9%，守卫 `multi_pass_share_counts_open_play_passes_only`） |
 | `start_reason` 覆盖率 | 闭集全成员的出现计数，`0` 也要输出（防空转：某个 start_reason 消失时报告必须显式显示 0，而不是省略） |
 
@@ -148,7 +148,7 @@ cargo test --test p17a_behavior_chain_baseline
 2. **"异常"是候选不是结论**：Markdown §6 标题为「异常候选」，并附声明——越阈 + 可回放证据 ≠ 已证明与真实足球不符。确认要等 #15B / #16 与真实比赛数据。
 3. **数值一律插值**：`title` / `criterion` / `why_not_football` 不得写死会随 seed 集变化的量（计数、均值、sd）。实测事故：A7 正文写死角球准备期 `15.25 s（sd 1.25）`，而同一份产物的表里是 15.35 s / sd 0.74。守卫 `markdown_states_the_missing_real_match_dataset`（断言产物不含写死值）。
 4. **报数同口径**：规则里出现的均值/离散度必须取自与报告表**同一份 `Stat`**，不得自己算池化均值。实测事故：A7 用池化 `model::mean` 报 kickoff 3.58 s，表里是 2.58 s。守卫 `a7_reports_the_per_match_statistic_not_the_pooled_mean`。
-5. **证据母体一致**：证据样本的选取条件必须与统计量的分母口径一致。实测事故：A5 的分母是"含 shot 的 episode"（2760），证据却按 `is_shot_ending`（572）挑。守卫 `a5_evidence_comes_from_the_statistic_population`。
+5. **证据母体一致**：证据样本的选取条件必须与统计量的分母口径一致。实测事故：A5 的分母是"含 shot 的 episode"（v7 上 5741），证据却按 `is_shot_ending`（v7 上 1226）挑。守卫 `a5_evidence_comes_from_the_statistic_population`。
 6. **措辞不夸大**：`x ∈ [0.5±0.2]` 是**中央 40% 区间**，不得称"窄带"——A8 的异常依据是两端区间近乎空集，不是该区间窄。
 7. **机制文本不含运行时数值**（2026-09-24 第四轮审阅补）：`mechanism_hypothesis` / `why_not_football` 是 `&'static str`，**canary 与 baseline 共用同一句**，因此任何随 seed 集变化的量（占比/计数/均值）写进去都会与其中一份产物自相矛盾。实测事故：A1 写「（约占 73%）」、A2 写「`delivery_loose` 的 26.3%」。这类量**只能**在 `criterion`（`String`，由指标插值）里出现。合法内容：源码常量（`BASE_ACTION_DEADLINE_TICKS=7`）、`file.rs:NNNN` 行号、结构性极端（0% / 100% 读作"必然/从不"）。守卫 `mechanism_prose_carries_no_frozen_statistical_ratios`（扫 `N%` token + 断言机制文本在两份不同指标的输入上逐字节相同）。
 

@@ -36,8 +36,11 @@
 - [x] 防空转测试：真实路径关键分母 ≥ 下限；by-kind 表 `matches ≤ seed 数`（池化回归守卫）；
       闭集清单完整；seed 区间被钉住。
 - [x] `#[ignore]` 运行器：`p17a_canary`（1..=30）与 `p17a_baseline`（1..=300），落盘到 `target/p17a-baseline/`。
-- [x] 跑 canary → 复核口径 → 跑 baseline；产物：300 场 331,966 facts / 26,429 episodes / 14,476 restarts /
-      15,743 contests / 0 gaps；canary 与 baseline 均 6/10 条异常触发。
+- [x] 跑 canary → 复核口径 → 跑 baseline；产物：300 场 338,120 facts / 30,179 episodes / 15,584 restarts /
+      20,053 contests / 0 gaps；canary 与 baseline 均 6/10 条异常触发。
+      （**2026-09-25 在 main/`MODEL_VERSION=7` 基线上重算**：初版数字取自一条 fork 自无球 demo
+      分支、`MODEL_VERSION=6` 的树，跨了 P104 体积重标定；判据未改、触发集合不变，数值全变。
+      移植与重算记录见报告 §8。）
 - [x] 分析报告：`.scratch/notes/behavior-chain-baseline-2026-09-24.md`（6 条异常 + 4 条未触发 + 机制假设 +
       缺失证据 + #19 最小改造候选 + 审阅修订记录）。
 - [x] 验证：`cargo test --test p17a_behavior_chain_baseline`（**22 passed / 2 ignored**，第三轮时点）、
@@ -56,9 +59,11 @@
 - [x] **P1 A7 报数口径**：规则原先自己算池化 `model::mean(vals)`，而报告 M3 表用逐场 `Stat`
       ——同产物里 kickoff 出现 3.58 s 与 2.58 s 两个值。改为与表同源（`prep_seconds_by_kind`）；
       报数与零方差判定都走该路径。守卫 `a7_reports_the_per_match_statistic_not_the_pooled_mean`。
-- [x] **P1 A5 证据母体**：证据按 `is_shot_ending`（572）挑，统计量分母却是
-      `first_shot_index.is_some()`（2760）。改为同一母体。守卫
+- [x] **P1 A5 证据母体**：证据按 `is_shot_ending` 挑，统计量分母却是
+      `first_shot_index.is_some()`。改为同一母体。守卫
       `a5_evidence_comes_from_the_statistic_population`。
+      （原文记的是当时 v6 树上的 572 与 2760；v7 基线上同一对为 1226 与 5741——**此处只去数字，
+      因为它们是会随基线漂的实例值，留在这里会再次变成陈旧记录**。）
 - [x] **P2 A7 正文硬编码**：删掉 `15.25 s（sd 1.25）`（同一产物表里是 15.35 s / sd 0.74）；
       A7 `title` 改为由零方差通道插值；证据配额改为**每通道上限 + 保留对照通道**（否则早期 seed
       的任意球占满 6 条，角球这个唯一有真实准备期的方式从不进证据）。

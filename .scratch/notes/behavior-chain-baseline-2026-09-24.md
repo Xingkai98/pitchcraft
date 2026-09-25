@@ -10,7 +10,9 @@
 > §0–§6 的数字是 **v7 main 基线**上的；§7 的两处复跑记录仍是 v6 当时的，未改写。
 > 完整的移植与重算记录见 §8。
 
-- 源码 commit：`7b38114f84ea6c9af48b47cda9a8f0ff28c40f08`（`engine/src/` 未改动）
+- 源码 commit：见产物 `provenance.source_commit`（`engine/src/` 未改动）。
+  **此处刻意不写死哈希**：本文档与产物同属一个提交，任何后面的 rebase/amend 都会让写死的哈希
+  指向不存在的对象（本次移植就发生过一次）。哈希请从产物里读，或按 §0 的复现命令重跑。
 - `MODEL_VERSION` = 7，engine crate 0.1.0
 - sidecar schema 指纹：`fnv1a64:7c76518ceff85604`（与 v6 相同——观察契约未变）
 - **引擎源码指纹**：`fnv1a64:8845fafb13713cb8`（哈希编译进二进制的 `lib.rs`+`observation.rs`+`rng.rs`
