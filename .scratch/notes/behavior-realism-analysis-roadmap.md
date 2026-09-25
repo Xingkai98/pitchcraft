@@ -3,7 +3,7 @@
 状态：Active roadmap
 最后更新：2026-09-24
 Canonical map：`.scratch/map.md` 的“行为真实性方向”
-当前 frontier：**#17A #15A 行为链基线分析**
+当前 frontier：**#15B Possession 内 PhaseAnnotator**（#17A 已完成，见下）
 
 ## 1. 当前已经具备什么
 
@@ -49,7 +49,18 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
   → 前后行为基线与真实比赛对照
 ```
 
-## 3. #17A：下一会话立即执行
+## 3. #17A：已完成（2026-09-24，2026-09-25 在 main/v7 上重算）
+
+> **结论摘要**：OpenSpec change `p17a-behavior-chain-baseline-analysis` 已落地；10 条机器判定的
+> 异常规则中 **6 条触发**（A1/A2/A3/A7/A8/A10）。头条是「球权转移不消耗时间、也不由位置决定」
+> ——动作间隔 **12.64 s**、争抢 **52.7%** 同 tick 收束、拦截/抢断夺回率 **0.0%** 而传失 **94.7%**、
+> 重开准备期是方式常数、争抢 **78.2%** 集中在中带。机制已逐条读代码核对：`start_loose_ball`
+> 的单队追逐者选择（与角球的 `start_battle_loose` 双队机制形成对照）是 A2/A3/A10 的共同根因。
+> 完整报告：`.scratch/notes/behavior-chain-baseline-2026-09-24.md`。
+>
+> **数值口径为 `MODEL_VERSION = 7`**（main）。初版数字取自一条 fork 自无球 demo 分支、`v6` 的树，
+> 跨了 P104 体积重标定；判据未改、触发集合不变，数值全变。移植与重算记录见报告 §8。
+> 下一 frontier 是 #15B（phase），随后 #16（空间特征），再进 #17B/#18/#19。
 
 ### 问题
 
