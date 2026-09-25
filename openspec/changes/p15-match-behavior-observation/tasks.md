@@ -148,7 +148,7 @@ sidecar 质量字段、终场时间来源、矛盾输入免检边界、时间不
 > （「Slice 3：全路径手写 fixture 覆盖矩阵」一节）；`engine/tests/p15_behavior_observation.rs`
 > 为**新增的集成门文件**（**11 条默认** + 1 条 ignored 校准门；第 5 轮修复新增 2 条
 > **接线层**门，见下「接线层断言」）。
-> 本 slice **不改生产行为**（golden-v6 逐字节不变，见下第 3 条），只把此前散在临时审阅 harness
+> 本 slice **不改生产行为**（当前 `MODEL_VERSION` 的 golden 逐字节不变，见下第 3 条），只把此前散在临时审阅 harness
 > 里的证据固化成仓库内可重复的门。
 
 - [x] Add fixtures for successful pass, interception, contested loss, loose pickup, shot outcomes,
@@ -247,8 +247,9 @@ sidecar 质量字段、终场时间来源、矛盾输入免检边界、时间不
       另加 `restart_end_reasons_stay_within_the_two_reachable_ones`（结束原因只在可达的两值内）。
 - [x] Assert recorder on/off leaves formal events, output bytes and RNG unchanged.
       **RNG 面只有「间接证据」——如实记录，勿退回「更强/直接证明」的旧说法。**
-      ① `recorder_on_and_off_reproduce_the_golden_v6_canary_stream`——把结果锚到**磁盘上的
-         golden-v6 基线**（seed 1..=10，与 `tests/realism.rs::GOLDEN_SEEDS` 同一集合），
+      ① `recorder_on_and_off_reproduce_the_golden_canary_stream`——把结果锚到**磁盘上的
+         golden 基线**（seed 1..=10，与 `tests/realism.rs::GOLDEN_SEEDS` 同一集合；目录随
+         `MODEL_VERSION`，移植到 main 后为 `golden-v7`），
          正式路径与 opt-in 路径的事件流 FNV-1a 都必须等于基线 `stream_hash`。
          **这是独立来源的对照**：只比「两条路径互相比」理论上可被「两边都错成一样」骗过。
       ② `plain_and_opt_in_paths_agree_byte_for_byte`——`simulate()` vs `events_json()` 逐字节，

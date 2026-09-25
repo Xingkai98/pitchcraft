@@ -4525,7 +4525,7 @@ mod tests {
     ///
     /// 「recorder on/off 不改变 RNG」的**间接**证据在：
     /// ① [`Self::observation_api_leaves_formal_events_byte_identical`]（两条路径事件流逐字节相同）；
-    /// ② `tests/p15_behavior_observation.rs::recorder_on_and_off_reproduce_the_golden_v6_canary_stream`
+    /// ② `tests/p15_behavior_observation.rs::recorder_on_and_off_reproduce_the_golden_canary_stream`
     ///    （再加一层磁盘 golden 外部锚）。**没有** raw rng 游标 / 序列的直接观察工件
     /// （见 `tests/p15_behavior_observation.rs` 模块头的「口径纪律」）。
     #[test]

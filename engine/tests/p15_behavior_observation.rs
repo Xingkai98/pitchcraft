@@ -10,7 +10,7 @@
 //! |---|---|---|
 //! | [`plain_and_opt_in_paths_agree_byte_for_byte`] | 事件流协议 | ✅ |
 //! | [`sidecar_is_deterministic_for_the_same_seed_and_config`] | 事件流协议 | ✅ |
-//! | [`recorder_on_and_off_reproduce_the_golden_v6_canary_stream`] | golden master | ✅ |
+//! | [`recorder_on_and_off_reproduce_the_golden_canary_stream`] | golden master | ✅ |
 //! | [`terminal_state_invariants_and_closure_hold_on_the_canary_seeds`] | 观察对象不变量 | ✅ |
 //! | [`restart_kind_decides_the_delivered_episode_start_reason`] | 观察对象耦合 | ✅ |
 //! | [`contest_reasons_and_settlements_are_bound_to_their_own_engine_events`] | 争抢事实 ↔ 引擎事件（**接线层**） | ✅ |
@@ -42,7 +42,7 @@
 //!   （design §15 A9-10）。
 //! - 本引擎**没有中场休息**（`half_time()` 零生产调用点，design §15 A9-5）：不为它编造 fixture。
 //! - **「recorder on/off 不改变 RNG」只有间接证据**（design §13 门 3 的 RNG 面）：正式事件流
-//!   与 golden-v6 基线逐字节相同是**强间接**证据——决策全由 RNG 驱动，消费点一变决策就变、
+//!   与当前 `MODEL_VERSION` 的 golden 基线逐字节相同是**强间接**证据——决策全由 RNG 驱动，消费点一变决策就变、
 //!   事件流随即不等。但**没有**任何直接观察 raw RNG 游标 / 序列的工件：比赛自己的 rng 是
 //!   `match_events` 的**局部变量、函数返回即丢弃**，外部拿不到消费位置。（`SeededRng`
 //!   **是**导出的——`lib.rs` 有 `pub use rng::SeededRng;`——所以「类型拿不到」**不是**理由；
@@ -108,7 +108,8 @@ const CANARY_SEEDS: [u64; 13] = [1, 5, 9, 15, 24, 33, 36, 86, 97, 100, 120, 157,
 /// 上列 5 个。**换的是样本，不是判据。**
 const CONTEST_SEEDS: [u64; 15] = [1, 5, 15, 33, 86, 97, 100, 120, 157, 317, 37, 41, 66, 106, 107];
 
-/// golden-v6 的 canary seed 集，与 `tests/realism.rs::GOLDEN_SEEDS` **必须一致**
+/// 与 `tests/realism.rs::GOLDEN_SEEDS` **必须一致**的 canary seed 集；对应哪个 golden 目录由
+/// `MODEL_VERSION` 决定（main 上为 `golden-v7`）。
 /// （那条门把当前引擎与磁盘基线绑死；本文件复用它来证明观察开关不改变正式事件流）。
 const GOLDEN_SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
 
@@ -200,10 +201,12 @@ fn sidecar_is_deterministic_for_the_same_seed_and_config() {
     }
 }
 
-/// **design §13 门 3**：观察开关**不改变正式事件流**——用 golden-v6 的正式基线做外部锚。
+/// **design §13 门 3**：观察开关**不改变正式事件流**——用当前 `MODEL_VERSION` 对应的 golden
+/// 基线做外部锚（移植到 main 后为 `golden-v7`；本测试在 v6 基线上写作，故函数名沿用旧称，
+/// 实际读取的目录由 `MODEL_VERSION` 决定）。
 ///
 /// 与 [`plain_and_opt_in_paths_agree_byte_for_byte`] 的分工：那条是「两条路径互相比」，
-/// 理论上可以被「两边都错成一样」骗过；这条把结果**锚到磁盘上的 golden**（`tests/golden-v6/`，
+/// 理论上可以被「两边都错成一样」骗过；这条把结果**锚到磁盘上的 golden**（`tests/golden-v{MODEL_VERSION}/`，
 /// 由 `tests/realism.rs::gm_canary_seeds` 维护），因此是独立来源的对照。
 ///
 /// golden 的 `stream_hash` 是 FNV-1a(事件流 JSON)，与 `events_json()` 同一份字符串，
@@ -236,21 +239,21 @@ fn golden_hash(seed: u64) -> u64 {
 }
 
 #[test]
-fn recorder_on_and_off_reproduce_the_golden_v6_canary_stream() {
+fn recorder_on_and_off_reproduce_the_golden_canary_stream() {
     for seed in GOLDEN_SEEDS {
         let expected = golden_hash(seed);
         let plain = simulate(seed, cfg(DUR));
         assert_eq!(
             fnv1a(&plain),
             expected,
-            "seed {}：正式路径偏离 golden-v6 基线（引擎行为变了，不是 P15 的锅——先查这一条）",
+            "seed {}：正式路径偏离 golden 基线（引擎行为变了，不是 P15 的锅——先查这一条）",
             seed
         );
         let dm = simulate_with_behavior_observations(seed, cfg(DUR));
         assert_eq!(
             fnv1a(&dm.events_json()),
             expected,
-            "seed {}：开启 recorder 后事件流偏离 golden-v6 基线——观察层改变了正式行为",
+            "seed {}：开启 recorder 后事件流偏离 golden 基线——观察层改变了正式行为",
             seed
         );
         assert_eq!(
@@ -273,7 +276,7 @@ fn recorder_on_and_off_reproduce_the_golden_v6_canary_stream() {
 // 2. **「满射代理」的说法不成立**：它只在「beat 序列是 rng 消费的单射投影」时才蕴含 RNG 结论，
 //    而这不是本引擎的性质——RNG 消费可以在不改变 beat 序列的位置发生。
 //
-// RNG 面的**间接**证据留在 [`recorder_on_and_off_reproduce_the_golden_v6_canary_stream`]
+// RNG 面的**间接**证据留在 [`recorder_on_and_off_reproduce_the_golden_canary_stream`]
 // （外部锚）与 [`plain_and_opt_in_paths_agree_byte_for_byte`]（互比）；raw rng 游标 / 序列
 // **没有**可观察工件（见模块头「口径纪律」）。若将来真的需要直接比 raw 序列，得让
 // `match_events` 接受外部注入的 rng（改生产签名）——那要先有真实需求，**不是**为测试放宽可见性。
