@@ -65,14 +65,14 @@
   - 第一版阶段候选：`build_up`、`progression`、`final_third`、`attacking_transition`、`defensive_transition`、`set_piece`。
   - 第一版空间观察：团队级状态 + 球附近局部空间，不做完整 22 人 tracking 分析。
   - 交付物：增强事件流 + 可读球权诊断报告；暂不改变行为生成器，暂不先做 viewer UI。
-- `13` **现有事件流可观测性盘点** ⏳ open
+- `13` **现有事件流可观测性盘点** ✅ 已解决（2026-09-22）
   - Blocked by: `12`
   - Type: Research
   - 问题：现有 `pass/dribble/shot/tackle/interception/off_ball_run/beat/foul` 是否足够重建球权、阶段和转换？哪些字段需要补充，哪些只能标记为 unknown？
   - 产物：字段映射表、不可观测项清单、最小增强协议提案。见 `.scratch/notes/behavior-observability-audit.md`。
   - 结论：**部分足够**。引擎内部已有 `possession/carrier/ball_pos/loose/dead_ball/transition`；事件流可重建粗粒度动作链和区域，但缺显式球权变化、phase、统一完成时间和压力观测。第一轮采用“正式事件流不变 + 只读诊断投影”，不改生成逻辑。
   - 状态：✅ 已解决（2026-09-22）
-- `14` **当前模型行为基线** ⏳ open
+- `14` **当前模型行为基线** ✅ 已解决（2026-09-22；数字为 v6 启发式时代，见该 note 的入库注记）
   - Blocked by: `13`
   - Type: Prototype
   - 问题：在不改生成逻辑的情况下，当前 30–100 个 seed 的球权长度、阶段比例、动作链、区域转换和转换反应是什么样？
@@ -87,7 +87,9 @@
   - 结论：**第一版边界已收敛**。成功传球保持球权；`lost` 保留为 `contested`；拦截/抢断切换控制权；出界、射门、犯规形成可解释的结束原因；犯规后的任意球作为新的 `set_piece` 段。动作完成时间暂用距离/速度估算，`phase` 保留启发式和 `unknown` 能力。
   - **#15A Match Behavior Observation：✅ 已完成（2026-09-24）**。
     - 正式设计：`.scratch/notes/match-behavior-observation-design.md`。
-    - 实现提交：`ad3dc05`（formal model）、`8a3da2b`（engine integration）、`647cb1e`（verification gates）。
+    - 实现：formal model、engine integration、verification gates 三段改动，见 PR #107 的提交序列。
+      （**此前这里写的是三个短哈希**——那是重放前的旧分支对象，main 上**不可达**，
+      重放后哈希已变。除非确需回溯旧分支，否则按 PR/符号名定位。）
     - 已能可靠输出 `ControlFact`、`PossessionEpisode`、`RestartSequence`、contest、结束原因和事件归属；正式事件流保持不变。
     - 300 seed × 90 分钟验证：331,966 facts、26,429 episodes、14,476 restarts、0 gaps；`verify.sh` 全绿。
   - **#15B PhaseAnnotator：⏳ open（当前 frontier）**。
