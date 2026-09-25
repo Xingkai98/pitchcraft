@@ -54,8 +54,9 @@
 ## 行为真实性方向（2026-09-22）
 
 > 目标：从“匹配真实比赛统计”推进到“经过真实足球式的状态、空间和动作链”。
-> #15A 观察层已于 2026-09-24 完成。当前 frontier 不再继续建设基础设施，立即进入
-> **#17A 行为链基线分析**，用真实 sidecar 数据找过程异常；再以 #15B/#16 增加阶段与空间解释。
+> #15A 观察层已于 2026-09-24 完成，**#17A 行为链基线分析已完成**（2026-09-24，2026-09-25 在
+> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **#15B Possession 内 PhaseAnnotator**：
+> 在已确认的 possession episode 内做纯只读的 phase 投影，为 #17B 的解释提供阶段证据。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
 
 - `12` **比赛行为观察契约** ✅ 已通过 grilling
@@ -89,21 +90,30 @@
     - 实现提交：`ad3dc05`（formal model）、`8a3da2b`（engine integration）、`647cb1e`（verification gates）。
     - 已能可靠输出 `ControlFact`、`PossessionEpisode`、`RestartSequence`、contest、结束原因和事件归属；正式事件流保持不变。
     - 300 seed × 90 分钟验证：331,966 facts、26,429 episodes、14,476 restarts、0 gaps；`verify.sh` 全绿。
-  - **#15B PhaseAnnotator：⏳ open**。
+  - **#15B PhaseAnnotator：⏳ open（当前 frontier）**。
     - 第一版只在已确认的 possession episode 内标注 `build_up / progression / final_third / attacking_transition / unknown`。
     - 定位球 delivery 留在 `RestartSequence`，首次明确开放控制前不得伪装成 possession phase。
+    - 契约与约束见 `.scratch/notes/match-behavior-observation-design.md` §11；`Phase`/`PhaseProvenance`
+      闭集已在 `engine/src/observation.rs` 预留（不产出 segment）。
 - `16` **团队与局部空间特征** ⏳ open
   - Blocked by: `12`, `13`
   - Type: Research
   - 问题：从当前坐标和 beat/off-ball 信息中，第一版可靠计算哪些宽度、纵深、线间距、支援和压力特征？
   - 产物：特征定义及缺失数据处理规则；不在此票据内改跑位逻辑。
-- `17A` **#15A 行为链基线分析** 🚧 **当前 frontier / 下一步立即执行**
+- `17A` **#15A 行为链基线分析** ✅ 已完成（2026-09-24；2026-09-25 在 main/v7 上重算）
   - Blocked by: `15A`
   - Type: Prototype
   - 问题：当前模型的真实 possession、contest、restart 和动作链究竟如何运作？哪些过程模式最不像足球？
-  - 产物：固定 seed 分析器 + JSON/Markdown 基线；列出 5–10 个高影响异常模式及可回看的 seed/比赛时间；为每个异常提出生成机制假设，**不在本票据调参**。
-  - 必做指标：控球时长/动作数/结束原因、丢球到重新控制、争抢归属、重开到首次控制、射门前动作链、转换后前 1–3 动作、常见链 motif。
-  - 停止条件：选出一条有明确证据、可做最小生成改造的流程；推荐候选仍是“后场建立控制 → 中场推进 → 前场结束或合理丢失”。
+  - 产物：OpenSpec change `p17a-behavior-chain-baseline-analysis`（分析器 `engine/tests/p17a/` +
+    target `engine/tests/p17a_behavior_chain_baseline.rs`）；固定 seed 分析器（baseline `1..=300`
+    / canary `1..=30`，均 90 分钟）+ JSON/Markdown 基线；10 条机器判定的异常规则。
+  - 结果（`MODEL_VERSION = 7`，2026-09-25 重算）：**6 条触发**（A1/A2/A3/A7/A8/A10）。
+    头条：动作间隔 **12.64 s**、争抢 **52.7%** 同 tick 收束、拦截/抢断夺回率 **0.0%**
+    而传失 **94.7%**、重开准备期是方式常数（任意球恒 1 s / 门球 0 s）、争抢 **78.2%** 集中中带。
+    报告见 `.scratch/notes/behavior-chain-baseline-2026-09-24.md`。
+  - 停止条件已满足：给出了具体动作链 + 回放定位 + 可核对的机制区域，并提出**单点**最小改造候选
+    （松散球追逐者选择，见报告 §5）；固定 seed 集与前后对比指标已选定。
+  - 状态：✅ 已解决（2026-09-24）；下一步 #15B phase → #16 空间特征 → #19 最小改造。
 - `17B` **带阶段与空间解释的行为诊断报告** ⏳ open
   - Blocked by: `17A`, `15B`, `16`
   - Type: Prototype
@@ -135,7 +145,7 @@
   - 问题：诊断信息如何以 debug overlay、逐球权暂停和事件链方式进入 viewer，而不污染正式演绎协议？
   - 产物：可视化诊断模式；正式 viewer 行为保持兼容。
 
-> **执行顺序（2026-09-24 决策）**：`#17A 立即分析` → `#15B phase` → `#16 空间特征` →
+> **执行顺序（2026-09-24 决策）**：`#17A 立即分析` ✅ 已完成 → `#15B phase` → `#16 空间特征` →
 > `#17B 可解释报告` → `#18 行为验证` → `#19 最小生成改造`。不要等 #15B/#16 全部完成才开始分析；
 > 也不要在 #17A 仅凭场均统计直接调参数。
 
