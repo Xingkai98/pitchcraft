@@ -130,12 +130,12 @@ fn widest_gap_samples(per_match: &[MatchRecord], want: usize) -> Vec<EvidenceSam
 /// **机制不是 `HOLD_MIN_TICKS`**（2026-09-24 审阅更正）：`HOLD_MIN_TICKS` / `HOLD_MAX_TICKS` /
 /// `POSSESSION_HOLD_MIN` / `POSSESSION_HOLD_MAX` 在 P31 删槽位后**已无任何读取点**
 /// （`engine/src/lib.rs` 只剩声明；改它们不影响任何输出）。真正的驱动是
-/// P28/P31 的**行动机会 deadline**：`open_action_opportunity`（lib.rs:1751）用
-/// `action_deadline_for`（lib.rs:1731）→ `compute_action_deadline`（lib.rs:1619）算出
-/// `BASE_ACTION_DEADLINE_TICKS=7`（lib.rs:1077）再按危险/压迫/出球空间压缩到
-/// `MIN/MAX_ACTION_DEADLINE_TICKS=3/12`（lib.rs:1085-1086，门将 +3，lib.rs:1088）；
+/// P28/P31 的**行动机会 deadline**：`open_action_opportunity` 用
+/// `action_deadline_for` → `compute_action_deadline` 算出
+/// `BASE_ACTION_DEADLINE_TICKS=7` 再按危险/压迫/出球空间压缩到
+/// `MIN/MAX_ACTION_DEADLINE_TICKS=3/12`（门将 +3）；
 /// 机会到期后 `build_action_plan` 若结算为「继续带球」就**重新开一个机会再等一个 deadline**
-/// （lib.rs:2225-2262 的 `advance_action_opportunity`），于是"带球—等待—再带球"会累积成
+/// （`advance_action_opportunity` 的重开机会逻辑），于是"带球—等待—再带球"会累积成
 /// 多个 deadline 之和——这解释了为什么实测 P90 达到 16.6 s、最大 42 s，而不是上界 12 s。
 pub const DWELL_ANOMALY_SECONDS: f64 = 6.0;
 
@@ -176,7 +176,7 @@ fn a1(ctx: &Ctx) -> Anomaly {
                               因此相邻动作间隔 = 若干轮 deadline 之和（轮数随场面变化，不由任何常量决定）\
                               + 交付飞行/transition 的 tick（`BASE_ACTION_DEADLINE_TICKS=7`，\
                               按危险/压迫压缩到 3–12，门将 +3）",
-        mechanism_area: "lib.rs:2225 `advance_action_opportunity`（`opp.age_ticks >= opp.deadline_ticks` 才结算）、lib.rs:1753 `open_action_opportunity`、lib.rs:1731 `action_deadline_for`、lib.rs:1619 `compute_action_deadline`、lib.rs:1077/1085-1088 常量",
+        mechanism_area: "`advance_action_opportunity`（`opp.age_ticks >= opp.deadline_ticks` 才结算）、`open_action_opportunity`、`action_deadline_for`、`compute_action_deadline`、`BASE_ACTION_DEADLINE_TICKS` / `MIN/MAX_ACTION_DEADLINE_TICKS` 常量",
         missing_evidence: "#16 空间特征——无法区分'因为无人可传而持球等待'与'按 deadline 无条件等待'；\
                         需要球附近接应人数与最近防守距离才能定性。\
                         （`PRESSURE_URGENCY`/`ESCAPE_BONUS` 已把压迫与出球空间计入 deadline，\
@@ -252,17 +252,17 @@ fn a2(ctx: &Ctx) -> Anomaly {
                              （2026-09-24 二审更正——此前的 Some/None 说法被产物自身反证：`tackle_loose` 走 `Some` 却是 3 s，\
                              `pass_lost` 走 `None` 却同时出现在 0/1/3 s）。真正判据是 `advance_loose` 的第一个检查：\
                              **松散球创建当刻，`chaser` 是否已在 `PICKUP_RADIUS_METERS`（0.5 m）内**\
-                             （lib.rs:5260）——是则当拍拾取（0 s），否则追逐者要跑过去（≈3 tick 后拾取）。\
+                             （`advance_loose` 的首个检查）——是则当拍拾取（0 s），否则追逐者要跑过去（≈3 tick 后拾取）。\
                              `interception_loose` 恒 0 s 是因为拦截路径**显式把拦截者对账到拦截点**\
-                             （lib.rs:4637「拦截者位置已对账到 at」），创建松散球时距离即 0；\
-                             `tackle_loose` 恒 3 s 是因为抢断的松散球点取 `deflect_point(...)`（lib.rs:4461），\
+                             （`intercept_pass_highlight` 内「拦截者位置已对账到 at」），创建松散球时距离即 0；\
+                             `tackle_loose` 恒 3 s 是因为抢断的松散球点取 `deflect_point(...)`（`emit_tackle_highlight_impl`），\
                              把球捅到离抢断者约 5.25 m（`TACKLE_DEFLECT_DISTANCE=0.05`，归一化 ≈ 球场长度的 1/20）处，\
                              追逐者必须先跑过去。`winning_team` 只决定**谁被允许追**，不决定 0 还是 3。\
-                             角球 battle（`start_battle_loose`，lib.rs:5235）仍是唯一双队对等的争抢，\
+                             角球 battle（`start_battle_loose`）仍是唯一双队对等的争抢，\
                              且不要把 `delivery_loose` 的争抢归属（其夺回率见 M2 表，随 seed 集变化）夺回归给它\
-                             ——`delivery_loose` 同时来自角球 battle（lib.rs:4871）、解围（4886）与门球（4902）\
+                             ——`delivery_loose` 同时来自角球 battle、解围与门球\
                              三处，门球是最大来源",
-        mechanism_area: "lib.rs:5260 `advance_loose` 的 `d < norm_step(PICKUP_RADIUS_METERS)` 当拍拾取判据、lib.rs:5225 `start_loose_ball`、lib.rs:4637 拦截者对账到 `at`、lib.rs:4461 `emit_tackle_highlight_impl` 的 `deflect_point` 松散球点（经 lib.rs:4929 `start_loose_ball` 落地）、lib.rs:5235 `start_battle_loose`、lib.rs:505 LOOSE_MAX_TICKS、lib.rs:503 PICKUP_RADIUS_METERS",
+        mechanism_area: "`advance_loose` 的 `d < norm_step(PICKUP_RADIUS_METERS)` 当拍拾取判据、`start_loose_ball`、`intercept_pass_highlight` 拦截者对账到 `at`、`emit_tackle_highlight_impl` 的 `deflect_point` 松散球点（经 `start_loose_ball` 落地）、`start_battle_loose`、`LOOSE_MAX_TICKS`、`PICKUP_RADIUS_METERS`",
         missing_evidence: "#16 空间特征——需要落点附近双方球员距离/速度，才能证明对手在空间上本可赶到；\
                         当前只能证明「时长由追逐者创建当刻的初始距离决定（0 或需跑过去）」，与球员速度无关",
     }
@@ -386,11 +386,11 @@ fn a3(ctx: &Ctx) -> Anomaly {
                         直接后果是：拦截和抢断在比赛里是完全等价的两种动作（都等于换球权），抢断这个动作本身不产生任何附加过程。\
                         （具体次数见下方 criterion，已由指标插值——不要硬编码，canary 与 baseline 计数不同。）",
         mechanism_hypothesis: "松散球的追逐者由 `start_loose_ball` 的 `winning_team` 参数按**单队**选出：\
-                              拦截走 lib.rs:4652 `Some(拦截者所属球队)`、抢断走 lib.rs:4929 `Some(防守方)`——\
+                              拦截走 `start_loose_ball(.., Some(拦截者所属球队))`、抢断走 `Some(防守方)`——\
                               于是拾取者在该队内是「离落点最近者」，但对手根本不参与竞争，归属必然是 100%/0%。\
-                              `pass_lost`（lib.rs:4669）与射门补射（lib.rs:4757）传 `None`，走 `nearest_any`，\
+                              `pass_lost` 与射门补射传 `None`，走 `nearest_any`，\
                               才有真正的双向比较；角球用 `start_battle_loose`（双队 + RNG）是唯一完全对等的争抢",
-        mechanism_area: "lib.rs:5225 `start_loose_ball`；调用点 lib.rs:4652（拦截）、lib.rs:4929（抢断）、lib.rs:4669（传失）、lib.rs:5235（角球 battle）",
+        mechanism_area: "`start_loose_ball`；调用点：拦截、抢断、传失、角球 battle",
         missing_evidence: "#16 空间特征——需要落点附近双方球员位置/距离，才能判断「对手是否本可赶到」；\
                           但归属呈现 0%/100% 的极端已足以说明：结果不是由位置竞争产生的，\
                           因为**每一次**拦截与**每一次**抢断（次数见下方 criterion，已插值）都无一例外",
@@ -457,7 +457,7 @@ fn a4(ctx: &Ctx) -> Anomaly {
         why_not_football: "定位球是**设计好的**重新开始：发球方按规则先触碰球、且有站位优势。\
                         如果交付之后立刻丢球成为常见结果，说明交付目标选择与接应位置没有体现这一优势。",
         mechanism_hypothesis: "定位球交付走的是与开放比赛相同的传球概率（`INTERCEPT_*` / `PASS_MISS_P`），未按重开场景调整目标选择",
-        mechanism_area: "lib.rs:288-302 拦截/传失概率常量（`INTERCEPT_P_TIGHT/MID/FAR`、`PASS_MISS_P`）、定位球交付的目标选择路径（P6 重开接线）",
+        mechanism_area: "`INTERCEPT_P_TIGHT/MID/FAR`、`PASS_MISS_P` 等拦截/传失概率常量；定位球交付的目标选择路径（P6 重开接线）",
         missing_evidence: "#15B phase / #16 空间——需要交付时接应点数量与防守站位，才能判定「本就无人可传」还是「选人错误」",
     }
 }
@@ -595,7 +595,7 @@ fn a6(ctx: &Ctx) -> Anomaly {
                         控球时长与决策数量脱钩，是「计时器驱动」而非「选项驱动」的直接特征。",
         mechanism_hypothesis: "与 A1 同源：行动机会 deadline 未到期就不产生新决策，而「继续带球」会把 deadline 重置再等一轮；\
                               动作数因此与控球时长脱钩（注意：**不是** `HOLD_MIN/MAX_TICKS`——那两个常量已无读取点）",
-        mechanism_area: "lib.rs:2225 `advance_action_opportunity`、lib.rs:1077/1085-1086 deadline 常量",
+        mechanism_area: "`advance_action_opportunity`、`BASE_ACTION_DEADLINE_TICKS` / `MIN/MAX_ACTION_DEADLINE_TICKS` deadline 常量",
         missing_evidence: "无（本条不需要空间数据即可确认；它的价值是把 A1 的后果量化成可回放的静止控球片段）",
     }
 }
@@ -782,17 +782,17 @@ fn a7(ctx: &Ctx) -> Anomaly {
                         （具体数值一律由指标插值——不要在此硬编码：canary 与 baseline 的量级不同，\
                         写死会让同一份产物自相矛盾，2026-09-24 审阅已在 A7 抓到过一例。）",
         mechanism_hypothesis: "**两种不同成因，不要合并成「按 kind 取常数」**（2026-09-24 审阅更正）：\
-                              ① **门球**是结构性的——`goal_kick_started`（observation.rs:2066）在死球**当拍**同时提交 \
+                              ① **门球**是结构性的——`observation::BehaviorObservationRecorder::goal_kick_started` 在死球**当拍**同时提交 \
                               `dead_ball_started` 与 `restart_taken`，完全不进 `RestartPreparation` 状态，\
                               所以准备期恒 0；② **任意球恒 1 s** 不是常数，而是**几何涌现**——\
-                              准备期本身是「走向球位」的距离循环（lib.rs:5047-5065，8 m/step，另有\
-                              `min_ticks = if kind == Corner { CORNER_SETUP_MIN_TICKS } else { 0 }`，lib.rs:5067），\
-                              而 `emit_foul_and_free_kick`（lib.rs:7097）把球位设在**被犯规持球者自己的位置**\
-                              （`let spot = st.pos[carrier as usize]`，lib.rs:2328）、\
+                              准备期本身是「走向球位」的距离循环（`advance_restart_prep`，8 m/step，另有\
+                              `min_ticks = if kind == Corner { CORNER_SETUP_MIN_TICKS } else { 0 }`），\
+                              而 `emit_foul_and_free_kick` 把球位设在**被犯规持球者自己的位置**\
+                              （`let spot = st.pos[carrier as usize]`）、\
                               发球者取 \
                               `nearest_in_team`，于是发球者恒在 1 step + 拾取半径内 → 下一 tick 即发出。\
-                              只有角球真正常数（`CORNER_SETUP_MIN_TICKS`，lib.rs:661）",
-        mechanism_area: "observation.rs:2066 `goal_kick_started`（同时提交 taken，跳过准备期）；lib.rs:5047-5067 重开准备期距离循环 + `min_ticks`；lib.rs:661 CORNER_SETUP_MIN_TICKS；`emit_foul_and_free_kick`（球位=犯规点）",
+                              只有角球真正常数（`CORNER_SETUP_MIN_TICKS`）",
+        mechanism_area: "`goal_kick_started`（同时提交 taken，跳过准备期）；`advance_restart_prep` 的重开准备期距离循环 + `min_ticks`；`CORNER_SETUP_MIN_TICKS`；`emit_foul_and_free_kick`（球位=犯规点）",
         missing_evidence: "#16 空间特征——需要发球者与球的距离，才能把②的「恒 1 s」从几何解释升级为可观测结论；\
                           ①（门球跳过准备期）已由 sidecar 事实计数实证，不需要空间数据",
     }
@@ -876,13 +876,13 @@ fn a8(ctx: &Ctx) -> Anomaly {
         why_not_football: "丢球位置决定了转换发生的区域，而转换区域决定了比赛的空间结构。\
                         若丢球几乎只发生在场地中央区间、两端区间近乎空集，那么进攻既不会因为推进到前场而冒险丢球，\
                         防守也不会在自己的危险区域承受压力——两种情况在真实足球里都是比赛的主要内容。",
-        mechanism_hypothesis: "传球落点与双方队形的纵向移动范围受限（`SIDE_SHIFT_FACTOR` lib.rs:665、`OFF_BALL_RUN_DIST` lib.rs:418 等形状常量），\
+        mechanism_hypothesis: "传球落点与双方队形的纵向移动范围受限（`SIDE_SHIFT_FACTOR`、`OFF_BALL_RUN_DIST` 等形状常量），\
                               使球很少被带到两端球门区，因而争抢也就集中在中带。\
                               **（本条未逐条读代码核对，置信度 medium——2026-09-24 审阅已剔除原先并列的\
                               `INTERCEPT_D_TIGHT_M/MID_M` 一项：那是围绕传球落点的**米制半径**，\
                               半径大小无法产生「集中在中场横带」这种位置分布，两者无因果关系。）**",
-        mechanism_area: "lib.rs:665 SIDE_SHIFT_FACTOR、lib.rs:418 OFF_BALL_RUN_DIST（**未核对**，见上；\
-                         原先并列的 `CORNER_SETUP_MIN_TICKS`（lib.rs:661）与本题无关，已剔除）",
+        mechanism_area: "`SIDE_SHIFT_FACTOR`、`OFF_BALL_RUN_DIST`（**未核对**，见上；\
+                         原先并列的 `CORNER_SETUP_MIN_TICKS` 与本题无关，已剔除）",
         missing_evidence: "#16 空间特征——需要 22 人位置分布（宽度/纵深/线间距）才能区分「球到不了前场」与「到了前场但没人丢球」；\
                           本条也是本轮唯一未做代码核对的机制假设",
     }
@@ -998,9 +998,9 @@ fn a9(ctx: &Ctx) -> Anomaly {
                         根本不存在：球在队内传递的深度被压到 1 跳，比赛退化为「拿球—传一次—丢球」的循环。",
         mechanism_hypothesis: "传球选人只考虑单次传球的成功/收益，不区分「保持控球的回传/横传」与「冒险的向前传球」；\
                               加上行动机会 deadline（A1）使每次出球都被迫产生一次有风险的传球",
-        mechanism_area: "传球选人路径与 lib.rs:302 `PASS_MISS_P`、lib.rs:288-289 `INTERCEPT_D_TIGHT_M/MID_M`、\
-                         A1 的行动机会 deadline（lib.rs:2225 `advance_action_opportunity`）——\
-                         **注意不是** `HOLD_MIN/MAX_TICKS`（lib.rs:513-514 已无读取点，见 A1 注释）",
+        mechanism_area: "传球选人路径与 `PASS_MISS_P`、`INTERCEPT_D_TIGHT_M/MID_M`、\
+                         A1 的行动机会 deadline（`advance_action_opportunity`）——\
+                         **注意不是** `HOLD_MIN/MAX_TICKS`（已无读取点，见 A1 注释）",
         missing_evidence: "#15B phase——需要把 possession 分段成 build_up / progression 才能说清「多脚传递」缺失\
                           发生在哪个阶段；#16 空间——需要接应点数量才能判断是否本就无安全传球选项",
     }
@@ -1085,18 +1085,18 @@ fn a10(ctx: &Ctx) -> Anomaly {
                         这意味着「传球失误」这个事件在行为层没有代价——既没有把球交给对手，也没有让本队失去位置，\
                         只是消耗了 3 秒并打断了一次 episode。若把 A1（出球计时器）与本条合起来看，\
                         当前模型的球权转移实际只由「被拦截」和「被抢断」两条路径驱动，传球失误不参与其中",
-        mechanism_hypothesis: "**结构性偏向传球方**（不是「通常离得近」）：`lost_pass_highlight`（lib.rs:3908）\
+        mechanism_hypothesis: "**结构性偏向传球方**（不是「通常离得近」）：`lost_pass_highlight`\
                               把落点设为 `lead_point(from_pos, to_pos, lead)`——即朝**原定接球队友**的提前量点\
-                              （lib.rs:3735 算 `lead_point`、lib.rs:3911 取 `(clamp01(lx), clamp01(ly))` 为落点 x2/y2），\
-                              接球者当前位置虽在 lib.rs:3732-3733 读出为 `rx/ry`，但只作为事件字段 `receiver_x/y` 上报、\
+                              （算 `lead_point`、再取 `(clamp01(lx), clamp01(ly))` 为落点 x2/y2），\
+                              接球者当前位置虽读出为 `rx/ry`，但只作为事件字段 `receiver_x/y` 上报、\
                               **刻意不写回落点**（`lost_pass_highlight` 的文档明写「接收者 NOT 对账到落点」）；\
-                              随后 `start_loose_ball(.., None)`（lib.rs:4669）→ `nearest_any` 在全体球员里取最近者。\
+                              随后 `start_loose_ball(.., None)` → `nearest_any` 在全体球员里取最近者。\
                               原队接球者本就是按这条传球选中的、落点又按他的提前量算，故拾回概率结构性偏高。\
-                              对比 `intercepted`（lib.rs:4652 传 `Some(拦截者球队)`）：那条路径的球直接飞向拦截者本人\
-                              （lib.rs:3862 取 `let (ix, iy) = st.pos[interceptor]`、lib.rs:3871-3872 令 `x2/y2 = ix/iy`；\
-                              `intercept_pass_highlight`（lib.rs:3860）的文档明写「拦截者离球最近默认拿到」），\
+                              对比 `intercepted`（传 `Some(拦截者球队)`）：那条路径的球直接飞向拦截者本人\
+                              （取 `let (ix, iy) = st.pos[interceptor]`、令 `x2/y2 = ix/iy`；\
+                              `intercept_pass_highlight` 的文档明写「拦截者离球最近默认拿到」），\
                               归属由标签预定。两条路径的差别不在随机性，而在**谁被允许竞争**",
-        mechanism_area: "lib.rs:3908-3911 `lost_pass_highlight`（落点=朝原目标的提前量点，接球者位置只上报不回写）、lib.rs:3860-3872 `intercept_pass_highlight`（落点=拦截者本人位置）、lib.rs:4669 / 4652 的 `start_loose_ball` 调用、lib.rs:5225-5230 `start_loose_ball` 内 `nearest_any` vs `nearest_in_team`",
+        mechanism_area: "`lost_pass_highlight`（落点=朝原目标的提前量点，接球者位置只上报不回写）、`intercept_pass_highlight`（落点=拦截者本人位置）、`start_loose_ball` 的 `Some(..)` / `None` 两条调用路径、`nearest_any` vs `nearest_in_team`",
         missing_evidence: "#16 空间特征——需要落点附近双方球员位置，才能判断「本队球员确实离落点最近」\
                           与「结算无条件偏向传球方」；当前证据只能证明归属与传球结果标签矛盾",
     }

@@ -1822,6 +1822,91 @@ fn mechanism_prose_carries_no_frozen_statistical_ratios() {
     }
 }
 
+/// **机制文本不得携带 `file.rs:NNNN` 行号**（2026-09-26 移植审阅 finding P1-a）。
+///
+/// 与 [`mechanism_prose_carries_no_frozen_statistical_ratios`] 同源：那条拦「随 seed 集变化」的量，
+/// 这条拦「随源码平移变化」的量。行号在重放/rebase 后**必然**失效——实测 P15A/P17A 移植到 main
+/// 后，`anomalies.rs` 里 44 处引用**全部**指错（`lib.rs:2225` 落到空行、`lib.rs:5260` 落到
+/// `Some(receiver)`），而它们经 `mechanism_area` 进了 `baseline.json` / `baseline.md`。
+///
+/// design §3.7 原先**把行号列为合法内容**，是这条缺陷的规则级根因；已一并更正为只许符号名。
+/// 扫描面 = 会进产物的三个字段（`mechanism_area` / `mechanism_hypothesis` / `why_not_football`）。
+#[test]
+fn mechanism_prose_carries_no_line_number_citations() {
+    /// 扫出 `任意路径.rs:NNNN` 形式的引用（区间 `:a-b` 只报起始行号 `a`）。
+    ///
+    /// 判据是字面量 `.rs:` 紧跟数字——冒号在数字**之前**（`lib.rs:5260`），不是之后。
+    fn line_number_citations(text: &str) -> Vec<String> {
+        let cs: Vec<char> = text.chars().collect();
+        let mut out = Vec::new();
+        let mut i = 0usize;
+        while i + 4 <= cs.len() {
+            // 匹配 `.rs:` 且其后紧跟数字
+            if cs[i] == '.'
+                && cs[i + 1] == 'r'
+                && cs[i + 2] == 's'
+                && cs[i + 3] == ':'
+                && i + 4 < cs.len()
+                && cs[i + 4].is_ascii_digit()
+            {
+                let start = i + 4;
+                let mut j = start;
+                while j < cs.len() && cs[j].is_ascii_digit() {
+                    j += 1;
+                }
+                out.push(cs[start..j].iter().collect());
+                i = j;
+                continue;
+            }
+            i += 1;
+        }
+        out
+    }
+
+    // 反证（防空转）：扫描器必须真抓得住行号引用，且源码常量与无行号文件名不得误抓。
+    assert_eq!(
+        line_number_citations("`advance_loose`（lib.rs:5260）"),
+        vec!["5260"],
+        "扫描器应抓住 `lib.rs:5260`"
+    );
+    assert_eq!(
+        line_number_citations("（lib.rs:1085-1086，门将 +3）"),
+        vec!["1085"],
+        "扫描器应抓住区间起始行号"
+    );
+    assert!(
+        line_number_citations("`BASE_ACTION_DEADLINE_TICKS=7`、`MIN=3`、`MAX=12`").is_empty(),
+        "源码常量不是行号引用，不得误抓"
+    );
+    assert!(
+        line_number_citations("`design.md` §3.7、`observation.rs` 模块头").is_empty(),
+        "不带行号的文件名不是行号引用"
+    );
+
+    // 真实路径 + 零样本两条路径都查。
+    for per_match in [derive_seeds(1, 3), vec![empty_match(1)]] {
+        let rules = evaluate_all(&per_match);
+        for a in &rules {
+            for (field, text) in [
+                ("mechanism_area", a.mechanism_area),
+                ("mechanism_hypothesis", a.mechanism_hypothesis),
+                ("why_not_football", a.why_not_football),
+            ] {
+                let bad = line_number_citations(text);
+                assert!(
+                    bad.is_empty(),
+                    "{} 的 `{}` 携带 `file.rs:NNNN` 行号 {:?}：行号随任何重放/rebase 平移，\
+                     而该字段会进 baseline.json / baseline.md；请改用符号名。文本：{}",
+                    a.id,
+                    field,
+                    bad,
+                    text
+                );
+            }
+        }
+    }
+}
+
 /// **Markdown 产物必须显式声明"没有用真实比赛数据集"**（审阅 finding 3 的产物级守卫）。
 ///
 /// 只看代码不够：结论页才是读者会读的东西。断言 §6 标题是"异常候选"、§7 局限里有数据缺口声明。
