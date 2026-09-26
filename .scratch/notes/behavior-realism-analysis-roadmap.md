@@ -1,7 +1,7 @@
 # 行为真实性：数据分析到生成改造路线
 
 状态：Active roadmap
-最后更新：2026-09-24
+最后更新：2026-09-26
 Canonical map：`.scratch/map.md` 的“行为真实性方向”
 当前 frontier：**#15B Possession 内 PhaseAnnotator**（#17A 已完成，见下）
 
@@ -16,16 +16,21 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
 - engine 内部生产状态提交点接线，不从事件文本事后猜球权；
 - recorder 不参与比赛决策、不消费 RNG、不改变正式 `simulate()` 输出。
 
-关键提交：
+关键改动四段（经 PR #107 重放落地到 main）：
 
-- `824911b`：设计与 OpenSpec change；
-- `ad3dc05`：formal observation model；
-- `8a3da2b`：engine 状态提交点接入；
-- `647cb1e`：fixtures、multi-seed gate 和验证门。
+- 设计与 OpenSpec change；
+- formal observation model；
+- engine 状态提交点接入；
+- fixtures、multi-seed gate 和验证门。
+
+> **为何不写提交哈希**（2026-09-26）：这四段原先记的是重放**之前**的短哈希
+> （`824911b` / `ad3dc05` / `8a3da2b` / `647cb1e`），在 main 上**不可达**——重放会重写哈希。
+> 定位请用上表按 PR/语义名，或 `git log --grep`。
 
 验证基线：
 
-- 300 seed × 90 分钟：331,966 facts、26,429 episodes、14,476 restarts、0 gaps；
+- 300 seed × 90 分钟：**338,120** facts、**30,179** episodes、**15,584** restarts、0 gaps
+  （`MODEL_VERSION = 7` 口径；v6 时代为 331,966 / 26,429 / 14,476——跨了 P104 体积重标定，勿混用）；
 - plain `simulate()` 与 opt-in 正式 events 逐字节一致；
 - `cargo test`、prototype tests、OpenSpec strict、`./verify.sh` 全绿；
 - 生产 wiring mutation 和非 canary 缺陷 gap 注入均能使门失败。
@@ -144,6 +149,48 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
 - 定位球 delivery 留在 `RestartSequence`，首次明确控制前不标 possession phase；
 - 不把球场区域直接等同为战术阶段。
 
+### 4.1 落地形态（design §11 已定，不要再讨论）
+
+`.scratch/notes/match-behavior-observation-design.md` §11 给了 `PhaseAnnotator` 的输入签名，
+方向是定的：**分析器层的纯只读投影**——不改 P15A recorder、不改正式事件流、不改 golden，
+`phase_segments` 在 sidecar 里继续只是预留字段。`Phase`/`PhaseProvenance` 闭集已在
+`engine/src/observation.rs` 预留（有测试守着「#15B 之前必须为空」）。
+
+### 4.2 实现前必须闭合的七项（2026-09-26 定，比原先四条更全）
+
+前四项来自 grill 要问的设计决策，后三项是原清单漏掉的工程前置：
+
+1. **四个 phase 的可执行谓词**——现有文档只给了禁令（「不把球场区域直接等同为战术阶段」），
+   没给判据。没有谓词，`build_up` 与 `progression` 的边界就是空的。
+2. **episode 内多段 phase 的切分 / 合并 / 边界不变量**——§11 的 `PhaseSegment[]` 与
+   「无法确定边界时拆段」暗示允许多段，但切分规则未定；**且不得跨 episode / `RestartSequence`
+   / `DeadBall`**。
+3. **`attacking_transition` 的触发来源、有效时间窗与转出条件**——`defensive_transition` 已明确排除
+   （那是失球方的 team-state，留给后续 team-state observation），但它留在了闭集里，边界要说清。
+4. **输入事实的优先级与 `unknown` / provenance 策略**——何者优先、何时降级、`engine_hint |
+   geometry | event | inherited | unknown` 各自在什么条件下产出。
+5. **时间基准混用**（原清单漏项）——`TimeBasis` 闭集有四个成员：
+   `StateCommit` / `EventEmit` / `DeterministicFlightEnd` / `Unknown`（`observation.rs`）。
+   P17A 报告 §6 已把 basis 混用列为已知局限。phase 的起止若跨 basis 混用，时间窗会出现
+   事实上不存在的重叠或空隙；必须规定**同一 segment 只用同一 basis**。
+6. **fixture matrix、反空转测试与变异验证**（原清单漏项）——按本仓门槛：边界 fixture 覆盖
+   `build_up`/`progression`/`final_third`/`attacking_transition`/`unknown` 五类 + 定位球不被误标；
+   每个断言配**反证条**；对「删掉某条 phase 判据」做定向变异，证明门会红（P36/P17A 的教训）。
+7. **analyzer / provenance 记录方式**（原清单漏项）——沿用 P17A 的做法：版本号随判据变化递增、
+   产物自带 `source_commit` + `engine_source_fingerprint` + 口径常量，使两次不可比的运行
+   能在产物层被识别。
+
+### 4.3 与 #16 的接口张力（须在 #15B 设计里显式处理）
+
+§11 的签名里有 `spatial_features`，**而 #16 按路线图排在 #15B 之后**——即 v1 的签名里有一项
+输入尚不存在。这不是可以默认略过的策略问题，v1 必须二选一并写进 design：
+
+- **（推荐）保留参数、显式留空**，并规定「该参数缺席时凡依赖空间判断的判据一律输出 `unknown`」，
+  使 #16 到位后是**填充**而非**改签名**；
+- 或**改签名**，把空间依赖整体推到 #16 之后。
+
+无论选哪条，**都不得用区域/坐标冒充空间特征**——那正是 §11 禁止的「把球场区域直接等同为战术阶段」。
+
 ## 5. #16：团队与局部空间特征
 
 第一版只做当前引擎可靠提供的特征：
@@ -209,10 +256,18 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
 4. `openspec/changes/p15-match-behavior-observation/`；
 5. `engine/tests/p15_behavior_observation.rs` 了解现有 sidecar 不变量。
 
-随后按 Paseo lifecycle 启动新的 change/session：
+随后按 Paseo lifecycle 启动新的 change/session。**当前 frontier 是 #15B**
+（见 §4；#17A 已于 2026-09-24 完成，不要重跑）：
 
 ```text
-P17A behavior-chain baseline analysis
+#15B Possession 内 PhaseAnnotator
 ```
 
-该会话只负责分析器、报告和异常候选；独立审阅会话负责检查统计口径、样本可复现性和“是否真的能定位生成机制”。
+- 该会话负责 phase 分析器、边界 fixture 与 provenance；**不得**改 P15A recorder、
+  正式事件流或 golden（落地形态见 §4.1）。
+- 开工前先闭合 §4.2 的七项，并处理 §4.3 与 #16 的接口张力。
+- 独立审阅会话负责检查判据可执行性、`unknown`/provenance 策略、时间基准一致性与
+  「门是否真空转」（反证条 + 定向变异）。
+
+> **本节曾指错方向**（2026-09-26 更正）：原先写「启动 P17A behavior-chain baseline analysis」，
+> 而 P17A 当时已完成——新会话照做会去重跑一个已收尾的 change。

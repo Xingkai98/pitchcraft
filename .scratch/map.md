@@ -97,6 +97,10 @@
     - 定位球 delivery 留在 `RestartSequence`，首次明确开放控制前不得伪装成 possession phase。
     - 契约与约束见 `.scratch/notes/match-behavior-observation-design.md` §11；`Phase`/`PhaseProvenance`
       闭集已在 `engine/src/observation.rs` 预留（不产出 segment）。
+    - **落地形态已定**：分析器层纯只读投影（不改 recorder / 正式事件流 / golden）。
+    - **开工前须闭合七项**（谓词、多段切分、`attacking_transition` 边界、`unknown`/provenance、
+      时间基准、fixture+变异、provenance 记录）**及与 #16 的接口张力**——
+      见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.3。
 - `16` **团队与局部空间特征** ⏳ open
   - Blocked by: `12`, `13`
   - Type: Research
