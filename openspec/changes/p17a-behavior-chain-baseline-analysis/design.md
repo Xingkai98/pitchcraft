@@ -150,7 +150,12 @@ cargo test --test p17a_behavior_chain_baseline
 4. **报数同口径**：规则里出现的均值/离散度必须取自与报告表**同一份 `Stat`**，不得自己算池化均值。实测事故：A7 用池化 `model::mean` 报 kickoff 3.58 s，表里是 2.58 s。守卫 `a7_reports_the_per_match_statistic_not_the_pooled_mean`。
 5. **证据母体一致**：证据样本的选取条件必须与统计量的分母口径一致。实测事故：A5 的分母是"含 shot 的 episode"（v7 上 5741），证据却按 `is_shot_ending`（v7 上 1226）挑。守卫 `a5_evidence_comes_from_the_statistic_population`。
 6. **措辞不夸大**：`x ∈ [0.5±0.2]` 是**中央 40% 区间**，不得称"窄带"——A8 的异常依据是两端区间近乎空集，不是该区间窄。
-7. **机制文本不含运行时数值**（2026-09-24 第四轮审阅补）：`mechanism_hypothesis` / `why_not_football` 是 `&'static str`，**canary 与 baseline 共用同一句**，因此任何随 seed 集变化的量（占比/计数/均值）写进去都会与其中一份产物自相矛盾。实测事故：A1 写「（约占 73%）」、A2 写「`delivery_loose` 的 26.3%」。这类量**只能**在 `criterion`（`String`，由指标插值）里出现。合法内容：源码常量（`BASE_ACTION_DEADLINE_TICKS=7`）、`file.rs:NNNN` 行号、结构性极端（0% / 100% 读作"必然/从不"）。守卫 `mechanism_prose_carries_no_frozen_statistical_ratios`（扫 `N%` token + 断言机制文本在两份不同指标的输入上逐字节相同）。
+7. **机制文本不含运行时数值**（2026-09-24 第四轮审阅补）：`mechanism_hypothesis` / `why_not_football` 是 `&'static str`，**canary 与 baseline 共用同一句**，因此任何随 seed 集变化的量（占比/计数/均值）写进去都会与其中一份产物自相矛盾。实测事故：A1 写「（约占 73%）」、A2 写「`delivery_loose` 的 26.3%」。这类量**只能**在 `criterion`（`String`，由指标插值）里出现。合法内容：源码常量（`BASE_ACTION_DEADLINE_TICKS=7`）、结构性极端（0% / 100% 读作"必然/从不"）。
+**`file.rs:NNNN` 行号不合法**（2026-09-26 移植审阅更正）：行号会随任何重放/rebase 平移，且
+P15A/P17A 移植到 main 后实测 `anomalies.rs` 里 44 处引用**全部失效**（`lib.rs:2225` 落到空行、
+`lib.rs:5260` 落到 `Some(receiver)`），而它们**会随 `mechanism_area` 进产物**。
+上一句清单里原来把行号列为合法——那是这条缺陷的**规则级根因**：规则批准了一种必然漂移的内容。
+**一律用符号名**（`advance_action_opportunity`、`start_loose_ball`…）；确需行号时写进注释并接受它会漂。守卫 `mechanism_prose_carries_no_frozen_statistical_ratios`（扫 `N%` token + 断言机制文本在两份不同指标的输入上逐字节相同）。
 
 ## 4. provenance（每条产物必须自带口径）
 

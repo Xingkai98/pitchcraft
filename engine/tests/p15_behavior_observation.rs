@@ -34,7 +34,7 @@
 //!
 //! - `gap_count() == 0` **只对本样本成立**，不是全称命题。终场哨落在未决飞行中途时会**合法**
 //!   产 `full_time_during_ball_in_flight`（实测 seed 470 @ dur 120、seed 1228 @ dur 400，
-//!   触发与时长无关；样本为 2026-09-25 在 main(v7) 基线重扫所得）。故本文件**不写**「所有 duration 均为 0」这类断言，而按**分类**断言
+//!   同一机制可由多种时长触发；样本为 2026-09-25 在 main(v7) 基线重扫所得）。故本文件**不写**「所有 duration 均为 0」这类断言，而按**分类**断言
 //!   （见 [`gap_is_a_classified_outcome_not_a_failure`]）。
 //! - `event_indexes` 是**对象↔事件**的归属；因果事件的时间**可以早于** `object.start_t`
 //!   （`event_emit` 早于 `state_commit`，design §15.6）。**不得**断言「事件时间落在对象时间窗内」。
@@ -96,7 +96,7 @@ const CANARY_SEEDS: [u64; 13] = [1, 5, 9, 15, 24, 33, 36, 86, 97, 100, 120, 157,
 
 /// 「争抢原因 ↔ 引擎事件」门的 seed 集：canary + 5 个**只为 `shot_rebound` 而加**的 seed。
 ///
-/// `shot_rebound` 是全部 5 类被钉住的争抢原因里最稀疏的（90 分钟 300 seed 仅 62 条，canary
+/// `shot_rebound` 是全部 5 类被钉住的争抢原因里最稀疏的（90 分钟 300 seed 仅 73 条，canary
 /// 里只有 3 条）。只靠那几条会让本门对「该路径整体消失」几近空转，故显式补
 /// 37 / 41 / 66 / 106 / 107——它们在 5400 全扫里各含 **2** 条（`shot_rebound` 出现在
 /// 1, 6, 11, 12, 27, 37, 41, 66, 106, …）。补到 5 个（种子集合上共 13 条）是为了给防空转
@@ -202,8 +202,8 @@ fn sidecar_is_deterministic_for_the_same_seed_and_config() {
 }
 
 /// **design §13 门 3**：观察开关**不改变正式事件流**——用当前 `MODEL_VERSION` 对应的 golden
-/// 基线做外部锚（移植到 main 后为 `golden-v7`；本测试在 v6 基线上写作，故函数名沿用旧称，
-/// 实际读取的目录由 `MODEL_VERSION` 决定）。
+/// 基线做外部锚（移植到 main 后为 `golden-v7`；函数名曾带 `v6` 字样，2026-09-25 已改为不含
+/// 版本号，目录由 `MODEL_VERSION` 决定）。
 ///
 /// 与 [`plain_and_opt_in_paths_agree_byte_for_byte`] 的分工：那条是「两条路径互相比」，
 /// 理论上可以被「两边都错成一样」骗过；这条把结果**锚到磁盘上的 golden**（`tests/golden-v{MODEL_VERSION}/`，
@@ -572,8 +572,8 @@ fn restart_kind_decides_the_delivered_episode_start_reason() {
 /// | `delivery_loose` | `Pass` / `result="contested"`（= 角球 / 门球 / 解围三类交付落点） | **不约束**——见下 |
 ///
 /// `delivery_loose` 的「同刻关闭的 episode」形态**本来就不同**：交付落点争抢开启时原 episode
-/// 通常已在出球提交点关闭（实测 204 条里 194 条同刻 0 条关闭、7 条 1 条 `ControlLost`、
-/// 2 条 1 条出界类、1 条 `FullTime`）。故对它只断言**绑定事件 + 收束原因 + 下一条事实**，
+/// 通常已在出球提交点关闭（**15 场 CONTEST_SEEDS** 实测 313 条里 296 条同刻 0 条关闭、
+/// 17 条 1 条且 `end_reason` 全为 `ControlLost`）。故对它只断言**绑定事件 + 收束原因 + 下一条事实**，
 /// 不硬套「恰好一条」——那会测出一个引擎不产生的形状。（它曾经被本门用一句注释「转交」
 /// 给 `restart_kind_decides_the_delivered_episode_start_reason`，而**那条门根本不读
 /// `control_facts`、对 `delivery_loose` 零断言**——那是一次假的覆盖转交，已改为真正覆盖。）
@@ -603,9 +603,9 @@ fn contest_reasons_and_settlements_are_bound_to_their_own_engine_events() {
         /// 恰好一条，且 `end_reason` 等于给定值。
         ExactlyOne(EpisodeEndReason),
         /// `delivery_loose` 专用：条数**不约束**（交付落点争抢开启时，原 episode 通常已在出球
-        /// 提交点关闭——实测 204 条里 194 条同刻 0 条关闭），但**凡是有同刻关闭的**，其 `end_reason`
+        /// 提交点关闭——15 场实测 313 条里 296 条同刻 0 条关闭），但**凡是有同刻关闭的**，其 `end_reason`
         /// 必须是给定值。这样既不硬套引擎不产生的「恰好一条」，又不把「`end_reason` 被改错」
-        /// 放过去（实测：三个交付点一起把 `ControlLost` 改成别的值时，7 条 episode 全部漂移）。
+        /// 放过去（实测：把 `ControlLost` 改成别的值时，17 条 episode 全部漂移）。
         AnyCountButReason(EpisodeEndReason),
     }
 
@@ -786,7 +786,7 @@ fn contest_reasons_and_settlements_are_bound_to_their_own_engine_events() {
             //    「紧邻下一条必为 `contest_ended`」是 recorder 状态机性质：争抢开启后 `state`
             //    为 `Contested`，此后**每个**收束入口（`control_established` 的 pickup、
             //    `dead_ball_started` / `full_time` 的 `settle_contest`）都在推进状态**之前**
-            //    先记 `contest_ended`（`observation.rs`）；实测 300 seed / 15,743 条争抢零反例。
+            //    先记 `contest_ended`（`observation.rs`）；实测 300 seed / 20,053 条争抢零反例。
             //    若将来引擎改成允许争抢中夹入其它事实，本断言会**先**红——那是 fail-closed 的
             //    正确行为，届时须重新评估 ③ 的取法。
             let next = dm.control_facts.get(fi + 1).unwrap_or_else(|| {
@@ -1036,7 +1036,7 @@ fn kickoff_flight_basis_separates_first_kickoff_from_a_goal_restart() {
 ///    未 taken 就被 `match_end` 收束的 restart、`dur` 时刻已 taken 的门球）由单一谓词统一覆盖。
 ///
 /// ⚠️ **不得**在此断言「事件时间落在对象时间窗内」——因果事件可以**早于** `object.start_t`
-/// （`event_emit` 早于 `state_commit`，design §15.6；实测 80 场里 1923/7749 条绑定事件如此）。
+/// （`event_emit` 早于 `state_commit`，design §15.6；实测 canary 13 场里 769/7571 条绑定事件如此）。
 ///
 /// 判别力（目标变异必红）：把「首开球收束前的那次绑定」删掉 → 第 3 条的非空断言红。
 #[test]
@@ -1147,7 +1147,11 @@ fn check_index_list(what: &str, id: u64, idxs: &[usize], n_events: usize, seed: 
 ///
 /// 这条测试的存在理由：`gap_count() == 0` 曾被当成全称命题写进多处断言，而**它是错的**——
 /// 终场哨落在未决飞行的中途时会**合法**产 `full_time_during_ball_in_flight`
-/// （design §15.5：触发与时长**无关**；已复核 seed 470 @ dur 120、seed 1228 @ dur 400）。
+/// （design §15.5；已复核 seed 470 @ dur 120、seed 1228 @ dur 400）。
+/// **「触发与时长无关」是 2026-09-26 审阅证伪的错误全称**：逐档实测（dur 60/120/300/400/600/1200/5400）
+/// 下，470 **只**在 dur=120 产 gap、1228 **只**在 dur=400 产，其余各档均为 0。
+/// 准确表述是「同一机制（`t=dur-1` 发出、`t=dur` 落终场哨）可由多种时长触发」，
+/// 而不是「任何时长都会触发」。
 ///
 /// 因此本门不写「所有 duration 均为 0」，而是：
 ///

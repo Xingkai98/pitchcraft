@@ -418,7 +418,7 @@ pub fn derive_match(seed: u64, dm: &DiagnosticMatch) -> MatchRecord {
         }
         // pickup 队伍：争抢收束后的下一条 `control_established`，但**只在本次结算的窗口内**找。
         //
-        // 为什么必须设边界：`obs_contest_pickup`（lib.rs:2811）是在 `contest_ended` **紧邻**提交
+        // 为什么必须设边界：`obs_contest_pickup` 是在 `contest_ended` **紧邻**提交
         // `control_established` 的，所以正常的拾回就在下一条；而无界向前搜会在「争抢以死球/哨声
         // 收束」时读到**很久之后**另一次进攻的 control_established，把无关球队记成本次拾回方
         // （与 `duration` 那条同理：向前搜会读到别人的收束）。边界取「下一个会改变比赛状态的

@@ -4567,7 +4567,7 @@ mod tests {
         );
         assert_eq!(a.possession_episodes, b.possession_episodes);
         assert_eq!(a.restart_sequences, b.restart_sequences);
-        assert_eq!(a.gap_count(), 0, "本 seed（默认时长）不该产 gap；\n                 注意：这只是**本样本内**的 0，不是「任何真实路径都无 gap」的全称命题——\n                 终场哨落在未决飞行中途时会合法产 `full_time_during_ball_in_flight`\n                 （实测 seed 470 @ dur 120、seed 1228 @ dur 400；触发与时长无关，见\n                 truncated_stream_produces_a_full_time_gap_by_design 的文档）");
+        assert_eq!(a.gap_count(), 0, "本 seed（默认时长）不该产 gap；\n                 注意：这只是**本样本内**的 0，不是「任何真实路径都无 gap」的全称命题——\n                 终场哨落在未决飞行中途时会合法产 `full_time_during_ball_in_flight`\n                 （实测 seed 470 @ dur 120、seed 1228 @ dur 400；同一机制可由多种时长触发，但不是「任何时长」，见\n                 truncated_stream_produces_a_full_time_gap_by_design 的文档）");
         assert!(
             a.phase_segments.is_empty(),
             "#15B 之前 phase_segments 必须为空"
@@ -5022,9 +5022,14 @@ mod tests {
     /// design §5 第二张表与 §10，必须记 `full_time_during_ball_in_flight` gap，并把 episode
     /// 结束原因固定为 `whistle_interrupt`（**不**伪造动作结果）。
     ///
-    /// 触发机制与时长**无关**：只要「某一 tick 以飞行中（`Pass` / `Shot` 等）结束、球尚未落地」
+    /// 触发条件是**结构性的**：只要「某一 tick 以飞行中（`Pass` / `Shot` 等）结束、球尚未落地」
     /// 而 `t + 1 == dur`，终场哨就落在飞行中途。短时长只是让**开球飞行**更容易撞上哨（`dur 120`
     /// 时开球刚发出就被截），长时长则需要比赛尾段恰有一脚未落地的球——**罕见，但会发生**。
+    ///
+    /// ⚠️ **不要写成「触发与时长无关」**（2026-09-26 审阅证伪）：逐档实测
+    /// （dur 60/120/300/400/600/1200/5400）下，`470` **只**在 dur=120 产 gap、`1228` **只**在
+    /// dur=400 产，其余各档均为 0。触发条件不依赖时长这一**结构**没错，但「任何时长都会触发」
+    /// 是错误全称——特定 seed 撞上哨需要尾部飞行恰好落在该时长上。
     ///
     /// 已复核示例（旧表述曾断言「dur ≥ 300 时 0 例」，**该全称已被证伪**，勿退回）：
     ///
@@ -5137,7 +5142,7 @@ mod tests {
                     dm.gap_count(),
                     0,
                     "seed {} dur {}：本样本不该产 gap（0 只对本样本成立——终场哨落在未决飞行\
-                     中途时会合法产 `full_time_during_ball_in_flight`，且**与时长无关**：\
+                     中途时会合法产 `full_time_during_ball_in_flight`：\
                      已复核 seed 470 @ dur 120、seed 1228 @ dur 400。若本行变红先查它是不是\
                      那一类合法缺口，再查 SupersededByDeadBall 口径）",
                     seed,
@@ -5213,7 +5218,7 @@ mod tests {
     /// `MODEL_VERSION=7` 上重测；旧 v6 基线为 22 + 55，谓词本身不变）。三个形态是：
     /// ① `dur` 时刻由终场哨开启的 episode（`start_t == end_t == dur`）；
     /// ② `dur` 时刻创建、未 `taken` 就被 `match_end` 收束的 restart；
-    /// ③ `dur` 时刻由射门 off-target 触发、**已 `taken`** 的门球 restart（在排空期内
+    /// ③ `dur` 时刻由出界（射门 off-target **或**传球 `result="out"`）触发、**已 `taken`** 的门球 restart（在排空期内
     ///    `finalize_highlight` 里创建并同步 taken——`taken` 本身不豁免绑定，是排空期暂停豁免的）。
     ///
     /// ⚠️ **本测试的第一版曾漏掉形态 ③**：它按 `end_reason == MatchEnd && taken_t.is_none()`
