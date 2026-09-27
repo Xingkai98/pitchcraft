@@ -94,7 +94,8 @@
       重放后哈希已变。除非确需回溯旧分支，否则按 PR/符号名定位。）
     - 已能可靠输出 `ControlFact`、`PossessionEpisode`、`RestartSequence`、contest、结束原因和事件归属；正式事件流保持不变。
     - 300 seed × 90 分钟验证：331,966 facts、26,429 episodes、14,476 restarts、0 gaps；`verify.sh` 全绿。
-  - **#15B PhaseAnnotator：⏸ 暂停（2026-09-27）**——前置是「phase 挂载模型」设计票据。
+  - **#15B PhaseAnnotator：⏸ 暂停（2026-09-27）**——前置是「phase 挂载模型」设计票据
+    [★ #113](issues/113-15b-phase-mounting-model.md)（GH #113，`wayfinder:grilling`，draft）。
     - 第一版只在已确认的 possession episode 内标注 `build_up / progression / final_third / attacking_transition / unknown`。
     - 定位球 delivery 留在 `RestartSequence`，首次明确开放控制前不得伪装成 possession phase。
     - 契约与约束见 `.scratch/notes/match-behavior-observation-design.md` §11；`Phase`/`PhaseProvenance`
