@@ -55,8 +55,10 @@
 
 > 目标：从“匹配真实比赛统计”推进到“经过真实足球式的状态、空间和动作链”。
 > #15A 观察层已于 2026-09-24 完成，**#17A 行为链基线分析已完成**（2026-09-24，2026-09-25 在
-> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **#15B Possession 内 PhaseAnnotator**：
-> 在已确认的 possession episode 内做纯只读的 phase 投影，为 #17B 的解释提供阶段证据。
+> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **「phase 挂载模型」设计票据**——
+> **#15B 已暂停**（2026-09-27）：实测证明 `attacking_transition` 在现行契约下结构上无法标注，
+> 另三档在 #16 之前无判据。须先答「Phase 是否必须完全挂在 `PossessionEpisode` 内」。
+> 见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3/§4.5。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
 
 - `12` **比赛行为观察契约** ✅ 已通过 grilling
@@ -79,7 +81,7 @@
   - 产物：可重复的 baseline fixture/report；明确哪些异常是模型已有行为，避免后续把回归误判为改进。见 `.scratch/notes/behavior-baseline-2026-09-22.md`。
   - 结论：**已得到第一版基线，但需由 #15 重算语义**。30 seed × 90 分钟平均 460.13 个动作事件、113.13 个启发式球权段；球权持续时间 P50=25 秒、P90=123 秒。阶段启发式结果为 `build_up` 0.12%、`progression` 24.17%、`final_third` 54.80%、攻防转换合计 13.34%、定位球 7.57%。这说明当前输出是动作/高亮流而非完整触球流，且现有 phase 推断不足以直接指导调参。
   - 状态：✅ 已解决（2026-09-22）
-- `15` **球权与阶段标注器** 🚧 #15A 已完成；#15B 待开始
+- `15` **球权与阶段标注器** 🚧 #15A 已完成；#15B **暂停**（2026-09-27，前置为「phase 挂载模型」设计票据，见本条末）
   - Blocked by: `13`, `14`
   - Type: Prototype
   - 问题：如何从现有事件流确定 possession 边界、阶段起止、竞争状态和球权结束原因？
@@ -92,16 +94,18 @@
       重放后哈希已变。除非确需回溯旧分支，否则按 PR/符号名定位。）
     - 已能可靠输出 `ControlFact`、`PossessionEpisode`、`RestartSequence`、contest、结束原因和事件归属；正式事件流保持不变。
     - 300 seed × 90 分钟验证：331,966 facts、26,429 episodes、14,476 restarts、0 gaps；`verify.sh` 全绿。
-  - **#15B PhaseAnnotator：⏳ open（当前 frontier）**。
+  - **#15B PhaseAnnotator：⏸ 暂停（2026-09-27）**——前置是「phase 挂载模型」设计票据。
     - 第一版只在已确认的 possession episode 内标注 `build_up / progression / final_third / attacking_transition / unknown`。
     - 定位球 delivery 留在 `RestartSequence`，首次明确开放控制前不得伪装成 possession phase。
     - 契约与约束见 `.scratch/notes/match-behavior-observation-design.md` §11；`Phase`/`PhaseProvenance`
       闭集已在 `engine/src/observation.rs` 预留（不产出 segment）。
-    - **落地形态**：填充 P15A 已在 sidecar 预留的 `phase_segments`（`PhaseSegment` 结构体与
-      `Phase`/`PhaseProvenance` 闭集已在 `observation.rs` 备好）。仍是**只读投影**——
-      不反向影响 possession 边界或决策；`phase_segments` 不参与 JSON 序列化，故不动 golden。
-      填充的**发生位置**（recorder 内 vs `simulate_with_behavior_observations` 后）待定，
-      见 roadmap §4.1/§4.2。
+    - **暂停原因**：实测证明 `attacking_transition` 在现行契约下**结构上无法标注**——
+      引擎 `transition` 窗口 ⊂ `Contested` 区间，而 `Contested` 按契约不是 `PossessionEpisode`；
+      另三个标签在 #16 之前只有坐标可用，而「区域 ≠ 阶段」。照做会得到产出≈零的机器。
+    - **前置设计票据**：Phase 是否必须完全挂在 `PossessionEpisode` 内，还是需要一个与
+      possession 正交的 transition observation 层（如 `TransitionSpan`）？
+    - 落地形态（填 sidecar 预留字段）与七项清单仍有效，但**先回答挂载模型**。
+    - 详见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.5。
     - **开工前须闭合七项**（谓词、多段切分、`attacking_transition` 边界、`unknown`/provenance、
       时间基准、fixture+变异、provenance 记录）**及与 #16 的接口张力**——
       见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.4。
@@ -155,7 +159,9 @@
   - 问题：诊断信息如何以 debug overlay、逐球权暂停和事件链方式进入 viewer，而不污染正式演绎协议？
   - 产物：可视化诊断模式；正式 viewer 行为保持兼容。
 
-> **执行顺序（2026-09-24 决策）**：`#17A 立即分析` ✅ 已完成 → `#15B phase` → `#16 空间特征` →
+> **执行顺序（2026-09-24 决策；2026-09-27 修正）**：`#17A 立即分析` ✅ 已完成 →
+> **`phase 挂载模型设计票据`（当前）** → `#15B phase`（暂停中）或 `#16 空间特征`（见 roadmap §4.5）→
+> 原序列 `#15B → #16` 是否维持，取决于设计票据的结论：
 > `#17B 可解释报告` → `#18 行为验证` → `#19 最小生成改造`。不要等 #15B/#16 全部完成才开始分析；
 > 也不要在 #17A 仅凭场均统计直接调参数。
 
