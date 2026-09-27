@@ -149,12 +149,28 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
 - 定位球 delivery 留在 `RestartSequence`，首次明确控制前不标 possession phase；
 - 不把球场区域直接等同为战术阶段。
 
-### 4.1 落地形态（design §11 已定，不要再讨论）
+### 4.1 落地形态：**落在 sidecar，不是分析器层**（2026-09-26 更正）
 
-`.scratch/notes/match-behavior-observation-design.md` §11 给了 `PhaseAnnotator` 的输入签名，
-方向是定的：**分析器层的纯只读投影**——不改 P15A recorder、不改正式事件流、不改 golden，
-`phase_segments` 在 sidecar 里继续只是预留字段。`Phase`/`PhaseProvenance` 闭集已在
-`engine/src/observation.rs` 预留（有测试守着「#15B 之前必须为空」）。
+⚠️ **本节先前写「分析器层的纯只读投影」，那是错的**——它来自对 §11 的误读，且**同一轮里
+`map.md` 又被改成相反的说法**（「见 design §11」）。两处互相矛盾。以下按证据重写：
+
+**设计意图是填充 sidecar 预留的字段**，证据三条（都在仓里可查）：
+
+1. `match-behavior-observation-design.md:36` 的 sidecar schema 明写 `phase_segments // #15B，第一版可为空`；
+2. 同文件 `:338`：「#15A 的 sidecar schema 为其**预留**空数组即可」；
+3. `engine/src/observation.rs` 已经把 `PhaseSegment { episode_id, start_t, end_t, phase, provenance }`
+   整个结构体、`Phase` / `PhaseProvenance` 两个闭集、以及 `DiagnosticMatch.phase_segments` 字段
+   **全部预留好了**，并留了两个「15B 之前必须为空」的守卫。
+
+**这仍然满足「纯只读投影」**：标注器读 `PossessionEpisode`/`ControlFact`/引擎 hints 产 segment，
+**不反向影响** possession 边界或决策。它只与 P15A 现有的两条纪律冲突——「recorder 不参与决策」
+与「不改 recorder」——而这两条都指**决策路径**，不是字段填充；`phase_segments` **不参与任何
+JSON 序列化**（`events_json()` 只序列化 events），故按字节一致门与 golden **不受影响**。
+
+**待确认项**（开工前必须定，见 §4.2 第 4 条）：填充**发生在哪里**——是 recorder 在 `into_diagnostic_match`
+之前填，还是 `simulate_with_behavior_observations` 在拿到 `DiagnosticMatch` 之后填？
+后者更贴合「recorder 不参与」，但 `PhaseSegment.episode_id` 指向的是 sidecar 内部对象，
+两种位置都能实现。**这是一个真决策，不要默认略过。**
 
 ### 4.2 实现前必须闭合的七项（2026-09-26 定，比原先四条更全）
 
@@ -180,7 +196,24 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
    产物自带 `source_commit` + `engine_source_fingerprint` + 口径常量，使两次不可比的运行
    能在产物层被识别。
 
-### 4.3 与 #16 的接口张力（须在 #15B 设计里显式处理）
+### 4.3 `attacking_transition` 有引擎内真值可接（2026-09-26 发现）
+
+`attacking_transition` 不必从零发明判据——引擎里已经有一个**同名的真实状态**，只是**没进 sidecar**：
+
+- `MatchState.transition: Option<Transition { ticks_left, attacking, source }>`，
+  窗口固定 `TRANSITION_TICKS = 4`（`lib.rs`）；
+- 仅两个触发来源（`enum TransitionSource`）：`Tackle`（抢断成功）与 `SaveCaught`（门将扑住）；
+  射门**被扑出反弹**（save-rebound）**不触发**（进普通松散球，双方可争）。
+- **命名冲突警告**：主 spec `match-engine` 已有一条「控球阶段与攻防转换」要求，讲的是引擎内部的
+  **team `attack`/`defend` + `transition_active`**。那与 15B 的 possession phase 闭集
+  （`build_up`/`progression`/`final_third`）**不是同一个概念**，勿混用同一名词。
+
+**因此 15B 的第一版 `attacking_transition` 应当接这个引擎 hint**（provenance = `engine_hint`），
+而不是自己用几何重新推断。但有一条**硬约束**：该状态目前**完全不在 sidecar 里**
+（`observation.rs` 零处引用），要么先把它作为事实暴露出来，要么在标注器可及处读取——
+这是 §4.2 第 4 条「输入事实优先级」的具体化，也是开工前必须定的。
+
+### 4.4 与 #16 的接口张力（须在 #15B 设计里显式处理）
 
 §11 的签名里有 `spatial_features`，**而 #16 按路线图排在 #15B 之后**——即 v1 的签名里有一项
 输入尚不存在。这不是可以默认略过的策略问题，v1 必须二选一并写进 design：
