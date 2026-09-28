@@ -198,51 +198,48 @@ JSON 序列化**（`events_json()` 只序列化 events），故按字节一致�
    产物自带 `source_commit` + `engine_source_fingerprint` + 口径常量，使两次不可比的运行
    能在产物层被识别。
 
-### 4.3 `attacking_transition` 在现行契约下**结构上无法标注**（2026-09-27 实测更正）
+### 4.3 `attacking_transition` 是 team-state，不作 possession phase（2026-09-28 定论）
 
-⚠️ **本节先前写「有引擎内真值可接，第一版应当接这个 hint」——那是错的**（同一轮内被实测反证）。
-保留更正过程，因为它是 15B 停摆的直接原因。
+> 本节经**三轮独立对抗审阅**（GH #113）。**前两版都写错了机制**，此处是定论；
+> 完整论证见 `.scratch/issues/113-15b-phase-mounting-model.md` 与 GH #113。
 
-**引擎里确实有一个同名状态**：`MatchState.transition { ticks_left, attacking, source }`，
-窗口固定 `TRANSITION_TICKS = 4`，仅两个来源 `Tackle` / `SaveCaught`（save-rebound 不触发）。
-**但它够不着任何 `PossessionEpisode`**——实测（60 seed × 90 分钟）：
+**结论**：`MatchState.transition { ticks_left, attacking, source }` 是**一个**对象，
+**同时驱动两队**——得球方前压（`press *= 2.0`）、失球方收缩（`close_down`）。
+实测窗口内 close_down movers **`4353 属防守方 / 0 属进攻方`**。
 
-| 路径 | 易主动作 → 下一个 episode 起点 | 与窗口 `[t, t+4)` 的关系 |
-|---|---|---|
-| **Tackle** | **867/867 全部恰好 4.0 s**（零例外） | 4.0 **落在区间外** -> **零重叠** |
-| SaveCaught | p50 = 20 s | 有重叠，但靠**松散球停留久**碰上，非窗口有效 |
+⇒ 它是**团队状态**，与 design §11 已排除的 `defensive_transition` **同构**
+（§11 逐字理由：「属于失去球权球队的团队状态，不应伪装成当前控球队 possession phase」）。
+把得球方那一面标成 possession phase 是**同一个类型错误**。
+→ **它不应作为 possession phase 产出**（处置见 §4.5）。
 
-时间线（tackle@80）：`ControlReleased@81 -> ContestStarted@81 -> ContestEnded@84 -> ControlEstablished@84`
+**一处须说明的不对称**：得球方在窗口后**确实**成为控球方，失球方不会——
+所以是**镜像**而非孪生。这条不对称应写进 design，而非当作已证明的矛盾。
 
-**根因是架构错配，不是覆盖率问题**：
+#### 前两版写错的三处（保留，因是本仓反复踩的坑）
 
-```text
-design §11 硬约束：phase_segments 只能挂在 PossessionEpisode 内，
-                   不得跨越 episode / RestartSequence / DeadBall
-引擎真实情况：      transition 窗口 ⊂ Contested 区间（tackle 路径整段落在里面）
-契约：              Contested 不是 PossessionEpisode（map.md:63；design §6 状态转移表）
-```
+| 曾写 | 实测更正 |
+|---|---|
+| 「tackle→下一个 episode **恒 +4.0 s**，结构事实」 | **常数巧合**：`gap = LOOSE_MAX_TICKS + 2`，只因 `2+2=4` 才等于 `TRANSITION_TICKS`。sweep：翻转条件是 **`gap < TRANSITION_TICKS`**（`LOOSE_MAX_TICKS` 0/1 翻：909/886 拍；2/3/4 不翻）——**「任何重标定都会翻」也错，上调不翻** |
+| 「够不着任何 `PossessionEpisode` / 窗口整段在 Contested」 | **只对 tackle 路径**；save 路径 **98/98 窗口、392/392 拍全覆盖**——「完全够不着」是假的。窗口起点**总是**已有 open episode（868/868、98/98），只是**属失球方** |
+| 「事件晚一拍」 | **讲反了**：tackle 事件与武装**同函数同 tick**（`lib.rs:4093`/`:4109`）；滞后的是 `contest_started`（`arm+1`） |
 
-`observation.rs` 亦确认 episode 只在 `Controlled` 下开启（悬空 `Contested` 走 `reject` 分支）。
-**两侧约束合起来 ⇒ `attacking_transition` 的真值落在 phase 够不着的地方。**
-与窗口重叠的 episode 共 1230/6047（20.3%），但拆开只有 **84 个是「起始落在窗口内」**，
-1106 个是「在窗口内**结束**」——后者是丢了球权的旧 episode，不是转换。
+#### 口径警告（前两版的数字因此对不上）
 
-**SaveCaught 之所以有重叠**：它的窗口与「门将持球建立新 episode」**在同一拍武装**
-（`lib.rs` save-caught 分支：武装 `transition` 后紧接着 `emit_beat_with_main`，注释明写
-「这记带球 beat 属于新 episode」）；而 tackle 路径的窗口整段在 contested 内，等 episode 开启时窗口已清除。
+- 窗口定义有**两套**：引擎真窗口 `[武装 tick, +4)` vs 事件锚 `[事件.t, +4)`。
+  tackle 上两者**同 tick**；save 武装滞后 saved-shot 事件 +1（90 次）/+2（8 次）。
+- 因此**本文件旧版记的 `1230 / 84 / 1106` 应作废**（本轮复现不出 `84`/`1106`；
+  可复现的是事件锚口径 `1230 / 124`）。引用一律以 #113 票据为准。
+- `tackle 事件数` 60 场为 **868**（旧版写 867 是「有后继 episode」的子集口径）。
 
-**命名冲突警告**（此条仍成立）：主 spec `match-engine` 已有一条「控球阶段与攻防转换」要求，
-讲的是引擎内部的 team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭集
-**不是同一个概念**，勿混用同一名词。
+**命名冲突警告**（仍成立）：主 spec `match-engine:641`「控球阶段与攻防转换」讲的是引擎内部
+team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭集**不是同一个概念**。
 
-**因此 15B 的前置问题不是「如何接 transition hint」，而是**：
+**⇒ 15B 的前置问题因此收敛为**（见 §4.5 与 #113 §8）：
 
 > **Phase 是否必须完全挂在 `PossessionEpisode` 内，还是需要一个与 possession 正交的
 > transition observation 层（如 `TransitionSpan`）？**
 
-这个问题没有答案之前，直接开工 15B 会变成形式主义——见 `.scratch/map.md` 的 `15B` 条目与
-roadmap §4.5。**15B 暂停。**
+**15B 暂停**，待设计票据确认。
 
 ### 4.4 与 #16 的接口张力（须在 #15B 设计里显式处理）
 
@@ -255,34 +252,36 @@ roadmap §4.5。**15B 暂停。**
 
 无论选哪条，**都不得用区域/坐标冒充空间特征**——那正是 §11 禁止的「把球场区域直接等同为战术阶段」。
 
-### 4.5 决定：**15B 暂停**，先立「phase 挂载模型」设计票据（2026-09-27）
+### 4.5 15B 的处置与顺序（2026-09-28 定）
 
-按 §4.3 的实测结论，15B 在现行契约下没有可标的真值。三个候选方案各自的代价：
+**已定**（依据 §4.3，见 GH #113）：
 
-| 方案 | 代价 |
+- `attacking_transition` **不作 possession phase 产出**——它是 team-state（§4.3）；
+- **不删** `Phase` 闭集成员：它从未产出，删它只改 2 处手写成员表，却让**已记录的**
+  `sidecar_schema_fingerprint` 变陈旧，且**定向突变实测删 label 后全套测试仍全绿**（无守卫守该值）；
+- 改为在 #15B design 标注「`attacking_transition` 在 possession phase 层**不作产出**，
+  语义归 team-state observation」；
+- **顺序**：`#16（含 phaseability gate）→ #15B`。
+
+**为何否决另两条**：
+
+| 方案 | 否决理由 |
 |---|---|
-| 1 照做（机器 + `unknown`） | 交付一台**空转的机器**：`attacking_transition` 上限 2–3%，其余 ~97% `unknown`；对 #17B 无阶段解释价值。应改名为前置基础设施票据，而非宣称 15B 提供了阶段证据 |
-| 2 扩张 possession 以覆盖 contested | **破坏 P15A 已验证的核心契约**。`Controlled`/`Contested` 互斥是状态机基础（`design §6` 转移表、`§9.1`）；改了会连带 episode 数/时长/起止原因/动作归属与 P17A 全部统计。正确方向是**新增正交对象**（`TransitionSpan`），不是扩张 possession |
-| 3 先做 #16 | #16 是**必要非充分**：它给的空间特征（宽度/纵深/局部人数/最近防守距离/接应角度）能支持「是否有组织接应」「是否受压」这类判断，**但不能自动定义** `build_up`/`progression`/`final_third`——`build_up ≠ 后场`、`progression ≠ 球向前移动`、`final_third ≠ 前 1/3`。若不额外产出面向 phaseability 的连续特征，只是在推迟同一个问题 |
+| 扩张 possession 覆盖 contested | **类型缺陷**：`Contested` = 控制**未**确认、`PossessionEpisode` = 控制**已**确认，互斥由 `design §6` 转移表 / `§9.1` / `observation.rs` 的 `reject` 分支保证；合并是把「未确认」塞进「已确认」。**且会撞 §10 不变量与既有守卫**（`p15_behavior_observation.rs` 那批直接变红），**并毁 P17A 全部统计** |
+| 15B 现在单独做 | 三档（`build_up`/`progression`/`final_third`）在 #16 之前**确认无判据**（只有坐标，而「区域 ≠ 阶段」）；save 路径虽够得着，但那是把 team-state 标成 phase（类型错误）。整体产出 ≈ 零 |
 
-**结论**：先回答设计问题，而不是选实现路径。
+**仍待用户拍板**（不再阻塞设计，但阻塞实现，见 #113 §8 全 7 项）：
 
-> **Phase 是否必须完全挂在 `PossessionEpisode` 内，还是需要一个与 possession 正交的
-> transition observation 层（如 `TransitionSpan`）？**
+1. 缺失的 §11 理由：**回填 design §11**（动冻结文档）还是在 #15B design 记偏离？
+2. 是否为 **team-state observation** 立项（承载两队转换语义），
+   还是先走「**负空间 + 判据**」的零新对象路线？（旧 episode 的 `control_lost` +
+   `contest_started(tackle_loose)` + 4-tick 窗口已构成转换窗口的完整负空间表达——
+   缺的是「升格为标签的判据」，不是「对象」）
+3. `phase_segments` 的**填充位置**（recorder 内 vs `simulate_with_behavior_observations` 后）；
+4. **判据冻结的守卫方式**（写进 §4.2 清单，还是靠 `engineFingerprint` 哨兵）；
+5. 三档 phase 的**可判定性判据**本身（待 #16）。
 
-**决策票据须回答**：
-
-1. 挂载模型三选一：扩张 possession / 引入正交 `TransitionSpan` / phase 保持现状、转换另行表达；
-2. 若引入 `TransitionSpan`：它与 `PossessionEpisode` 的嵌套或相邻关系、状态不变量、边界 fixture；
-3. 若扩张 possession：需要什么证据才敢动 P15A 的契约——至少包括真实数据证明转换阶段应覆盖争抢区间、
-   新的状态不变量、重跑 0 gap / episode-contest 收束 / 300 seed 校准 / sidecar 确定性 / golden 门，
-   并重生成 P17A 全部指标、确认哪些历史结论失效；
-4. `build_up`/`progression`/`final_third` 的**可判定性判据**：需要哪些特征、在什么时间窗上算、
-   如何避免退化成「区域 = 阶段」；以及若最终不可判定，`unknown` 的期望占比与如何避免 15B 形式主义；
-5. 与 #16 的顺序：先 #16、合并、还是保持 `#16 -> 15B` 但给 #16 加一个 **phaseability gate**——
-   先检验现有观测能否区分三档，够则设计谓词，不够则明确保留 `unknown` 或补数据。
-
-**在票据解决前不动 15B 实现。**
+**在 1–5 落地前不动 15B 实现。**
 
 ## 5. #16：团队与局部空间特征
 
@@ -351,25 +350,25 @@ roadmap §4.5。**15B 暂停。**
 
 随后按 Paseo lifecycle 启动新的 change/session。
 
-**当前 frontier 是「phase 挂载模型」设计票据，不是 #15B 实现**（见 §4.5）。
-**#15B 已暂停**（2026-09-27）：实测证明 `attacking_transition` 在现行契约下结构上无法标注
-（§4.3），`build_up`/`progression`/`final_third` 在 #16 之前没有判据——照做会得到一台产出≈零的机器。
+**当前 frontier 是「用户拍板 #113 的待决项」，不是 15B 实现**（见 §4.5）。
+**#15B 已暂停**（2026-09-27；结论 2026-09-28 定，GH #113 经三轮对抗审阅）：
 
-```text
-phase 挂载模型设计票据（wayfinder issue / OpenSpec explore）
-  Phase 是否必须完全挂在 PossessionEpisode 内，
-  还是需要一个与 possession 正交的 transition observation 层？
-```
+- `attacking_transition` **是 team-state，不作 possession phase 产出**（§4.3）；
+- `build_up`/`progression`/`final_third` 在 #16 之前**确认无判据**——照做会得到产出≈零的机器；
+- **顺序**：`#16（含 phaseability gate）→ #15B`。
 
-- 该会话**只出设计决策**，不写实现；须回答 §4.5 列的五项（尤其是挂载模型三选一，
-  以及扩张 possession 需要什么证据才敢动 P15A 已验证的契约）。
+**#113 的设计结论已定**，剩下的是 §4.5 列的**用户待拍板 5 项**
+（§11 理由回填方式 / 是否立 team-state observation / `phase_segments` 填充位置 /
+判据冻结的守卫方式 / 三档判据本身）。**这 5 项没定之前不要开 15B 实现会话。**
+
+- 若要开工，先做 **#16**，并给 #16 加 **phaseability gate**（先检验现有观测能否区分三档，
+  够则设计谓词，不够则明确保留 `unknown` 或补数据）。
 - **不得**动 P15A recorder、正式事件流或 golden。
-- 决策落地后，路线按 §4.5 第 5 条确定：先 #16、合并、或 `#16 -> 15B` 但给 #16 加 phaseability gate。
-- 独立审阅会话负责核「结论是否被原始契约支持」（本轮的教训：引权威要引原始出处，
-  不要把后来的注记当契约——已发生过一次）。
+- 独立审阅会话负责核「结论是否被原始契约支持」（教训：引权威要引**原始出处**，
+  不要把后来的注记当契约——本轮发生过一次；且**行号引用会漂**，一律用符号名）。
 
-> **本节曾是错的**（2026-09-26 修过一次、09-27 又因实测改一次）：最初让新会话启动
-> **P17A**（已完成，照做会重跑），随后改成启动 **#15B**，而 #15B 现已暂停。
+> **本节已被修过三次**（09-26、09-27、09-28）：最初让新会话启动 **P17A**（已完成，照做会重跑），
+> 随后改成 **#15B**（其后暂停），现改为「拍板 #113 的五项待决」。
 > 每次路线变化都要回来改这里——**这是新会话的第一入口，写错方向代价最大**。
 
 > **本节曾指错方向**（2026-09-26 更正）：原先写「启动 P17A behavior-chain baseline analysis」，

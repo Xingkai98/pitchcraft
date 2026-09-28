@@ -55,9 +55,10 @@
 
 > 目标：从“匹配真实比赛统计”推进到“经过真实足球式的状态、空间和动作链”。
 > #15A 观察层已于 2026-09-24 完成，**#17A 行为链基线分析已完成**（2026-09-24，2026-09-25 在
-> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **「phase 挂载模型」设计票据**——
-> **#15B 已暂停**（2026-09-27）：实测证明 `attacking_transition` 在现行契约下结构上无法标注，
-> 另三档在 #16 之前无判据。须先答「Phase 是否必须完全挂在 `PossessionEpisode` 内」。
+> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **拍板 #113 的待决项**——
+> **#15B 已暂停**（2026-09-27；结论 2026-09-28 定，GH #113）：`attacking_transition`
+> **是 team-state，不作 possession phase 产出**（与已排除的 `defensive_transition` 同构）；
+> 另三档在 #16 之前无判据。
 > 见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3/§4.5。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
 
@@ -100,11 +101,16 @@
     - 定位球 delivery 留在 `RestartSequence`，首次明确开放控制前不得伪装成 possession phase。
     - 契约与约束见 `.scratch/notes/match-behavior-observation-design.md` §11；`Phase`/`PhaseProvenance`
       闭集已在 `engine/src/observation.rs` 预留（不产出 segment）。
-    - **暂停原因**：实测证明 `attacking_transition` 在现行契约下**结构上无法标注**——
-      引擎 `transition` 窗口 ⊂ `Contested` 区间，而 `Contested` 按契约不是 `PossessionEpisode`；
-      另三个标签在 #16 之前只有坐标可用，而「区域 ≠ 阶段」。照做会得到产出≈零的机器。
-    - **前置设计票据**：Phase 是否必须完全挂在 `PossessionEpisode` 内，还是需要一个与
-      possession 正交的 transition observation 层（如 `TransitionSpan`）？
+    - **暂停原因**（结论见 GH #113，经三轮对抗审阅）：`attacking_transition` **是 team-state，
+      不是 possession phase**——引擎 `transition` 窗口同时驱动两队（得球方前压 / 失球方收缩），
+      与 §11 已排除的 `defensive_transition` 同构。另三个标签在 #16 之前无判据
+      （只有坐标，而「区域 ≠ 阶段」）。照做会得到产出≈零的机器。
+    - **处置已定**：**不删** `Phase` 闭集（该 label 从不产出；删它只改 2 处手写成员表，
+      却让已记录的 `sidecar_schema_fingerprint` 变陈旧，且无测试守该值）；
+      改为在 #15B design 标「不作 possession phase 产出」。
+    - **顺序**：`#16（含 phaseability gate）→ #15B`。
+    - **待用户拍板**（#113 §8）：§11 理由回填方式 / 是否立 team-state observation /
+      `phase_segments` 填充位置 / 判据冻结守卫方式 / 三档判据本身。**未定前不开 15B 实现。**
     - 落地形态（填 sidecar 预留字段）与七项清单仍有效，但**先回答挂载模型**。
     - 详见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.5。
     - **开工前须闭合七项**（谓词、多段切分、`attacking_transition` 边界、`unknown`/provenance、
@@ -161,7 +167,7 @@
   - 产物：可视化诊断模式；正式 viewer 行为保持兼容。
 
 > **执行顺序（2026-09-24 决策；2026-09-27 修正）**：`#17A 立即分析` ✅ 已完成 →
-> **`phase 挂载模型设计票据`（当前）** → `#15B phase`（暂停中）或 `#16 空间特征`（见 roadmap §4.5）→
+> **`拍板 #113 待决项`（当前）** → `#16 空间特征`（含 phaseability gate）→ `#15B`（暂停中，见 roadmap §4.5）→
 > 原序列 `#15B → #16` 是否维持，取决于设计票据的结论：
 > `#17B 可解释报告` → `#18 行为验证` → `#19 最小生成改造`。不要等 #15B/#16 全部完成才开始分析；
 > 也不要在 #17A 仅凭场均统计直接调参数。
