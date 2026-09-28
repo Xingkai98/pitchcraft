@@ -1,20 +1,29 @@
 # Grill Design: #15B phase 挂载模型
 
 - Type: design
-- Status: draft（待用户 grill 确认；**确认前不写实现代码**）
+- Status: draft（**结论已成型，待用户 grill 确认**；确认前不写实现代码）
 - Created: 2026-09-27
 - GitHub issue: https://github.com/Xingkai98/pitchcraft/issues/113（`wayfinder:grilling`）
 - 关联：`#15B`（暂停）、`#16`、`openspec/changes/p15-match-behavior-observation/`、
   `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3/§4.5
 
-> **为什么立这张票**：15B 原计划直接实现 phase 标注器，实测发现它的核心标签
-> 在现行契约下**结构上标不出来**（下节）。所以先答设计问题，再谈实现路径。
+> **结论摘要（经三轮独立对抗审阅）**：
+> `attacking_transition` **是 team-state，不是 possession phase**——它与已被 §11 排除的
+> `defensive_transition` 是**同一窗口的两面**（该窗口同时驱动两队前进/收缩）。
+> 因此**不删 `Phase` 闭集**（该 label 本就从不产出，删它只会让已记录的
+> `sidecar_schema_fingerprint` 变陈旧），改为在 #15B design 标注「不作 possession phase 产出」。
+> 顺序：`#16（含 phaseability gate）→ #15B`。
+> 详细论证与实测见 ticket 后半 `## 结论（v4）`。
 
 ---
 
 ## 1. 触发本票的实测（facts，可复现）
 
-### 1.1 `attacking_transition` 够不着任何 possession
+### 1.1 `attacking_transition` 的窗口够不着「当前控球方」的 episode
+
+> ⚠️ 本节初版写「结构上标不出来」，**已被后续实测修正**（见末节 v4）：
+> 准确说法是**类型不对**（它是 team-state）+ tackle 路径**在此常数组合下**够不着，
+> 而 save 路径**够得着**（98/98）。
 
 引擎里有一个同名状态 `MatchState.transition { ticks_left, attacking, source }`，
 窗口固定 `TRANSITION_TICKS = 4`，来源仅 `Tackle` / `SaveCaught`（save-rebound 不触发）。
@@ -63,56 +72,24 @@ design §11 硬约束：phase_segments 只能挂在 PossessionEpisode 内，
 
 ---
 
-## 2. 需要 grill 的决策
+## 2. 初始决策框架（**已被末节 v4 结论取代，保留以见推理轨迹**）
 
-### Q1（核心）Phase 的挂载模型
+> ⚠️ 本节是**立票当时**（2026-09-27）列的问题框架。经三轮独立对抗审阅后，
+> 末节 `## 结论（v4）` 已给出答案并修正了当时的若干误判。
+> **以末节为准**；本节保留是为了让后来者看到问题是怎么收敛的。
 
-> **Phase 是否必须完全挂在 `PossessionEpisode` 内，还是需要一个与 possession 正交的
-> transition observation 层？**
+### 原 Q1 挂载模型
+（三候选：扩张 possession / 引入正交对象 / phase 保持现状。)**v4 的答案**：
+两个都不是——`attacking_transition` **是 team-state**，与已排除的 `defensive_transition` 同源，
+所以既不该塞进 possession，也不该作为 possession phase 产出。闭集**保留但不产出**。
 
-三个候选，代价已核：
+### 原 Q2 三档 phase 判据
+（候选特征：球门向净推进 / 推进·回撤·横向转移 / 线间距 / 接应与人数优势 / 时间序列。）
+**v4 的答案**：**确认 #16 之前无判据**，全部推后；且 #16 是必要非充分。
 
-| 方案 | 代价 |
-|---|---|
-| **1. 扩张 possession** 以覆盖 contested 区间 | **破坏已验证契约**。`Controlled`/`Contested` 互斥是状态机基础；改了连带 episode 数/时长/起止原因/动作归属，以及 P17A 全部统计。需重生成并确认哪些历史结论失效 |
-| **2. 引入正交对象**（如 `TransitionSpan`） | 不动 possession 语义，但引入**新的对象类型与嵌套/相邻关系**，需要新的不变量与边界 fixture。跨 `Contested` 的表达能力是它的价值，也是它的复杂度 |
-| **3. phase 保持现状，转换另行表达** | 最小改动：15B 只做 possession 内能判的部分（当前≈只有 `unknown`），转换语义留给别的层。代价是 15B 可能仍无产出 |
-
-**须一并回答**：
-- 若选 1：需要什么证据才敢动 P15A 契约？（至少：真实 tracking/event 数据证明转换阶段**应**覆盖争抢区间、
-  新的状态不变量、重跑 0 gap / episode-contest 收束 / 300 seed 校准 / sidecar 确定性 / golden 门）
-- 若选 2：`TransitionSpan` 与 `PossessionEpisode` 是**嵌套**还是**相邻**？跨 dead ball 怎么办？
-  与 `RestartSequence` 的关系？谁负责开启/关闭？
-- 若选 3：15B 是否还有存在意义？若无，是否应把「phase」整体推迟到 #16 之后再立项？
-
-### Q2 三档 phase 的可判定性判据
-
-`build_up` / `progression` / `final_third` 各自需要**哪些特征**才不退化成为「区域 = 阶段」？
-候选方向（来自 2026-09-27 的一次外部咨询，**未验证**）：
-
-- 按球队进攻方向归一化的**球门向净推进**；
-- 连续动作窗口内的**推进 / 回撤 / 横向转移**；
-- 推进是否伴随**线间距变化**；
-- 推进后是否形成**前方接应或局部人数优势**；
-- 球权开始后的**时间序列**，而非单帧空间快照。
-
-**须回答**：这些特征足够吗？若不足，15B 应明确保留 `unknown`，还是先补数据/模型？
-以及 `unknown` 的期望占比到多少算「15B 形式主义」、需要重新设计？
-
-### Q3 与 #16 的顺序
-
-三条路：
-
-1. 先 #16，再 15B；
-2. #15B + #16 合并为一个 change；
-3. 保持 `#16 → 15B`，但给 **#16 加一个 phaseability gate**——先检验现有观测能否区分三档，
-   够则设计谓词，不够则明确保留 `unknown` 或补数据。
-
-**注意**：#16 是**必要非充分**。它给的空间特征（宽度/纵深/局部人数/最近防守距离/接应角度）
-能支持「是否有组织接应」「是否受压」这类判断，但**不能自动定义**三档——
-`build_up ≠ 后场`、`progression ≠ 球向前移动`、`final_third ≠ 前 1/3`。
-
----
+### 原 Q3 与 #16 的顺序
+（先 #16 / 合并 / 给 #16 加 phaseability gate。）**v4 的答案**：
+`#16（含 phaseability gate）→ #15B`。
 
 ## 3. 不在本票范围
 
@@ -129,3 +106,169 @@ design §11 硬约束：phase_segments 只能挂在 PossessionEpisode 内，
 - `.scratch/map.md` 的 `12`（grilling 契约）、`15`（#15A/#15B 状态）
 - `engine/src/observation.rs`：`PhaseSegment` / `Phase` / `PhaseProvenance` 预留与两条「必须为空」守卫
 - `engine/src/lib.rs`：`Transition` / `TransitionSource` / `TRANSITION_TICKS` 与窗口清除时机
+
+---
+
+# 结论（v4，embedded from .grill/conclusion-v4.md）
+
+> v1、v2 均被判 `NEEDS_REVISION`；v3 亦被判「轻 NEEDS_REVISION」（四处表述问题，已修）。
+> 本版按三轮意见重写。
+> **主结论三轮不变**（`attacking_transition` 是 team-state，不是 possession phase；
+> 不删闭集；顺序 `#16（含 gate）→ 15B`），但**机制陈述两轮都写过头**，这版把
+> 「结构性 / 常数性 / 路径分叉」三者分开，不再混为一谈。
+
+---
+
+## 一、问题的实质（分三层，勿混）
+
+### 1.1 结构性的（与任何常数无关，稳定）
+
+**(a) transition 是团队状态，一个窗口同时驱动两队。** 来自代码，非推断：
+
+`struct Transition { ticks_left, attacking, source }` 是**一个**对象；只有两处武装点
+（`lib.rs:4109` tackle、`:4267` save-caught），每次赋值都同时设定 `attacking`——**不存在单侧触发**。
+
+窗口内同时生效（实测 close_down movers `from_defending=4353 / from_attacking=0`）：
+- `if tr.attacking == my_team { press *= 2.0 }` → **得球方**前压（`lib.rs:3082-3083`）
+- `pick_close_down_players(st, 1 - tr.attacking, …)` → **失球方**收缩（`lib.rs:3217`）
+
+**(b) tackle 路径上，窗口起点那个 open episode 属于失球方。** 868/868。
+这是**输入**决定的（tackle 在失球方仍持球时触发），与窗口长度无关。
+
+### 1.2 常数性的（会随重标定翻转，**前一版误标为结构性**）
+
+**窗口的其余拍是否触达得球方的 episode，由常数决定。** 定向变异实证
+（我独立复跑，`LOOSE_MAX_TICKS 2→1`）：
+
+| | `=2`（当前） | `=1`（变异） |
+|---|---|---|
+| tackle→下一个 episode | +4.0 s | **+3.0 s** |
+| 是否落进窗口 `[t,t+4)` | ❌ 落区间外 | ✅ **落区间内** |
+| 窗口内得球方 tick | **0 / 3472** | **886 / 3548** |
+| 下一 episode 队别 == 得球方 | 0 | 886 |
+
+因为 `gap = LOOSE_MAX_TICKS + 2`，当前 `2+2 = 4 = TRANSITION_TICKS` 是**巧合**。
+**⇒ 「tackle 路径挂不上」成立于此常数组合，不是架构不变量。**
+
+**但翻转条件不是「任何重标定」**（v3 此处写过头，已实测更正）。定向 sweep：
+
+| `LOOSE_MAX_TICKS` | 0 | 1 | **2（当前）** | 3 | 4 |
+|---|---|---|---|---|---|
+| `gap = +2` | 2 | 3 | **4** | 5 | 6 |
+| 窗口内得球方**拍数** | **909** | **886** | **0** | **0** | **0** |
+
+（口径：窗口 `[arm, arm+4)` 的 4 个整数拍，逐拍判断是否落在属得球方的 episode 内；
+逐常数变体均 `rm -rf target` 重编后实测。0/1 翻转，2/3/4 不翻。）
+
+**翻转条件是 `gap < TRANSITION_TICKS`**（即 `LOOSE_MAX_TICKS ≤ 1`），**不是「任何变动」**。
+上调不翻。这个更窄的条件同样必须写进 design——本仓 `dead-constants-must-not-be-mechanism` 的形态。
+
+### 1.3 路径分叉（**save 与 tackle 相反**）
+
+**save 路径的窗口整段落在得球方（门将）的 episode 内：98/98 窗口、392/392 拍。**
+因为 save-caught 的窗口与「门将持球建立新 episode」**在同一拍武装**（`lib.rs:4267` 武装后
+紧接着 `emit_beat_with_main`，注释明写「这记带球 beat 属于新 episode」）。
+
+**⇒ 「`attacking_transition` 完全无法挂载」是错的**——save 路径上它就挂在得球方的 episode 里。
+所以真正的问题**不是「够不够得着」，而是「它是不是 phase」**（见 §2）。
+
+## 二、主结论：它是 team-state，不该作为 possession phase
+
+`defensive_transition` 被 §11 排除，理由逐字为：
+
+> 属于**失去球权**球队的团队状态，不应伪装成当前控球队 possession phase；留给后续 team-state observation
+> （`match-behavior-observation-design.md:334`）
+
+而 §1.1(a) 证明：**同一个窗口同时是「得球方的转换」和「失球方的转换」**。
+把得球方那一面标成「控球方的 possession phase」，与排除失球方那面**是同一个类型错误**。
+
+**正确的说法是「镜像 + 一处不对称」**（v2 已改对，保留）：
+两者是对称的两面，**但得球方最终确实成为控球方**（口径：首个 `start ≥ 武装 tick` 的 episode，
+实测 `same=965 / diff=0 / 无后继=1`；**注意该口径包含 save 路径在武装拍当拍开启的门将 episode**，
+即它在窗口**内**而非「窗口结束后」），
+失球方则不会。这给了 `attacking_transition` 一个 `defensive_transition` 没有的性质：
+它描述的是**「将会控球、但尚未控球」**的那一方。
+
+**⇒ §11 对两个 label 的处理不对称，且缺一条显式理由。** 若理由是「得球方将在窗口后进入 episode，
+故值得留在闭集等待判据」，那么它与「phase 只能挂在 episode 内」的硬约束**在 tackle 路径上冲突**
+（该窗口永不落入该队 episode，除非改常数——见 §1.2）。**冲突须写出来**，
+而不是笼统说「不一致」——那是把需要论证的缺口当成已证明的矛盾。
+
+**待决（用户）**：这条缺失的理由**回填 design §11（改已冻结的权威文档）**，
+还是**在 #15B design 里记偏离**（不动 §11）？
+
+## 三、处置：闭集不动，标记为「不作 possession phase 产出」
+
+**不删** `attacking_transition`，理由（**经审阅修正，成本比 v2 说的低**）：
+
+1. **行为等价**：该 label 从未产出（`observation.rs:1166`、两条「必须为空」守卫）。
+2. **真正要改的是 2 处手写成员表**（v2 说 5 处，夸大了）：
+   - `observation.rs:2964`（`check("Phase", &[…])`）——删变体会**编译失败**，必改；
+   - `observation.rs:6029`（`same_set!("Phase", Phase::ALL, […])` 的成员行）——与 6024 是**同一处**断言。
+   - `p17a/model.rs:679` 与 `p17a_behavior_chain_baseline.rs:989` 都用 `Phase::ALL`，**自动跟随，不会红**。
+3. **改 `sidecar_schema_fingerprint` 会让已记录的基线指纹变陈旧**
+   （当前 `fnv1a64:7c76518ceff85604`，见 P17A 报告 `:17`；删除后我实测为 `fnv1a64:d8140101f83a4582`）。
+   ⚠️ **但没有任何测试写死该值**（全仓 grep 只命中报告与本文件）——所以删 label **不会让测试变红**，
+   只会让**记录下来的**指纹对不上。v2 说「有守卫」是不准的。
+
+**⇒ 推荐**：闭集不动；#15B design 写一行「`attacking_transition` 在 possession phase 层
+**不作产出**（类型理由见 #113）」，`Phase::ALL` 注释指向它。
+
+## 四、否决「扩张 possession 覆盖 contested」
+
+三条理由（**最硬的一条 v1/v2 都漏了**）：
+
+1. **类型缺陷**：`Contested` 是「控制**未**确认」，`PossessionEpisode` 是「控制**已**确认」，
+   互斥由 §6 状态转移表、§9.1、`observation.rs` 的 `reject` 分支保证。合并是**把「未确认」塞进「已确认」**。
+2. **会撞 §10 不变量与既有守卫**（最硬、最便宜可验）：「每时刻最多一个开放 episode」
+   「restart 与开放 episode 不重叠」「episode/contest 收束」——改了会直接让
+   `p15_behavior_observation.rs` 那批门变红。
+3. **会毁 P17A 全部统计**：`metrics.rs` 逐条迭代 `m.episodes`，边界一改全重算
+（报告 §8 有 v6→v7「判据未改、数值全变」的先例）。
+
+## 五、顺序
+
+- `build_up`/`progression`/`final_third`：**确认无判据**（#16 之前只有坐标，而「区域 ≠ 阶段」）。
+- **save 路径子集**：技术上现在就能标（§1.3），但**不建议做**——它会把 team-state 标成 possession phase
+  （§2 的类型错误），且会触发两条「必须为空」守卫。
+- **⇒ 顺序**：`#16（含 phaseability gate）→ #15B`。
+
+**§5 与 §3 不冲突**的原因写明：save 路径只证明**够得着**，不改变**类型不对**。
+这恰说明类型问题比可达性问题更根本。
+
+## 六、审阅补的重要洞察：transition 已可「观测」，只是不可「挂载」
+
+旧 episode 的 `end_reason=control_lost` + `contest_start_reason=tackle_loose` + 引擎 4-tick 窗口，
+三者合起来就是转换窗口的**负空间表达**。
+**⇒ #113 真正缺的不是「对象」，是「把负空间升格为标签的判据」。**
+前者零新对象；后者（新 state 层）要新状态机 + 新不变量 + 新 fixture。**成本差很远。**
+
+## 七、口径警告（v2 的机制讲错了，此处更正）
+
+**v2 声称「事件晚一拍」——实测为假**：`EventType::Tackle` 在 `emit_tackle_highlight_impl`
+内 `events.push`（`lib.rs:4093`），武装在同函数末尾（`:4109`）——**同一函数、同一 `t`，868/868 零滞后**。
+
+真正滞后的是 **`contest_started` 这条 control fact**（`observation.rs` 的 `ContestStarted`；
+v3 误写作 `control_started`，该 fact kind 不存在）：在 `finalize_highlight` 的 `t_end = arm+1` 提交
+（868/868 为 +1）。save 武装则滞后 saved-shot 事件 +1（90 次）或 +2（8 次）。
+
+**⇒ 教训**：`[武装,+4)` 与 `[事件.t,+4)` 在 tackle 上是**同一个窗口**。
+v1/v2 都把它们当成两套口径讲，是错的。
+
+## 八、待用户拍板（收敛）
+
+1. **缺失的那条 §11 理由**：回填 design §11（动冻结文档）还是在 #15B design 记偏离？
+2. **顺序**：`#16（含 gate）→ 15B` 确认？
+3. **是否为 team-state observation 立项**（承载两队转换语义），
+   还是先走「负空间 + 判据」的零新对象路线（§6）？
+4. **存量口径数字要不要一起修**：roadmap §4.3 记的 `1230 / 84 / 1106` 与本轮数字对不上
+   （能复现 1230 与 124，复现不到 84/1106）——是否立一条「口径显式化」收尾项？
+5. **判据冻结的守卫方式**：把「常数重标定后须复核」写进 #15B 开工前七项清单（roadmap §4.2），
+   还是靠 `engineFingerprint` 哨兵？
+6. **命名冲突**（roadmap §4.3 标「此条仍成立」，v3 曾漏）：主 spec `match-engine:641`
+   「控球阶段与攻防转换」讲的是引擎内部 team `attack`/`defend` + `transition_active`，
+   与 15B 的 possession phase 闭集**不是同一个概念**，勿混用同一名词。
+   它与本结论（该 label 是 team-state）**直接相关**。
+7. **`phase_segments` 的填充位置**（roadmap §4.1 明标「真决策，不要默认略过」）：
+   recorder 在 `into_diagnostic_match` 之前填，还是 `simulate_with_behavior_observations`
+   拿到 `DiagnosticMatch` 之后填？
