@@ -3,7 +3,7 @@
 状态：Active roadmap
 最后更新：2026-09-26
 Canonical map：`.scratch/map.md` 的“行为真实性方向”
-当前 frontier：**phase 挂载模型设计票据**（#15B 暂停，见 §4.5；#17A 已完成）
+当前 frontier：**#16 团队与局部空间特征（含 phaseability gate）**（GH #116；#15B 暂停，见 §4.5）
 
 ## 1. 当前已经具备什么
 
@@ -283,7 +283,10 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 
 **在 1–5 落地前不动 15B 实现。**
 
-## 5. #16：团队与局部空间特征
+## 5. #16：团队与局部空间特征（含 phaseability gate）← **当前 frontier**
+
+票据：GH [#116](https://github.com/Xingkai98/pitchcraft/issues/116) /
+`.scratch/issues/116-team-local-spatial-features.md`。
 
 第一版只做当前引擎可靠提供的特征：
 
@@ -294,7 +297,17 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 - 支援角度；
 - 中后场与前场的间距代理。
 
-不在该票据修改跑位或决策逻辑；缺失 tracking 时明确标 unknown，不从统计相关性虚构因果。
+**2026-09-28 增补**（因 #15B 暂停而定）：
+
+1. **还须产出面向 phaseability 的带时间关系特征**——上面六条是**静态快照**，
+   不足以判 `build_up`/`progression`/`final_third`（`build_up ≠ 后场`、`progression ≠ 球向前移动`）。
+   候选：球门向净推进 / 推进·回撤·横向转移 / 线间距变化 / 接应与人数优势 / 球权后的时间序列。
+2. **验收 = phaseability gate**：不只「特征算得出来」，还要裁决**三档能否判定**——
+   够则给出可执行谓词（供 15B），不够则明确缺什么、15B 该保留 `unknown` 还是补数据。
+3. **不得**用区域/坐标冒充战术阶段；若最终只能用几何代理，须命名为证据
+   （如 `GoalwardProgressEvidence`），不得复用 `Phase`。
+
+不在该票据修改跑位或决策逻辑；**不实现 15B**；缺失 tracking 时明确标 unknown，不从统计相关性虚构因果。
 
 ## 6. #17B → #18 → #19
 
@@ -350,7 +363,8 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 
 随后按 Paseo lifecycle 启动新的 change/session。
 
-**当前 frontier 是「用户拍板 #113 的待决项」，不是 15B 实现**（见 §4.5）。
+**当前 frontier 是 #16（GH #116，含 phaseability gate）**，见 §5。
+另需用户拍板 #113 的待决项（见 §4.5）。
 **#15B 已暂停**（2026-09-27；结论 2026-09-28 定，GH #113 经三轮对抗审阅）：
 
 - `attacking_transition` **是 team-state，不作 possession phase 产出**（§4.3）；
