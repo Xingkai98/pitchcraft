@@ -1184,6 +1184,13 @@ pub struct StateSnapshot {
     pub t: ObservedTime,
     /// 22 人归一化位置，**下标 = 球员 id**（与事件协议同：0 = 主队门将、21 = 客队门将）。
     pub pos: [(f64, f64); 22],
+    /// 该拍末的**球位**（归一化）。与 `MatchState.ball_pos` 逐位相同。
+    ///
+    /// **为什么必须带**：design §3.2 的两条时间关系特征以球为参考——
+    /// 「推进/回撤/横向转移」是**球**的位移，「接应是否形成」明写「推进后**球前方**
+    /// 是否出现可接应队友」。缺了它，这两条只能用球队重心当代理
+    /// （与真实「球周围接应」不等价，是**已知缺口**而非等价物）。
+    pub ball: (f64, f64),
     /// **本拍结束时仍活跃的**高亮参与者 id（由 `lib.rs` 的提交点传入——
     /// 本模块不读 `MatchState`／`Highlight`，见模块头）。
     ///
@@ -2391,6 +2398,7 @@ impl BehaviorObservationRecorder {
         &mut self,
         t: ObservedTime,
         pos: &[(f64, f64); 22],
+        ball: (f64, f64),
         frozen: &[i32],
     ) {
         if !self.enabled {
@@ -2399,6 +2407,7 @@ impl BehaviorObservationRecorder {
         self.snapshots.push(StateSnapshot {
             t,
             pos: *pos,
+            ball,
             frozen: frozen.to_vec(),
         });
     }

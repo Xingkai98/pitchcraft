@@ -55,12 +55,21 @@
 
 ## Slice 3 — 时间关系特征（本 change 的实际工作量）
 
-- [ ] **球门向净推进**（按进攻方向归一化）
-- [ ] **推进 / 回撤 / 横向转移**（纵向横向分开；须定窗口长度）
-- [ ] **线间距变化**
-- [ ] **接应是否形成**（距离/角度阈值待定）
-- [ ] 每条：定义 + 覆盖率 + 缺失原因分类
-- [ ] 遵守时间基准纪律（同一特征不混 basis），跨 basis 的显式标注
+- [x] **球门向净推进**（按进攻方向归一化）——直接复用位置口径 `EpisodeCaliber::net_progress`
+- [x] **推进 / 回撤 / 横向转移**（纵向横向分开；窗口 `WINDOW_SECONDS = 5.0`，
+      以**球位**为参考点——为此 Slice 2 的快照补了 `ball` 字段）
+- [x] **线间距变化**（`depth`/`spread` 的**最小二乘斜率**，非末减首）
+- [x] **接应是否形成**（以**球位**为参考点，`≤25 m` 且进攻方向前方 `≥2 m`；见下缺口）
+- [x] 每条：定义 + 覆盖率 + 缺失原因分类（`FeatureCoverage`；seed 1 实测窗口 >100、四条皆 >50% 覆盖）
+- [x] 遵守时间基准纪律（同一特征不混 basis）：快照恒 `StateCommit`；
+      **⚠️ 实测发现 episode 边界混 basis**（105 个 episode 里 `start_t`：
+      `state_commit` 102 / `deterministic_flight_end` 2 / `event_emit` 1），
+      已在测试里**显式打印并单独列出**（design §2.3 的处置），不是忽略
+
+**已知缺口（记录在案，不冒充）**：见 `tests/p16/features.rs` 的 `FEATURE_LIMITATIONS`——
+① `ball_pos` 在死球/重开期是**约定点**不是球位；② 接应判据纯几何，
+不含「线路是否通畅」⇒ 它是**证据**（`SupportFormation`）不是战术意图判定；
+③ `WINDOW_SECONDS` 是可调参数不是判据。
 
 ## Slice 4 — phaseability gate（验收）
 

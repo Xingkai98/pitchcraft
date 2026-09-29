@@ -2822,7 +2822,12 @@ fn match_events(
                 .as_ref()
                 .map(|h| h.participants.iter().map(|(id, _)| *id).collect())
                 .unwrap_or_default();
-            obs.observe_state(observation::ObservedTime::state_commit(t), &st.pos, &frozen);
+            obs.observe_state(
+                observation::ObservedTime::state_commit(t),
+                &st.pos,
+                st.ball_pos,
+                &frozen,
+            );
         }
         t += TICK_SECONDS;
     }

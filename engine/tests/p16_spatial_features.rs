@@ -25,6 +25,11 @@
 //! | [`spread_pairs_unsorted_coordinates`] | 静态队形（配对口径，历史坑） | ✅ |
 //! | [`engine_shape_coverage_is_total_and_missing_reasons_stay_empty`] | 静态队形（空操作记录） | ✅ |
 //! | [`rust_shape_is_in_the_same_regime_as_the_js_ruler`] | 静态队形（与 JS 标尺同量级哨兵） | ✅ |
+//! | [`displacement_decomposition_normalizes_direction_and_splits_axes`] | 时间关系（方向归一 + 轴分解） | ✅ |
+//! | [`line_spacing_slope_is_least_squares_not_endpoint_difference`] | 时间关系（斜率估计量） | ✅ |
+//! | [`support_uses_ball_position_and_only_counts_players_ahead`] | 时间关系（接应：球位 + 前方） | ✅ |
+//! | [`time_relationship_feature_coverage_on_a_real_seed`] | 时间关系（覆盖率 + 缺失分类） | ✅ |
+//! | [`all_feature_times_use_a_single_basis`] | 时间关系（时间基准不混用） | ✅ |
 //!
 //! **产物落盘测试（`p16_canary` / `p16_baseline`）尚未建**——属 Slice 5，随特征与裁决一并落地。
 //! 届时按 P17A 的形态加 `#[ignore]` 门与 JSON/Markdown 产物。
@@ -42,8 +47,11 @@
 mod caliber;
 #[path = "p16/shape.rs"]
 mod shape;
+#[path = "p16/features.rs"]
+mod features;
 
 use caliber::*;
+use features::*;
 use shape::*;
 use fm_engine::observation::*;
 use fm_engine::{simulate_with_behavior_observations, EventType, MatchConfig};
@@ -281,6 +289,10 @@ impl Fixture {
 // | `depth` 用 max−min | `quantile_span` → 首尾差 | `rust_shape_is_in_the_same_regime_as_the_js_ruler` + `team_shape_excludes_keeper_and_uses_quantile_span` |
 // | 不剔门将 | 删 `KEEPER_IDS` 过滤 | `team_shape_excludes_keeper_and_uses_quantile_span` + `spread_pairs_unsorted_coordinates` |
 // | `spread` 用排序 x 配未排序 y | 先 sort 再配对 | `spread_pairs_unsorted_coordinates`（**含反证条**） |
+// | 位移不乘 `dir` | `along = dx_m` | `displacement_decomposition_normalizes_direction_and_splits_axes` |
+// | 斜率用末减首 | `slope()` 换成端点差 | `line_spacing_slope_is_least_squares_not_endpoint_difference` |
+// | 接应去掉「球前方」 | 删 `along < SUPPORT_MIN_FORWARD_M` | `support_uses_ball_position_and_only_counts_players_ahead` |
+// | 接应参考点用重心 | `bx/by` 取 `team_shape.cx/cy` | 同上 |
 //
 // ⚠️ 两条**fixture 判别力**的教训（都是初版踩到、修复后复验）：
 // - 「排空拍」变异在 **seed 1 上无区分度**（seed 1 整场不进排空循环）⇒ 该测试**必须用 seed 2**
@@ -534,6 +546,7 @@ fn team_shape_excludes_keeper_and_uses_quantile_span() {
     }
     let snap = StateSnapshot {
         t: ObservedTime::state_commit(1.0),
+        ball: (0.5, 0.5),
         pos,
         frozen: vec![],
     };
@@ -583,6 +596,7 @@ fn spread_pairs_unsorted_coordinates() {
     }
     let snap = StateSnapshot {
         t: ObservedTime::state_commit(1.0),
+        ball: (0.5, 0.5),
         pos,
         frozen: vec![],
     };
@@ -662,6 +676,293 @@ fn rust_shape_is_in_the_same_regime_as_the_js_ruler() {
         (30.0..=50.0).contains(&mean_depth),
         "Rust 侧平均 depth {mean_depth:.2} m 明显偏离 JS 标尺的 ≈40 m 量级——口径可能分叉"
     );
+}
+
+// ============================== 时间关系特征（Slice 3） ==============================
+
+/// **位移分解的符号口径**：进攻方向的位移计入 `forward`，反向计入 `backward`，
+/// 垂直方向**无符号**计入 `lateral`。用主客两队**同一组位移**证明方向归一生效。
+///
+/// 判别力：把 `along = dir * dx_m` 写成 `dx_m`（不乘 dir）会让客队那半红。
+#[test]
+fn displacement_decomposition_normalizes_direction_and_splits_axes() {
+    // 球沿 +x 走 10 m（同时 y 不动）——对主队是前插、对客队是回撤。
+    let fwd = vec![(1.0, (0.0, 0.5)), (2.0, (10.0 / 105.0, 0.5))];
+    let home = decompose_displacement(&fwd, TeamId::Home).unwrap();
+    assert!((home.forward_m - 10.0).abs() < 1e-9, "主队：+x 应为 forward");
+    assert!((home.backward_m - 0.0).abs() < 1e-9);
+    let away = decompose_displacement(&fwd, TeamId::Away).unwrap();
+    assert!((away.forward_m - 0.0).abs() < 1e-9, "客队：+x 应为**回撤**");
+    assert!((away.backward_m - 10.0).abs() < 1e-9, "客队攻 −x，+x 位移 = backward");
+
+    // 横向：球沿 +y 走 6.8 m，两队都应记进 lateral（无符号），不进 forward/backward。
+    let lat = vec![(1.0, (0.5, 0.0)), (2.0, (0.5, 6.8 / 68.0))];
+    let h2 = decompose_displacement(&lat, TeamId::Home).unwrap();
+    assert!((h2.lateral_m - 6.8).abs() < 1e-9, "横向位移应进 lateral");
+    assert!(h2.forward_m.abs() < 1e-9 && h2.backward_m.abs() < 1e-9);
+    // 负向横向也是 lateral 正值（无符号）
+    let lat_neg = vec![(1.0, (0.5, 6.8 / 68.0)), (2.0, (0.5, 0.0))];
+    assert!((decompose_displacement(&lat_neg, TeamId::Home).unwrap().lateral_m - 6.8).abs() < 1e-9);
+
+    // 单帧 / 零帧 → None（不猜 0.0）
+    assert_eq!(decompose_displacement(&[(1.0, (0.5, 0.5))], TeamId::Home), None);
+    assert_eq!(decompose_displacement(&[], TeamId::Home), None);
+}
+
+/// **线间距斜率**用最小二乘（不是末减首）。用一条**带噪直线**证明两者不同值，
+/// 并断言取的是回归斜率。
+///
+/// 判别力：把 `slope()` 换成 `(last.y - first.y)/(last.t - first.t)` 会红。
+#[test]
+fn line_spacing_slope_is_least_squares_not_endpoint_difference() {
+    // depth 随时间线性上升 +0.5 m/s，但首帧被抬高（异常值）——末减首会低估斜率。
+    let frames: Vec<(f64, TeamShape)> = vec![
+        (0.0, ts(70.0)),
+        (1.0, ts(40.5)),
+        (2.0, ts(41.0)),
+        (3.0, ts(41.5)),
+        (4.0, ts(42.0)),
+    ];
+    let c = line_spacing_change(&frames).unwrap();
+    // 末减首：(42.0-70.0)/4 = -7.0；最小二乘应显著更接近 +0.5 的潜在趋势。
+    let endpoint = (42.0 - 70.0) / 4.0;
+    assert!(
+        (c.depth_slope_m_per_s - endpoint).abs() > 1.0,
+        "斜率必须**不是**末减首（末减首 = {endpoint}）——若相等说明实现退化"
+    );
+    // 去掉异常首帧后，纯线性段的斜率应精确 = +0.5
+    let clean: Vec<(f64, TeamShape)> = vec![
+        (1.0, ts(40.5)),
+        (2.0, ts(41.0)),
+        (3.0, ts(41.5)),
+        (4.0, ts(42.0)),
+    ];
+    let cc = line_spacing_change(&clean).unwrap();
+    assert!(
+        (cc.depth_slope_m_per_s - 0.5).abs() < 1e-9,
+        "纯线性段的最小二乘斜率应为 0.5，实测 {}",
+        cc.depth_slope_m_per_s
+    );
+    assert_eq!(cc.frames, 4);
+    // <2 帧 → None
+    assert_eq!(line_spacing_change(&frames[..1]), None);
+}
+
+/// 构造只填 depth/spread 的 `TeamShape`（其余字段本测试不关心）。
+fn ts(depth: f64) -> TeamShape {
+    TeamShape {
+        depth,
+        width: 40.0,
+        cx: 52.5,
+        cy: 34.0,
+        spread: 18.0,
+        n: 10,
+    }
+}
+
+/// **接应判据用球位、且只取球前方**——这是 design §3.2 逐字要求的
+/// （「推进后**球前方**是否出现可接应队友」）。
+///
+/// 判别力：把参考点从 `snap.ball` 换回重心、或删掉 `along < SUPPORT_MIN_FORWARD_M`
+/// 这个条件，都会让本测试红。
+#[test]
+fn support_uses_ball_position_and_only_counts_players_ahead() {
+    let mut pos = [(0.5, 0.5); 22];
+    // 球放在 x=0.5（中线）。主队外场：
+    //   - id 1 在球**前方** 10 m（x=0.5+10/105）
+    //   - id 2 在球**后方** 10 m（x=0.5-10/105）——不应计入
+    //   - id 3 在球前方但 30 m 外 —— 超出 SUPPORT_MAX_DIST_M
+    pos[1] = (0.5 + 10.0 / 105.0, 0.5);
+    pos[2] = (0.5 - 10.0 / 105.0, 0.5);
+    pos[3] = (0.5 + 30.0 / 105.0, 0.5);
+    let snap = StateSnapshot {
+        t: ObservedTime::state_commit(1.0),
+        ball: (0.5, 0.5),
+        pos,
+        frozen: vec![],
+    };
+    let sup = support_formation(&snap, TeamId::Home).unwrap();
+    assert_eq!(
+        sup.supporters, 1,
+        "只应计入「球前方且距离内」的 1 名队友（id 1）——后方(id2)与超距(id3)都不算"
+    );
+    assert!((sup.nearest_support_m.unwrap() - 10.0).abs() < 1e-9);
+    assert!((sup.ball_progress - 0.5).abs() < 1e-9, "球的推进度应为 0.5（x=0.5 主队）");
+
+    // 方向归一：客队视角下，x=0.5 的前方是 **−x** 方向。
+    // id 11 在 x=0.5−10/105（客队的前方）应被计入；id 12/13 在主队方向则不计。
+    let mut pos2 = [(0.5, 0.5); 22];
+    pos2[11] = (0.5 - 10.0 / 105.0, 0.5);
+    pos2[12] = (0.5 + 10.0 / 105.0, 0.5);
+    let snap2 = StateSnapshot {
+        t: ObservedTime::state_commit(1.0),
+        ball: (0.5, 0.5),
+        pos: pos2,
+        frozen: vec![],
+    };
+    let sup2 = support_formation(&snap2, TeamId::Away).unwrap();
+    assert_eq!(
+        sup2.supporters, 1,
+        "客队：只有 −x 方向的队友是「前方」——方向归一必须按队生效"
+    );
+}
+
+/// **四条特征的覆盖率**（design 要求「每条给覆盖率 + 缺失原因分类」）。
+/// 这是**报告项**（打印）加**防空转下限**（不做虚高的硬门）。
+#[test]
+fn time_relationship_feature_coverage_on_a_real_seed() {
+    let dm = observe(1);
+    let mut cov = FeatureCoverage::default();
+    let mut net_progress_values: Vec<f64> = Vec::new();
+    let mut depth_slopes: Vec<f64> = Vec::new();
+
+    for ep in &dm.possession_episodes {
+        let Some(c) = caliber_of(&dm, ep) else { continue };
+        let end = ep.end_t.map(|t| t.value);
+        // 本 episode 窗内的快照帧（用位置口径的窗）
+        let frames: Vec<(f64, StateSnapshot)> = dm
+            .state_snapshots
+            .iter()
+            .filter(|s| {
+                s.t.value + 1e-9 >= ep.start_t.value && end.map(|e| s.t.value <= e + 1e-9).unwrap_or(false)
+            })
+            .map(|s| (s.t.value, s.clone()))
+            .collect();
+        for w in windows_over((ep.start_t.value, end), dm.state_snapshots.last().map(|s| s.t.value).unwrap_or(0.0)) {
+            let win_frames: Vec<(f64, StateSnapshot)> = frames
+                .iter()
+                .filter(|(t, _)| *t + 1e-9 >= w.start && *t < w.end - 1e-9)
+                .cloned()
+                .collect();
+            let ball_track = collect_ball_track(&win_frames);
+            let shapes = collect_shapes(&win_frames, ep.team);
+            let mut support_frames = 0usize;
+            for (_, snap) in &win_frames {
+                if let Some(s) = support_formation(snap, ep.team) {
+                    if s.supporters > 0 {
+                        support_frames += 1;
+                    }
+                }
+            }
+            let f = WindowFeatures {
+                window: w,
+                net_progress: goalward_net_progress(&c),
+                displacement: decompose_displacement(&ball_track, ep.team),
+                line_spacing: line_spacing_change(&shapes),
+                support_frames,
+                snap_frames: win_frames.len(),
+            };
+            if let Some(v) = f.net_progress {
+                net_progress_values.push(v);
+            }
+            if let Some(ls) = f.line_spacing {
+                depth_slopes.push(ls.depth_slope_m_per_s);
+            }
+            cov.observe_window(&f);
+        }
+    }
+
+    println!(
+        "时间关系特征覆盖率（seed 1）：windows={} 净推进={:?} 位移={:?} 线间距={:?} 接应={:?}",
+        cov.windows,
+        cov.share(cov.win_net_progress),
+        cov.share(cov.win_displacement),
+        cov.share(cov.win_line_spacing),
+        cov.share(cov.win_support),
+    );
+    println!("缺失原因分类：{:?}", cov.missing);
+    if !net_progress_values.is_empty() {
+        let mut s = net_progress_values.clone();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        println!(
+            "净推进：n={} p10={:.3} p50={:.3} p90={:.3}",
+            s.len(),
+            s[s.len() / 10],
+            s[s.len() / 2],
+            s[s.len() * 9 / 10]
+        );
+    }
+    if !depth_slopes.is_empty() {
+        let mut s = depth_slopes.clone();
+        s.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        println!(
+            "纵深斜率（米/秒）：n={} p10={:.3} p50={:.3} p90={:.3}",
+            s.len(),
+            s[s.len() / 10],
+            s[s.len() / 2],
+            s[s.len() * 9 / 10]
+        );
+    }
+
+    // **防空转下限**（宽松——精确覆盖率是报告项，不设虚高硬门）
+    assert!(cov.windows > 100, "窗口数过少：{}", cov.windows);
+    assert!(
+        cov.win_displacement as f64 / cov.windows as f64 > 0.5,
+        "位移分解覆盖率过低：{}/{}",
+        cov.win_displacement,
+        cov.windows
+    );
+    assert!(
+        cov.win_line_spacing as f64 / cov.windows as f64 > 0.5,
+        "线间距覆盖率过低：{}/{}",
+        cov.win_line_spacing,
+        cov.windows
+    );
+    assert!(
+        cov.win_support as f64 / cov.windows as f64 > 0.5,
+        "接应覆盖率过低：{}/{}",
+        cov.win_support,
+        cov.windows
+    );
+}
+
+/// **时间基准不混用**（design §2.3）：本 change 全部特征只用 `StateCommit` 一种 basis。
+///
+/// 判别力：若将来有特征读了 `EventEmit` 或 `DeterministicFlightEnd` 的时间，
+/// 那条特征必须显式记录 basis 并单独列出——本测试守住「当前全部同 basis」这个事实。
+#[test]
+fn all_feature_times_use_a_single_basis() {
+    let dm = observe(1);
+    // 位置快照的时间 basis 全部 StateCommit（唯一进入特征的时间来源）。
+    for s in &dm.state_snapshots {
+        assert_eq!(
+            s.t.basis,
+            TimeBasis::StateCommit,
+            "位置快照的 TimeBasis 必须是 StateCommit——本 change 的特征全部以它为时间来源"
+        );
+    }
+    // ⚠️ **episode 的起止时间会混 basis**——实测（见下打印）：`start_t` 有
+    // `event_emit`（首开球的 `match_started` 专线）与 `deterministic_flight_end`
+    // （`kickoff_again` 后恢复），`end_t` 也有 `deterministic_flight_end`。
+    // 这是**观测层既有事实**，不是本 change 引入的。
+    //
+    // design §2.3 的纪律是「同一特征只用同一 basis；跨 basis 的显式标注并单独列出」。
+    // 故本测试**不**断言 episode 时间单一 basis（那不成立），而是：
+    // ① 断言**快照**（本 change 的时间来源）单 basis；
+    // ② 把 episode 边界的 basis 分布**打印出来**（= 显式标注、单独列出）。
+    let mut start_bases: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    let mut end_bases: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    for ep in &dm.possession_episodes {
+        *start_bases.entry(ep.start_t.basis.as_str()).or_insert(0) += 1;
+        if let Some(e) = ep.end_t {
+            *end_bases.entry(e.basis.as_str()).or_insert(0) += 1;
+        }
+    }
+    println!("episode start_t basis 分布：{start_bases:?}");
+    println!("episode end_t   basis 分布：{end_bases:?}");
+    assert!(
+        start_bases.contains_key("state_commit") && start_bases.len() >= 1,
+        "start_t 至少应有 state_commit；实测 {start_bases:?}"
+    );
+    // 起点位置口径的 basis（`caliber.rs` 记的）也应是 StateCommit / 少数
+    // finalized_outcome——**不是**未知或混用。这条打印现状、不设硬门（它随路径变化）。
+    let mut bases: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    for ep in &dm.possession_episodes {
+        if let Some(c) = caliber_of(&dm, ep) {
+            *bases.entry(c.start_basis.as_str()).or_insert(0) += 1;
+        }
+    }
+    println!("起点事实的 TimeBasis 分布：{bases:?}");
 }
 
 // ============================== 口径：起点来源 ==============================
