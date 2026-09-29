@@ -319,8 +319,10 @@ pub fn artifact_write_guard(dirty: bool, allow_dirty: bool) -> Result<(), String
 
 /// 工作树是否有未提交改动（`git status --porcelain` 非空）。
 ///
-/// **调不起 git**（无 git 的 CI/容器）时返回 `false`——那与「干净」不可区分，
-/// 但本栏只是标签注释，不参与判据（见 [`Provenance::worktree_dirty`]）。
+/// **调不起 git**（无 git 的 CI/容器）时返回 `false`——那与「干净」不可区分。
+///
+/// ⚠️ 第 3 轮审阅指出此处曾写「本栏只是标签注释，**不参与判据**」——**已陈旧**：
+/// 本函数现在是落盘门（[`artifact_write_guard`]）的**输入实参**，**参与判据**。
 pub fn worktree_is_dirty() -> bool {
     !worktree_status_porcelain().is_empty()
 }

@@ -1937,8 +1937,21 @@ fn provenance_records_worktree_state() {
         "provenance 的 `worktree_dirty`（{}）与真跑的 `git status --porcelain`（{dirty}）不符",
         p.worktree_dirty
     );
-    // 反证条：本栏**能被观测到为 true**——在本测试进程里无法可靠造脏（会改仓库），
-    // 故改为断言「字段存在且类型正确、且 MD/JSON 都有它」（内容活性由落盘门覆盖）。
+    // ⚠️ **本测试的判据与局限（第 2/3 轮审阅两次纠正后的最终表述）**：
+    //
+    // 首版 doc 写「在本测试进程里无法可靠造脏（会改仓库），故只断言字段存在」——
+    // **那是错的**（进程内 `std::fs::write` 一个临时文件即可让 `worktree_is_dirty()` 变
+    // `true`，删除后复原）；而「字段 == 它自己的来源函数」是一个**无判别力**的断言。
+    // 第 3 轮又指出：即便拆出纯缝，**调用点**（`write_artifacts` 有没有把真值喂给门）
+    // 在**干净树**上仍不可观测。
+    //
+    // ⇒ 最终分工（三条互补，**缺一不可**）：
+    //  ① 本测试：`worktree_dirty` 与真跑 `git status` 一致（防「记成常量」）；
+    //  ② [`artifact_write_guard_has_discriminating_power`]：门的**决策逻辑**（纯函数三组合）；
+    //  ③ [`on_disk_artifacts_share_the_current_source_fingerprint`]：**产物内容不变量**
+    //     `!(worktree_dirty && !worktree_override)`——它在干净树上也跑，
+    //     且**绕过门在脏树上写产物**会被它抓（产物记 `dirty=true, override=false`）。
+    //     （实测：把 `write_artifacts` 的 `dirty` 实参改字面 `false` + 造脏 + 落盘 ⇒ 它红。）
     let md = crate::report::provenance_markdown(&p);
     let json = crate::report::provenance_json(&p);
     assert!(md.contains("`worktree_dirty`"), "MD provenance 缺 `worktree_dirty`");
