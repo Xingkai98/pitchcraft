@@ -2806,6 +2806,24 @@ fn match_events(
     let mut t = TICK_SECONDS;
     while t < dur {
         tick(&mut st, &mut rng, &mut events, t, obs);
+        // P16（#116）位置快照：**主 tick 循环内、`tick` 返回之后**——此刻该 tick 的全部
+        // 状态变更（含 `tick` 内部的高亮 finalize）已结束，`st.pos` 是本拍终态。
+        //
+        // ⚠️ 三点口径（见 `observation` 的 `StateSnapshot` 与 P16 的
+        // `POSITION-EXPORT-DESIGN.md` §2.4）：
+        // 1. **拍 = tick**（不是 beat）：犯规/开球等路径不产 beat，但位置照样推进；
+        // 2. **不含终场的排空循环**（在 `t == dur` 上反复产拍、且会被尾哨压缩按时间戳去重
+        //    丢弃的那段）——本循环退出后即停止记录；
+        // 3. `frozen` = **本拍结束时仍活跃的**高亮参与者 id（`finalize_highlight` 可能链式
+        //    建新高亮，如 `start_goal_kick`，故取 `st.highlight` 的当前值）。
+        {
+            let frozen: Vec<i32> = st
+                .highlight
+                .as_ref()
+                .map(|h| h.participants.iter().map(|(id, _)| *id).collect())
+                .unwrap_or_default();
+            obs.observe_state(observation::ObservedTime::state_commit(t), &st.pos, &frozen);
+        }
         t += TICK_SECONDS;
     }
     // 终场前若高亮未 finalize（射门/传球飞行跨过 dur）：在 dur 时刻强制交接，比分按结局确认。
@@ -6756,7 +6774,7 @@ mod tests {
         // `if obs.is_enabled() { rng.next_u64() }` 反而可以靠换行绕过。
         // 覆盖 recorder 的**全部**读方法（含 `DiagnosticMatch` 侧的同族 API——
         // `terminal_state` / `invalid_violations` / `gap_reason_counts` 同样是「读观察状态」）。
-        const RECORDER_READS: [&str; 11] = [
+        const RECORDER_READS: [&str; 12] = [
             ".is_enabled()",
             ".state()",
             ".facts()",
@@ -6768,6 +6786,7 @@ mod tests {
             ".gap_reason_counts()",
             ".is_coherent()",
             ".event_index_binding_suspended()",
+            ".state_snapshots()",
         ];
         // 按顶层 `fn ` 切块，函数名取紧随其后的标识符。
         let mut chunks: Vec<(String, String)> = Vec::new();

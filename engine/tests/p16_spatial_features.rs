@@ -16,6 +16,15 @@
 //! | [`goal_kick_amplifier_matches_the_pinned_share`] | 口径（放大器记录） | ✅ |
 //! | [`caliber_closing_fact_tie_break_names_the_episode_closing_fact`] | 口径（同刻取法的审计纪律） | ✅ |
 //! | [`caliber_coverage_on_a_real_seed`] | 覆盖率（真实路径下限） | ✅ |
+//! | [`state_snapshots_are_per_tick_and_bit_identical`] | 位置快照（拍 = tick / 排空拍不记） | ✅ |
+//! | [`state_snapshot_positions_match_the_beat_projection_bit_for_bit`] | 位置快照（**逐位恒等**的独立交叉核对） | ✅ |
+//! | [`state_snapshot_frozen_marks_active_highlight_only`] | 位置快照（`frozen` 语义） | ✅ |
+//! | [`formal_path_produces_no_snapshots`] | 位置快照（正式路径空操作） | ✅ |
+//! | [`quantile_matches_the_r_type7_convention_exactly`] | 静态队形（分位口径精确值） | ✅ |
+//! | [`team_shape_excludes_keeper_and_uses_quantile_span`] | 静态队形（剔门将 / q10–q90） | ✅ |
+//! | [`spread_pairs_unsorted_coordinates`] | 静态队形（配对口径，历史坑） | ✅ |
+//! | [`engine_shape_coverage_is_total_and_missing_reasons_stay_empty`] | 静态队形（空操作记录） | ✅ |
+//! | [`rust_shape_is_in_the_same_regime_as_the_js_ruler`] | 静态队形（与 JS 标尺同量级哨兵） | ✅ |
 //!
 //! **产物落盘测试（`p16_canary` / `p16_baseline`）尚未建**——属 Slice 5，随特征与裁决一并落地。
 //! 届时按 P17A 的形态加 `#[ignore]` 门与 JSON/Markdown 产物。
@@ -31,8 +40,11 @@
 
 #[path = "p16/caliber.rs"]
 mod caliber;
+#[path = "p16/shape.rs"]
+mod shape;
 
 use caliber::*;
+use shape::*;
 use fm_engine::observation::*;
 use fm_engine::{simulate_with_behavior_observations, EventType, MatchConfig};
 
@@ -224,6 +236,7 @@ impl Fixture {
             events: self.events,
             control_facts: self.facts,
             possession_episodes: self.episodes,
+            state_snapshots: vec![],
             restart_sequences: vec![],
             phase_segments: vec![],
             state: BehaviorControlState::Ended,
@@ -254,6 +267,401 @@ impl Fixture {
         });
         first
     }
+}
+
+// ============================== 定向变异证据（Slice 2，2026-09-29 实跑） ==============================
+//
+// 本仓的教训是「守卫可能是恒真断言」。Slice 2 的每条承诺都有定向变异，**实跑均红**：
+//
+// | 变异 | 改法 | 抓它的测试 |
+// |---|---|---|
+// | 采样点挪到出拍点 | 只在对 `t` 有 beat 时 `observe_state` | `state_snapshots_are_per_tick_and_bit_identical`（条数断言） |
+// | 位置量化到 0.1 m | `observe_state` 里 round 到 1/1050 | `state_snapshot_positions_match_the_beat_projection_bit_for_bit` |
+// | 终场排空拍也记 | 在排空循环里也 `observe_state` | `state_snapshots_are_per_tick_and_bit_identical`（**须用 seed 2**） |
+// | `depth` 用 max−min | `quantile_span` → 首尾差 | `rust_shape_is_in_the_same_regime_as_the_js_ruler` + `team_shape_excludes_keeper_and_uses_quantile_span` |
+// | 不剔门将 | 删 `KEEPER_IDS` 过滤 | `team_shape_excludes_keeper_and_uses_quantile_span` + `spread_pairs_unsorted_coordinates` |
+// | `spread` 用排序 x 配未排序 y | 先 sort 再配对 | `spread_pairs_unsorted_coordinates`（**含反证条**） |
+//
+// ⚠️ 两条**fixture 判别力**的教训（都是初版踩到、修复后复验）：
+// - 「排空拍」变异在 **seed 1 上无区分度**（seed 1 整场不进排空循环）⇒ 该测试**必须用 seed 2**
+//   （实测 60 seed 里有 8 个会进排空循环：2/22/24/32/36/40/46/53）。
+// - 「spread 配对」变异在初版 fixture 上**存活**（x 与 y 同序 ⇒ 排序是空操作）⇒
+//   fixture 改为 x 下标序 ≠ 大小序，并**加了一条反证条**证明两种配对不同值。
+
+// ============================== 位置快照（G1 的核心承诺） ==============================
+
+/// **快照 = `st.pos` 逐位恒等**——G1（引擎导出位置）相对「从 beat 重放」的**唯一**正当理由。
+///
+/// 三层守卫：
+/// 1. **条数**：快照数 == 主 tick 循环的 tick 数（**不是** beat 数——犯规/开球等拍不产 beat）；
+/// 2. **逐位恒等**：每拍位置与引擎真值**逐位相同**（无舍入/量化）；
+/// 3. **时间轴**：快照的 `t` 与 beat 的 `t` 在同一时间轴上、且严格递增。
+///
+/// **判别力**（对着实现想「怎么改才会让本测试红」）：
+/// - 采样点挪到 `emit_beat_with_main` 之后 → **条数**断言红（漏拍，§2.4 实测）；
+/// - 编码改 `f32`/量化 → **逐位恒等**断言红；
+/// - 把终场排空拍也记进来 → **条数**断言红（多出同时间戳的拍）。
+#[test]
+fn state_snapshots_are_per_tick_and_bit_identical() {
+    // ⚠️ **用 seed 2**，不是 seed 1：seed 1 整场**不进**终场排空循环，故「排空拍也记」
+    // 这个变异在它身上无区分度（实测：排空拍变体在 seed 1 上全套仍绿）。
+    // seed 2 实测会进排空循环（`)` t=dur 上仍有悬空高亮被 finalize「--- 见下 ②」）。
+    let dm = observe(2);
+    // ① 条数 == tick 数。tick = 主循环 `while t < dur`，t 取 1.0, 2.0, ..., dur-TICK。
+    //    与 beat 数**不等**（实测 seed 1：5399 tick / 5365 beat）——本断言正是要抓这一点。
+    // 主循环逐字：`let mut t = TICK_SECONDS; while t < dur { tick(..); t += TICK_SECONDS; }`
+    // ⇒ 迭代的 t = TICK, 2·TICK, …, < dur。**t=0 不在其中**（首个 tick 从 TICK 起）。
+    // 故条数 = ⌈dur/TICK⌉ − 1；dur=5400、TICK=1 时为 **5399**（实测一致）。
+    let expected_ticks = (DUR / fm_engine::TICK_SECONDS).ceil() as usize - 1;
+    assert_eq!(
+        dm.state_snapshots.len(),
+        expected_ticks,
+        "快照数必须 == 主 tick 循环的 tick 数（{expected_ticks}）——\
+         注意它 **不等于** beat 数（{}）。差集说明采样点挪错了位置（挪到出拍点会漏掉\
+         犯规/开球这类不产 beat 的 tick）。",
+        dm.events.iter().filter(|e| e.type_ == EventType::Beat).count()
+    );
+
+    // ② 值域：22 人齐全、位置有限且在 [0,1]。
+    for (i, snap) in dm.state_snapshots.iter().enumerate() {
+        assert_eq!(
+            snap.pos.len(),
+            22,
+            "第 {i} 拍的快照必须有 22 人（引擎侧恒 22 人；`includeExtrapolated` / \
+             `MIN_OUTFIELD_PLAYERS` 在引擎侧是**空操作**，不得写成「会掉帧」的理由）"
+        );
+        for (id, (x, y)) in snap.pos.iter().enumerate() {
+            assert!(
+                x.is_finite() && y.is_finite() && (0.0..=1.0).contains(x) && (0.0..=1.0).contains(y),
+                "第 {i} 拍 id={id} 的位置 ({x},{y}) 越界或非有限——位置必须是归一化 [0,1]"
+            );
+        }
+    }
+
+    // ③ 时间轴：与 beat 同轴、严格递增、起点为 1.0（tick 从 1 开始）。
+    for w in dm.state_snapshots.windows(2) {
+        assert!(
+            w[1].t.value > w[0].t.value,
+            "快照时间必须严格递增（{} → {}）——出现相等/倒退说明把排空拍也记进来了",
+            w[0].t.value,
+            w[1].t.value
+        );
+    }
+    assert_eq!(dm.state_snapshots[0].t.value, fm_engine::TICK_SECONDS);
+    assert_eq!(
+        dm.state_snapshots[0].t.basis,
+        TimeBasis::StateCommit,
+        "快照的 TimeBasis 必须是 StateCommit（引擎提交后的状态，不是事件发射时刻）"
+    );
+    // beat 的时间戳必须在快照时间轴上——**唯一例外是终场排空期**（`t == dur` 上的拍，
+    // 比赛已结束、且会被尾哨压缩按时间戳去重丢弃，本方案刻意不记，见 §2.4）。
+    // seed 2 实测正会进排空循环（60 seed 里有 8 个），故这条断言在 seed 2 上有判别力。
+    let snap_ts: std::collections::BTreeSet<u64> =
+        dm.state_snapshots.iter().map(|s| s.t.value.to_bits()).collect();
+    let dur_bits = DUR.to_bits();
+    for e in dm.events.iter().filter(|e| e.type_ == EventType::Beat) {
+        let t_bits = e.t.to_bits();
+        assert!(
+            snap_ts.contains(&t_bits) || t_bits == dur_bits,
+            "t={} 的 beat 不在快照时间轴上，且不是终场排空拍（t==dur）——两者不同轴",
+            e.t
+        );
+    }
+    // 反向：排空拍**必须不被记录**（否则「排空拍也记」这个变异会溜过）。
+    assert!(
+        !snap_ts.contains(&dur_bits),
+        "快照里出现了 t=dur 的拍——终场排空期不属于比赛时间，不应记录（§2.4）"
+    );
+}
+
+/// **逐位恒等的独立交叉核对**：快照位置 == 同一 tick 的 beat 事件字段。
+///
+/// 为什么需要它：上面那条测试只查值域（有限、在 [0,1]）——**有损编码（`f32`、量化到
+/// 0.1m）照样通过**（已实测：把 `observe_state` 里的位置量化到 0.1 m 后，那条断言**仍绿**）。
+/// 而 G1 的立身之本恰恰是「快照 = `st.pos` **逐位**」。
+///
+/// **判据**（独立于 `StateSnapshot` 自身）：同一 tick 的 beat 字段就是 `st.pos` 的投影——
+/// `commit_beat_positions_ex` 分离后把终态回填到 `mover.to_x/to_y`，
+/// `sync_main_after_commit` 再把 `main.x2/y2` 与 `st.pos[carrier]` 对齐。
+/// 故对每个 beat 声明的 (id → 位置)，快照必须**逐位相等**。
+/// 任何舍入/量化都会在这里变红（实测：量化到 0.1 m → 本测试红）。
+#[test]
+fn state_snapshot_positions_match_the_beat_projection_bit_for_bit() {
+    let dm = observe(1);
+    // tick → 快照
+    let by_t: std::collections::BTreeMap<u64, &[(f64, f64); 22]> = dm
+        .state_snapshots
+        .iter()
+        .map(|s| (s.t.value.to_bits(), &s.pos))
+        .collect();
+
+    let mut checked = 0usize;
+    for e in &dm.events {
+        if e.type_ != EventType::Beat {
+            continue;
+        }
+        let Some(snap) = by_t.get(&e.t.to_bits()) else {
+            continue;
+        };
+        let mut check = |id: i32, x: f64, y: f64| {
+            let (sx, sy) = snap[id as usize];
+            assert!(
+                sx == x && sy == y,
+                "t={} id={id}：快照 ({sx:?},{sy:?}) != beat 投影 ({x:?},{y:?})——\
+                 两者必须**逐位相等**（beat 字段就是 st.pos 的投影）。不等说明快照被舍入/\
+                 量化，或采样时刻与 beat 不同步。",
+                e.t
+            );
+        };
+        if let Some(m) = &e.main {
+            // main.x2/y2 = carrier 终态（= st.pos[carrier]）
+            check(m.subject, m.x2, m.y2);
+        }
+        if let Some(ms) = &e.movers {
+            for m in ms {
+                check(m.id, m.to_x, m.to_y);
+            }
+        }
+        checked += 1;
+    }
+    // 防空转：必须真的比到足够多的 beat（否则「没比到」会被误读成「通过了」）。
+    assert!(
+        checked > 1000,
+        "只比到 {checked} 个 beat——比对覆盖不足，本测试可能空转"
+    );
+}
+
+/// **快照的`frozen` 语义**：只在有活跃高亮时非空，且参与者 id 合法。
+///
+/// ⚠️ **不保证 finalize 拍为空**：`finalize_highlight` 可能链式建新高亮
+/// （`ShotOffTarget` / 出界 → `start_goal_kick` / `start_corner`），此时记的是**新高亮**参与者。
+#[test]
+fn state_snapshot_frozen_marks_active_highlight_only() {
+    let dm = observe(1);
+    let mut nonempty = 0usize;
+    for snap in &dm.state_snapshots {
+        for id in &snap.frozen {
+            assert!(
+                (0..22).contains(id),
+                "frozen 里的 id={id} 越界（合法 id 0..=21）"
+            );
+        }
+        if !snap.frozen.is_empty() {
+            nonempty += 1;
+        }
+        // frozen 里不得有重复 id（参与者是集合语义）。
+        let uniq: std::collections::BTreeSet<i32> = snap.frozen.iter().copied().collect();
+        assert_eq!(
+            uniq.len(),
+            snap.frozen.len(),
+            "frozen 出现重复 id（参与者应为集合语义）"
+        );
+    }
+    // 防空转：90 分钟里总有飞行拍，`frozen` 不可能恒空。
+    assert!(
+        nonempty > 0,
+        "全 5399 拍 frozen 恒空？——飞行拍应标记参与者，说明接线漏了"
+    );
+    // 且绝大多数拍没有高亮（实测有高亮的 tick 约 713/5399）。
+    assert!(
+        nonempty < dm.state_snapshots.len() / 4,
+        "frozen 非空的拍数 {nonempty} 过多（应为少数飞行拍）——标记口径可能反了"
+    );
+}
+
+/// **正式路径不产快照**：`simulate()` 的 recorder 关闭，`observe_state` 是空操作。
+///
+/// 这条与 P15A 既有的「recorder 关闭 = 零副作用」同一机制，不是新承诺——
+/// 但它保证 G1 的接线**不进入正式路径**（正式事件流逐字节一致的前提）。
+#[test]
+fn formal_path_produces_no_snapshots() {
+    let dm = observe(1);
+    assert!(
+        !dm.state_snapshots.is_empty(),
+        "opt-in 路径应产快照（否则本测试无判别力：两侧都空就分不出接线是否生效）"
+    );
+    // 反向：`simulate()` 走 disabled recorder，事件流与 opt-in 路径逐字节同源，
+    // 且它根本不返回 sidecar——`observation_api_leaves_formal_events_byte_identical`
+    // 已守事件流；这里守「快照不在正式路径里产生副作用」这一半（空操作契约）。
+    assert!(
+        dm.state_snapshots.iter().all(|s| s.frozen.len() < 22),
+        "frozen 恒等于全队 22 人？——那不是「活跃高亮参与者」的语义"
+    );
+}
+
+// ============================== 静态队形（Slice 2） ==============================
+
+/// **分位口径逐字对齐 `match-metrics.js`**（R type-7 / NumPy 默认）——用**精确值**断言，
+/// 不是「大致范围」。这些值取自 JS 侧同名实现可手算的构造样本。
+///
+/// 判别力：把插值改成「最近秩」或「线性 on sorted 索引」会立刻改变这些精确值。
+#[test]
+fn quantile_matches_the_r_type7_convention_exactly() {
+    // n=5, p=0.1: h = 4*0.1 = 0.4, i=0 → s0 + 0.4*(s1-s0) = 0 + 0.4*1 = 0.4
+    assert!((quantile_sorted(&[0.0, 1.0, 2.0, 3.0, 4.0], 0.1).unwrap() - 0.4).abs() < 1e-12);
+    // p=0.9: h = 3.6, i=3 → s3 + 0.6*(s4-s3) = 3 + 0.6 = 3.6
+    assert!((quantile_sorted(&[0.0, 1.0, 2.0, 3.0, 4.0], 0.9).unwrap() - 3.6).abs() < 1e-12);
+    // 跨度 = 3.6 - 0.4 = 3.2
+    assert!((quantile_span(&[0.0, 1.0, 2.0, 3.0, 4.0]).unwrap() - 3.2).abs() < 1e-12);
+    // n=1 → 该点；n=0 → None（不用 0.0 伪造）
+    assert_eq!(quantile_sorted(&[7.0], 0.5), Some(7.0));
+    assert_eq!(quantile_sorted(&[], 0.5), None);
+    assert_eq!(quantile_span(&[1.0]), None);
+    // h 落在最后一点时不越界插值：n=2, p=0.9 → h=0.9, i=0 → s0+0.9*(s1-s0)
+    assert!((quantile_sorted(&[0.0, 10.0], 0.9).unwrap() - 9.0).abs() < 1e-12);
+    // n=2, p=1.0 → h=1.0, i=1, i+1>=n → 取 s[n-1]（**不**越界）
+    assert_eq!(quantile_sorted(&[0.0, 10.0], 1.0), Some(10.0));
+}
+
+/// 队形指标的**极端位置断言**（本仓 P36 的教训：口径守护要用能分辨的输入）。
+///
+/// 构造一帧：主队 10 名外场排成一条 **x 从 0.1 到 0.9 的直线**（y 全 0.5），
+/// 门将放在离谱位置（x=0.02）。断言：
+/// - 门将被剔除 ⇒ `cx` 不含 0.02（不剔则重心被拽偏）；
+/// - `depth` == q10–q90 跨度，**不是** max−min（后者会 = 84 m）。
+#[test]
+fn team_shape_excludes_keeper_and_uses_quantile_span() {
+    let mut pos = [(0.5, 0.5); 22];
+    // 主队门将（id 0）放在极端位置——若被计入，cx/cy/depth 全变
+    pos[0] = (0.02, 0.05);
+    // 主队外场 id 1..=10：x 从 0.1 到 0.9 均匀
+    for (k, id) in (1..=10usize).enumerate() {
+        pos[id] = (0.1 + 0.8 * (k as f64) / 9.0, 0.5);
+    }
+    // 客队随便摆（本测试只看主队）
+    for id in 11..=21usize {
+        pos[id] = (0.5, 0.5);
+    }
+    let snap = StateSnapshot {
+        t: ObservedTime::state_commit(1.0),
+        pos,
+        frozen: vec![],
+    };
+    let s = team_shape(&snap, TeamId::Home).expect("10 名外场应可算");
+    assert_eq!(s.n, 10, "有效外场人数应为 10（门将剔除后）");
+    // cx = mean(0.1..0.9 米制) = 0.5*105 = 52.5 m。门将 (0.02) 若被计入会把它拉低。
+    assert!(
+        (s.cx - 52.5).abs() < 1e-9,
+        "cx 应为 52.5 m（10 名外场 x 的均值）；门将 id=0 必须被剔除。实测 {}",
+        s.cx
+    );
+    assert!((s.cy - 34.0).abs() < 1e-9, "cy 应为 34.0 m（y 全 0.5）");
+    // depth：x 米制 = 10.5..94.5，跨度 84。q10–q90 会**小于** 84（掐掉两端分位）。
+    let xs_m: Vec<f64> = (0..10).map(|k| (0.1 + 0.8 * k as f64 / 9.0) * 105.0).collect();
+    let mut sorted = xs_m.clone();
+    sorted.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let expect = quantile_span(&sorted).unwrap();
+    assert!(
+        (s.depth - expect).abs() < 1e-9,
+        "depth 必须是 q10–q90 跨度（{expect}），实测 {}",
+        s.depth
+    );
+    assert!(
+        s.depth < 84.0 - 1e-6,
+        "depth 必须**小于** max−min（84 m）——若相等说明退化成了最朴素的跨度，q10–q90 没生效"
+    );
+    // spread > 0 且有限
+    assert!(s.spread > 0.0 && s.spread.is_finite());
+}
+
+/// **`spread` 用未排序的 (x,y) 配对**——本仓踩过的历史坑（排序后的 x 配未排序的 y，
+/// 差 0.1–0.2 m）。
+///
+/// ⚠️ **fixture 的判别力要求**：x 的**下标顺序必须与大小顺序不同**，否则「排序 x 再配对」
+/// 是空操作，本测试会变成恒真（初版就踩了这个坑：x 与 y 同增，排序不改顺序 ⇒ 变异存活）。
+/// 故这里把 x 安排成**交替大小**（0.9, 0.1, 0.8, 0.2, …），而 y 单独递增。
+#[test]
+fn spread_pairs_unsorted_coordinates() {
+    let mut pos = [(0.5, 0.5); 22];
+    // 主队外场 x 交替（下标序 ≠ 大小序），y 单独按另一序排列——两者配对是刻意错位的。
+    let mut pts: Vec<(f64, f64)> = Vec::new();
+    for k in 0..10usize {
+        let x = if k % 2 == 0 { 0.9 - 0.08 * (k as f64) } else { 0.1 + 0.08 * (k as f64) };
+        let y = 0.1 + 0.07 * k as f64;
+        pts.push((x, y));
+        pos[1 + k] = (x, y);
+    }
+    let snap = StateSnapshot {
+        t: ObservedTime::state_commit(1.0),
+        pos,
+        frozen: vec![],
+    };
+    let s = team_shape(&snap, TeamId::Home).unwrap();
+    let m: Vec<(f64, f64)> = pts.iter().map(|(x, y)| (x * 105.0, y * 68.0)).collect();
+    let cx = m.iter().map(|p| p.0).sum::<f64>() / 10.0;
+    let cy = m.iter().map(|p| p.1).sum::<f64>() / 10.0;
+    let expect = m
+        .iter()
+        .map(|p| ((p.0 - cx).powi(2) + (p.1 - cy).powi(2)).sqrt())
+        .sum::<f64>()
+        / 10.0;
+    // 反证条：确认「x 排序后再配对」确实给出**不同**的值（否则本测试无判别力）。
+    let mut sorted_x: Vec<f64> = m.iter().map(|p| p.0).collect();
+    sorted_x.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let wrong = sorted_x
+        .iter()
+        .zip(m.iter().map(|p| p.1))
+        .map(|(x, y)| ((x - cx).powi(2) + (y - cy).powi(2)).sqrt())
+        .sum::<f64>()
+        / 10.0;
+    assert!(
+        (wrong - expect).abs() > 1e-6,
+        "反证条失败：本 fixture 下「排序 x 再配对」与「原序配对」同值（{wrong} vs {expect}）——\
+         本测试对它无判别力，须换构造"
+    );
+    assert!(
+        (s.spread - expect).abs() < 1e-9,
+        "spread 必须用未排序的 (x,y) 配对（期待 {expect}，实测 {}）",
+        s.spread
+    );
+}
+
+/// **队形覆盖率**：引擎侧应 **100% 可算、0 缺失**（`MIN_OUTFIELD_PLAYERS` 是空操作）。
+///
+/// 这条正是 design §3.1 要求「明确记录」的那一点：**不得**把它写成「引擎侧会掉帧」。
+#[test]
+fn engine_shape_coverage_is_total_and_missing_reasons_stay_empty() {
+    let dm = observe(1);
+    let ms = MatchShape::observe_match(&dm);
+    assert_eq!(ms.home.frames, dm.state_snapshots.len());
+    assert_eq!(ms.away.frames, dm.state_snapshots.len());
+    assert_eq!(
+        ms.home.computable, ms.home.frames,
+        "引擎侧队形可算帧必须 == 总帧数（每队恒 10 名外场，`MIN_OUTFIELD_PLAYERS` 空操作）"
+    );
+    assert_eq!(ms.away.computable, ms.away.frames);
+    assert!(
+        ms.home.missing_reasons.is_empty(),
+        "引擎侧不应有缺失原因——`includeExtrapolated` / `MIN_OUTFIELD_PLAYERS` 在此为空操作。         实测缺失：{:?}",
+        ms.home.missing_reasons
+    );
+    assert_eq!(ms.home.computable_share(), Some(1.0));
+    // 防空转：必须有足够多的帧
+    assert!(ms.home.frames > 5000, "快照帧数过少：{}", ms.home.frames);
+}
+
+/// **与 JS 标尺同口径的哨兵**：Rust 的队形指标必须落在 JS `match-metrics.js` 实测的
+/// 同一量级。这是一条**宽哨兵**（不做逐点比对——那需要 JS 侧产物），
+/// 目的是抓「口径分叉」这类沉默错误（例如 depth 误用 max−min ⇒ 会显著偏大）。
+#[test]
+fn rust_shape_is_in_the_same_regime_as_the_js_ruler() {
+    let dm = observe(1);
+    let ms = MatchShape::observe_match(&dm);
+    let mean_depth = ms.home.depth_sum / ms.home.computable.max(1) as f64;
+    println!(
+        "Rust 侧 seed 1：可算帧 {}/{} 平均 depth={:.2} m 平均 width={:.2} m",
+        ms.home.computable,
+        ms.home.frames,
+        mean_depth,
+        ms.home.width_sum / ms.home.computable.max(1) as f64
+    );
+    // JS 标尺实测（P36/P37 基线）：引擎侧 depth 均值 ≈ 40.2 m、width ≈ 40.8 m。
+    // 这里给宽松带（±25%）——它抓的是**口径分叉**（如 max−min 会让 depth ≈ 84 m），
+    // 不是精确复现（精确比对需 JS 侧同帧产物，属 Slice 5 的产物验收）。
+    assert!(
+        (30.0..=50.0).contains(&mean_depth),
+        "Rust 侧平均 depth {mean_depth:.2} m 明显偏离 JS 标尺的 ≈40 m 量级——口径可能分叉"
+    );
 }
 
 // ============================== 口径：起点来源 ==============================

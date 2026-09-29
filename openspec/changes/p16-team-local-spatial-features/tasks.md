@@ -22,26 +22,30 @@
 
 ## Slice 2 — 静态特征接入（G1 已批准：引擎导出位置）
 
-- [ ] 引擎侧新增 `observe_state` 命令 + `DiagnosticMatch.state_snapshots` 字段
+- [x] 引擎侧新增 `observe_state` 命令 + `DiagnosticMatch.state_snapshots` 字段
       （**只加字段/命令，不改 `ControlFact` 闭集、不改正式事件流**）
-- [ ] 采样点 = **`match_events` 的 `while t < dur { tick(...); }` 循环体内、`tick` 返回之后**
+- [x] 采样点 = **`match_events` 的 `while t < dur { tick(...); }` 循环体内、`tick` 返回之后**
       （⚠️ **不是** `emit_beat_with_main`——实测 ≥16.7% 的拍不经它，且 34/5399 个 tick
       根本不产 beat，见 `POSITION-EXPORT-DESIGN.md` §2.4）。**拍 = tick，不是 beat**
-- [ ] `frozen` 取自 `st.highlight` 的 `participants`（**取 id 列**），语义 = 「本拍结束时
+- [x] `frozen` 取自 `st.highlight` 的 `participants`（**取 id 列**），语义 = 「本拍结束时
       仍活跃的高亮参与者」——在 **`tick` 返回之后**取（= finalize 之后，§2.4）
-- [ ] 实测：飞行期冻结者的位置由高亮**钉住**（结构保证：`commit_beat_positions_ex` 跳过
+- [x] 实测：飞行期冻结者的位置由高亮**钉住**（结构保证：`commit_beat_positions_ex` 跳过
       其 `st.pos` 写回），故 `frozen` 的用途是「标记进行中的量」，**不是**「防陈旧」；
       成本 ≈ 0（全 5399 拍摊薄 0.233 人/拍；有高亮的 713 拍上 ≈1.76 人/拍）
-- [ ] 守卫：① `simulate()` 逐字节一致门仍绿（recorder 空操作）；
+- [x] 守卫：① `simulate()` 逐字节一致门仍绿（recorder 空操作）；
       ② **快照 = `st.pos` 逐位恒等**（G1 的核心承诺，须定向变异可红）；
       ③ **快照数 == tick 数**（≠ beat 数，seed 1：5399 vs 5365）；
       ④ `DiagnosticMatch` 三处构造点（`into_diagnostic_match` / P16 fixture / P17A `empty_dm`）
       同步更新（全字段字面量 → 漏改是编译错，非静默）
-- [ ] 接入 `depth` / `width` / `cx`,`cy` / `spread` / `n`（Rust 侧口径与 `match-metrics.js` 对齐，
-      与标尺在整秒点上互为哨兵）
+      —— 另有两处源码扫描守卫被本改动触发并已按其要求登记/改写：
+      `RECORDER_READS` 加 `.state_snapshots()`、`p15_compaction_boundary_is_actually_registered`
+      的锚点字符串不得出现在注释里（本 change 的注释一度含它，已改写）
+- [x] 接入 `depth` / `width` / `cx`,`cy` / `spread` / `n`（Rust 侧 `tests/p16/shape.rs`，
+      口径逐条对齐 `match-metrics.js`：剔门将 / 逐帧算再均值 / q10–q90 / 未排序配对）
 - [ ] 编码保持 `[(f64,f64); 22]`——**不得**改 `f32`/量化（那会破坏「逐位恒等」这条 G1 的立身之本）
-- [ ] 报告每项的可算帧占比与 `unknown` 占比
-- [ ] 明确记录：`includeExtrapolated` / `MIN_OUTFIELD_PLAYERS` 在**引擎侧是空操作**
+- [x] 报告每项的可算帧占比与 `unknown` 占比（`ShapeCoverage`：引擎侧实测 **100% 可算、0 缺失**）
+- [x] 明确记录：`includeExtrapolated` / `MIN_OUTFIELD_PLAYERS` 在**引擎侧是空操作**
+      （`shape.rs` 模块头 + 测试 `engine_shape_coverage_is_total_and_missing_reasons_stay_empty`）
 
 ## 产物纪律（本 change 新增）
 

@@ -285,6 +285,7 @@ fn empty_dm(events: Vec<Event>) -> DiagnosticMatch {
         events,
         control_facts: Vec::new(),
         possession_episodes: Vec::new(),
+        state_snapshots: vec![],
         restart_sequences: Vec::new(),
         phase_segments: Vec::new(),
         state: BehaviorControlState::Ended,
