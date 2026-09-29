@@ -273,10 +273,12 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 **仍待用户拍板**（不再阻塞设计，但阻塞实现，见 #113 §8 全 7 项）：
 
 1. 缺失的 §11 理由：**回填 design §11**（动冻结文档）还是在 #15B design 记偏离？
-2. 是否为 **team-state observation** 立项（承载两队转换语义），
-   还是先走「**负空间 + 判据**」的零新对象路线？（旧 episode 的 `control_lost` +
-   `contest_started(tackle_loose)` + 4-tick 窗口已构成转换窗口的完整负空间表达——
-   缺的是「升格为标签的判据」，不是「对象」）
+2. 是否为 **team-state observation** 立项 —— **实测结论：不立**（见 #113 §6）：
+   转换的**完整观测已现成**——窗口起止可从 `tackle` 事件（同 tick）/ `saved shot` 事件 +1
+   加 `TRANSITION_TICKS` 重建；**转换形态**由专用 mover 动作 `Mover.action == "close_down"` 给出
+   （20 场实测 870 拍，**窗口外 0**，即它恰是窗口的指纹）；参与者即该 tick 的 mover id。
+   新建 `TransitionSpan` 是重复建设。**待用户确认。**
+   （⚠️ 早前这里写「负空间表达」——**错**，它是正信号；已更正。）
 3. `phase_segments` 的**填充位置**（recorder 内 vs `simulate_with_behavior_observations` 后）；
 4. **判据冻结的守卫方式**（写进 §4.2 清单，还是靠 `engineFingerprint` 哨兵）；
 5. 三档 phase 的**可判定性判据**本身（待 #16）。
