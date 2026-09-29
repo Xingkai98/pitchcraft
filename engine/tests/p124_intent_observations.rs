@@ -47,6 +47,8 @@ mod pool;
 mod intent;
 #[path = "p124/phasegate.rs"]
 mod phasegate;
+#[path = "p124/report.rs"]
+mod report;
 
 // 复用 P16 的管线（**只读**：不改 `tests/p16/*`，只 include 其模块）。
 //
@@ -1325,4 +1327,486 @@ fn purification_over_intent_features_reproduces_the_verdict() {
          ——一条都没有说明样本量门槛失效"
     );
     println!("三臂净化下，样本充足的意图特征均分不开 build_up / progression");
+}
+
+// ============================== Slice 5：产物 + 裁决 ==============================
+
+/// 把一次 gate 运行渲染成 Markdown + JSON（**纯函数**，便于确定性与落盘测试共用）。
+fn render_artifacts(mode: &str) -> (String, String) {
+    let pw = pool_gate_seeds_with_intents();
+    let t = crate::phasegate::verdict_table(&pw.pool, &pw.intents);
+    let p = crate::report::build_provenance(mode, GATE_SEEDS.0, GATE_SEEDS.1, DUR);
+
+    // ── Markdown ──
+    let mut md = String::new();
+    md.push_str(&format!("# P124 意图观测与 phaseability 裁决（{mode}）\n\n"));
+    md.push_str("## provenance\n\n");
+    md.push_str(&crate::report::provenance_markdown(&p));
+    md.push_str("\n## Slice 1：motif 混淆净化（30 seed，forward_m/s）\n\n");
+    md.push_str("| 臂 | 抽掉了什么 | AUC |\n|---|---|---|\n");
+    for arm in crate::purify::PURIFY_ARMS {
+        let r = crate::purify::arm_auc(&pw.pool, arm);
+        md.push_str(&format!(
+            "| `{}` | {} | {} |\n",
+            arm.name,
+            arm.removes,
+            r.auc.map(|a| format!("{a:.3}")).unwrap_or_else(|| "N/A".into())
+        ));
+    }
+    let cp = crate::purify::counter_proof_final_third(&pw.pool);
+    md.push_str(&format!(
+        "\n反证条 `final_third`（forward_m/s）：AUC = {:.3}（期望 {:.3} ± {:.2}）\n\n",
+        cp.auc.unwrap_or(f64::NAN),
+        crate::purify::COUNTER_PROOF_EXPECTED,
+        crate::purify::COUNTER_PROOF_TOL
+    ));
+
+    // ── Slice 3 覆盖率 ──
+    let mut cov = crate::intent::IntentCoverage::default();
+    for it in &pw.intents {
+        cov.observe(it);
+    }
+    md.push_str("## Slice 3：意图特征覆盖率\n\n| 特征 | 可算 / episode | 覆盖率 |\n|---|---|---|\n");
+    for (k, c) in &cov.computed {
+        md.push_str(&format!(
+            "| `{k}` | {c} / {} | {:.3} |\n",
+            cov.episodes,
+            *c as f64 / cov.episodes as f64
+        ));
+    }
+    md.push_str("\n缺失原因分类：\n\n| 原因 | 计数 |\n|---|---|\n");
+    for (k, c) in &cov.missing {
+        md.push_str(&format!("| {k} | {c} |\n"));
+    }
+
+    // ── Slice 4 gate 表 ──
+    for (title, rows) in [
+        ("## Slice 4：final_third vs 其余", &t.final_vs_rest),
+        ("## Slice 4：build_up vs progression", &t.build_vs_prog),
+    ] {
+        md.push_str(&format!("\n{title}\n\n| 特征 | AUC | 种类 | pos / neg | 证据 |\n|---|---|---|---|---|\n"));
+        for r in rows {
+            let judge = if r.provenance == crate::phasegate::Provenance::Circular {
+                "循环·不作证据".to_string()
+            } else if let Some(note) = r.undersized_note() {
+                format!("**不作证据**：{note}")
+            } else {
+                "样本充足".to_string()
+            };
+            md.push_str(&format!(
+                "| `{}` | {} | {:?} | {} / {} | {judge} |\n",
+                r.feature,
+                r.auc.map(|a| format!("{a:.3}")).unwrap_or_else(|| "N/A".into()),
+                r.provenance,
+                r.pos_n,
+                r.neg_n
+            ));
+        }
+    }
+    // ── 裁决 ──
+    let best = t.best_intent_for_build_vs_prog();
+    md.push_str("\n## 裁决\n\n");
+    md.push_str("**不够**（对 `build_up` / `progression`）：意图信号未能分开这两档。\n\n");
+    match best {
+        Some(b) => md.push_str(&format!(
+            "- 最强**样本充足**的非循环意图特征：`{}` AUC = {:.3}（pos={} neg={}）——落在 [0.44, 0.56] 内，             即与随机无异。\n",
+            b.feature,
+            b.auc.unwrap_or(f64::NAN),
+            b.pos_n,
+            b.neg_n
+        )),
+        None => md.push_str("- **没有任何样本充足的意图特征**可算——样本量门槛把全部行挡在证据之外。\n"),
+    }
+    // ⚠️ 明确点出被排除的行（否则读者会把它们的极端 AUC 当信号）。
+    let undersized: Vec<&str> = t
+        .build_vs_prog
+        .iter()
+        .filter(|r| r.provenance == crate::phasegate::Provenance::Intent && !r.is_adequately_sampled())
+        .map(|r| r.feature)
+        .collect();
+    if !undersized.is_empty() {
+        md.push_str(&format!(
+            "- **不作证据**（样本不足，两档都几乎不开窗）：{}。它们的 AUC 偏离 0.5 是噪声，             不是信号——见 `MIN_SIDE_FOR_SEPARABILITY` 的 doc。\n",
+            undersized.join(" / ")
+        ));
+    }
+    md.push_str(&format!(
+        "- P16 基线 `forward_m/s` = {:.3}（复现）。\n",
+        t.p16_baseline_build_vs_prog().unwrap_or(f64::NAN)
+    ));
+    md.push_str("\n### 15B 的处置\n\n");
+    md.push_str("- `final_third`：有候选判据，但它是**几何证据**（`forward_m/s`），\
+                若 15B 用它须命名 `GoalwardProgressEvidence`，**不得**复用 `Phase`。\n");
+    md.push_str("- `build_up` / `progression`：**保留 `unknown`**。空间 + 意图仍不足。\n");
+
+    // ── JSON ──
+    let mut rows_json: Vec<String> = Vec::new();
+    for (label, rows) in [("final_vs_rest", &t.final_vs_rest), ("build_vs_prog", &t.build_vs_prog)] {
+        for r in rows {
+            rows_json.push(crate::report::obj(&[
+                ("pair", crate::report::J::S(label.to_string())),
+                ("feature", crate::report::J::S(r.feature.to_string())),
+                ("provenance", crate::report::J::S(format!("{:?}", r.provenance))),
+                ("auc", r.auc.map(crate::report::J::F).unwrap_or(crate::report::J::Null)),
+                ("pos_n", crate::report::J::Int(r.pos_n as i64)),
+                ("neg_n", crate::report::J::Int(r.neg_n as i64)),
+                ("adequately_sampled", crate::report::J::S(r.is_adequately_sampled().to_string())),
+            ]));
+        }
+    }
+    let features_array = format!("[{}]", rows_json.join(","));
+    let (fingerprint, _) = {
+        // P17A 的闭集指纹（本模块只作交叉引用）。
+        (crate::report::p16_sidecar_schema_fingerprint(), ())
+    };
+    let _ = fingerprint;
+    let json = {
+        let with_rows = crate::report::merge_into_object(
+            &crate::report::provenance_json(&p),
+            &[("rows", features_array.clone())],
+        );
+        with_rows
+    };
+    (md, json)
+}
+
+/// **确定性**：同输入两次运行**逐字节相同**（产物可复现的前提）。
+#[test]
+fn identical_inputs_produce_byte_identical_output() {
+    let (md1, json1) = render_artifacts("test");
+    let (md2, json2) = render_artifacts("test");
+    assert_eq!(md1, md2, "同输入的 Markdown 两次不同——产物不可复现");
+    assert_eq!(json1, json2, "同输入的 JSON 两次不同——产物不可复现");
+    assert!(!md1.is_empty() && !json1.is_empty());
+}
+
+/// **落盘 JSON 必须结构合法**（P16 缺陷 1/2 的直接防线）。
+#[test]
+fn rendered_json_is_structurally_valid() {
+    let (_, json) = render_artifacts("test");
+    crate::report::json_looks_well_formed(&json)
+        .unwrap_or_else(|e| panic!("渲染出的 JSON 结构非法：{e}\n---\n{json}"));
+    // 关键字段存在（键名与 provenance 逐字一致）。
+    for key in [
+        "\"caliber_version\"",
+        "\"test_source_fingerprint\"",
+        "\"has_intent_snapshots\"",
+        "\"rows\"",
+    ] {
+        assert!(json.contains(key), "JSON 缺关键字段 {key}");
+    }
+}
+
+/// **校验器自身有判别力**：喂它 P16 缺陷 1 的坏形态（少一个 `}`）必须报错。
+#[test]
+fn json_validator_rejects_the_known_bad_shapes() {
+    let (_, good) = render_artifacts("test");
+    assert!(crate::report::json_looks_well_formed(&good).is_ok(), "合法 JSON 被误判为坏");
+    // 缺陷 1 的形态：`trim_end_matches` 剥多字符 ⇒ **少一个 `}`**。
+    //
+    // ⚠️ 构造必须**真的坏**：渲染出的 JSON 顶层以**单个** `}` 收尾，
+    // 故 `trim_end_matches('}') + "}"` 会**原样还原**（首版就这么写，本测试当场红）。
+    // 真正的缺陷形态是「**嵌套对象**少一个括号」——把第 2 个 `}` 删掉：
+    // `{"a":{"b":1}` 这类。故这里直接删内部那个 `}`。
+    let bad = &good[..good.len() - 1]; // 删掉最外层收尾的 `}`
+    assert!(
+        crate::report::json_looks_well_formed(bad).is_err(),
+        "少最外层 `}}` 的坏形态被放过——校验器无判别力"
+    );
+    // 嵌套层少一个括号（缺陷 1 的形态：内部子对象未闭合）。
+    let inner_bad = good.replacen('}', "", 1);
+    assert!(
+        crate::report::json_looks_well_formed(&inner_bad).is_err(),
+        "内部少一个 `}}` 的坏形态被放过"
+    );
+    // 括号不平衡的另一形态：多一个 `}`。
+    let bad2 = format!("{good}}}");
+    assert!(crate::report::json_looks_well_formed(&bad2).is_err(), "多一个 `}}` 被放过");
+    // 空文档。
+    assert!(crate::report::json_looks_well_formed("").is_err(), "空文档被放过");
+}
+
+/// **`merge_into_object` 必须只剥一个 `}`**——P16 缺陷 1 的回归守卫。
+///
+/// 定向变异：把 `strip_suffix('}')` 换回 `trim_end_matches('}')` ⇒ 本测试红。
+#[test]
+fn merge_into_object_strips_exactly_one_brace() {
+    let base = "{\"a\":{\"b\":1}}"; // 结尾是 `}}`
+    let merged = crate::report::merge_into_object(base, &[("c", "2".to_string())]);
+    crate::report::json_looks_well_formed(&merged)
+        .unwrap_or_else(|e| panic!("合并后 JSON 非法（多半是剥多了 `}}`）：{e}\n{merged}"));
+    assert!(merged.contains("\"c\":2"), "合并未加入新键：{merged}");
+    // 反证条：坏 base（不以 `}` 结尾）必须 panic 而非静默拼坏。
+    let caught = std::panic::catch_unwind(|| {
+        crate::report::merge_into_object("{\"a\":1", &[("c", "2".to_string())])
+    });
+    assert!(caught.is_err(), "不以 `}}` 结尾的 base 被静默接受——坏 JSON 会溜过去");
+}
+
+/// **产物与源码同源**（补 `engine_source_fingerprint` 对测试文件的盲区）——
+/// 落盘产物存在时，其 `test_source_fingerprint` 必须等于**当前源码**算出的值。
+///
+/// ⚠️ **不断言 `source_commit == HEAD`**（P16 缺陷 4 的教训：那是**自失效**的——
+/// 产物是 gitignored 的本地文件，任何一次提交都会把 HEAD 推过它记录的 commit，
+/// 于是「提交修复」这个动作本身就让测试红）。判据是**内容**不是**标签**。
+#[test]
+fn on_disk_artifacts_share_the_current_source_fingerprint() {
+    let dir = crate::report::out_dir();
+    let current = crate::report::test_source_fingerprint();
+    let mut checked = 0usize;
+    for mode in ["canary", "baseline"] {
+        let md_path = dir.join(format!("{mode}.md"));
+        let json_path = dir.join(format!("{mode}.json"));
+        let Ok(text) = std::fs::read_to_string(&md_path) else {
+            continue;
+        };
+        assert!(
+            text.contains(&current),
+            "落盘产物 `{}` 的 `test_source_fingerprint` 与**当前源码**不符——产物陈旧\
+             （改了 `tests/p124/*` 后没重跑产物门）。当前源码指纹 = {current}\n\
+             重跑：`P124_SOURCE_COMMIT=$(git rev-parse HEAD) cargo test --release \
+             --test p124_intent_observations -- --ignored --nocapture`",
+            md_path.display()
+        );
+        // 落盘 JSON 必须结构合法。
+        let jtext = std::fs::read_to_string(&json_path)
+            .unwrap_or_else(|_| panic!("有 `{mode}.md` 却无 `{mode}.json`——产物不成对"));
+        crate::report::json_looks_well_formed(&jtext)
+            .unwrap_or_else(|e| panic!("落盘 JSON `{}` 结构非法：{e}", json_path.display()));
+        // `source_commit` 标签合理性：40 位 hex 且是 HEAD 的祖先（**不要求 == HEAD**）。
+        let recorded = text
+            .lines()
+            .find(|l| l.contains("`source_commit`"))
+            .and_then(|l| {
+                l.split('`')
+                    .filter(|t| t.len() == 40 && t.chars().all(|c| c.is_ascii_hexdigit()))
+                    .next_back()
+            })
+            .map(|s| s.to_string());
+        let rec = recorded.unwrap_or_else(|| {
+            panic!("落盘产物 `{}` 找不到 40 位 hex 的 `source_commit`", md_path.display())
+        });
+        assert_ne!(rec, "unknown", "产物 `source_commit` 是 unknown——产物门须传 `P124_SOURCE_COMMIT`");
+        // ⚠️ 显式 match 三种退出码（P16 缺陷 4 第二版的教训：`.ok().map(success)` 会把
+        // 「ref 不存在(128)」静默放行——那是假守卫）。
+        let out = std::process::Command::new("git")
+            .args(["merge-base", "--is-ancestor", &rec, "HEAD"])
+            .current_dir(env!("CARGO_MANIFEST_DIR"))
+            .status();
+        match out {
+            Ok(st) if st.success() => {}
+            Ok(st) if st.code() == Some(1) => panic!(
+                "产物 `source_commit`（{rec}）不是 HEAD 的祖先——来自别的分支/fork"
+            ),
+            Ok(st) if st.code() == Some(128) => {
+                panic!("产物 `source_commit`（{rec}）在本仓库不存在（git 退出 128）——标签是编的")
+            }
+            Ok(st) => panic!("`git merge-base --is-ancestor` 意外退出码 {:?}", st.code()),
+            Err(_) => println!("无 git，跳过祖先检查"),
+        }
+        checked += 1;
+    }
+    if checked == 0 {
+        println!("未发现落盘产物 → 跳过（新 worktree 的正常状态）");
+    } else {
+        println!("核过 {checked} 份产物：内容指纹 == 当前源码，且 source_commit 是 HEAD 的祖先");
+    }
+}
+
+/// 写一份产物到盘（`{name}.md` + `{name}.json`）——落盘测试共用。
+fn write_artifacts(name: &str) -> String {
+    let (md, json) = render_artifacts(name);
+    let dir = crate::report::out_dir();
+    std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("建目录 {} 失败：{e}", dir.display()));
+    std::fs::write(dir.join(format!("{name}.md")), &md).expect("写 md 失败");
+    std::fs::write(dir.join(format!("{name}.json")), &json).expect("写 json 失败");
+    dir.display().to_string()
+}
+
+/// **`#[ignore]` 门：canary 产物**（30 seed，与 `GATE_SEEDS` 同区间）。
+///
+/// 跑法：`P124_SOURCE_COMMIT=$(git rev-parse HEAD) cargo test --release \
+/// --test p124_intent_observations -- --ignored --nocapture p124_canary`
+#[test]
+#[ignore = "30 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p124_canary"]
+fn p124_canary() {
+    let dir = write_artifacts("canary");
+    let p = crate::report::build_provenance("canary", GATE_SEEDS.0, GATE_SEEDS.1, DUR);
+    assert_ne!(
+        p.source_commit, "unknown",
+        "产物门须传 `P124_SOURCE_COMMIT=$(git rev-parse HEAD)`——否则 provenance 的 commit 无意义"
+    );
+    // 落盘后立刻自检（落盘门不该产出坏 JSON）。
+    let json = std::fs::read_to_string(crate::report::out_dir().join("canary.json")).unwrap();
+    crate::report::json_looks_well_formed(&json).expect("落盘 JSON 结构非法");
+    println!("[p124:canary] 产物写入 {dir}（caliber_version={}）", p.caliber_version);
+}
+
+/// **`#[ignore]` 门：baseline 产物**（300 seed，与 P16 的 300 seed 基线同区间，
+/// 供「两组数字不可跨 seed 数互换」的对照——见 P16 的 `0.855 / 0.862` 教训）。
+///
+/// 跑法：`P124_SOURCE_COMMIT=$(git rev-parse HEAD) cargo test --release \
+/// --test p124_intent_observations -- --ignored --nocapture p124_baseline`
+#[test]
+#[ignore = "300 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p124_baseline"]
+fn p124_baseline() {
+    // ⚠️ **本门用 300 seed**，与默认套件的 30 seed **是两个口径**——产物 provenance 记了
+    // seed 区间，故两组数字在产物层可区分（P16 的教训：数字不可跨口径互换）。
+    let pw = {
+        let mut feats: Vec<(usize, crate::gate::EpisodeFeature)> = Vec::new();
+        let mut facts: Vec<Option<crate::reference::ActionFacts>> = Vec::new();
+        let mut intents: Vec<crate::intent::EpisodeIntent> = Vec::new();
+        let mut offset = 0usize;
+        for seed in 1u64..=300 {
+            let dm = observe(seed);
+            let n = dm.possession_episodes.len();
+            let f = crate::gate::episode_features(&dm);
+            let a = crate::gate::action_facts(&dm);
+            let i = crate::intent::match_intents(
+                &dm.intent_snapshots,
+                &dm.defensive_intents,
+                &dm.possession_episodes,
+            );
+            assert_eq!(f.len(), n);
+            assert_eq!(a.len(), n);
+            assert_eq!(i.len(), n);
+            feats.extend(f.into_iter().map(|(k, e)| (k + offset, e)));
+            facts.extend(a);
+            intents.extend(i);
+            offset += n;
+        }
+        crate::pool::PooledWithIntent {
+            pool: crate::probe::Pooled { feats, facts, seeds: (1, 300) },
+            intents,
+        }
+    };
+    let t = crate::phasegate::verdict_table(&pw.pool, &pw.intents);
+    let p16_bp = t.p16_baseline_build_vs_prog().expect("应可算");
+    println!(
+        "[p124:baseline] 300 seed / {} episode：P16 forward_m/s 对 build_up vs progression = {p16_bp:.3}",
+        pw.pool.len()
+    );
+    // 与 30 seed 口径的对照（**两条都在，别互相替代**）。
+    assert!(
+        (p16_bp - 0.431).abs() <= 0.06,
+        "300 seed 的 P16 基线应 ≈0.431（P16 记录值）——实测 {p16_bp:.3}"
+    );
+    let dir = write_artifacts("baseline");
+    println!("[p124:baseline] 产物写入 {dir}");
+}
+
+/// **provenance 携带可比性三件套**——两次运行可比的前提（同 P16 的形态）。
+#[test]
+fn provenance_carries_the_comparability_triple() {
+    let p = crate::report::build_provenance("test", 1, 1, DUR);
+    assert!(!p.engine_source_fingerprint.is_empty());
+    assert!(!p.test_source_fingerprint.is_empty());
+    assert!(!p.caliber_version.is_empty());
+    assert!(
+        p.engine_source_fingerprint.starts_with("fnv1a64:")
+            && p.test_source_fingerprint.starts_with("fnv1a64:"),
+        "指纹应形如 fnv1a64:…"
+    );
+    // `has_intent_snapshots` 是**活探测**（不是硬编码）——它必须与真跑一场的结果一致。
+    let dm = observe(1);
+    assert!(!dm.intent_snapshots.is_empty(), "真跑一场应有意图快照");
+    assert!(
+        p.has_intent_snapshots,
+        "provenance 的 `has_intent_snapshots` 应为 true（真跑有快照）——硬编码/探测失效"
+    );
+    // 口径快照必须列出驱动判据的活常量（否则 reviewer 得读源码才能核对）。
+    let names: Vec<&str> = p.caliber.iter().map(|(k, _)| *k).collect();
+    for need in [
+        "window_seconds",
+        "min_side_for_separability",
+        "counter_proof_expected",
+        "gate_seed_first",
+        "gate_seed_last",
+    ] {
+        assert!(
+            names.contains(&need),
+            "口径快照缺 `{need}`（它是驱动判据的活常量）——当前：{names:?}"
+        );
+    }
+}
+
+/// **本 change 不使 P16 的产物指纹陈旧**——`test_source_fingerprint` 覆盖本 change 的源码，
+/// 而 **engine 侧指纹**（`engine_source_fingerprint`）与 P16 是**同一清单**：
+/// 本 change 改了 `engine/src/*`（接了意图观测），故 P16 的落盘产物会陈旧——**那是预期的**
+/// （P16 的守卫会提示重生成 P16 产物）。本测试只钉住「本 change 的指纹确实覆盖了自己的源码」。
+#[test]
+fn p124_fingerprint_covers_its_own_sources() {
+    let p = crate::report::build_provenance("test", 1, 1, DUR);
+    // 本 change 的测试源码清单必须**含自己的入口与全部模块**。
+    let names: Vec<&str> = crate::report::TEST_SOURCES_P124.iter().map(|(n, _)| *n).collect();
+    for need in [
+        "p124_intent_observations.rs",
+        "p124/probe.rs",
+        "p124/purify.rs",
+        "p124/pool.rs",
+        "p124/intent.rs",
+        "p124/phasegate.rs",
+        "p124/report.rs",
+        // 只读复用的 P16 模块也必须被哈希（改了它们本 change 的数字就变）。
+        "p16/gate.rs",
+        "p16/reference.rs",
+    ] {
+        assert!(names.contains(&need), "测试源码指纹清单缺 `{need}`：{names:?}");
+    }
+    // 引擎侧与 P16 同清单（改 `engine/src/*` 会同时反映在两处）。
+    let eng: Vec<&str> = crate::report::ENGINE_SOURCES.iter().map(|(n, _)| *n).collect();
+    assert_eq!(eng, vec!["lib.rs", "observation.rs", "rng.rs"]);
+    let _ = p;
+}
+
+/// **裁决的「最强意图特征」必须只从「样本充足」的行里选**——定向变异抓出来的缺口守卫。
+///
+/// ## 来由（**变异逼出，不是先想到的**）
+///
+/// 我最初以为「样本量门槛」+「裁决测试」两条已覆盖产物里的裁决行。**定向变异显示没有**：
+/// 把 `best_intent_for_build_vs_prog` 的 `is_adequately_sampled()` 过滤**删掉**，
+/// 全套 27 条里**只有一条偶然变红**（落盘产物陈旧——那是**副作用**，因为我刚改过源码；
+/// 若在干净树上跑，它会**静默通过**）。
+///
+/// 而该变异让产物写出「最强意图特征 AUC = 0.281（`first_window_frac`）——
+/// 落在 [0.44,0.56] 内」——**自相矛盾的裁决行**：0.281 的两个样本才 12 个，
+/// 却被呈现为「最强信号」。这正是本仓「结论对但机制错」的同型：数字没错，
+/// 但**读者会得到相反的结论**。
+///
+/// ⇒ 本测试直接钉住：`best_intent_for_build_vs_prog()` 返回的行必须
+/// `is_adequately_sampled()`，且**不得**是 `first_window_frac`（那条恰恰是样本不足的）。
+#[test]
+fn verdict_best_intent_row_is_adequately_sampled() {
+    let pw = pool_gate_seeds_with_intents();
+    let t = crate::phasegate::verdict_table(&pw.pool, &pw.intents);
+    // 反证条：本 change 确实存在**样本不足**的意图行（否则本测试无判别力）。
+    let undersized: Vec<&str> = t
+        .build_vs_prog
+        .iter()
+        .filter(|r| r.provenance == crate::phasegate::Provenance::Intent)
+        .filter(|r| !r.is_adequately_sampled())
+        .map(|r| r.feature)
+        .collect();
+    assert!(
+        !undersized.is_empty(),
+        "本测试期望存在样本不足的意图行（`first_window_frac` / `max_window_ticks`）——\
+         一条都没有说明判据失效"
+    );
+    // 主断言：选中的「最强」行必须样本充足，且不是那几条样本不足的。
+    let best = t
+        .best_intent_for_build_vs_prog()
+        .expect("应选出一行「最强意图特征」（30 seed 下确有样本充足的意图行）");
+    assert!(
+        best.is_adequately_sampled(),
+        "裁决选出的「最强意图特征」`{}` 的 pos={} neg={} **样本不足**——\
+         产物会把它呈现为「最强信号」，而它其实是 12 个样本上的噪声（本仓「结论对但机制错」同型）",
+        best.feature,
+        best.pos_n,
+        best.neg_n
+    );
+    assert!(
+        !undersized.contains(&best.feature),
+        "裁决选出的「最强」不允许是样本不足行 `{}`",
+        best.feature
+    );
 }

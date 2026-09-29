@@ -212,11 +212,47 @@ AUC 标准误差 ≈0.184，0.219 不到 1.2σ，**纯噪声**。
 
 ## Slice 5 — 裁决与产物
 
-- [ ] **明确裁决**：够（三档谓词）或不够（点名缺什么 + 15B 处置）
-- [ ] 产物：JSON + Markdown + provenance（沿用 P16 形态）
-- [ ] 确定性测试（同输入两次逐字节相同）
+- [x] **明确裁决**：够（三档谓词）或不够（点名缺什么 + 15B 处置）
+- [x] 产物：JSON + Markdown + provenance（沿用 P16 形态）
+- [x] 确定性测试（同输入两次逐字节相同）
 - [ ] **代码审阅闭环**：独立只读 subagent 审阅 → 修复 → 再审阅 → 全过
       （⚠️ P16 的教训：**自查抓不到**——6 条假覆盖、3 条 P0 **无一条**由自查在提交前发现）
+
+### 裁决（**不够** —— 意图信号未能判 `build_up` / `progression`）
+
+| 档 | 裁决 | 依据 |
+|---|---|---|
+| `final_third` | 可判（**仍是几何证据**） | P16 的 `forward_m/s` = 0.855 复现；意图侧 `window_opened`/`setup_share` 0.966（但见循环条），`first_window_frac` 0.850 |
+| `build_up` / `progression` | **不够** | 全部**样本充足**的非循环意图特征落在 **0.449–0.546**（\|Δ\|≤0.06）⇒ 与随机无异 |
+
+**给 15B 的处置**：
+- `final_third`：有候选判据（`forward_m/s`），但它是**几何证据不是战术意图**。
+  若 15B 用它，须命名为**证据**（如 `GoalwardProgressEvidence`），**不得复用 `Phase`**；
+- `build_up` / `progression`：**保留 `unknown`**。空间 + 意图**都**不足——
+  本 change 的裁决是 P16「部分够」的**确认**（补了意图维度后仍不够），不是推翻。
+
+### 产物（`target/p124-intent/`，`#[ignore]` 门产出；gitignored）
+
+- `canary.{md,json}`（30 seed，`p124_canary`）/ `baseline.{md,json}`（300 seed，`p124_baseline`）；
+- provenance（**沿用 P16 形态**）：`source_commit` / `engine_source_fingerprint` /
+  `sidecar_schema_fingerprint` / `has_intent_snapshots`（**活探测**）/ seed 集 / 口径常量快照 /
+  **`test_source_fingerprint`**（哈希本 change 的源码 + 只读复用的 P16 模块）；
+- ⚠️ **P16 的教训逐条继承**：`strip_suffix('}')`（不是 `trim_end_matches`）+
+  `merge_into_object` 的 base 断言 + 落盘 JSON 结构校验 + `source_commit` **不要求 == HEAD**
+  （那是自失效的），只断言「40 位 hex 且是 HEAD 的祖先」并**显式 match git 的三种退出码**。
+
+### Slice 5 的定向变异（**实跑均红**）
+
+| 定向变异 | 抓它的测试 |
+|---|---|
+| `merge_into_object` 换回 `trim_end_matches('}')`（P16 缺陷 1 形态） | `merge_into_object_strips_exactly_one_brace` |
+| `best_intent_for_build_vs_prog` 去掉样本量过滤 | `verdict_best_intent_row_is_adequately_sampled`（**变异逼出的缺口**，见下） |
+
+⚠️ **第 2 条是变异测试逼出来的缺口**：我最初以为样本量门槛 + 裁决测试已覆盖产物里的裁决行。
+**实测删掉 `best_intent` 的过滤后，全套 27 条只有一条偶然变红**（落盘产物陈旧——是副作用，
+干净树上会**静默通过**）。而该变异会让产物写出**自相矛盾的裁决行**：
+「最强意图特征 AUC = 0.281 —— 落在 [0.44,0.56] 内」（0.281 那条只有 12 个样本）。
+⇒ 补写 `verdict_best_intent_row_is_adequately_sampled` 直接钉住「最强行必须样本充足」。
 
 ## 停止条件
 

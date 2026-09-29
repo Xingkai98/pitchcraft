@@ -327,12 +327,22 @@ pub struct VerdictTable {
 }
 
 impl VerdictTable {
-    /// 本 change 对 `build_up` vs `progression` 的**最强意图特征**（`def_none[循环]` 除外）。
+    /// 本 change 对 `build_up` vs `progression` 的**最强意图特征**。
+    ///
+    /// ## 过滤条件（三选一都会让「最强」变成误导）
+    ///
+    /// ① **排除循环量**（`def_none`）：它高是因为与 `ends_shot` 机制同源，不是判别力；
+    /// ② **排除样本不足的行**：实测 `first_window_frac` 的 `|Δ|` 最大（0.219），
+    ///    但它只有 pos=4 / neg=8 ⇒ **不作证据**。若不排除，产物会写出
+    ///    「最强意图特征 AUC=0.281」——读者会以为「有信号只是不够强」，
+    ///    而真相是「**这条特征在这两档间几乎没有样本**」；
+    /// ③ 要求 `auc.is_some()`。
     pub fn best_intent_for_build_vs_prog(&self) -> Option<&GateRow> {
         self.build_vs_prog
             .iter()
             .filter(|r| r.provenance == Provenance::Intent)
             .filter(|r| r.auc.is_some())
+            .filter(|r| r.is_adequately_sampled())
             .max_by(|a, b| {
                 let da = (a.auc.unwrap() - 0.5).abs();
                 let db = (b.auc.unwrap() - 0.5).abs();
