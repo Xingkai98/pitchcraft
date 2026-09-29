@@ -164,6 +164,68 @@ change 口径明禁的）。实测往 `reference_set` 塞 `acts.last().map(|e| e
 
 ---
 
+## 轮次 3（**主 session 交付核验**抓到的缺陷 —— 不是自查抓到的）
+
+> ⚠️ **这一轮的发现者不是审阅 subagent，也不是实现者自查，而是主 session 的交付核验。**
+> 记在这里是因为它**又一次**证明「自查不够」：实现者在提交前跑了 `cargo test` 全绿、
+> `openspec validate` 全绿，并**口头声称** `git diff --check` 干净、`source_commit == HEAD`——
+> 三条里有两条是错的，且**没有任何测试**会发现其中两条。
+
+### 缺陷 1（P0）落盘 JSON **不可解析**
+
+`python3 -c "json.load(...)"` 与 `jq -e` 都失败：`Expecting ',' delimiter`；
+括号计数 `{` 4 个 / `}` 3 个。
+
+**根因**：`provenance_json(&p).trim_end_matches('}')` —— `trim_end_matches` **剥掉所有**
+尾随 `}`（不是剥一个），而 `provenance_json` 结尾是 `}}`（`caliber` 子对象 + 最外层）
+⇒ 剥两个补一个 ⇒ 少一个 `}`。
+
+**修复**：收口为唯一入口 `merge_into_object()`，用 `strip_suffix('}')`（剥一个）
+且**断言** base 以 `}` 结尾（否则 panic，不静默拼坏 JSON）。
+
+### 缺陷 2（P0）**没有任何测试会发现缺陷 1**
+
+全仓没有测试解析或断言 JSON 合法性；`on_disk_artifacts_share_...` **只读 `.md`**。
+⇒ 坏 JSON 一路绿。**这是本 change 第 6 条「假覆盖」形态。**
+
+**修复**：`on_disk_json_is_structurally_valid`（对每份落盘 JSON 跑零依赖的结构校验
+`json_looks_well_formed`：括号/引号平衡 + 顶层形状 + 关键字段存在）
++ `json_validator_rejects_the_known_bad_shapes`（**校验器自身**的判别力：
+喂它缺陷 1 的坏形态必须报错）。
+**定向变异**：`merge_into_object` 换回 `trim_end_matches` → JSON 守卫**红**。
+
+### 缺陷 3（P1）`git diff --check main..HEAD` 不干净
+
+`p16_spatial_features.rs:2367: new blank line at EOF`（实现者声称干净——**不实**）。已修。
+
+### 缺陷 4（P1）产物 `source_commit` 不是 HEAD，且**无哨兵**
+
+产物记 `7c3f8b4`、HEAD 已是 `282faf2`。`test_source_fingerprint` 对**内容**敏感，
+但对「产物是否在最新 commit 上生成」不敏感（内容没变就同值）。
+**修复**：`on_disk_artifacts_share_...` 增加 `source_commit == 真实 HEAD` 断言
+（取 `P16_EXPECT_HEAD` 或 `git rev-parse HEAD`）。
+
+### 缺陷 5（P0，**实现者据缺陷 1/2 的线索自查时发现**，比主 session 报的四条更严重）
+
+`gate.rs::action_facts` 的 `from_restart` 被判成
+`... && caliber_of(dm, ep).map(|c| c.start_progress < 0.9).unwrap_or(false)`
+——**它用位置构造参考集**。这使参考集**实际被位置剪裁**（循环论证），
+且**推翻我在 7c3f8b4 里「类型隔离已生效」的声明**。
+（该污染是**实现者在上一轮做「最强绕过测试」时的变异未还原**，随 `282faf2` 提交。）
+
+**影响量级**：因过滤阈值 `< 0.9` 极宽，实际剪掉的 episode 极少——
+裁决数字几乎不动（`final_third` 0.855、`build_up` vs `progression` 0.461，
+与净化后**完全相同**）。**但污染本身不可接受**：参考集一旦含位置判据，
+裁决在**原则上**失效，与量级无关。
+
+**修复**：删除该子句；**并补一条直接守卫** `action_facts_construction_never_reads_position`
+（扫 `gate.rs` 里 `action_facts` 的函数体，位置 token 命中即红）。
+⚠️ **为什么必须有这条**：复验显示，只靠原有守卫，污染**只会**触发「产物陈旧」类失败
+（因为改了源码文本）——**重生成产物后就全绿了**。没有任何守卫**直接**说
+「参考集构造不该读位置」。
+
+---
+
 ## 最终状态
 
 - **审阅全过**（轮次 2 的 P1-1 与全部 P2 已修并复验）。

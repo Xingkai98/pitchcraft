@@ -41,6 +41,9 @@
 //! | [`p16_does_not_change_the_p17a_schema_fingerprint`] | 产物（不使 P17A 指纹陈旧） | ✅ |
 //! | [`provenance_caliber_snapshot_lists_the_live_constants`] | 产物（口径快照活性） | ✅ |
 //! | [`on_disk_artifacts_share_the_current_source_fingerprint`] | 产物（与源码同源） | ✅ |
+//! | [`on_disk_json_is_structurally_valid`] | 产物（**JSON 可解析**） | ✅ |
+//! | [`json_validator_rejects_the_known_bad_shapes`] | 产物（校验器本身有判别力） | ✅ |
+//! | [`action_facts_construction_never_reads_position`] | gate（构造点不得读位置） | ✅ |
 //! | `p16_canary` | 产物落盘（30 seed） | ❌ `#[ignore]` |
 //! | `p16_baseline` | 产物落盘（300 seed） | ❌ `#[ignore]` |
 //!
@@ -1168,6 +1171,63 @@ fn reference_set_source_references_no_position_quantity() {
     );
 }
 
+/// **`action_facts` 不得读位置**——它是 [`ActionFacts`] 的**唯一**构造点，
+/// 故它是参考集「零位置」这条承诺的**第二个、也是更靠上的**入口。
+///
+/// ## 为什么需要这条（主 session 交付核验后的补查发现）
+///
+/// `reference.rs` 的源码扫描只覆盖**该文件**。而 `ActionFacts` 由 `gate.rs::action_facts`
+/// 构造——**在那个文件里**。实测（2026-09-29）：往 `action_facts` 的 `from_restart`
+/// 上挂 `caliber_of(dm, ep).map(|c| c.start_progress < 0.9)`，
+/// **只有**「产物陈旧」类守卫会红（因为它改了源码文本），
+/// **没有任何守卫直接说「参考集构造不该读位置」**——重生成产物后就全绿了。
+///
+/// ⇒ 本测试扫 `gate.rs` 里 `action_facts` 的**函数体**，位置 token 命中即红。
+/// 与 `reference.rs` 的全文扫描合起来，覆盖参考集构造的**两个入口**。
+///
+/// ⚠️ **能力边界**：同 `reference.rs` 那条——文本扫描，非调用图分析。
+/// 但 `action_facts` 是**唯一**的 `ActionFacts` 构造点（改动它才能污染参考集），
+/// 故这一层比「任意 helper」收敛得多。
+#[test]
+fn action_facts_construction_never_reads_position() {
+    const SRC: &str = include_str!("p16/gate.rs");
+    let start = SRC
+        .find("pub fn action_facts(")
+        .expect("找不到 action_facts（改名了？守卫失效）");
+    let rest = &SRC[start..];
+    // 到函数结束（下一个顶层 `fn ` 或 `===` 分隔或 `use ` 行）。
+    let end = ["\nfn ", "\npub fn ", "\n// ====", "\nuse "]
+        .iter()
+        .filter_map(|m| rest.find(m))
+        .min()
+        .unwrap_or(rest.len());
+    let body = &rest[..end];
+
+    const FORBIDDEN: &[&str] = &[
+        ".x", ".y", ".x2", ".y2", "out_pos", "location",
+        "start_progress", "end_progress", "net_progress",
+        "caliber_of", "calibers_of", "EpisodeCaliber",
+        "team_shape", "TeamShape", "StateSnapshot", "state_snapshots",
+        "collect_ball_track", "support_formation", "decompose_displacement",
+        "line_spacing_change", "progress(", "attack_dir",
+    ];
+    for tok in FORBIDDEN {
+        assert!(
+            !body.contains(tok),
+            "`gate.rs::action_facts` 的函数体里出现了位置量 `{tok}` —— \
+             `action_facts` 是 `ActionFacts` 的唯一构造点，它读位置 ⇒ 参考集被位置污染 ⇒ \
+             整个 phaseability 裁决退化为循环论证。\
+             参考集只允许由**动作类型/result/detail/start_reason** 构造。"
+        );
+    }
+    // 反证的反证：扫描必须真的落在 `action_facts` 上。
+    assert!(
+        body.contains("open_success_passes") && body.contains("ends_shot") && body.contains("from_restart"),
+        "源码扫描没有落在 `action_facts` 的函数体上——守卫失效"
+    );
+    assert!(body.len() > 300, "扫到的函数体过短（{} 字节）", body.len());
+}
+
 /// **参考集谓词语义被钉住**（防「文档说 A、实现做 B」）。
 ///
 /// 动机：实测（2026-09-29）把 `final_third_candidate` 的实现从「**以** shot 结尾」
@@ -1765,13 +1825,113 @@ fn on_disk_artifacts_share_the_current_source_fingerprint() {
              --test p16_spatial_features -- --ignored --nocapture`。当前源码指纹 = {current}",
             path.display()
         );
+        // ⚠️ **`source_commit` 必须等于真实 HEAD**（主 session 核验抓到的缺陷 4）：
+        // 先前只断言「非 unknown」，于是产物记着旧 commit（`7c3f8b4`）而 HEAD 已前进，
+        // 没有哨兵能发现。`test_source_fingerprint` 对**内容**敏感、但对
+        // 「产物是否在最新 commit 上生成」不敏感（内容没变就同值）。
+        let head = std::env::var("P16_EXPECT_HEAD").ok().or_else(|| {
+            // 无环境变量时尝试 git（只在开发机上有效；CI/无 git 时跳过这条）。
+            std::process::Command::new("git")
+                .args(["rev-parse", "HEAD"])
+                .current_dir(env!("CARGO_MANIFEST_DIR"))
+                .output()
+                .ok()
+                .filter(|o| o.status.success())
+                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
+        });
+        if let Some(head) = head {
+            assert!(
+                text.contains(&head),
+                "落盘产物 `{}` 的 `source_commit` 不是当前 HEAD（{head}）——产物陈旧。\
+                 重跑：`P16_SOURCE_COMMIT=$(git rev-parse HEAD) cargo test --release \
+                 --test p16_spatial_features -- --ignored --nocapture`。",
+                path.display()
+            );
+        }
         checked += 1;
     }
     if checked == 0 {
         println!("未发现落盘产物 → 跳过（新 worktree 的正常状态）");
     } else {
-        println!("核过 {checked} 份产物，均与当前源码同源（{current}）");
+        println!("核过 {checked} 份产物，均与当前源码同源（{current}）且 source_commit == HEAD");
     }
+}
+
+/// **落盘的 JSON 必须结构合法**（主 session 交付核验抓到的缺陷 2）。
+///
+/// 先前**没有任何测试解析或断言 JSON 合法性**：`on_disk_artifacts_share_...` 只读 `.md`，
+/// 于是缺一个 `}` 的坏 JSON 一路绿。这正是本 change 反复出现的「假覆盖」形态。
+///
+/// 本测试对**每一份**落盘 JSON 跑 [`json_looks_well_formed`]（括号/引号平衡 + 顶层形状），
+/// 并断言关键字段存在。定向变异：把 `merge_into_object` 换回
+/// `trim_end_matches('}')` → 本测试**红**。
+///
+/// 产物不存在时跳过（新 worktree 未跑过产物门）。
+#[test]
+fn on_disk_json_is_structurally_valid() {
+    let dir = out_dir();
+    let mut checked = 0usize;
+    for mode in ["canary", "baseline"] {
+        let path = dir.join(format!("{mode}.json"));
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue;
+        };
+        json_looks_well_formed(&text).unwrap_or_else(|e| {
+            panic!(
+                "落盘产物 `{}` 不是结构合法的 JSON：{e}\n\
+                 （产物门必须经 `merge_into_object` 拼装，不得手写 `trim_end_matches('}}')`）",
+                path.display()
+            )
+        });
+        // 关键字段必须在（防空转：合法但空的对象不算通过）。
+        for key in [
+            "caliber_version",
+            "test_source_fingerprint",
+            "engine_source_fingerprint",
+            "caliber_coverage",
+            "feature_coverage",
+        ] {
+            assert!(
+                text.contains(&format!("\"{key}\"")),
+                "落盘 JSON `{}` 缺字段 `{key}`",
+                path.display()
+            );
+        }
+        checked += 1;
+    }
+    if checked == 0 {
+        println!("未发现落盘 JSON → 跳过（新 worktree 的正常状态）");
+    } else {
+        println!("核过 {checked} 份落盘 JSON，均结构合法");
+    }
+}
+
+/// **校验器本身的判别力**：喂给它**已知坏的** JSON（就是缺陷 1 的形态）必须报错。
+///
+/// 没有这条，「校验器恒返回 Ok」与「产物真的合法」分不开（本仓「探针本身也要审」的教训）。
+#[test]
+fn json_validator_rejects_the_known_bad_shapes() {
+    // 好形态：通过（否则下面的「坏形态报错」无意义）。
+    assert!(json_looks_well_formed(r#"{"a":{"b":1},"c":[1,2]}"#).is_ok());
+    // 缺陷 1 的形态：**缺一个** `}`（`trim_end_matches` 剥多了）。
+    assert!(
+        json_looks_well_formed(r#"{"a":{"b":1},"c":[1,2]"#).is_err(),
+        "缺尾括号必须报错"
+    );
+    // 括号不平衡（少一个内层 `}`）。
+    assert!(
+        json_looks_well_formed(r#"{"a":{"b":1,"c":[1,2]}"#).is_err(),
+        "内层对象未闭合必须报错"
+    );
+    // 字符串未闭合。
+    assert!(
+        json_looks_well_formed(r#"{"a":{"b":"oops},"c":[1]}"#).is_err(),
+        "未闭合字符串必须报错"
+    );
+    // 顶层不是对象 / 没有嵌套（形状可疑）。
+    assert!(json_looks_well_formed("[]").is_err());
+    assert!(json_looks_well_formed(r#"{"a":1}"#).is_err(), "无嵌套 → 形状可疑");
+    assert!(json_looks_well_formed("").is_err());
 }
 
 /// **`#[ignore]` 门：canary 产物落盘**（30 seed）。用
@@ -1967,23 +2127,33 @@ pub fn run_and_write(
     let dir = out_dir();
     std::fs::create_dir_all(&dir).expect("创建产物目录失败");
     let md = to_markdown(&provenance, &cov, &shape_cov, &feat_cov, &gate_rows, (db, dp, df));
-    let json = format!(
-        "{},\"caliber_coverage\":{},\"feature_coverage\":{}}}",
-        provenance_json(&provenance).trim_end_matches('}'),
-        obj(&[
-            ("episodes", J::Int(cov.episodes as i64)),
-            ("start_available", J::Int(cov.start_available as i64)),
-            ("end_available", J::Int(cov.end_available as i64)),
-            ("band_disagreement", J::Int(cov.band_disagreement as i64)),
-            ("band_comparable", J::Int(cov.band_comparable as i64)),
-        ]),
-        obj(&[
-            ("windows", J::Int(feat_cov.windows as i64)),
-            ("win_net_progress", J::Int(feat_cov.win_net_progress as i64)),
-            ("win_displacement", J::Int(feat_cov.win_displacement as i64)),
-            ("win_line_spacing", J::Int(feat_cov.win_line_spacing as i64)),
-            ("win_support", J::Int(feat_cov.win_support as i64)),
-        ]),
+    // ⚠️ 用 `merge_into_object`（**唯一**入口，`strip_suffix` 剥一个）而不是
+    // 手写 `trim_end_matches('}')`——后者剥**全部**尾随 `}`，会产生缺括号的坏 JSON
+    // （主 session 核验抓到的缺陷 1）。
+    let json = merge_into_object(
+        &provenance_json(&provenance),
+        &[
+            (
+                "caliber_coverage",
+                obj(&[
+                    ("episodes", J::Int(cov.episodes as i64)),
+                    ("start_available", J::Int(cov.start_available as i64)),
+                    ("end_available", J::Int(cov.end_available as i64)),
+                    ("band_disagreement", J::Int(cov.band_disagreement as i64)),
+                    ("band_comparable", J::Int(cov.band_comparable as i64)),
+                ]),
+            ),
+            (
+                "feature_coverage",
+                obj(&[
+                    ("windows", J::Int(feat_cov.windows as i64)),
+                    ("win_net_progress", J::Int(feat_cov.win_net_progress as i64)),
+                    ("win_displacement", J::Int(feat_cov.win_displacement as i64)),
+                    ("win_line_spacing", J::Int(feat_cov.win_line_spacing as i64)),
+                    ("win_support", J::Int(feat_cov.win_support as i64)),
+                ]),
+            ),
+        ],
     );
     let md_path = dir.join(format!("{mode}.md"));
     let json_path = dir.join(format!("{mode}.json"));
@@ -2364,4 +2534,3 @@ fn caliber_coverage_on_a_real_seed() {
         cov.band_comparable
     );
 }
-

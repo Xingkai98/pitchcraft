@@ -105,7 +105,7 @@ pub fn action_facts(dm: &DiagnosticMatch) -> Vec<Option<ActionFacts>> {
                 from_restart: matches!(
                     ep.start_reason,
                     EpisodeStartReason::Kickoff | EpisodeStartReason::RestartControl
-                ) && caliber_of(dm, ep).map(|c| c.start_progress < 0.9).unwrap_or(false),
+                ),
             })
         })
         .collect()

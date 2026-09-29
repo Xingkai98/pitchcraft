@@ -227,6 +227,96 @@ fn sidecar_schema_fingerprint_p16() -> (String, Vec<(&'static str, usize)>) {
     (format!("fnv1a64:{:016x}", fnv1a(&joined)), sizes)
 }
 
+/// 把一个**已经是合法 JSON 对象**的字符串（`{...}`）与若干额外字段合并成一个对象。
+///
+/// ⚠️ **本函数的存在是一个 bug 的修复**（主 session 交付核验抓到，缺陷 1）：
+/// 先前调用点写 `format!("{},\"k\":{}}}", provenance_json(..).trim_end_matches('}'), ..)`。
+/// `trim_end_matches('}')` **剥掉所有**尾随 `}`（不是剥一个），而 `provenance_json`
+/// 结尾恰是 `}}`（`caliber` 子对象 + 最外层）⇒ 剥两个、补回一个 ⇒ **产物缺一个 `}`**，
+/// 落盘 JSON 不可解析。（`trim_end_matches` 是「剥全部匹配」，`strip_suffix` 才是「剥一个」。）
+///
+/// 故收口为**唯一**入口：`strip_suffix('}')`（剥一个，且**断言**确实以 `}` 结尾），
+/// 失败即 panic——不静默拼出坏 JSON。
+pub fn merge_into_object(base: &str, extra: &[(&str, String)]) -> String {
+    let inner = base
+        .strip_suffix('}')
+        .unwrap_or_else(|| panic!("merge_into_object 的 base 必须以 `}}` 结尾：{base}"));
+    assert!(
+        inner.starts_with('{'),
+        "merge_into_object 的 base 必须以 `{{` 开头：{base}"
+    );
+    let mut parts: Vec<String> = Vec::with_capacity(extra.len() + 1);
+    if inner.len() > 1 {
+        parts.push(inner[1..].to_string());
+    }
+    for (k, v) in extra {
+        parts.push(format!("\"{}\":{}", k, v));
+    }
+    format!("{{{}}}", parts.join(","))
+}
+
+/// **最小 JSON 结构校验**（零依赖）：只做括号/引号平衡与顶层形状检查，
+/// 足以抓住「缺一个 `}`」这类坏产物。
+///
+/// ⚠️ 为什么需要它：坏 JSON 一路绿——落盘守卫只读 `.md`，没有测试解析 `.json`
+/// （主 session 核验抓到，缺陷 2）。本函数由 `p16_on_disk_json_is_parseable` 调用。
+///
+/// ⚠️ **能力边界**：它不是完整解析器（不校验转义、数字格式、重复键）。
+/// 对「产物是自己拼出来的、只需防括号/引号失衡」这个用途够用；
+/// 要更强可换真解析器（但那会引入依赖，与本仓「零依赖」冲突）。
+pub fn json_looks_well_formed(s: &str) -> Result<(), String> {
+    let b = s.trim().as_bytes();
+    if b.is_empty() {
+        return Err("空文档".to_string());
+    }
+    if b[0] != b'{' {
+        return Err(format!("顶层不是对象（首字符 {:?}）", b[0] as char));
+    }
+    if *b.last().unwrap() != b'}' {
+        return Err("顶层对象未以 `}` 收尾".to_string());
+    }
+    let mut depth: i64 = 0;
+    let mut in_str = false;
+    let mut escaped = false;
+    let mut max_depth: i64 = 0;
+    for (i, &c) in b.iter().enumerate() {
+        if in_str {
+            if escaped {
+                escaped = false;
+            } else if c == b'\\' {
+                escaped = true;
+            } else if c == b'"' {
+                in_str = false;
+            }
+            continue;
+        }
+        match c {
+            b'"' => in_str = true,
+            b'{' | b'[' => {
+                depth += 1;
+                max_depth = max_depth.max(depth);
+            }
+            b'}' | b']' => {
+                depth -= 1;
+                if depth < 0 {
+                    return Err(format!("第 {i} 字节处闭合多于打开"));
+                }
+            }
+            _ => {}
+        }
+    }
+    if in_str {
+        return Err("字符串未闭合".to_string());
+    }
+    if depth != 0 {
+        return Err(format!("括号不平衡：结束时 depth = {depth}（多了 {depth} 个未闭合的 `{{`/`[`）"));
+    }
+    if max_depth < 2 {
+        return Err("顶层对象里没有嵌套对象/数组——形状可疑".to_string());
+    }
+    Ok(())
+}
+
 /// provenance → Markdown 表。
 pub fn provenance_markdown(p: &Provenance) -> String {
     let mut out = String::new();
