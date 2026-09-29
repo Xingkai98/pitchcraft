@@ -107,6 +107,32 @@ pub struct Provenance {
     pub config_duration_seconds: f64,
     /// 口径常量快照（让 reviewer 不必读源码就能核对判据来源）。
     pub caliber: Vec<(&'static str, f64)>,
+    /// **P16 测试源码指纹**——补 `engine_source_fingerprint` 的盲区：后者只哈希
+    /// `engine/src/*`，而裁决/参考集/特征的改动全在 `tests/p16/*`。
+    /// 两者一起使「产物内容 ↔ 产出它的源码」双向可核对。
+    pub test_source_fingerprint: String,
+}
+
+/// P16 测试源码清单（哈希输入顺序即此顺序）。
+pub const TEST_SOURCES: &[(&str, &str)] = &[
+    ("p16_spatial_features.rs", include_str!("../p16_spatial_features.rs")),
+    ("p16/caliber.rs", include_str!("caliber.rs")),
+    ("p16/shape.rs", include_str!("shape.rs")),
+    ("p16/features.rs", include_str!("features.rs")),
+    ("p16/gate.rs", include_str!("gate.rs")),
+    ("p16/reference.rs", include_str!("reference.rs")),
+    ("p16/report.rs", include_str!("report.rs")),
+];
+
+pub fn test_source_fingerprint() -> String {
+    let mut combined = String::new();
+    for (name, text) in TEST_SOURCES {
+        combined.push_str(name);
+        combined.push('\n');
+        combined.push_str(text);
+        combined.push('\n');
+    }
+    format!("fnv1a64:{:016x}", fnv1a(&combined))
 }
 
 /// `has_state_snapshots` 的取值来源：**真的查一次 opt-in 路径是否产快照**，
@@ -126,6 +152,11 @@ pub fn build_provenance(mode: &str, seed_first: u64, seed_last: u64, duration: f
     let (fingerprint, _sizes) = sidecar_schema_fingerprint_p16();
     Provenance {
         mode: mode.to_string(),
+        // ⚠️ **`source_commit` 无哨兵会漂**（独立审阅 P2-1）：产物在改测试文件后重生成时，
+        // 若忘了更新 `P16_SOURCE_COMMIT`，它会记成旧 commit，而 `engine_source_fingerprint`
+        // 只哈希 `engine/src/*`——**对测试文件的改动是盲区**，前后同值。
+        // 故产物同时记 `test_source_fingerprint`（哈希 P16 的测试源码），
+        // 使「产物内容」与「产出它的测试源码」绑定。
         source_commit: std::env::var("P16_SOURCE_COMMIT").unwrap_or_else(|_| "unknown".to_string()),
         engine_version: env!("CARGO_PKG_VERSION").to_string(),
         model_version: MODEL_VERSION,
@@ -133,6 +164,7 @@ pub fn build_provenance(mode: &str, seed_first: u64, seed_last: u64, duration: f
         engine_source_fingerprint: engine_source_fingerprint(),
         sidecar_schema_fingerprint: fingerprint,
         has_state_snapshots: probe_has_state_snapshots(),
+        test_source_fingerprint: test_source_fingerprint(),
         seed_first,
         seed_last,
         config_duration_seconds: duration,
@@ -209,6 +241,10 @@ pub fn provenance_markdown(p: &Provenance) -> String {
     out.push_str(&format!("| `model_version` | `{}` |\n", p.model_version));
     out.push_str(&format!("| `caliber_version` | `{}` |\n", p.caliber_version));
     out.push_str(&format!(
+        "| `test_source_fingerprint` | `{}` |\n",
+        p.test_source_fingerprint
+    ));
+    out.push_str(&format!(
         "| `engine_source_fingerprint` | `{}` |\n",
         p.engine_source_fingerprint
     ));
@@ -246,6 +282,10 @@ pub fn provenance_json(p: &Provenance) -> String {
         ("model_version", J::Int(p.model_version as i64)),
         ("caliber_version", J::S(p.caliber_version.clone())),
         (
+            "test_source_fingerprint",
+            J::S(p.test_source_fingerprint.clone()),
+        ),
+        (
             "engine_source_fingerprint",
             J::S(p.engine_source_fingerprint.clone()),
         ),
@@ -281,6 +321,9 @@ pub fn to_markdown(
     shape_home: &crate::shape::ShapeCoverage,
     feat: &crate::features::FeatureCoverage,
     gate_rows: &[(String, String, f64, usize, usize)],
+    // 各档 episode 时长中位数（build_up / progression / final_third）——**活计算**传入，
+    // 不硬编码：这些数是「为何必须时长归一」的理由，引擎重开分布一变就会陈旧。
+    duration_medians: (f64, f64, f64),
 ) -> String {
     let mut out = String::new();
     out.push_str("# P16 团队与局部空间特征 — 产物\n\n");
@@ -364,8 +407,18 @@ pub fn to_markdown(
     out.push_str("\n## 4. phaseability 裁决（Slice 4）\n\n");
     out.push_str("**裁决：部分够。** 只能判 `final_third`；`build_up` 与 `progression` 判不了。\n\n");
     out.push_str("判据用**时长归一**的 `forward_m/s`（累计位移随时长增长，未归一会引入混淆；\n");
-    out.push_str("各档时长中位数：`build_up` 78 s / `progression` 45 s / `final_third` 40 s——\n");
-    out.push_str("`build_up` 约为另两档的 1.7 倍，故必须先归一）：\n\n");
+    out.push_str(&format!(
+        "各档 episode 时长中位数：`build_up` {:.0} s / `progression` {:.0} s / `final_third` {:.0} s——\n",
+        duration_medians.0, duration_medians.1, duration_medians.2
+    ));
+    out.push_str(&format!(
+        "`build_up` 约为另两档的 {:.1} 倍，故必须先归一）：\n\n",
+        if duration_medians.1 > 0.0 {
+            duration_medians.0 / duration_medians.1
+        } else {
+            0.0
+        }
+    ));
     out.push_str("| 对照 | 特征 | AUC | 正样本 | 负样本 |\n|---|---|---|---|---|\n");
     for (set, ft, a, pos, neg) in gate_rows {
         out.push_str(&format!("| {set} | {ft} | {a:.3} | {pos} | {neg} |\n"));

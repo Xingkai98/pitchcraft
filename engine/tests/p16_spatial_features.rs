@@ -63,12 +63,15 @@ mod shape;
 mod features;
 #[path = "p16/gate.rs"]
 mod gate;
+#[path = "p16/reference.rs"]
+mod reference;
 #[path = "p16/report.rs"]
 mod report;
 
 use caliber::*;
 use features::*;
 use gate::*;
+use reference::*;
 use report::*;
 use shape::*;
 use fm_engine::observation::*;
@@ -1068,77 +1071,73 @@ fn motifs_do_not_use_position() {
     }
 }
 
-/// **循环性防护（源码扫描）**：构造参考集的代码**不得引用任何位置量**。
+/// **循环性防护（源码扫描整个 `reference.rs`）**：构造参考集的代码**不得引用任何位置量**。
 ///
 /// ## 为什么必须是源码扫描（而不是只做行为核对）
 ///
-/// 初版只做了**事件位置**的行为核对：克隆一场、把 `Event.x/y/x2/y2` 改成极端值、
-/// 断言参考集不变。**那个护栏漏掉了 `ControlFact.location`**——实测（2026-09-29）
-/// 往 `reference_set` 里塞 `caliber_of(dm, ep).start_progress < 0.33`（读的是
-/// **事实的位置**，不是事件的位置）后，**全套 27 条测试仍然全绿**。
-/// 这正是本仓「假覆盖」的教科书形态：守卫看着在守，实际守不住目标变异。
+/// 初版只做了**事件位置**的行为核对（克隆一场、把 `Event.x/y/x2/y2` 改成极端值、
+/// 断言参考集不变）。**那个护栏漏掉了 `ControlFact.location`**——实测往 `reference_set`
+/// 里塞 `caliber_of(dm, ep).start_progress < 0.33` 后，**全套仍绿**。
 ///
-/// ⇒ 改为**源码扫描**：直接读 `gate.rs` 的源代码文本，断言 `reference_set`
-/// 的函数体里不出现任何位置相关的标识符。位置量的读取点只有以下几种形态，
-/// 逐条列举（与 `caliber.rs` / `shape.rs` / `features.rs` 的公开面一一对应）。
+/// ## 为什么扫描范围是**整个文件**（这是第二轮独立审阅的 P1）
+///
+/// 中间版本扫描的是 `reference_set` 的**函数体**（`include_str!` 切出函数体再核 token）。
+/// 实测：把位置读取放进**体外 helper** 再在体内调用，**全套 32 条仍绿**，
+/// 而参考集已真的用上位置（`build_up` vs `progression` 的 AUC 从 0.461 移到 0.552）。
+///
+/// ⇒ 结构性修复：参考集（含其全部 helper）**拆到独立文件 `p16/reference.rs`**，
+/// 本守卫扫**该文件全文**。任何 helper 都必须在文件内，故全文扫描**覆盖调用闭包**。
+///
+/// ⚠️ **能力边界（如实记录）**：这仍不是形式化证明（没有真正的调用图分析）。
+/// 它挡「不小心写循环论证」，挡不住「刻意用晦涩别名读位置」——
+/// 那需要类型级隔离（把位置量封进 `Position` newtype，参考集侧不导入）。
 #[test]
 fn reference_set_source_references_no_position_quantity() {
-    const SRC: &str = include_str!("p16/gate.rs");
-    // 取 `reference_set` 的函数体（到下一个顶层 `fn ` 或 `// ====` 分隔为止）。
-    let start = SRC
-        .find("pub fn reference_set(")
-        .expect("找不到 reference_set（改名了？守卫失效）");
-    let body = &SRC[start..];
-    let end = body
-        .find("\n// =============")
-        .unwrap_or_else(|| body.find("\npub fn ").unwrap_or(body.len()));
-    let body = &body[..end];
+    // 扫**整个** `reference.rs`（不是某个函数体）——这是本守卫的关键。
+    const SRC: &str = include_str!("p16/reference.rs");
 
-    // 位置量的标识符（任何一个出现在函数体里都说明参考集读了位置）。
+    // 位置量的标识符（任何一个出现在该文件里都说明参考集读了位置）。
     const FORBIDDEN: &[&str] = &[
-        // ⚠️ **必须含裸 `.x` / `.y`**：它们是**动作主体的位置**（本 change 的
-        // 位置口径明禁用它）。首版只列了 `.x2`/`.y2`/`location`，实测往
-        // `reference_set` 里塞 `acts.last().map(|e| e.x)` 后**全套 32 条仍绿**——
-        // 同一类盲区（审阅 P1-3 抓到）。
+        // 动作事件的位置（本 change 的口径明禁用它：动作主体的位置 ≠ 球位）
         ".x",
         ".y",
         ".x2",
         ".y2",
+        "out_pos",
+        // 观测层事实的位置
         "location",
         "start_progress",
         "end_progress",
         "net_progress",
+        // 位置口径 / 空间特征的入口
         "caliber_of",
         "EpisodeCaliber",
+        "calibers_of",
         "team_shape",
         "TeamShape",
         "StateSnapshot",
         "state_snapshots",
         "collect_ball_track",
+        "support_formation",
+        "decompose_displacement",
+        "line_spacing_change",
         "progress(",
         "attack_dir",
-        "calibers_of",
-        "ref_progress",
     ];
     for tok in FORBIDDEN {
         assert!(
-            !body.contains(tok),
-            "`reference_set` 的函数体里出现了位置量 `{tok}` —— 参考集必须**只由动作链**\
-             构造（契约：判别参考集不得只用区域构造，否则循环论证）。\
-             若确需位置谓词，那不是参考集，是特征。"
+            !SRC.contains(tok),
+            "`p16/reference.rs` 里出现了位置量 `{tok}` —— 参考集必须**只由动作链**构造\
+             （契约：判别参考集不得只用区域构造，否则循环论证）。\
+             若确需位置谓词，那不是参考集，是特征（应放 `features.rs` / `gate.rs`）。"
         );
     }
-    // 反证的反证：上面的扫描必须真的落在 `reference_set` 的函数体上（不是空串）。
+    // 反证的反证：扫描必须真的落在参考集代码上（不是空文件 / 扫错路径）。
     assert!(
-        body.contains("open_passes") && body.contains("ends_shot"),
-        "源码扫描没有落在 `reference_set` 的函数体上（找到的片段不含预期标识符）——\
-         守卫失效，须修扫描逻辑"
+        SRC.contains("open_passes") && SRC.contains("ends_shot") && SRC.contains("reference_set"),
+        "源码扫描没有落在参考集代码上——守卫失效，须修扫描目标"
     );
-    assert!(
-        body.len() > 200,
-        "扫到的函数体过短（{} 字节）——扫描边界写错了",
-        body.len()
-    );
+    assert!(SRC.len() > 500, "扫到的文件过短（{} 字节）", SRC.len());
 }
 
 /// **参考集谓词语义被钉住**（防「文档说 A、实现做 B」）。
@@ -1225,7 +1224,17 @@ fn phaseability_separability_is_measured() {
     for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
         let dm = observe(seed);
         let feats = episode_features(&dm);
-        let local_count = feats.len();
+        // ⚠️ offset 必须走 **`possession_episodes` 的下标空间**（参考集的下标就是它），
+        // 而不是「有 caliber 的 episode 数」——二者只在「每个 episode 都有 caliber」时相等。
+        // 若将来有 episode 缺起点，用 `feats.len()` 会让下一 seed 的标签与本 seed 高位**重叠**
+        // （正是本 change 栽过两次的同类 join bug）。故断言两者相等，不等即红。
+        assert_eq!(
+            feats.len(),
+            dm.possession_episodes.len(),
+            "`episode_features` 跳过了缺 caliber 的 episode——此时 offset 必须改成 \
+             `dm.possession_episodes.len()`，否则参考集标签会跨 seed 重叠（join bug 复发）"
+        );
+        let local_count = dm.possession_episodes.len();
         for m in REFERENCE_MOTIFS {
             let refs = reference_set(&dm, m.name);
             all_refs
@@ -1352,7 +1361,17 @@ fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
     for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
         let dm = observe(seed);
         let feats = episode_features(&dm);
-        let local_count = feats.len();
+        // ⚠️ offset 必须走 **`possession_episodes` 的下标空间**（参考集的下标就是它），
+        // 而不是「有 caliber 的 episode 数」——二者只在「每个 episode 都有 caliber」时相等。
+        // 若将来有 episode 缺起点，用 `feats.len()` 会让下一 seed 的标签与本 seed 高位**重叠**
+        // （正是本 change 栽过两次的同类 join bug）。故断言两者相等，不等即红。
+        assert_eq!(
+            feats.len(),
+            dm.possession_episodes.len(),
+            "`episode_features` 跳过了缺 caliber 的 episode——此时 offset 必须改成 \
+             `dm.possession_episodes.len()`，否则参考集标签会跨 seed 重叠（join bug 复发）"
+        );
+        let local_count = dm.possession_episodes.len();
         for m in REFERENCE_MOTIFS {
             all_refs
                 .entry(m.name)
@@ -1429,9 +1448,16 @@ fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
          这条不是判据，是**混淆存在的证据**：若不成立，下面那条断言的理由就不对"
     );
     assert!(
-        (auc_bp - 0.5).abs() <= 0.12,
-        "build_up 与 progression 在**时长归一**的 forward_m/s 上应分不开（实测 {auc_bp:.3}）——\
-         若越过 0.62，说明空间形态真的能分开这两档，裁决须更新（重新给谓词）"
+        (auc_bp - 0.5).abs() <= 0.06,
+        "build_up 与 progression 在**时长归一**的 forward_m/s 上应分不开（实测 {auc_bp:.3}，
+         容差 ±0.06）——若越过 0.56，说明空间形态真的能分开这两档，裁决须更新（重新给谓词）"
+    );
+    // **方向也钉住**：实测是**反向**的（0.431→build_up 的推进速率*更低*），
+    // 这条方向信息本身是证据（build_up 不是「推得更快」，恰恰相反）——不钉住会丢。
+    assert!(
+        auc_bp < 0.5,
+        "实测 build_up 的 forward_m/s 应**低于** progression（AUC < 0.5，实测 {auc_bp:.3}）——\
+         若变成 > 0.5，方向翻转了，裁决的理由须重写"
     );
 
     // ③ 混淆记录：各档时长必须显著不同（这是「backward_m 的一 vs 其余高」的解释）。
@@ -1510,7 +1536,7 @@ fn identical_inputs_produce_byte_identical_output() {
             }
         }
         let p = build_provenance("test", 1, 1, DUR);
-        to_markdown(&p, &cov, &ms.home, &fc, &[])
+        to_markdown(&p, &cov, &ms.home, &fc, &[], (0.0, 0.0, 0.0))
     };
     let a = build();
     let b = build();
@@ -1531,6 +1557,7 @@ fn provenance_carries_the_comparability_triple() {
     let md = provenance_markdown(&p);
     for needle in [
         "caliber_version",
+        "test_source_fingerprint",
         "engine_source_fingerprint",
         "has_state_snapshots",
         "sidecar_schema_fingerprint",
@@ -1607,6 +1634,26 @@ fn p16_does_not_change_the_p17a_schema_fingerprint() {
     // P17A 的冻结值：由 `tests/p17a/model.rs` 的同配方算出（闭集枚举 ALL 的顺序敏感哈希）。
     // 这里**只断言它非空且形如 fnv1a64**，并把值打印出来供与 P17A 产物人工比对——
     // 硬编码一个期望值会让「P17A 侧合法改枚举」时本测试误红（那是 P17A 的事，不是 P16 的）。
+    // `source_commit` 不得是 unknown（独立审阅 P2-1：它无哨兵会漂）。
+    // 落盘门里断言真值；这里断言**配方**在（`P16_SOURCE_COMMIT` 由跑法传入）。
+    let _ = &p.source_commit;
+    // **测试源码指纹必须有判别力**：它是补 `engine_source_fingerprint` 盲区的那一半。
+    let fp = test_source_fingerprint();
+    assert!(fp.starts_with("fnv1a64:"), "测试源码指纹格式不对：{fp}");
+    assert_eq!(fp, p.test_source_fingerprint, "provenance 里的指纹须与当前源码一致");
+    // 内容敏感：改一个字节就变。
+    let mut combined = String::new();
+    for (name, text) in TEST_SOURCES {
+        combined.push_str(name);
+        combined.push('\n');
+        combined.push_str(text);
+        combined.push('\n');
+    }
+    assert_ne!(
+        format!("fnv1a64:{:016x}", fnv1a(&format!("{combined}x"))),
+        fp,
+        "测试源码指纹对内容不敏感——守卫失去意义"
+    );
     assert!(
         p.sidecar_schema_fingerprint.starts_with("fnv1a64:"),
         "指纹格式应为 fnv1a64:…，实测 {}",
@@ -1649,6 +1696,10 @@ fn provenance_caliber_snapshot_lists_the_live_constants() {
 #[ignore = "30 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p16_canary"]
 fn p16_canary() {
     let (_, r, p) = run_and_write("canary", 1, 30);
+    assert_ne!(
+        p.source_commit, "unknown",
+        "产物门须传 `P16_SOURCE_COMMIT=$(git rev-parse HEAD)`——否则 provenance 里的 commit 无意义"
+    );
     assert_eq!(r.episodes, r.start_available, "起点位置必须 100% 可得");
     assert!(r.windows > 500, "窗口数过少：{}", r.windows);
     println!("[p16:canary] caliber_version={}", p.caliber_version);
@@ -1696,7 +1747,17 @@ pub fn run_and_write(
             *shape_cov.in_episode.entry(k).or_insert(0) += v;
         }
         let feats = episode_features(&dm);
-        let local_count = feats.len();
+        // ⚠️ offset 必须走 **`possession_episodes` 的下标空间**（参考集的下标就是它），
+        // 而不是「有 caliber 的 episode 数」——二者只在「每个 episode 都有 caliber」时相等。
+        // 若将来有 episode 缺起点，用 `feats.len()` 会让下一 seed 的标签与本 seed 高位**重叠**
+        // （正是本 change 栽过两次的同类 join bug）。故断言两者相等，不等即红。
+        assert_eq!(
+            feats.len(),
+            dm.possession_episodes.len(),
+            "`episode_features` 跳过了缺 caliber 的 episode——此时 offset 必须改成 \
+             `dm.possession_episodes.len()`，否则参考集标签会跨 seed 重叠（join bug 复发）"
+        );
+        let local_count = dm.possession_episodes.len();
         for m in REFERENCE_MOTIFS {
             all_refs
                 .entry(m.name)
@@ -1813,7 +1874,7 @@ pub fn run_and_write(
     };
     let dir = out_dir();
     std::fs::create_dir_all(&dir).expect("创建产物目录失败");
-    let md = to_markdown(&provenance, &cov, &shape_cov, &feat_cov, &gate_rows);
+    let md = to_markdown(&provenance, &cov, &shape_cov, &feat_cov, &gate_rows, (db, dp, df));
     let json = format!(
         "{},\"caliber_coverage\":{},\"feature_coverage\":{}}}",
         provenance_json(&provenance).trim_end_matches('}'),

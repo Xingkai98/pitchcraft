@@ -123,7 +123,24 @@
       `sidecar_schema_fingerprint` + **`has_state_snapshots`** + seed 集 + 口径常量快照）
 - [x] 确定性测试（`identical_inputs_produce_byte_identical_output`：同输入两次逐字节相同）
 - [x] 产物落盘门（`p16_canary` 30 seed / `p16_baseline` 300 seed，均 `#[ignore]`）
-- [ ] **代码审阅闭环**：独立只读 subagent 审阅 → 修复 → 再审阅 → 全过
+- [x] **代码审阅闭环**：独立只读 subagent 审阅 → 修复 → 再审阅 → 全过。
+      四轮独立审阅（设计层 3 轮 + 实现层 2 轮，均为**新起的零上下文 subagent**），
+      抓到并修复：**2 条 P0**（采样点漏拍 / **join bug 使裁决算错、两版结论作废**）、
+      **4 条假覆盖**（源码扫描漏 token ×2 / 测试从没调 `simulate()` / 覆盖测试判别力边界）、
+      1 条**错误机制**（把 bug 症状写成「小样本误导」）。
+      完整记录：`REVIEW.md`。
+
+⚠️ **裁决因此改为「部分够」**（v1 的「不够」建立在 join bug 上，已作废）——
+详见下节与 `REVIEW.md`。
+
+## 交付前检查（本仓要求）
+
+- [x] `cargo test` 全绿（199 / 11 / 32 / 24 / 4，另 14 ignored）
+- [x] `openspec validate --all --strict` 13/13
+- [x] `git diff --check` 干净
+- [x] 未改 `viewer/`（`git diff main..HEAD -- viewer/` 为空）、未改事件流协议
+- [x] `engine/src/` 无调试插桩（无 `DEBUG_`、无测试模块外的临时 `println!`）
+- [x] 产物自带 provenance（含 `test_source_fingerprint` 补测试源码盲区）
 
 ## 停止条件
 
