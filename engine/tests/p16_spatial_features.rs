@@ -1685,8 +1685,9 @@ fn provenance_carries_the_comparability_triple() {
         "JSON 缺 has_state_snapshots 键：{json}"
     );
     assert!(
-        json.contains("true"),
-        "JSON 里 has_state_snapshots 的值应为 true：{json}"
+        json.contains("\"has_state_snapshots\":\"true\""),
+        "JSON 里必须有 `\"has_state_snapshots\":\"true\"` 的**键值绑定**——\
+         只查子串 `true` 是弱断言（本仓「假覆盖」的形态之一）：{json}"
     );
     // 引擎指纹必须覆盖 rng.rs 等全部仿真源（与 P17A 同判据）。
     let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");

@@ -114,10 +114,12 @@
 - **时长混淆必须先去掉**：`backward_m`/`forward_m` 是**累计**位移，随 episode 时长增长；
   各档时长中位数 `build_up` 78 s / `progression` 45 s / `final_third` 40 s。
 - 去掉后（`forward_m/s`）：
-  - `final_third` vs 其余 AUC **0.862**（300 seed 基线同向）⇒ **可分开**，
+  - `final_third` vs 其余 AUC **0.855**（30 seed 实测；300 seed 基线 **0.862**，同向）⇒ **可分开**，
     方向一致（final_third 的球门向推进**速率**更高，与足球直觉一致）；
-  - `build_up` vs `progression` AUC **0.431** ⇒ **分不开**。未归一时的 0.738
+  - `build_up` vs `progression` AUC **0.461** ⇒ **分不开**。未归一时的 0.738
     是时长/传球次数混淆，且 motif 定义本身就含传球次数。
+  （⚠️ 数字以 `gate.rs` 的裁决测试实测为准；此前的 `0.862 / 0.431` 是文档漂移，
+  且 0.431 **落在裁决测试自身容差带 `[0.44, 0.56]` 之外**——照它写测试会红。）
 
 #### 给 15B 的处置
 
@@ -139,18 +141,18 @@
 - [x] 确定性测试（`identical_inputs_produce_byte_identical_output`：同输入两次逐字节相同）
 - [x] 产物落盘门（`p16_canary` 30 seed / `p16_baseline` 300 seed，均 `#[ignore]`）
 - [x] **代码审阅闭环**：独立只读 subagent 审阅 → 修复 → 再审阅 → 全过。
-      五轮独立审阅（设计层 3 + 实现层 3，均为**新起的零上下文 subagent**），
-      抓到并修复：**2 条 P0**（采样点漏拍 / **join bug 使裁决算错、两版结论作废**）、
-      **5 条假覆盖**（源码扫描漏 token ×3 / 测试从没调 `simulate()` / 覆盖测试判别力边界）、
-      1 条**错误机制**（把 bug 症状写成「小样本误导」）。
-      完整记录：`REVIEW.md`。
+      **7 个审阅轮次**（设计层 3 + 实现层 4），审阅者均为**新起的零上下文 subagent**
+      （或同一 agent 续问、保留其自身上文）；另加**主 session 交付核验** 1 轮。
+      抓到并修复：**3 条 P0**（采样点漏拍 / **join bug 使裁决算错、两版结论作废** /
+      **参考集被位置污染**）、**6 条假覆盖**、1 条**错误机制**、1 条**过强保证**。
+      完整记录（含 agent id 留痕）：`REVIEW.md`。
 
 ⚠️ **裁决因此改为「部分够」**（v1 的「不够」建立在 join bug 上，已作废）——
 详见下节与 `REVIEW.md`。
 
 ## 交付前检查（本仓要求）
 
-- [x] `cargo test` 全绿（199 / 11 / 32 / 24 / 4，另 14 ignored）
+- [x] `cargo test` 全绿（199 / 11 / 36 / 24 / 4，另 14 ignored）
 - [x] `openspec validate --all --strict` 13/13
 - [x] `git diff --check` 干净
 - [x] 未改 `viewer/`（`git diff main..HEAD -- viewer/` 为空）、未改事件流协议
