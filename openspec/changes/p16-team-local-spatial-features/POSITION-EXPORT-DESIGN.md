@@ -157,7 +157,9 @@ pub struct StateSnapshot {
     pub t: ObservedTime,          // basis 恒 StateCommit（tick 末提交）
     /// 22 人位置（下标 = id，与事件协议同：0=主队门将、21=客队门将）。
     pub pos: [(f64, f64); 22],
-    /// 本拍**仍在飞行中**的高亮参与者 id（取自 `st.highlight` 的 `participants` 的 id 列）。
+    /// **本拍结束时仍活跃的**高亮参与者 id（取自 `st.highlight` 的 `participants` 的 id 列）。
+    /// 含两种情形：飞行中间拍（同一高亮延续），与**链式 finalize 拍**
+    /// （本拍 finalize 后又建了新高亮，如 `start_goal_kick`）——定义统一为「拍末活跃者」。
     /// 它们的位置由高亮**钉住**（`commit_beat_positions_ex` 跳过其 `st.pos` 写回），
     /// 是**进行中的量**、不是稳定观测——记下来是为让下游能过滤或单独报告这批拍。
     /// （**不是**为了「防陈旧」：实测飞行期该位置**不变**，见 §2.4。）
@@ -219,15 +221,20 @@ pub struct StateSnapshot {
 初稿这两句**互相矛盾**（审阅 P1-NEW-1 抓到）：`finalize_highlight` 是在 **`tick()` 内部**
 调用的，`tick` 一返回 finalize 早就跑完了——「返回之后」与「finalize 之前」是两个互斥的位置。
 
-**取「返回之后」，因为那正是「本拍终态」的定义**：
+**取「返回之后」，因为那正是「本拍终态」的定义**：`tick()` 返回时该 tick 的全部状态变更
+已结束（`finalize_highlight` 在 `tick` 内、其后无再改 `st.pos`/`st.highlight` 的路径）。
+另一侧（finalize 之前）取到的是**未对账的中间态**，且要把采样写进 `tick()` 内部——
+与「在主循环采样」冲突，并让「快照数 == tick 数」这条守卫依赖 `tick` 的早返回分支。
 
-- `finalize_highlight` 用 `st.highlight.take()`（源码逐字）消费高亮，并把参与者
-  `st.pos[id] = end_pos` 对账。故 finalize 那一拍采样时 `st.highlight` 已是 `None`——
-  **`frozen` 自然为空，位置是已对账的终态**，语义正确。
-- 飞行中的中间拍：`st.highlight` 仍 `Some`，参与者位置被钉住（§下），`frozen` 非空——
-  **正是「进行中的量」这个标记要表达的**。
-- 若反过来取「finalize 之前」，采样就得写进 `tick()` **内部**，与「在主循环采样」冲突，
-  且「快照数 == tick 数」这条守卫会依赖 `tick` 内部的早返回分支，不稳。
+⚠️ **`frozen` 在 finalize 拍上不保证为空**（审阅 P1-B 更正）：`finalize_highlight` 用
+`st.highlight.take()` 消费**本拍被 finalize 的那条**高亮，但它的若干分支**会链式建新高亮**——
+例如 `ShotOffTarget` / 出界 → `start_goal_kick` / `start_corner` / `start_throw_in`，
+而这些函数内部**逐字** `st.highlight = Some(Highlight { .. })`。
+
+⇒ 于是 finalize 拍采样时 `st.highlight` **可能仍是 `Some`**，`frozen` 记为**新高亮的参与者**。
+**这不是问题**：`frozen` 的统一定义就是「**本拍结束时仍活跃的高亮参与者**」，
+flight 中间拍与链式 finalize 拍自动一致（初稿那句「finalize 拍 `frozen` 自然为空」
+**是错的**，且与本文件排空拍段的自述打架——那里正以「finalize 能链式产新高亮」为前提）。
 
 #### 终场排空拍**不**记快照（边界，须显式写）
 
@@ -251,7 +258,8 @@ pub struct StateSnapshot {
 ⚠️ 注意类型：`participants: Vec<(i32, (f64,f64))>`，而快照的 `frozen: Vec<i32>`——
 须**取 id 列**（`participants.iter().map(|(id, _)| *id).collect()`），
 **不是**「直接把它作为」。（`tick` 里传给 `beat_movers` 的 `excluded` 正是这个映射，可复用其形态。）
-采样点取 `tick` 返回之后时，finalize 拍上 `st.highlight` 已被 `take()` 消费 → `frozen` 为空。
+采样点取 `tick` 返回之后时，`frozen` = **该拍结束时仍活跃的高亮参与者**——
+finalize 拍若链式建了新高亮（`start_goal_kick` 等），记的就是新高亮的参与者（见上）。
 
 #### 飞行期冻结者的位置是**钉住的**（主证据：结构保证），所以 `frozen` 不承担「防陈旧」
 
@@ -275,7 +283,8 @@ pub struct StateSnapshot {
 **那还要不要记？要，但理由是另一个**：下游要能**区分**「这个位置是引擎本拍提交的终态」
 与「这个位置是飞行中的中途值（马上会被 finalize 改写）」。后者用于「瞬时队形」时
 是个**进行中的量**，不是稳定观测。`frozen` 让下游能过滤或单独报告这批拍。
-**成本 ≈ 0**（每拍平均 0.233 人）。若审阅认为这不值得，删掉它也不影响 G1 的核心保证。
+**成本 ≈ 0**（全 5399 拍摊薄后平均 0.233 人/拍 = 1258/5399；只在那 713 个有高亮的拍上
+则为 ≈1.76 人/拍）。若审阅认为这不值得，删掉它也不影响 G1 的核心保证。
 
 ### 2.5 与「phase_segments」的关系
 

@@ -27,9 +27,11 @@
 - [ ] 采样点 = **`match_events` 的 `while t < dur { tick(...); }` 循环体内、`tick` 返回之后**
       （⚠️ **不是** `emit_beat_with_main`——实测 ≥16.7% 的拍不经它，且 34/5399 个 tick
       根本不产 beat，见 `POSITION-EXPORT-DESIGN.md` §2.4）。**拍 = tick，不是 beat**
-- [ ] `frozen` 取自 `st.highlight` 的 `participants`，**在 finalize 之前**取
-      （实测飞行期冻结者的位置本来就不动，故 `frozen` 的用途是「标记进行中的量」，
-      不是「防陈旧」；成本 ≈ 0，每拍 0.233 人）
+- [ ] `frozen` 取自 `st.highlight` 的 `participants`（**取 id 列**），语义 = 「本拍结束时
+      仍活跃的高亮参与者」——在 **`tick` 返回之后**取（= finalize 之后，§2.4）
+- [ ] 实测：飞行期冻结者的位置由高亮**钉住**（结构保证：`commit_beat_positions_ex` 跳过
+      其 `st.pos` 写回），故 `frozen` 的用途是「标记进行中的量」，**不是**「防陈旧」；
+      成本 ≈ 0（全 5399 拍摊薄 0.233 人/拍；有高亮的 713 拍上 ≈1.76 人/拍）
 - [ ] 守卫：① `simulate()` 逐字节一致门仍绿（recorder 空操作）；
       ② **快照 = `st.pos` 逐位恒等**（G1 的核心承诺，须定向变异可红）；
       ③ **快照数 == tick 数**（≠ beat 数，seed 1：5399 vs 5365）；
