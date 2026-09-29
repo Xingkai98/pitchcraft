@@ -119,8 +119,9 @@
     - **开工前须闭合七项**（谓词、多段切分、`attacking_transition` 边界、`unknown`/provenance、
       时间基准、fixture+变异、provenance 记录）**及与 #16 的接口张力**——
       见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.4。
-- `16` **团队与局部空间特征（含 phaseability gate）** ⏳ open ← **下一步**
-  [★ #116](issues/116-team-local-spatial-features.md)（GH #116，`wayfinder:research`，draft）
+- `16` **团队与局部空间特征（含 phaseability gate）** 🚧 实现中
+  [★ #116](issues/116-team-local-spatial-features.md)（GH #116 侦察已合入；实现 change
+  `openspec/changes/p16-team-local-spatial-features/`，跟踪 GH #121）
   - Blocked by: `12`, `13`（均已完成）
   - Type: Research
   - 问题：从当前坐标和 beat/off-ball 信息中，第一版可靠计算哪些宽度、纵深、线间距、支援和压力特征？

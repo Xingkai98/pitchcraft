@@ -1150,6 +1150,61 @@ pub struct PhaseSegment {
     pub provenance: PhaseProvenance,
 }
 
+// ============================== 位置快照（P16，#116） ==============================
+
+/// 逐 tick 的引擎位置快照（P16 位置导出的粒度 G1）。
+///
+/// ## 为什么要有它（而不是从 beat 事件重放）
+///
+/// `beat.movers` 是 `MatchState.pos` 的**稀疏增量**（实测每拍 22 人里平均 **19.46 人**
+/// 不出现在 beat 里：dead-zone 内不动者、门将、罚下者、被排除者各有分支）。
+/// 从中重放位置属于「从事件文本事后推断」——正是本模块刻意拒绝的做法
+/// （见模块头「本文件不引用 `MatchState`」）。
+/// 引擎本来就有权威位置 `MatchState.pos`，本结构体把它**逐拍原样**带出来。
+///
+/// ## 口径（P16 位置口径模块 `tests/p16/caliber.rs` 是消费方）
+///
+/// - **恒等**：`pos` 就是该 tick 末的 `MatchState.pos`，**逐位相同**，不做舍入/量化
+///   （有损编码会把「快照」降级成又一个近似，G1 就此失去意义）。
+/// - **采样点**：主 tick 循环内、`tick()` 返回之后（= 该 tick 全部状态变更结束）。
+///   **不含**终场的排空循环——那段在 `t == dur` 上反复产生拍、且会被尾哨压缩按时间戳
+///   去重丢弃，不属于比赛时间。
+/// - **`TimeBasis::StateCommit`**：这是引擎提交后的状态，不是事件发射时刻。
+///
+/// ## 恒等是**可核验**的，不是自述
+///
+/// 同一 tick 的 `beat` 事件字段**就是** `st.pos` 的投影（`commit_beat_positions_ex`
+/// 分离后回填 `mover.to` / `main.x2`，`sync_main_after_commit` 再把 main 与 `st.pos`
+/// 对齐）。故「快照 == beat 字段」是一条**独立于本结构体**的交叉核对，
+/// 见 P16 测试 `state_snapshot_positions_match_the_beat_projection_bit_for_bit`——
+/// 任何有损编码（`f32` / 量化）都会让它变红。
+#[derive(Debug, Clone, PartialEq)]
+pub struct StateSnapshot {
+    /// 该 tick 的比赛时间（秒），与 beat 事件的 `t` 同一时间轴。
+    pub t: ObservedTime,
+    /// 22 人归一化位置，**下标 = 球员 id**（与事件协议同：0 = 主队门将、21 = 客队门将）。
+    pub pos: [(f64, f64); 22],
+    /// 该拍末的**球位**（归一化）。与 `MatchState.ball_pos` 逐位相同。
+    ///
+    /// **为什么必须带**：design §3.2 的两条时间关系特征以球为参考——
+    /// 「推进/回撤/横向转移」是**球**的位移，「接应是否形成」明写「推进后**球前方**
+    /// 是否出现可接应队友」。缺了它，这两条只能用球队重心当代理
+    /// （与真实「球周围接应」不等价，是**已知缺口**而非等价物）。
+    pub ball: (f64, f64),
+    /// **本拍结束时仍活跃的**高亮参与者 id（由 `lib.rs` 的提交点传入——
+    /// 本模块不读 `MatchState`／`Highlight`，见模块头）。
+    ///
+    /// 它们是「进行中的量」而非稳定观测：`commit_beat_positions_ex` 对冻结者
+    /// **跳过 `st.pos` 写回**，其位置由 `finalize_highlight` 事后一次性对账到终点。
+    /// 记下来是为让下游能**区分**「本拍终态」与「飞行中的钉住值」——不是为「防陈旧」
+    /// （实测飞行期该位置**不变**）。
+    ///
+    /// ⚠️ **不保证为空**：`finalize_highlight` 可能**链式**建新高亮
+    /// （`ShotOffTarget` / 出界 → `start_goal_kick` / `start_corner` / `start_throw_in`），
+    /// 此时本拍记的是**新高亮的参与者**。统一定义即「本拍结束时仍活跃者」。
+    pub frozen: Vec<i32>,
+}
+
 // ============================== sidecar（design §3） ==============================
 
 /// 独立的行为诊断 sidecar。`events` 与正式 `simulate()` 的事件流逐字节同源。
@@ -1165,6 +1220,12 @@ pub struct DiagnosticMatch {
     pub restart_sequences: Vec<RestartSequence>,
     /// 恒为空数组（Slice 1）；#15B 的 phase 标注器落地前不得填充。
     pub phase_segments: Vec<PhaseSegment>,
+    /// **逐 tick 的引擎位置快照（P16，#116）**。只读观测量，**不是**控制事实——
+    /// 它与 `control_facts` 无关，不参与任何不变量检查（`gap_count()` 不受影响）。
+    ///
+    /// 正式路径（`simulate()`）不产出它（recorder 关闭）；opt-in 路径按主 tick 循环
+    /// 每拍一条。**不参与 JSON 序列化**（[`Self::events_json`] 只序列化 `events`）。
+    pub state_snapshots: Vec<StateSnapshot>,
     /// 终态观察状态（design §5）。`Ended` 表示事件流收束；`Uninitialized` 出现在 demo 模式
     /// （不为固定动作序列伪造事实）。
     ///
@@ -1361,6 +1422,9 @@ pub struct BehaviorObservationRecorder {
     attributed_upto: usize,
     next_episode_id: u64,
     next_restart_id: u64,
+    /// **逐 tick 的位置快照（P16）**。只读观测量，与 `facts` 无关，
+    /// 不参与任何不变量检查，也不影响 `gap_count`。
+    snapshots: Vec<StateSnapshot>,
 }
 
 impl BehaviorObservationRecorder {
@@ -1382,6 +1446,7 @@ impl BehaviorObservationRecorder {
             attributed_upto: 0,
             next_episode_id: 0,
             next_restart_id: 0,
+            snapshots: Vec::new(),
         }
     }
 
@@ -1408,6 +1473,11 @@ impl BehaviorObservationRecorder {
 
     pub fn restarts(&self) -> &[RestartSequence] {
         &self.restarts
+    }
+
+    /// 逐 tick 位置快照（P16）。正式路径恒空。
+    pub fn state_snapshots(&self) -> &[StateSnapshot] {
+        &self.snapshots
     }
 
     pub fn state(&self) -> &BehaviorControlState {
@@ -1438,6 +1508,7 @@ impl BehaviorObservationRecorder {
             possession_episodes: self.episodes,
             restart_sequences: self.restarts,
             phase_segments: Vec::new(),
+            state_snapshots: self.snapshots,
             state: self.state,
             invariant_violations,
         }
@@ -2306,6 +2377,38 @@ impl BehaviorObservationRecorder {
         self.set_state(BehaviorControlState::Contested {
             previous_team: releasing_team,
             location,
+        });
+    }
+
+    /// **逐 tick 位置快照**（P16，#116）。
+    ///
+    /// 调用方（`lib.rs` 主 tick 循环、`tick()` 返回之后）把该 tick 末的
+    /// `MatchState.pos` 与「本拍结束时仍活跃的高亮参与者 id」随拍提交。
+    ///
+    /// 设计边界（与既有命令一致）：
+    /// - **只追加**、**不读事件文本、不做推断、零 RNG**；
+    /// - 传的是 `&[(f64,f64); 22]`（**值语义的数组引用**），不引用 `MatchState` ——
+    ///   模块头「本文件不引用 `MatchState`」仍然成立；
+    /// - 关闭时（`simulate()` 的 `disabled()`）**空操作**，故正式事件流逐字节不变；
+    /// - **不参与任何不变量检查**：快照与控制事实无关，`gap_count()` 不受影响。
+    ///
+    /// **不做舍入/量化**：快照必须**逐位**等于引擎的 `st.pos`（G1 的立身之本），
+    /// 有损编码会把它降级成又一个近似。
+    pub fn observe_state(
+        &mut self,
+        t: ObservedTime,
+        pos: &[(f64, f64); 22],
+        ball: (f64, f64),
+        frozen: &[i32],
+    ) {
+        if !self.enabled {
+            return;
+        }
+        self.snapshots.push(StateSnapshot {
+            t,
+            pos: *pos,
+            ball,
+            frozen: frozen.to_vec(),
         });
     }
 
