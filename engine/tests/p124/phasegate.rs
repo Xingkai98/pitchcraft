@@ -343,12 +343,6 @@ fn rate_auc_intent(
     }
 }
 
-/// 一个档的 AUC 行（报告用）。
-pub struct ZoneReport {
-    pub label: &'static str,
-    pub rows: Vec<GateRow>,
-}
-
 /// 报告的一行（供产物序列化）。
 pub struct VerdictTable {
     pub final_vs_rest: Vec<GateRow>,

@@ -1495,6 +1495,11 @@ fn render_artifacts(mode: &str) -> (String, String) {
     for (k, c) in &cov.missing {
         md.push_str(&format!("| {k} | {c} |\n"));
     }
+    // **已知缺口**（P16 的产物形态：特征模块的 `FEATURE_LIMITATIONS` 要进产物）。
+    md.push_str("\n### 已知缺口（记录在案，不冒充）\n\n");
+    for (name, why) in crate::intent::INTENT_FEATURE_LIMITATIONS {
+        md.push_str(&format!("- **`{name}`**：{why}\n"));
+    }
 
     // ── Slice 4 gate 表 ──
     for (title, rows) in [
@@ -1572,11 +1577,8 @@ fn render_artifacts(mode: &str) -> (String, String) {
         }
     }
     let features_array = format!("[{}]", rows_json.join(","));
-    let (fingerprint, _) = {
-        // P17A 的闭集指纹（本模块只作交叉引用）。
-        (crate::report::p16_sidecar_schema_fingerprint(), ())
-    };
-    let _ = fingerprint;
+    // （P17A 的闭集指纹已在 `build_provenance` 里作为 `sidecar_schema_fingerprint` 记入，
+    //   此处不再重算——曾有一个算完即 `let _ =` 的死块，第 6 轮自查删除。）
     let json = {
         let with_rows = crate::report::merge_into_object(
             &crate::report::provenance_json(&p),

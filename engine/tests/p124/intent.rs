@@ -242,12 +242,6 @@ impl IntentCoverage {
         }
     }
 
-    pub fn share(&self, name: &str) -> Option<f64> {
-        if self.episodes == 0 {
-            return None;
-        }
-        self.computed.get(name).map(|c| *c as f64 / self.episodes as f64)
-    }
 }
 
 /// 已知缺口（**记录在案，不冒充**）。每条给「影响哪条特征」与「要补什么」。
