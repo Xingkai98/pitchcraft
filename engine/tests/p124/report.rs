@@ -250,6 +250,21 @@ pub struct Provenance {
     /// 表达「产出时是否含未提交改动」。故本栏如实记下——**内容绑定靠
     /// `test_source_fingerprint`（硬门），本栏只补标签语义**，不参与 pass/fail。
     pub worktree_dirty: bool,
+    /// 产出时是否设了 `P124_ALLOW_DIRTY`（**显式接受脏树**）。
+    ///
+    /// ## 为什么必须记它（第 3 轮审阅的 P1 处置）
+    ///
+    /// 落盘门在脏树上拒绝写——但「门有没有真的被调用/被喂对值」**在干净树上无法观测**
+    /// （干净树上 `dirty=false` 恒正确，改不改都一样）。第 3 轮实测：把 `write_artifacts`
+    /// 里传给门的 `dirty` 改成字面 `false`，整套默认测试仍绿，而脏树被静默落盘。
+    ///
+    /// ⇒ 记下**这一对** (`worktree_dirty`, `worktree_override`)，由**默认**测试执行一条
+    /// **纯内容不变量**：`!(worktree_dirty && !worktree_override)`
+    /// ——「产物不得声称自己在脏树上产出，除非明确 override」。
+    /// 该不变量在**干净树**上也能跑（它读产物内容，不需要造脏）：
+    /// - 若门被绕过而在脏树上写了产物 ⇒ 产物记 `dirty=true, override=false` ⇒ **红**；
+    /// - 若把 `worktree_dirty` 记成 `false`（撒谎）⇒ 与真跑 `git status` 不符 ⇒ **红**。
+    pub worktree_override: bool,
 }
 
 /// `has_intent_snapshots` 的 provenance 取值来源（活探测，见 [`probe_has_intent_snapshots`]）。
@@ -273,6 +288,7 @@ pub fn build_provenance(mode: &str, seed_first: u64, seed_last: u64, duration: f
         caliber: caliber_snapshot(),
         test_source_fingerprint: test_source_fingerprint(),
         worktree_dirty: worktree_is_dirty(),
+        worktree_override: std::env::var("P124_ALLOW_DIRTY").is_ok(),
     }
 }
 
@@ -402,6 +418,10 @@ pub fn provenance_markdown(p: &Provenance) -> String {
         "| `worktree_dirty` | `{}` |\n",
         p.worktree_dirty
     ));
+    out.push_str(&format!(
+        "| `worktree_override` | `{}` |\n",
+        p.worktree_override
+    ));
     out.push_str(&format!("| `seed_first` | `{}` |\n", p.seed_first));
     out.push_str(&format!("| `seed_last` | `{}` |\n", p.seed_last));
     out.push_str(&format!(
@@ -426,7 +446,7 @@ pub fn provenance_json(p: &Provenance) -> String {
     format!(
         "{{\"mode\":{},\"source_commit\":{},\"engine_version\":{},\"model_version\":{},\
          \"caliber_version\":{},\"engine_source_fingerprint\":{},\"test_source_fingerprint\":{},\
-         \"sidecar_schema_fingerprint\":{},\"has_intent_snapshots\":{},\"worktree_dirty\":{},\
+         \"sidecar_schema_fingerprint\":{},\"has_intent_snapshots\":{},\"worktree_dirty\":{},\"worktree_override\":{},\
          \"seed_first\":{},\"seed_last\":{},\"config_duration_seconds\":{},\"caliber\":{}}}",
         json_of(&J::S(p.mode.clone())),
         json_of(&J::S(p.source_commit.clone())),
@@ -438,6 +458,7 @@ pub fn provenance_json(p: &Provenance) -> String {
         json_of(&J::S(p.sidecar_schema_fingerprint.clone())),
         json_of(&J::S(p.has_intent_snapshots.to_string())),
         json_of(&J::S(p.worktree_dirty.to_string())),
+        json_of(&J::S(p.worktree_override.to_string())),
         json_of(&J::Int(p.seed_first as i64)),
         json_of(&J::Int(p.seed_last as i64)),
         json_of(&J::F(p.config_duration_seconds)),

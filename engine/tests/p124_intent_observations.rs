@@ -1690,6 +1690,26 @@ fn on_disk_artifacts_share_the_current_source_fingerprint() {
             .unwrap_or_else(|_| panic!("有 `{mode}.md` 却无 `{mode}.json`——产物不成对"));
         crate::report::json_looks_well_formed(&jtext)
             .unwrap_or_else(|e| panic!("落盘 JSON `{}` 结构非法：{e}", json_path.display()));
+        // ⚠️ **纯内容不变量**（第 3 轮 P1 的处置，**默认套件执行**）：
+        // 「产物不得声称自己在脏树上产出，除非明确 override」。
+        // 这条在**干净树**上也能跑（读产物内容，不需造脏）：若落盘门被绕过、在脏树上写了
+        // 产物，产物会记 `worktree_dirty=true` 而 `worktree_override=false` ⇒ 当场红。
+        let recorded_dirty = text.lines().any(|l| l.contains("| `worktree_dirty` | `true` |"));
+        let recorded_override = text.lines().any(|l| l.contains("| `worktree_override` | `true` |"));
+        let real_dirty = crate::report::worktree_is_dirty();
+        assert_eq!(
+            recorded_dirty, real_dirty,
+            "产物 `{}` 记的 `worktree_dirty={recorded_dirty}`，而真跑 `git status --porcelain` \
+             得 `{real_dirty}`——provenance 的这栏撒了谎（记录值必须来自真跑，不得是常量）",
+            md_path.display()
+        );
+        assert!(
+            !(recorded_dirty && !recorded_override),
+            "产物 `{}` 声称自己在**脏树**上产出（`worktree_dirty=true`）却没有 `worktree_override` \
+             ——落盘门被绕过了（它本该拒绝在脏树上写）。这是第 3 轮审阅点名的 P1 形态：\
+             门可以在干净树测试里被摘掉而无人察觉。",
+            md_path.display()
+        );
         // `source_commit` 标签合理性：40 位 hex 且是 HEAD 的祖先（**不要求 == HEAD**）。
         let recorded = text
             .lines()
