@@ -71,16 +71,23 @@ export function compareFrames(replay, render, { limitT = Infinity } = {}) {
   let worstAt = null;
   let frames = 0;
   let framesWithDiff = 0;
+  // ⚠️ **跳过数必须报**（本 change 的探针纪律）：不报跳过，「N 点全通过」会把
+  // 「大部分点根本没比」读成「大部分点通过了」。分三类计数并随结果返回。
+  let skippedNonInteger = 0; // 非整秒帧（本探针只比整秒）
+  let skippedOverLimit = 0;  // 超出 limitT
+  let skippedNoReplay = 0;   // 重放侧没有该时刻
+  let skippedPoint = 0;      // 某一侧缺该 id 的点
   for (const f of render) {
-    if (!Number.isInteger(f.t) || f.t > limitT) continue;
+    if (!Number.isInteger(f.t)) { skippedNonInteger += 1; continue; }
+    if (f.t > limitT) { skippedOverLimit += 1; continue; }
     const rp = byT.get(f.t);
-    if (!rp) continue;
+    if (!rp) { skippedNoReplay += 1; continue; }
     frames += 1;
     let frameDiff = 0;
     for (let id = 0; id < 22; id += 1) {
       const a = f.players.find((p) => p.id === id);
       const b = rp[id];
-      if (!a || !b) continue;
+      if (!a || !b) { skippedPoint += 1; continue; }
       const d = Math.hypot(a.x - b[0], a.y - b[1]);
       if (!Number.isFinite(d)) {
         throw new Error(`比较得到非有限值：t=${f.t} id=${id} render=${a.x},${a.y} replay=${b}`);
@@ -96,7 +103,10 @@ export function compareFrames(replay, render, { limitT = Infinity } = {}) {
     }
     if (frameDiff > 0.01) framesWithDiff += 1;
   }
-  return { n, frames, framesWithDiff, worst, worstAt, mean: n ? sum / n : NaN, over1cm };
+  return {
+    n, frames, framesWithDiff, worst, worstAt, mean: n ? sum / n : NaN, over1cm,
+    skipped: { nonInteger: skippedNonInteger, overLimit: skippedOverLimit, noReplay: skippedNoReplay, point: skippedPoint },
+  };
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {
@@ -118,4 +128,9 @@ if (import.meta.url === `file://${process.argv[1]}`) {
   console.log(`  偏差 > 1cm 的点：${r.over1cm} (${((r.over1cm / r.n) * 100).toFixed(2)}%)`);
   console.log(`  含偏差 > 1cm 的帧：${r.framesWithDiff} / ${r.frames}`);
   console.log(`  最大偏差处：t=${r.worstAt?.t} id=${r.worstAt?.id}`);
+  // **跳过数与被比较数并列打印**——「N 点通过」必须带上「多少点没比」才有意义。
+  console.log(
+    `  跳过：非整秒帧 ${r.skipped.nonInteger} / 超 limitT ${r.skipped.overLimit} / `
+    + `重放侧无该时刻 ${r.skipped.noReplay} / 单侧缺点 ${r.skipped.point}`,
+  );
 }

@@ -42,16 +42,31 @@
       的锚点字符串不得出现在注释里（本 change 的注释一度含它，已改写）
 - [x] 接入 `depth` / `width` / `cx`,`cy` / `spread` / `n`（Rust 侧 `tests/p16/shape.rs`，
       口径逐条对齐 `match-metrics.js`：剔门将 / 逐帧算再均值 / q10–q90 / 未排序配对）
-- [ ] 编码保持 `[(f64,f64); 22]`——**不得**改 `f32`/量化（那会破坏「逐位恒等」这条 G1 的立身之本）
+- [x] 编码保持 `[(f64,f64); 22]`——**不得**改 `f32`/量化。
+      **由两条守卫保证**：① `engine/src/observation.rs` 的 `StateSnapshot.pos` 类型即
+      `[(f64,f64); 22]`（改 `f32` 是编译错）；② 逐位恒等由
+      `state_snapshot_positions_match_the_beat_projection_bit_for_bit` 守——
+      实测把 `observe_state` 的位置量化到 0.1 m → 该测试**红**。
+      （`state_snapshots_are_per_tick_and_bit_identical` 只查条数/值域/时间轴，
+      **不**抓有损编码——其 doc 已注明，避免误认覆盖。）
 - [x] 报告每项的可算帧占比与 `unknown` 占比（`ShapeCoverage`：引擎侧实测 **100% 可算、0 缺失**）
 - [x] 明确记录：`includeExtrapolated` / `MIN_OUTFIELD_PLAYERS` 在**引擎侧是空操作**
       （`shape.rs` 模块头 + 测试 `engine_shape_coverage_is_total_and_missing_reasons_stay_empty`）
 
 ## 产物纪律（本 change 新增）
 
-- [ ] **探针比较函数须对「比较失败」有区分度**（`NaN` 显式判红）+ **每张表写明对照两端**。
+- [x] **探针比较函数须对「比较失败」有区分度**（`NaN` 显式判红）+ **每张表写明对照两端**。
       来由：本 change 曾用 `.x`/`.y` 误用数组得 `NaN`，而 `NaN > max` 恒假 ⇒ 打出
-      「`max|Δ| = 0.000000`」的**假证据**。可复现探针：`notes/probes/position-fidelity.mjs`
+      「`max|Δ| = 0.000000`」的**假证据**。
+      - **NaN 判红**：`notes/probes/position-fidelity.mjs` 的 `compareFrames`
+        对非有限距离 `throw`（逐点判，不是只判最大值）；
+      - **跳过数与被比较数并列报**：探针现在明报四类跳过
+        （非整秒帧 / 超 limitT / 重放侧无该时刻 / 单侧缺点），
+        实测 seed 1：比 19668 点、跳过 21600+4500+7+0——「N 点通过」不再会被读成
+        「大部分点通过了」；
+      - **对照两端写明**：探针头注释与输出行都标 `A = beat-only 重放` /
+        `B = viewer 渲染路径`；设计文档 §1 另把「vs 渲染路径」（可复现）
+        与「vs 引擎真值 `st.pos`」（需插桩）**分列两栏**，并注明不可混引。
 
 ## Slice 3 — 时间关系特征（本 change 的实际工作量）
 
@@ -77,8 +92,8 @@
       三档纯动作链 motif（`final_third` / `build_up` / `progression`），
       每条子句逐条标注「是否用位置」；`reference_set` 的**源码扫描**守卫证明它不碰位置
 - [x] 用特征跑三档可分性检验（秩基 AUC，**30 seed / 3075 episode**）
-- [x] 产出**裁决**：**不够**——三档最强特征的 AUC 全部 ≈0.5（0.517–0.530），与随机无异；
-      连区域对照量 `start_progress` 也只有 0.47–0.51
+- [x] 产出**裁决**：**部分够**——只能判 `final_third`；`build_up`/`progression` 判不了。
+      （⚠️ 初版「不够」建立在 join bug 上，已由独立审阅推翻并重算；详见下方「裁决」小节）
 - [x] 硬约束检查：**不得**把区域/坐标当阶段——本 change **不产出任何** `Phase`，
       特征命名均为几何/证据（`TeamShape` / `DisplacementDecomposition` /
       `SupportFormation` / `LineSpacingChange`）

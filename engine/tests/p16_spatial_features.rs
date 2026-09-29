@@ -40,6 +40,7 @@
 //! | [`provenance_carries_the_comparability_triple`] | 产物（provenance 三件套） | ✅ |
 //! | [`p16_does_not_change_the_p17a_schema_fingerprint`] | 产物（不使 P17A 指纹陈旧） | ✅ |
 //! | [`provenance_caliber_snapshot_lists_the_live_constants`] | 产物（口径快照活性） | ✅ |
+//! | [`on_disk_artifacts_share_the_current_source_fingerprint`] | 产物（与源码同源） | ✅ |
 //! | `p16_canary` | 产物落盘（30 seed） | ❌ `#[ignore]` |
 //! | `p16_baseline` | 产物落盘（300 seed） | ❌ `#[ignore]` |
 //!
@@ -1735,6 +1736,42 @@ fn provenance_caliber_snapshot_lists_the_live_constants() {
     // 且这些常量确实是**活**的（改它们会改变特征输出）。
     assert!(crate::features::WINDOW_SECONDS > 0.0);
     assert!(crate::features::SUPPORT_MAX_DIST_M > 0.0);
+}
+
+/// **落盘产物必须与当前源码同源**——否则产物是陈旧证据（本仓 P17A 的
+/// `on_disk_artifacts_share_one_provenance_block` 同类守卫）。
+///
+/// 判据：`target/p16-baseline/*.md` 里的 `test_source_fingerprint` 必须等于
+/// **当前源码**算出的值。产物落后于源码（改了 `tests/p16/*` 却没重跑产物门）
+/// 时本测试红——这正补上 `engine_source_fingerprint` 对测试文件的盲区。
+///
+/// 产物不存在时**跳过**（新克隆的 worktree 未跑过产物门，不该红）——
+/// 跑法见模块头（`--ignored --nocapture p16_canary`）。
+#[test]
+fn on_disk_artifacts_share_the_current_source_fingerprint() {
+    let dir = out_dir();
+    let current = test_source_fingerprint();
+    let mut checked = 0usize;
+    for mode in ["canary", "baseline"] {
+        let path = dir.join(format!("{mode}.md"));
+        let Ok(text) = std::fs::read_to_string(&path) else {
+            continue; // 未跑过产物门 → 跳过
+        };
+        assert!(
+            text.contains(&current),
+            "落盘产物 `{}` 的 `test_source_fingerprint` 与**当前源码**不符——\
+             产物是陈旧的（改了 `tests/p16/*` 之后没重跑产物门）。\
+             重跑：`P16_SOURCE_COMMIT=$(git rev-parse HEAD) cargo test --release \
+             --test p16_spatial_features -- --ignored --nocapture`。当前源码指纹 = {current}",
+            path.display()
+        );
+        checked += 1;
+    }
+    if checked == 0 {
+        println!("未发现落盘产物 → 跳过（新 worktree 的正常状态）");
+    } else {
+        println!("核过 {checked} 份产物，均与当前源码同源（{current}）");
+    }
 }
 
 /// **`#[ignore]` 门：canary 产物落盘**（30 seed）。用
