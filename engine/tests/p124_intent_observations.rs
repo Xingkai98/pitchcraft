@@ -54,6 +54,9 @@ mod gate;
 #[path = "p16/reference.rs"]
 mod reference;
 
+use fm_engine::observation::{
+    BehaviorObservationRecorder, DefensiveIntentKind, IntentState, ObservedTime,
+};
 use pool::*;
 use probe::*;
 use purify::*;
@@ -412,4 +415,316 @@ fn pool_rejects_index_space_mismatch() {
          那正是 P16 join bug 的入口（`all_refs` 用全局下标而 `all_feats` 用本地下标，\
          seed 1 之后逐 seed 全错，AUC 被摊平到 0.5）。这条断言必须拦住它。"
     );
+}
+
+// ============================== Slice 2：意图信号的接出 ==============================
+
+/// **意图快照与位置快照逐拍对齐**——这是下游按拍取用两条通道的前提。
+///
+/// ⚠️ **为什么单独立一条**：P16 的 join bug（参考集用全局下标、特征用逐场本地下标）
+/// 的形态就是「两个集合的下标空间不同步」。本 change 又加了一条**平行**的逐拍通道
+/// （`intent_snapshots`），风险同型：两条通道各自 push，只要提交点的顺序/条件有一处
+/// 不同，`intent_snapshots[i]` 就不再指 `state_snapshots[i]` 那一拍——而**任何一侧单独看
+/// 都自洽**。故这里逐拍断言 `t` 相同 + 条数相同。
+#[test]
+fn intent_export_is_tick_aligned_with_positions() {
+    for seed in [1u64, 2, 7] {
+        let dm = observe(seed);
+        assert!(
+            !dm.state_snapshots.is_empty(),
+            "seed {seed}：opt-in 路径应产位置快照（否则本测试两侧都空，无判别力）"
+        );
+        assert_eq!(
+            dm.intent_snapshots.len(),
+            dm.state_snapshots.len(),
+            "seed {seed}：意图快照 {} 条 != 位置快照 {} 条——两条通道必须同拍\
+             （同一 tick 循环、同一 `t`）",
+            dm.intent_snapshots.len(),
+            dm.state_snapshots.len()
+        );
+        for (i, (si, ss)) in dm
+            .intent_snapshots
+            .iter()
+            .zip(dm.state_snapshots.iter())
+            .enumerate()
+        {
+            assert_eq!(
+                si.t.value, ss.t.value,
+                "seed {seed}：第 {i} 拍的两条通道时间不同（意图 {:?} vs 位置 {:?}）——\
+                 下标空间已错位（P16 join bug 的同型）",
+                si.t.value, ss.t.value
+            );
+            assert_eq!(
+                si.t.basis, ss.t.basis,
+                "seed {seed}：第 {i} 拍的两条通道 basis 不同——逐拍数据不得混时间基准"
+            );
+        }
+    }
+}
+
+/// **意图观测不进入正式路径**——三条互补判据（逐字节一致 / 空操作契约 + 反证 / 输出无痕迹）。
+///
+/// 与 P16 的 `formal_path_produces_no_snapshots_and_is_byte_identical` 同形。
+/// ⚠️ 白盒说明：`simulate()` **丢弃** recorder，故「逐字节一致」对「删掉 `observe_intent`
+/// 的 `if !self.enabled`」这个变异**看不见**——那由空操作契约那条（公开 API 直接构造
+/// `disabled()`）抓。两条分工，缺一不可。
+#[test]
+fn intent_export_never_enters_the_formal_path() {
+    // ① opt-in 路径**真的**产意图数据（否则下面的比对无判别力）。
+    let dm = observe(1);
+    assert!(
+        !dm.intent_snapshots.is_empty(),
+        "opt-in 路径应产意图快照——空的话本测试无判别力"
+    );
+    assert!(
+        dm.defensive_intents.iter().any(|d| d.kind.as_str() != "none"),
+        "opt-in 路径应至少有一个非 `none` 的防守意图——空的话防守通道无判别力"
+    );
+    // ② 正式路径与 opt-in 路径的事件流**逐字节相同**（意图采集没有改变决策/RNG/事件）。
+    let formal = fm_engine::simulate(1, cfg());
+    assert_eq!(
+        formal,
+        dm.events_json(),
+        "正式路径与 opt-in 路径的事件流必须**逐字节相同**——不同说明意图采集漏进了决策路径"
+    );
+    // ③ 正式路径的输出里没有任何意图观测痕迹（事件流协议未被改动）。
+    assert!(
+        !formal.contains("intent") && !formal.contains("shot_setup"),
+        "正式路径的事件流里出现了意图字段——事件流协议被改动了（本 change 明禁）"
+    );
+    // ④ **关闭的 recorder 必须是空操作**（可观测形态；见测试 doc 的白盒说明）。
+    let mut off = BehaviorObservationRecorder::disabled();
+    let st = IntentState {
+        has_shot_setup: true,
+        in_window: true,
+        window_ticks: 3,
+        drive_ticks_left: 5,
+        committed: false,
+        entry_pressure_bucket: 1,
+        pressure_state_ticks: 4,
+    };
+    off.observe_intent(ObservedTime::state_commit(1.0), st);
+    off.observe_defensive_intent(
+        ObservedTime::state_commit(1.0),
+        DefensiveIntentKind::Tackle,
+        Some(7),
+    );
+    assert!(
+        off.intent_snapshots().is_empty() && off.defensive_intents().is_empty(),
+        "**关闭的 recorder 上意图命令必须是空操作**——它若写入，正式路径\
+         （`simulate()` 传 `disabled()`）就会在结构上持有意图数据"
+    );
+    // 反证条：同样的命令在**启用**的 recorder 上必须写入（否则上面的断言恒真）。
+    let mut on = BehaviorObservationRecorder::enabled();
+    on.observe_intent(ObservedTime::state_commit(1.0), st);
+    on.observe_defensive_intent(
+        ObservedTime::state_commit(1.0),
+        DefensiveIntentKind::Tackle,
+        Some(7),
+    );
+    assert_eq!(
+        on.intent_snapshots().len(),
+        1,
+        "反证条：启用的 recorder 上 `observe_intent` 必须真的写入——否则「空操作」断言恒真"
+    );
+    assert_eq!(
+        on.defensive_intents().len(),
+        1,
+        "反证条：启用的 recorder 上 `observe_defensive_intent` 必须真的写入"
+    );
+}
+
+/// **意图语义被钉住**：`no_shot_setup` 是「无序列」的唯一编码；有序列时字段逐字取自引擎。
+///
+/// 判别力：把 `has_shot_setup` 与 `in_window` 混为一谈（例如让无序列也置 `in_window`）
+/// 会让下游的「窗口开启」特征把**没有起脚序列**的拍也算进去。
+///
+/// ⚠️ **不用生产不可达的取值**（本仓 P15/P17A 教训）：这里构造的是引擎**真会**产生的
+/// 组合——无序列 / 推进相 / 窗口相三态，逐条对应 `ShotSetup` 的字段。
+#[test]
+fn intent_semantics_are_pinned() {
+    // 「无序列」的编码：判别位 false，其余字段归零（不得留下上次的寄生值）。
+    let none = IntentState::no_shot_setup(4);
+    assert!(!none.has_shot_setup, "无序列时判别位必须为 false");
+    assert!(
+        !none.in_window && none.window_ticks == 0 && none.drive_ticks_left == 0 && !none.committed,
+        "无序列时其余起脚字段必须归零——留下寄生值会让下游把「无序列」读成「窗口内」"
+    );
+    assert_eq!(
+        none.pressure_state_ticks, 4,
+        "`pressure_state_ticks` 与起脚序列**无关**（压迫状态可以独立于序列存在）——\
+         无序列时它仍须如实传递"
+    );
+    // 生产路径上真的是这三态，不只是构造出来的。
+    let dm = observe(1);
+    let n_setup = dm.intent_snapshots.iter().filter(|s| s.state.has_shot_setup).count();
+    let n_window = dm
+        .intent_snapshots
+        .iter()
+        .filter(|s| s.state.has_shot_setup && s.state.in_window)
+        .count();
+    assert!(n_setup > 0, "seed 1 整场没有一拍处于起脚序列——接出没生效或谓词错了");
+    assert!(n_window > 0, "seed 1 整场没有一拍处于起脚窗口——窗口相未被观测到");
+    assert!(
+        dm.intent_snapshots
+            .iter()
+            .any(|s| s.state.has_shot_setup && !s.state.in_window),
+        "seed 1 从未观测到「有序列但未进窗口」（推进相）——两相状态机只观测到一相"
+    );
+    // 无序列的拍必须**不**满足「有序列」谓词（判别位真的在起作用）。
+    assert!(
+        dm.intent_snapshots.iter().any(|s| !s.state.has_shot_setup),
+        "seed 1 每一拍都有起脚序列？——判别位失效（`shot_setup` 是单例，全场只该有少数几拍）"
+    );
+}
+
+/// **防守意图是稀疏的、有分母的、且 `defender` 语义如实**。
+///
+/// 三条：
+/// ① 稀疏——条数远小于 tick 数（它是事件，不是逐拍通道）；
+/// ② 有分母——每个被执行的计划恰好一条，故条数与「非 `none` + `none`」之和自洽；
+/// ③ `defender` 只在引擎绑定接触动作主体时给出（`tackle` / `foul`），
+///    其余为 `None`——**不是**「防守者未知」，故不得反推。
+#[test]
+fn defensive_intents_are_sparse_and_well_formed() {
+    let dm = observe(1);
+    let di = &dm.defensive_intents;
+    assert!(!di.is_empty(), "seed 1 没有任何防守意图事件——接出没生效");
+    assert!(
+        di.len() < dm.intent_snapshots.len() / 5,
+        "防守意图 {} 条 vs 逐拍 {} 条——它应是**稀疏事件**（每个机会点一条），\
+         接近逐拍说明记错了通道",
+        di.len(),
+        dm.intent_snapshots.len()
+    );
+    // 归因靠 `t`：每条都须落在本场的 `[1.0, 5400.0]` 内（同位置快照的时间轴）。
+    let (t_min, t_max) = (
+        dm.intent_snapshots.first().unwrap().t.value,
+        dm.intent_snapshots.last().unwrap().t.value,
+    );
+    for d in di {
+        assert!(
+            d.t.value + 1e-9 >= t_min && d.t.value - 1e-9 <= t_max,
+            "防守意图的时刻 {:?} 落在逐拍通道的时间轴 [{t_min}, {t_max}] 之外——\
+             两条通道不同源，归因会错",
+            d.t.value
+        );
+    }
+    // ② `defender` 语义：接触动作（tackle/foul）**都**带防守者；无事件防守**都**不带。
+    for d in di {
+        match d.kind {
+            DefensiveIntentKind::Tackle | DefensiveIntentKind::Foul => assert!(
+                d.defender.is_some(),
+                "`{}` 是接触动作，引擎必然绑定了防守者 id——记成 `None` 说明映射漏了",
+                d.kind.as_str()
+            ),
+            DefensiveIntentKind::Contain
+            | DefensiveIntentKind::Jockey
+            | DefensiveIntentKind::None => assert!(
+                d.defender.is_none(),
+                "`{}` 是无事件防守 / 无动作，决策层不绑定防守者——\
+                 这里记成 `Some` 就是从位置反推了（P16 已证不足的做法）",
+                d.kind.as_str()
+            ),
+        }
+    }
+    // ③ 分母：四类动作 + none 的计数必须等于总条数（每个被执行的计划恰好一条）。
+    let mut counts = std::collections::BTreeMap::new();
+    for d in di {
+        *counts.entry(d.kind.as_str()).or_insert(0usize) += 1;
+    }
+    let total: usize = counts.values().sum();
+    assert_eq!(
+        total,
+        di.len(),
+        "分类计数之和 {total} != 事件条数 {}——有动作未被归入闭集",
+        di.len()
+    );
+    println!("seed 1 防守意图分布（{} 条，逐拍 {} 条）：{:?}", di.len(), dm.intent_snapshots.len(), counts);
+}
+
+/// **`committed` 在逐拍采样点上不可观测**——这是本 change 的**已知缺口**，须记录。
+///
+/// ## 机制（读代码 + 实测，不是猜测）
+///
+/// `shot_window_plan` 的提交分支是 `st.shot_setup = None;` **紧接** `execute_action_resolution`——
+/// 即「提交射门」与「序列销毁」发生在**同一个 tick**。采样点在 `tick()` **返回之后**，
+/// 那时 `shot_setup` 已是 `None` ⇒ `committed == true` 永远观测不到。
+///
+/// 实测（seed 1/2/3）：`committed` 计数都是 **0**，而 `in_window` / `has_shot_setup` 都非 0。
+///
+/// ⇒ 下游**不得**用 `committed` 构造意图特征（它是死字段）。本测试把它**钉住**：
+/// 若哪天它变成非 0，说明引擎改了提交时序——那时这个「缺口」的记录必须一起更新，
+/// 而不是让一条无人知晓的陈旧说明留在文档里。
+///
+/// ⚠️ 本断言**会**在引擎改动时变红，那是**预期的**：它守的不是「永远为 0」，
+/// 而是「文档与代码一致」。
+#[test]
+fn committed_is_not_observable_at_the_per_tick_sampling_point() {
+    let mut total_committed = 0usize;
+    for seed in 1u64..=5 {
+        let dm = observe(seed);
+        let c = dm.intent_snapshots.iter().filter(|s| s.state.committed).count();
+        total_committed += c;
+        // 反证条：同一批快照里 `in_window` 必须非 0——否则「committed 为 0」可能只是
+        // 「窗口根本没被观测到」，而不是「提交即销毁」。
+        let w = dm.intent_snapshots.iter().filter(|s| s.state.in_window).count();
+        assert!(
+            w > 0,
+            "seed {seed} 没观测到起脚窗口——此时「committed 为 0」无判别力\
+             （分不清「提交即销毁」与「窗口压根没进」）"
+        );
+    }
+    assert_eq!(
+        total_committed, 0,
+        "seed 1..=5 观测到 {total_committed} 拍 `committed == true`——这与「提交射门与序列销毁\
+         同一 tick」的机制不符。若引擎改了提交时序，请**同时**更新本测试与\
+         `intent.rs` 里关于 `committed` 的已知缺口记录。"
+    );
+}
+
+/// **接触类意图与事件流交叉核对**——独立来源的验证，抓「映射被悄悄改掉」。
+///
+/// ## 为什么需要这条（判别力论证）
+///
+/// 上面那条测试只证明了「分类是自洽的闭集 + `defender` 语义如实」，它**抓不到**
+/// 「`Contain` 与 `Jockey` 的映射互换」或「`Tackle`/`Foul` 接反」——
+/// 那种变异下分类依然穷尽、`defender` 语义依然成立。
+///
+/// 但 `Tackle` / `Foul` 是**接触动作**：引擎为它们产事件（`tackle` / `foul`），
+/// 且**每个**被执行的接触意图必然产一条事件（断球成败都产 `tackle`；犯规必产 `foul`）。
+/// 故「接触意图计数」与「事件流里的接触事件计数」**逐条相等**——这是一条独立来源的
+/// 交叉核对（本仓 P16 的教训：自查抓不到，要靠独立证据）。
+///
+/// 实测（seed 1/2/3）：`tackle` 29/28/33 与事件 29/28/33 相等；`foul` 19/10/24 与事件相等。
+///
+/// ⚠️ **不断言 `contain`/`jockey` 与事件的对应**——它们**不产事件**（P30 D5：
+/// 「只调压力状态」），结构上无从与事件流核对，只能靠上面的闭集自洽 + `defender` 语义守。
+#[test]
+fn contact_intents_match_the_event_stream() {
+    for seed in [1u64, 2, 3] {
+        let dm = observe(seed);
+        let count_kind = |k: DefensiveIntentKind| {
+            dm.defensive_intents.iter().filter(|d| d.kind == k).count()
+        };
+        let count_ev = |ty: fm_engine::EventType| {
+            dm.events.iter().filter(|e| e.type_ == ty).count()
+        };
+        assert_eq!(
+            count_kind(DefensiveIntentKind::Tackle),
+            count_ev(fm_engine::EventType::Tackle),
+            "seed {seed}：`tackle` 意图数 != 事件流里的 `tackle` 事件数——\
+             意图通道的接触动作分类与事件流**不同源**（映射被改掉？）"
+        );
+        assert_eq!(
+            count_kind(DefensiveIntentKind::Foul),
+            count_ev(fm_engine::EventType::Foul),
+            "seed {seed}：`foul` 意图数 != 事件流里的 `foul` 事件数——同上"
+        );
+        // 反证条：接触意图必须**真的存在**（否则上面的等式在 0 == 0 上恒真）。
+        assert!(
+            count_kind(DefensiveIntentKind::Tackle) > 0,
+            "seed {seed} 没有任何 `tackle` 意图——上面的等式在 0==0 上恒真，无判别力"
+        );
+    }
 }

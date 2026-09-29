@@ -266,6 +266,8 @@ impl Fixture {
             control_facts: self.facts,
             possession_episodes: self.episodes,
             state_snapshots: vec![],
+            intent_snapshots: vec![],
+            defensive_intents: vec![],
             restart_sequences: vec![],
             phase_segments: vec![],
             state: BehaviorControlState::Ended,

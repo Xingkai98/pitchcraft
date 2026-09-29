@@ -1205,6 +1205,140 @@ pub struct StateSnapshot {
     pub frozen: Vec<i32>,
 }
 
+// ============================== 意图观测（P124，#124） ==============================
+
+/// 防守者在**一次机会点**被选中的动作类型（P124）。
+///
+/// ## 为什么这是一个**新**闭集、而不是复用引擎内部的 `DefensiveAction`
+///
+/// 引擎的 `DefensiveAction` 是 `lib.rs` 的**私有**枚举（决策层实现细节）。sidecar 的接口
+/// 承诺是「闭集、可审计、可串名」——把私有枚举直接暴露出去会让决策层改名/加成员立刻破
+/// sidecar 的产物契约。故这里定义一个**同构的公开闭集**，由 `lib.rs` 在提交点做映射
+/// （映射是穷尽的：决策层加成员会在 `match` 处编译失败）。
+///
+/// ⚠️ **本枚举不是 `ControlFact`**：它不进 `control_facts`、不参与不变量检查、
+/// 不参与 `gap_count()`。它是与 [`StateSnapshot`] 同级的**只读观测量**。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DefensiveIntentKind {
+    /// 抢断（接触动作）。
+    Tackle,
+    /// 犯规（与抢断同窗口竞争胜出者）。
+    Foul,
+    /// 封堵（无事件防守，只调压力状态）。
+    Contain,
+    /// 跟防（无事件防守，只调压力状态）。
+    Jockey,
+    /// 无防守动作（无防守者进入争夺范围）。
+    None,
+}
+
+impl DefensiveIntentKind {
+    /// 闭集全成员（守护「闭集完整性」：新增成员时串名/单调性测试会因漏列而红）。
+    pub const ALL: &'static [DefensiveIntentKind] = &[
+        Self::Tackle,
+        Self::Foul,
+        Self::Contain,
+        Self::Jockey,
+        Self::None,
+    ];
+
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            DefensiveIntentKind::Tackle => "tackle",
+            DefensiveIntentKind::Foul => "foul",
+            DefensiveIntentKind::Contain => "contain",
+            DefensiveIntentKind::Jockey => "jockey",
+            DefensiveIntentKind::None => "none",
+        }
+    }
+}
+
+/// **持球者的意图状态**（P124）——逐 tick，与位置快照同一采样点。
+///
+/// ## 语义（design §6.2：实现前读代码定死）
+///
+/// - `has_shot_setup` / `in_window` / `window_ticks` / `drive_ticks_left` / `committed` /
+///   `entry_pressure_bucket` 逐字对应引擎 `ShotSetup` 的字段（推进相 / 起脚窗口两相状态机）。
+///   `shot_setup` 是**单场单例**（`Option<ShotSetup>`）⇒ 任一时刻最多一个持球者在起脚序列中。
+/// - **无序列时的取值**：`has_shot_setup == false`，其余字段取 `false` / `0`。
+///   ⚠️ 这与「有序列但字段恰为 0」**不是同一状态**——`has_shot_setup` 是判别位，
+///   下游必须**先**看它。本结构刻意不把「无序列」编码成 `Option`，
+///   是为了让逐 tick 记录保持定长（`Option` 的 `None` 在池化时会被误当成缺失样本）。
+/// - `pressure_state_ticks`：持球者压迫状态的**剩余保持 tick 数**（倒计时，0 = 无压迫状态）。
+///   防守动作结算为 `Contain` / `Jockey`（无事件防守）时置为满值，此后每 tick 衰减 1。
+///   ⚠️ **它是「距上次无事件防守的 tick 数（饱和）」而不是「压迫强度」**——
+///   引擎侧唯一的消费点是射门 hazard 的 `defensive_pressure` 因子，
+///   且那里会先除以满值归一。本结构**记原始 tick 数**（不在此归一），
+///   使归一化只有一个落点（引擎侧的那一处），避免两处口径分叉。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct IntentState {
+    /// 本拍末是否存在起脚序列（`MatchState.shot_setup.is_some()`）。
+    pub has_shot_setup: bool,
+    /// 是否已进入起脚窗口（`ShotSetup::in_window`）。
+    pub in_window: bool,
+    /// 窗口内已消耗的决策 tick 数（`ShotSetup::window_ticks`）。
+    pub window_ticks: u32,
+    /// 推进预算剩余（`ShotSetup::drive_ticks_left`）。
+    pub drive_ticks_left: u32,
+    /// 是否已提交射门（`ShotSetup::committed`）。
+    pub committed: bool,
+    /// 进窗时的压迫桶（`ShotSetup::entry_pressure_bucket`；0 = 贴身 / 1 = 无压 / 2 = 中间）。
+    pub entry_pressure_bucket: u8,
+    /// 持球者压迫状态**剩余**保持 tick 数（倒计时；见结构体 doc 的语义说明）。
+    pub pressure_state_ticks: u32,
+}
+
+impl IntentState {
+    /// 无起脚序列时的取值（`has_shot_setup == false`）。
+    ///
+    /// 它同时是「引擎在无序列时提交什么」的**唯一**定义——提交点不得自行拼字段
+    /// （那会让「无序列」在不同提交点有不同编码）。
+    pub const fn no_shot_setup(pressure_state_ticks: u32) -> Self {
+        IntentState {
+            has_shot_setup: false,
+            in_window: false,
+            window_ticks: 0,
+            drive_ticks_left: 0,
+            committed: false,
+            entry_pressure_bucket: 0,
+            pressure_state_ticks,
+        }
+    }
+}
+
+/// **逐 tick 的意图快照**（P124）。与 [`StateSnapshot`] **同采样点、同拍数**。
+///
+/// ⚠️ **两条通道的对齐是可用性的前提**：`intent_snapshots[i]` 与 `state_snapshots[i]`
+/// 必须指同一拍（`t` 逐位相同）。二者由 `lib.rs` 在同一处相邻提交，
+/// 并由测试 `intent_and_state_snapshots_are_tick_aligned` 守住——**不靠约定，靠断言**。
+/// （P16 的 join bug 正是因为两个集合的下标空间不同步，见 `p16/reference.rs`。）
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct IntentSnapshot {
+    /// 该 tick 的比赛时间（秒），与 [`StateSnapshot::t`] 同一时间轴、同一 basis（`StateCommit`）。
+    pub t: ObservedTime,
+    pub state: IntentState,
+}
+
+/// **一次防守机会点的防守意图**（P124）——**稀疏事件**，每个被评估的机会一条。
+///
+/// ## 为什么是稀疏通道而不是逐 tick 字段
+///
+/// `DefensiveAction` **不是引擎状态**：它是每个机会点由打分选出的**决策输出**，
+/// 引擎只在 tally 里保留累计计数（`defensive_tackle` 等），不留「上一拍选了什么」。
+/// 逐 tick 记录会得到 ~99% 的占位值，且**丢掉分母**（无法区分「没机会」与「选了 None」）。
+/// 故按**事件**记：每条 = 一次被评估并执行的机会 ⇒ 记录条数天然是分母。
+///
+/// ⚠️ 归因靠 `t`（落在某个 episode 的 `[start_t, end_t]` 内），**不靠下标**——
+/// 与 [`IntentSnapshot`] 的逐拍对齐不同，本通道是事件的、自描述时间的。
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct DefensiveIntent {
+    /// 评估该机会的 tick 时刻（`StateCommit`）。
+    pub t: ObservedTime,
+    pub kind: DefensiveIntentKind,
+    /// 被选中的防守者 id；`kind == None` 时为 `None`（没有防守者被选中，不是「防守者未知」）。
+    pub defender: Option<i32>,
+}
+
 // ============================== sidecar（design §3） ==============================
 
 /// 独立的行为诊断 sidecar。`events` 与正式 `simulate()` 的事件流逐字节同源。
@@ -1226,6 +1360,13 @@ pub struct DiagnosticMatch {
     /// 正式路径（`simulate()`）不产出它（recorder 关闭）；opt-in 路径按主 tick 循环
     /// 每拍一条。**不参与 JSON 序列化**（[`Self::events_json`] 只序列化 `events`）。
     pub state_snapshots: Vec<StateSnapshot>,
+    /// **逐 tick 的意图快照（P124，#124）**。与 `state_snapshots` **同采样点**：
+    /// `intent_snapshots[i].t == state_snapshots[i].t`（由测试守，不靠约定）。
+    /// 只读观测量，与 `control_facts` 无关（`gap_count()` 不受影响）。
+    pub intent_snapshots: Vec<IntentSnapshot>,
+    /// **防守机会点的意图事件（P124，#124）**。**稀疏**：每个被评估执行的机会一条
+    /// （见 [`DefensiveIntent`] 的「为什么不是逐 tick 字段」）。只读观测量。
+    pub defensive_intents: Vec<DefensiveIntent>,
     /// 终态观察状态（design §5）。`Ended` 表示事件流收束；`Uninitialized` 出现在 demo 模式
     /// （不为固定动作序列伪造事实）。
     ///
@@ -1425,6 +1566,10 @@ pub struct BehaviorObservationRecorder {
     /// **逐 tick 的位置快照（P16）**。只读观测量，与 `facts` 无关，
     /// 不参与任何不变量检查，也不影响 `gap_count`。
     snapshots: Vec<StateSnapshot>,
+    /// **逐 tick 的意图快照（P124）**。与 `snapshots` **同拍**（同一提交点相邻写入）。
+    intent_snapshots: Vec<IntentSnapshot>,
+    /// **防守机会点的意图事件（P124）**。稀疏。
+    defensive_intents: Vec<DefensiveIntent>,
 }
 
 impl BehaviorObservationRecorder {
@@ -1447,6 +1592,8 @@ impl BehaviorObservationRecorder {
             next_episode_id: 0,
             next_restart_id: 0,
             snapshots: Vec::new(),
+            intent_snapshots: Vec::new(),
+            defensive_intents: Vec::new(),
         }
     }
 
@@ -1480,6 +1627,16 @@ impl BehaviorObservationRecorder {
         &self.snapshots
     }
 
+    /// 逐 tick 的意图快照（P124）。与 [`Self::state_snapshots`] **同拍**。
+    pub fn intent_snapshots(&self) -> &[IntentSnapshot] {
+        &self.intent_snapshots
+    }
+
+    /// 防守机会点的意图事件（P124，稀疏）。
+    pub fn defensive_intents(&self) -> &[DefensiveIntent] {
+        &self.defensive_intents
+    }
+
     pub fn state(&self) -> &BehaviorControlState {
         &self.state
     }
@@ -1509,6 +1666,8 @@ impl BehaviorObservationRecorder {
             restart_sequences: self.restarts,
             phase_segments: Vec::new(),
             state_snapshots: self.snapshots,
+            intent_snapshots: self.intent_snapshots,
+            defensive_intents: self.defensive_intents,
             state: self.state,
             invariant_violations,
         }
@@ -2410,6 +2569,40 @@ impl BehaviorObservationRecorder {
             ball,
             frozen: frozen.to_vec(),
         });
+    }
+
+    /// **逐 tick 的意图快照**（P124，#124）。
+    ///
+    /// 与 [`Self::observe_state`] **同采样点、同一拍**：调用方在 `tick()` 返回之后
+    /// 紧邻提交。设计边界与 `observe_state` 完全一致（只追加 / 值语义 / 零 RNG /
+    /// 关闭时空操作 / 不参与不变量检查）。
+    ///
+    /// ⚠️ **传值语义**：`state` 是 `Copy` 的值对象，**不引用 `MatchState`**——
+    /// 模块头「本文件不引用 `MatchState`」的承诺仍然成立。调用方负责把引擎的
+    /// 私有状态（`ShotSetup` / `pressure_state_ticks`）**映射**成 [`IntentState`]。
+    pub fn observe_intent(&mut self, t: ObservedTime, state: IntentState) {
+        if !self.enabled {
+            return;
+        }
+        self.intent_snapshots.push(IntentSnapshot { t, state });
+    }
+
+    /// **一次防守机会点的意图**（P124，#124）——**稀疏**，每个被评估执行的机会一条。
+    ///
+    /// 与 [`Self::observe_intent`] 不同，本通道**不逐拍**：`DefensiveAction` 是决策输出
+    /// 而非引擎状态，逐拍记会得到 ~99% 的占位值且丢掉分母（见 [`DefensiveIntent`]）。
+    ///
+    /// 设计边界同上（只追加 / 值语义 / 零 RNG / 关闭时空操作 / 不参与不变量检查）。
+    pub fn observe_defensive_intent(
+        &mut self,
+        t: ObservedTime,
+        kind: DefensiveIntentKind,
+        defender: Option<i32>,
+    ) {
+        if !self.enabled {
+            return;
+        }
+        self.defensive_intents.push(DefensiveIntent { t, kind, defender });
     }
 
     /// 半场哨（design §5 第二张表 `半场哨` 列）。

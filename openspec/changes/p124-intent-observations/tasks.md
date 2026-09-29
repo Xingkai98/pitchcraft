@@ -47,12 +47,48 @@
 
 ## Slice 2 — 接出意图信号
 
-- [ ] 读代码定死 `pressure_state` 的语义（design §6.2）
-- [ ] 决策粒度（design §6.1）：逐 tick 全记 vs 变化时记——写进 design 并给理由
-- [ ] recorder 新增只读命令（传值语义，保持「不引用 `MatchState`」）
-- [ ] 接出：`shot_setup` 的 `in_window`/`window_ticks`/`drive_ticks_left`/`committed`/`entry_pressure_bucket`
-- [ ] 接出：`DefensiveAction` 类型 + 持球者压迫
-- [ ] 守卫：`simulate()` 逐字节一致门仍绿；不改 `ControlFact` 闭集；无调试桩
+- [x] 读代码定死 `pressure_state` 的语义（design §6.2）
+- [x] 决策粒度（design §6.1）：逐 tick 全记 vs 变化时记——写进 design 并给理由
+- [x] recorder 新增只读命令（传值语义，保持「不引用 `MatchState`」）
+- [x] 接出：`shot_setup` 的 `in_window`/`window_ticks`/`drive_ticks_left`/`committed`/`entry_pressure_bucket`
+- [x] 接出：`DefensiveAction` 类型 + 持球者压迫
+- [x] 守卫：`simulate()` 逐字节一致门仍绿；不改 `ControlFact` 闭集；无调试桩
+
+### Slice 2 落地形态（`observation.rs` 新增，`lib.rs` 只加提交点）
+
+| 新增 | 粒度 | 内容 |
+|---|---|---|
+| `IntentState` / `IntentSnapshot` | 逐 tick（与 `StateSnapshot` 同拍） | `has_shot_setup` / `in_window` / `window_ticks` / `drive_ticks_left` / `committed` / `entry_pressure_bucket` / `pressure_state_ticks` |
+| `DefensiveIntentKind` / `DefensiveIntent` | **稀疏**（每个被执行的机会一条） | `Tackle`/`Foul`/`Contain`/`Jockey`/`None` + `defender: Option<i32>` |
+
+- **`DefensiveIntentKind` 是新的公开闭集**，不是复用引擎私有的 `DefensiveAction`
+  （后者是决策层实现细节，直接暴露会让改名破 sidecar 契约）。
+  映射函数 `defensive_kind_of` 用**穷尽 `match`**（无 `_ =>`）⇒ 决策层加成员即编译失败。
+- **`IntentState` 不在此归一** `pressure_state_ticks`（原始倒计时 tick 数传出去，见 design §6.2）。
+- **`RECORDER_READS` 同步登记** `.intent_snapshots()` / `.defensive_intents()`
+  （12 → 14），否则 P15 的「lib.rs 不得读观察状态」反向覆盖守卫会漏抓新读方法。
+
+### Slice 2 的守卫与定向变异（**实跑均红**）
+
+| 定向变异 | 抓它的测试 |
+|---|---|
+| 删掉 `observe_intent` 的 `if !self.enabled { return; }` | `intent_export_never_enters_the_formal_path`（空操作契约条） |
+| 只在有起脚序列时提交意图快照（两通道错位） | `intent_export_is_tick_aligned_with_positions` + `intent_semantics_are_pinned` + `defensive_intents_are_sparse_and_well_formed` |
+| `Tackle`/`Foul` 映射互换 | `contact_intents_match_the_event_stream`（**独立来源**交叉核对） |
+| `no_shot_setup` 置 `in_window = true`（混判别位） | `intent_semantics_are_pinned` |
+
+⚠️ **`contact_intents_match_the_event_stream` 的来由**：前三类测试对「闭集内部互换」无感
+（分类仍穷尽、`defender` 语义仍成立）。接触动作**必产事件**（`tackle`/`foul`），
+故用**事件流这一独立来源**核对计数——实测 seed 1/2/3 逐条相等（29/28/33、19/10/24）。
+`contain`/`jockey` **不产事件**（P30 D5），结构上无从与事件流核对，如实记录不冒充。
+
+### Slice 2 实测发现（**已知缺口，记录在案**）
+
+**`committed` 在逐拍采样点上不可观测**（seed 1..=5 全 0）。机制：`shot_window_plan` 的
+提交分支是 `st.shot_setup = None;` **紧接** `execute_action_resolution`——提交与序列销毁
+**同一 tick**，而采样点在 `tick()` 返回之后。⇒ 下游**不得**用它构造意图特征。
+由 `committed_is_not_observable_at_the_per_tick_sampling_point` 钉住（引擎若改提交时序
+它会红，届时须同步更新文档）。
 
 ## Slice 3 — 意图类特征
 
