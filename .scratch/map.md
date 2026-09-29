@@ -55,11 +55,12 @@
 
 > 目标：从“匹配真实比赛统计”推进到“经过真实足球式的状态、空间和动作链”。
 > #15A 观察层已于 2026-09-24 完成，**#17A 行为链基线分析已完成**（2026-09-24，2026-09-25 在
-> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **拍板 #113 的待决项**——
-> **#15B 已暂停**（2026-09-27；结论 2026-09-28 定，GH #113）：`attacking_transition`
-> **是 team-state，不作 possession phase 产出**（与已排除的 `defensive_transition` 同构）；
-> 另三档在 #16 之前无判据。
-> 见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3/§4.5。
+> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **#16 团队与局部空间特征（含 phaseability gate）**
+> （GH #116）——它是 **#15B 的硬前置**：`build_up`/`progression`/`final_third` 三档在 #16 之前无判据
+> （只有坐标，而「区域 ≠ 阶段」是契约明禁）。
+> **#15B 已暂停**（GH #113 结论：`attacking_transition` 是 team-state，不作 possession phase 产出）；
+> 另需用户拍板 #113 的五项待决（见 roadmap §4.5）。
+> 权威路线：`.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3–§4.5、§5。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
 
 - `12` **比赛行为观察契约** ✅ 已通过 grilling
@@ -95,8 +96,9 @@
       重放后哈希已变。除非确需回溯旧分支，否则按 PR/符号名定位。）
     - 已能可靠输出 `ControlFact`、`PossessionEpisode`、`RestartSequence`、contest、结束原因和事件归属；正式事件流保持不变。
     - 300 seed × 90 分钟验证：331,966 facts、26,429 episodes、14,476 restarts、0 gaps；`verify.sh` 全绿。
-  - **#15B PhaseAnnotator：⏸ 暂停（2026-09-27）**——前置是「phase 挂载模型」设计票据
-    [★ #113](issues/113-15b-phase-mounting-model.md)（GH #113，`wayfinder:grilling`，draft）。
+  - **#15B PhaseAnnotator：⏸ 暂停（2026-09-27）**——前置有两块：
+    [★ #113](issues/113-15b-phase-mounting-model.md)（挂载模型，**结论已定**）
+    + [★ #116](issues/116-team-local-spatial-features.md)（空间特征与 phaseability gate，**下一步**）。
     - 第一版只在已确认的 possession episode 内标注 `build_up / progression / final_third / attacking_transition / unknown`。
     - 定位球 delivery 留在 `RestartSequence`，首次明确开放控制前不得伪装成 possession phase。
     - 契约与约束见 `.scratch/notes/match-behavior-observation-design.md` §11；`Phase`/`PhaseProvenance`
@@ -116,11 +118,17 @@
     - **开工前须闭合七项**（谓词、多段切分、`attacking_transition` 边界、`unknown`/provenance、
       时间基准、fixture+变异、provenance 记录）**及与 #16 的接口张力**——
       见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.4。
-- `16` **团队与局部空间特征** ⏳ open
-  - Blocked by: `12`, `13`
+- `16` **团队与局部空间特征（含 phaseability gate）** ⏳ open ← **下一步**
+  [★ #116](issues/116-team-local-spatial-features.md)（GH #116，`wayfinder:research`，draft）
+  - Blocked by: `12`, `13`（均已完成）
   - Type: Research
   - 问题：从当前坐标和 beat/off-ball 信息中，第一版可靠计算哪些宽度、纵深、线间距、支援和压力特征？
-  - 产物：特征定义及缺失数据处理规则；不在此票据内改跑位逻辑。
+  - **本轮新增**：还须产出**面向 phaseability** 的带时间关系特征（球门向净推进 / 推进·回撤·横向转移 /
+    线间距变化 / 接应与人数优势 / 球权后的时间序列）——原候选是静态快照，不足以判 `build_up`/`progression`/`final_third`
+    （`build_up ≠ 后场`、`progression ≠ 球向前移动`）。
+  - **验收 = phaseability gate**：不只「特征算得出来」，还要裁决**三档能否判定**——
+    够则给出可执行谓词（15B 用），不够则明确缺什么、15B 该保留 `unknown` 还是补数据。
+  - 产物：特征定义及缺失数据处理规则；**不在此票据内改跑位逻辑**；**不实现 15B**。
 - `17A` **#15A 行为链基线分析** ✅ 已完成（2026-09-24；2026-09-25 在 main/v7 上重算）
   - Blocked by: `15A`
   - Type: Prototype
