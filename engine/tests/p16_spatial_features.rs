@@ -14,20 +14,16 @@
 //! | [`caliber_never_reads_across_episode_boundaries`] | 口径（不跨 episode 边界） | ✅ |
 //! | [`progress_normalizes_direction_per_team`] | 口径（方向归一） | ✅ |
 //! | [`goal_kick_amplifier_matches_the_pinned_share`] | 口径（放大器记录） | ✅ |
+//! | [`caliber_closing_fact_tie_break_names_the_episode_closing_fact`] | 口径（同刻取法的审计纪律） | ✅ |
 //! | [`caliber_coverage_on_a_real_seed`] | 覆盖率（真实路径下限） | ✅ |
-//! | `p16_canary` | 产物落盘（30 seed） | ❌ `#[ignore]` |
-//! | `p16_baseline` | 产物落盘（300 seed） | ❌ `#[ignore]` |
+//!
+//! **产物落盘测试（`p16_canary` / `p16_baseline`）尚未建**——属 Slice 5，随特征与裁决一并落地。
+//! 届时按 P17A 的形态加 `#[ignore]` 门与 JSON/Markdown 产物。
 //!
 //! 跑法：
 //!
 //! ```text
-//! # 默认快速门
 //! cargo test --test p16_spatial_features
-//! # canary 产物
-//! cargo test --release --test p16_spatial_features -- --ignored --nocapture p16_canary
-//! # 300 seed 基线产物
-//! P16_SOURCE_COMMIT=$(git rev-parse HEAD) \
-//!   cargo test --release --test p16_spatial_features -- --ignored --nocapture p16_baseline
 //! ```
 //!
 //! **行号引用会漂**：本文件的注释与文档一律用**符号名**（函数名 / 结构体名 / 常量名），
@@ -80,7 +76,10 @@ fn coverage_over(first: u64, last: u64) -> CaliberCoverage {
 //
 // 手工 fixture 的字段取值**照真实路径观测到的形状**构造（见本 change 的 recon 实测）：
 // 起点事实恒为 `control_established`、`basis ∈ {engine_state, finalized_outcome}`、
-// 收束侧事实是 `contest_started` 或 `control_established`。
+// 收束侧事实上实际有**四类**（`control_released` / `contest_started` /
+// `control_established` / `open_play_resumed`，实测 100 seed）——
+// 其中 `control_released` 常是「从 Controlled 进争抢」时的族首，见
+// `caliber_closing_fact_tie_break_names_the_episode_closing_fact`。
 // **不构造生产不可达的取值**——否则断言会变成恒真（P15/P36/P17A 的教训）。
 
 fn ev(t: f64, ty: EventType, subject: i32, result: Option<&str>, detail: Option<&str>) -> fm_engine::Event {
@@ -440,19 +439,34 @@ fn caliber_never_reads_across_episode_boundaries() {
 }
 
 /// **同刻取「最早一条」的审计纪律**：`t == end_t` 上有多条带位置事实时，
-/// 取**最早**那条——它是本 episode 的收束侧事实；**最后**那条往往是**下一个 episode 的开启事实**。
+/// 取**最早**那条——它是本 episode 的收束提交序列的**族首**；**最后**那条往往是
+/// **下一个 episode 的开启事实**。
 ///
-/// 这条守卫存在的理由：两种取法的**位置值实测完全一致**（10102 条里 0 条分歧），
-/// 因此上面那些基于位置的断言**抓不到**这个变异（已实测：把 `find` 换成
-/// `filter(..).last()` 全套仍绿）。差异只在**审计栏** `end_fact_kind` ——
+/// 这条守卫存在的理由：两种取法的**位置值实测完全一致**（`end_t` 上 4057 次并列，
+/// 位置分歧 0 次），因此上面那些基于位置的断言**抓不到**这个变异（已实测：把 `find`
+/// 换成 `filter(..).last()` 全套仍绿）。差异只在**审计栏** `end_fact_kind`——
 /// 它决定报告里「终点取的哪类事实」这句话对不对。故本测试**直接断言 `end_fact_kind`**。
+///
+/// ⚠️ **fixture 必须造生产可达的序列**（本仓「fixture 入参必须生产可达」的教训）：
+/// 真实路径上，从 `Controlled` 态进争抢时 `observation.rs` 的 `contest_started`
+/// **必先** push `ControlReleased` **再** push `ContestStarted`（同 `t` 同 `location`），
+/// 故族首是 **`control_released`** 而不是 `contest_started`（实测 100 seed：
+/// `control_released` 1587 条 / `contest_started` 3103 条）。旧版 fixture 省掉了那条
+/// 前置事实，是**生产不可达**的形状。
 #[test]
 fn caliber_closing_fact_tie_break_names_the_episode_closing_fact() {
-    // 生产可达形状（`saved_caught` / 争抢收束）：同一 `t` 上，先本 episode 的收束事实
-    // （`contest_started`，带位置），紧接下一个 episode 的开启事实（`control_established`）。
+    // 生产可达形状（从 Controlled 进争抢 → 随后 advance_loose 的 pickup 开启下一条）
     let mut f = fixture((0.2, 0.5), &[], None);
     let t = 10.0;
-    // 第一个 episode 的 end_t 此刻是死球时刻 10.0（见 fixture 的 None 分支）。
+    // 本 episode 的收束提交序列：release 在前、contest 在后（同 t 同 location）
+    f.facts.push(fact(
+        t,
+        ControlFactKind::ControlReleased,
+        Some(TeamId::Home),
+        Some((0.66, 0.33)),
+        ControlFactBasis::EngineState,
+        None,
+    ));
     f.facts.push(fact(
         t,
         ControlFactKind::ContestStarted,
@@ -461,31 +475,31 @@ fn caliber_closing_fact_tie_break_names_the_episode_closing_fact() {
         ControlFactBasis::FinalizedOutcome,
         Some(ControlFactDetail::ContestStart(ContestStartReason::PassLost)),
     ));
+    // 下一个 episode 的开启事实：**位置刻意不同**，好让「取错了」能被位置断言抓到
     f.facts.push(fact(
         t,
         ControlFactKind::ControlEstablished,
         Some(TeamId::Home),
-        Some((0.67, 0.34)),
+        Some((0.95, 0.95)),
         ControlFactBasis::EngineState,
         None,
     ));
-    // 重新设定第一个 episode 的收束原因（contest 收束）
     f.episodes[0].end_reason = Some(EpisodeEndReason::ControlLost);
     let dm = f.dm();
     let c = caliber_of(&dm, &dm.possession_episodes[0]).expect("口径应可导出");
 
     assert_eq!(
         c.end_fact_kind,
-        Some(ControlFactKind::ContestStarted),
-        "同刻有两条带位置事实时必须取**最早**那条（本 episode 的收束事实 contest_started），\
-         而不是最后那条（下一个 episode 的开启事实 control_established）——\
-         两种取法的位置值相同，故本条**只能**靠断言 end_fact_kind 来守"
+        Some(ControlFactKind::ControlReleased),
+        "同刻有多个带位置事实时必须取**最早**那条（收束提交序列的族首 = control_released），\
+         而不是最后那条（下一个 episode 的开启事实 control_established）"
     );
     assert_eq!(
         c.end,
         Some((0.66, 0.33)),
-        "位置取最早那条的（与最后那条 0.67,0.34 不同——本 fixture 刻意让两者可分）"
+        "位置取族首那条——不得是下一条 episode 的 (0.95,0.95)"
     );
+    assert_ne!(c.end, Some((0.95, 0.95)), "终点不得跨到下一个 episode");
     assert!(c.end_fact_at_close);
 }
 

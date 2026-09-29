@@ -20,12 +20,32 @@
 （不可得的 13.2% 按 `end_reason` 分解在 `CaliberCoverage.end_missing_by_reason`）；
 两口径推进带分歧率 **25.7%**（复现侦察报告 §2 的 3 倍差）。
 
-## Slice 2 — 静态特征接入
+## Slice 2 — 静态特征接入（G1 已批准：引擎导出位置）
 
-- [ ] 决策 JS→Rust 层差（design §5.1）：移植 `teamShape` 进 Rust，或引擎导出快照
-- [ ] 接入 `depth` / `width` / `cx`,`cy` / `spread` / `n`
+- [ ] 引擎侧新增 `observe_state` 命令 + `DiagnosticMatch.state_snapshots` 字段
+      （**只加字段/命令，不改 `ControlFact` 闭集、不改正式事件流**）
+- [ ] 采样点 = **`match_events` 的 `while t < dur { tick(...); }` 循环体内、`tick` 返回之后**
+      （⚠️ **不是** `emit_beat_with_main`——实测 ≥16.7% 的拍不经它，且 34/5399 个 tick
+      根本不产 beat，见 `POSITION-EXPORT-DESIGN.md` §2.4）。**拍 = tick，不是 beat**
+- [ ] `frozen` 取自 `st.highlight` 的 `participants`，**在 finalize 之前**取
+      （实测飞行期冻结者的位置本来就不动，故 `frozen` 的用途是「标记进行中的量」，
+      不是「防陈旧」；成本 ≈ 0，每拍 0.233 人）
+- [ ] 守卫：① `simulate()` 逐字节一致门仍绿（recorder 空操作）；
+      ② **快照 = `st.pos` 逐位恒等**（G1 的核心承诺，须定向变异可红）；
+      ③ **快照数 == tick 数**（≠ beat 数，seed 1：5399 vs 5365）；
+      ④ `DiagnosticMatch` 三处构造点（`into_diagnostic_match` / P16 fixture / P17A `empty_dm`）
+      同步更新（全字段字面量 → 漏改是编译错，非静默）
+- [ ] 接入 `depth` / `width` / `cx`,`cy` / `spread` / `n`（Rust 侧口径与 `match-metrics.js` 对齐，
+      与标尺在整秒点上互为哨兵）
+- [ ] 编码保持 `[(f64,f64); 22]`——**不得**改 `f32`/量化（那会破坏「逐位恒等」这条 G1 的立身之本）
 - [ ] 报告每项的可算帧占比与 `unknown` 占比
 - [ ] 明确记录：`includeExtrapolated` / `MIN_OUTFIELD_PLAYERS` 在**引擎侧是空操作**
+
+## 产物纪律（本 change 新增）
+
+- [ ] **探针比较函数须对「比较失败」有区分度**（`NaN` 显式判红）+ **每张表写明对照两端**。
+      来由：本 change 曾用 `.x`/`.y` 误用数组得 `NaN`，而 `NaN > max` 恒假 ⇒ 打出
+      「`max|Δ| = 0.000000`」的**假证据**。可复现探针：`notes/probes/position-fidelity.mjs`
 
 ## Slice 3 — 时间关系特征（本 change 的实际工作量）
 

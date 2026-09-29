@@ -15,7 +15,7 @@
 //!    实测机制：episode 开场通常是带球（`beat.main`），首个决策动作晚**中位 8 秒**
 //!    （p10 −2s / p90 16s，n=9292，100 seed）——届时球已离开后场。
 //! 2. **起止同源**：起点取该 episode 的**首条** `control_established` 事实；
-//!    终点取**同一条事实族**在 episode 窗内、下标严格晚于起点事实的**最后一条**带位置事实。
+//!    终点取**同一条事实族**（见 [`closing_fact`] 的两段规则）。
 //!    两处都读 [`ControlFact::location`]，不一处用事实、一处用动作位置。
 //! 3. **缺失不猜**：收束侧位置不可得 → 该 episode 的**终点位置口径不可用**
 //!    （`None`），由下游计入 `unknown`，不退回起点、不取动作位置、不插值。
@@ -116,7 +116,9 @@ pub struct EpisodeCaliber {
     /// 终点在进攻方向上的推进度；`end` 为 `None` 时同为 `None`。
     pub end_progress: Option<f64>,
     /// 供出终点的**事实类型**。审计用：让 reviewer 不必读源码就能核对
-    /// 「终点到底取的是哪一类事实」。
+    /// 「终点到底取的是哪一类事实」。四类都可能出现（`control_released` /
+    /// `contest_started` / `control_established` / `open_play_resumed`），
+    /// 见 [`closing_fact`] 的说明。
     pub end_fact_kind: Option<ControlFactKind>,
     /// 供出终点的事实相对 `end_t` 是否**同刻**（= 收束侧事实）。
     /// `false` 表示取的是窗内较早的一条（episode 以死球/哨声收束时没有位置的收束事实）。
@@ -157,9 +159,25 @@ impl EpisodeCaliber {
 /// `observation.rs` 的 `control_established`：同 `t` 里先 `close_episode` 再
 /// `open_new_episode`）。
 ///
-/// **两种取法的位置值实测完全一致**（10102 条里 0 条分歧）——差异只在**审计栏**
-/// （`end_fact_kind` 报的是什么）。故这条选择是为了让「终点到底取的哪类事实」这句话
-/// 说得准，不是为了让数字好看。
+/// **两种取法的位置值实测完全一致**：`end_t` 上出现多条带位置事实的 **4057** 次里，
+/// 位置**分歧 0 次**（`kind` 分歧 4057 次）。故这条选择是为了让「终点到底取的哪类事实」
+/// 这句话说得准，不是为了让数字好看。
+///
+/// ## 收束侧事实上实际会出现**四类**（实测 100 seed，非两类）
+///
+/// 「最早一条」命中的是**收束提交序列的第一条**，而不总是 `contest_started`：
+///
+/// | kind | 条数（100 seed / 10102 ep） | 什么时候是它 |
+/// |---|---|---|
+/// | `control_released` | 1587 | 从 `Controlled` 态进争抢：`observation.rs` 的 `contest_started` 在 `!already_released` 时**先** push `ControlReleased` **再** push `ContestStarted`（同 `t` 同 `location`） |
+/// | `contest_started` | 3103 | 从 `BallInFlight` 态进争抢（`already_released`）——没有前置的 release |
+/// | `control_established` | 4106 | 跨队易主 / pickup 的同刻交接 |
+/// | `open_play_resumed` | 2 | 重开交付收束（`control_established` 里有开放 restart 时先 push 它） |
+///
+/// **这不是缺陷**：四者都带 `ControlFact.location`，与起点同源；且实测
+/// **同刻多条带位置事实时位置值恒相同**（4057 次并列，**0 次位置分歧**）——
+/// 差异只在审计栏 `end_fact_kind`。文档先前只列两类是**记录不全**，
+/// 会把报告里「终点取哪类事实」这句话讲错。
 ///
 /// ⚠️ 为什么**不**把搜索限制在 `episode.control_fact_indexes` 里：收束侧事实往往**不属于**
 /// 该 vector（跨队易主的 `control_established` 只记进新 episode），限制在那里会丢掉
