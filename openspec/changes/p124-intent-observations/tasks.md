@@ -143,10 +143,72 @@ position 只活在 `dm.state_snapshots`，故意图特征及其**任何** helper
 
 ## Slice 4 — 重跑 phaseability gate
 
-- [ ] 用「P16 空间特征 + 本 change 意图特征」重跑三档 AUC
-- [ ] **与 P16 基线并列对照**（哪些改善了、哪些没有）
-- [ ] **再净化一次混淆**（带反证条）
-- [ ] 硬约束检查：不得把区域/坐标当阶段；几何代理须命名为证据
+- [x] 用「P16 空间特征 + 本 change 意图特征」重跑三档 AUC
+- [x] **与 P16 基线并列对照**（哪些改善了、哪些没有）
+- [x] **再净化一次混淆**（带反证条）
+- [x] 硬约束检查：不得把区域/坐标当阶段；几何代理须命名为证据
+
+### 重跑结果（30 seed / 3075 episode；`tests/p124/phasegate.rs`）
+
+**`final_third` vs 其余**（P16 基线 `forward_m/s` = 0.855 已复现）：
+
+| 特征 | AUC | 种类 |
+|---|---|---|
+| `forward_m/s[空间]`（P16 最强） | **0.855** | 空间 |
+| `window_opened` / `window_share` / `setup_share` | **0.966** | 意图 |
+| `first_window_frac` | 0.850 | 意图 |
+| `def_none[循环·仅对照]` | 0.934 | **循环**（见下） |
+| `def_per_s` | 0.694 | 意图 |
+| 其余意图特征 | 0.28–0.69 | 意图 |
+
+**`build_up` vs `progression`**（P16 基线 `forward_m/s` = 0.461 已复现）：
+
+| 特征 | AUC | 样本 |
+|---|---|---|
+| `forward_m/s[空间]`（P16 基线） | 0.461 | 476 / 851 |
+| **全部样本充足的意图特征** | **0.449–0.546**（\|Δ\| ≤ **0.06**） | 476 / 851 |
+| `first_window_frac` / `max_window_ticks` | 0.281 / 0.375 | **pos=4 neg=8 → 不作证据** |
+
+⇒ **意图信号救不了 `build_up` / `progression`**。这是本 change 对 P16 裁决的**确认**（非推翻）。
+
+### ⚠️ 循环性发现（本 change 实测，**必须读**）
+
+`def_none`（防守方「无动作」比例）对 `final_third` 的 AUC 高达 **0.934**——
+**但它是循环的**：起脚窗口内 `committed` 的 tick，`evaluate_defensive_action` 的
+不可回溯守卫直接返回 `DefensiveAction::None`。实测 seed 1/2/3：**射门 tick 上的防守意图
+21/21、21/21、14/14 全是 `none`**。⇒ `def_none` 与参考集谓词 `ends_shot` **机制同源**，
+AUC 是同义反复。已标注 `[循环·仅对照]`，**不得**作为判别力证据。
+由 `def_none_signal_is_mechanically_tied_to_shots` 钉住机制。
+
+### ⚠️ 一次**假发现**被样本量门槛拦下（本 change 的关键纪律）
+
+`first_window_frac` 在 build_up vs progression 上算出 AUC = **0.281**（\|Δ\|=0.219），
+看着像「意图特征分开了这两档」。**但 pos=4 / neg=8 只有 12 个样本**——
+AUC 标准误差 ≈0.184，0.219 不到 1.2σ，**纯噪声**。
+根因：该特征只在**开窗**的 episode 上可算，而这两档定义就含 `!has_shot`，几乎从不开窗。
+
+⇒ 新增**逐行**样本量门槛（`MIN_SIDE_FOR_SEPARABILITY = 50`，`GateRow::is_adequately_sampled`）：
+不足的行**不作证据，但必须打印**（不静默跳过）。定向变异证明它承载判据
+（门槛设 0 ⇒ 两条测试当场红）。
+
+⚠️ **与 P16 的「小样本不可信」教训不同，别混**：P16 的 v2 是**用「小样本」解释一个 join bug
+的症状**（AUC 其实稳定在 0.6–0.86，根本没「塌回 0.5」）。本条不是在解释异常，
+而是**在断言之前先问样本够不够**——结论是「这条特征在两档间几乎没有样本，
+故它**两种结论都得不出**」。
+
+### Slice 4 的定向变异（**实跑均红**）
+
+| 定向变异 | 抓它的测试 |
+|---|---|
+| intent 数组与 feats 下标错位（`+1`） | `gate_rerun_and_p16_baseline_side_by_side` + `purification_over_intent_features_reproduces_the_verdict` |
+| 样本量门槛设 0（取消门槛） | 同上两条（**门槛本身承载判据**） |
+
+### 硬约束检查
+
+- **不得把区域/坐标当阶段**：本 change **不产出任何** `Phase`；意图特征命名均为
+  观测语义（`window_*` / `pressure_*` / `def_*`），空间侧沿用 P16 的 `[空间]` / `[区域量·仅对照]` 标注；
+- **几何代理须命名为证据**：本 change 未新增任何几何代理；
+- 空间侧的 8 条与 P16 的 `separability` **逐条同输出**（`spatial_rows_match_the_p16_separability` 守）。
 
 ## Slice 5 — 裁决与产物
 

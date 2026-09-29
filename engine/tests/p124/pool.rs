@@ -43,3 +43,54 @@ pub fn observe(seed: u64) -> DiagnosticMatch {
 pub fn pool_gate_seeds() -> crate::probe::Pooled {
     crate::probe::pool_episodes(GATE_SEEDS, observe)
 }
+
+/// **一次池化，同时给出三样**——意图特征与特征**必须同一次池化**产生，
+/// 否则两条平行数组的下标空间可能错位（P16 join bug 的同型）。
+///
+/// ⚠️ 这是唯一允许构造「意图特征 + 空间特征」配对的入口：
+/// 它把 `pool.feats[i]`、`pool.facts[i]`、`intents[i]` 绑成同一组逐 seed 追加，
+/// 并在返回前断言三者同长。任何一侧单独走别的路径都可能让下标空间分叉。
+pub struct PooledWithIntent {
+    pub pool: crate::probe::Pooled,
+    pub intents: Vec<crate::intent::EpisodeIntent>,
+}
+
+/// 池化特征 + 意图（**同一次遍历**，逐 seed 追加，返回前断言三者同长）。
+pub fn pool_gate_seeds_with_intents() -> PooledWithIntent {
+    let mut feats: Vec<(usize, crate::gate::EpisodeFeature)> = Vec::new();
+    let mut facts: Vec<Option<crate::reference::ActionFacts>> = Vec::new();
+    let mut intents: Vec<crate::intent::EpisodeIntent> = Vec::new();
+    let mut offset = 0usize;
+    for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
+        let dm = observe(seed);
+        let n = dm.possession_episodes.len();
+        let f = crate::gate::episode_features(&dm);
+        let a = crate::gate::action_facts(&dm);
+        let i = crate::intent::match_intents(
+            &dm.intent_snapshots,
+            &dm.defensive_intents,
+            &dm.possession_episodes,
+        );
+        assert_eq!(f.len(), n, "seed {seed}：口径特征数 != episode 数");
+        assert_eq!(a.len(), n, "seed {seed}：动作事实数 != episode 数");
+        assert_eq!(i.len(), n, "seed {seed}：意图特征数 != episode 数");
+        feats.extend(f.into_iter().map(|(k, e)| (k + offset, e)));
+        facts.extend(a);
+        intents.extend(i);
+        offset += n;
+    }
+    assert_eq!(feats.len(), facts.len());
+    assert_eq!(
+        feats.len(),
+        intents.len(),
+        "意图特征与空间特征长度不等——下标空间已错位（P16 join bug 同型）"
+    );
+    PooledWithIntent {
+        pool: crate::probe::Pooled {
+            feats,
+            facts,
+            seeds: GATE_SEEDS,
+        },
+        intents,
+    }
+}

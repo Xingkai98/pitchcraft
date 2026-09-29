@@ -45,6 +45,8 @@ mod purify;
 mod pool;
 #[path = "p124/intent.rs"]
 mod intent;
+#[path = "p124/phasegate.rs"]
+mod phasegate;
 
 // 复用 P16 的管线（**只读**：不改 `tests/p16/*`，只 include 其模块）。
 //
@@ -1059,4 +1061,268 @@ fn defensive_intents_are_attributed_by_time_window_not_by_index() {
         it_edge.def_opportunities, 2,
         "闭区间 `[start, end]` 的边界事件应计入（与 P16 帧过滤同口径）"
     );
+}
+
+// ============================== Slice 4：重跑 phaseability gate ==============================
+
+/// **空间侧的行必须与 P16 的 `separability` 同输出**——防止本 change 悄悄换掉对照基线。
+///
+/// 判据：同一池化空间、同一参考集，`phasegate::rate_auc_spatial`（本模块另写的等价实现）
+/// 与 P16 的 `gate::separability`（原实现）对**每一条空间特征**给出**同一个** AUC。
+/// 若不同，说明本 change 的对照列与 P16 的基线不可比——那整张对照表就是废的。
+#[test]
+fn spatial_rows_match_the_p16_separability() {
+    let p = pool_gate_seeds();
+    let sets = crate::phasegate::zone_sets(&p);
+    let get = |name: &str| -> Vec<usize> {
+        sets.iter().find(|(n, _)| *n == name).map(|(_, v)| v.clone()).unwrap_or_default()
+    };
+    for zone in ["final_third_candidate", "build_up_candidate", "progression_candidate"] {
+        let set = get(zone);
+        let p16_rows = crate::gate::separability(&set, &p.feats);
+        let mine = crate::phasegate::gate_rows(&p, &vec![Default::default(); p.feats.len()], &set, &crate::probe::complement(&p, &set), "x");
+        for r16 in &p16_rows {
+            if let Some(mine_row) = mine.iter().find(|m| m.feature == r16.feature) {
+                match (r16.auc, mine_row.auc) {
+                    (Some(a), Some(b)) => assert!(
+                        (a - b).abs() < 1e-12,
+                        "空间特征 `{}` 在档 `{zone}`：P16 `separability` 给 {a:.6}，\
+                         本模块给 {b:.6}——对照基线被换掉了，两侧不可比",
+                        r16.feature
+                    ),
+                    (None, None) => {}
+                    (x, y) => panic!(
+                        "空间特征 `{}` 在档 `{zone}`：一侧可算一侧不可算（P16={x:?} vs 本模块={y:?}）",
+                        r16.feature
+                    ),
+                }
+            }
+        }
+    }
+    println!("空间侧 {} 档与 P16 的 `separability` 逐条同输出", 3);
+}
+
+/// **`def_none` 的信号与射门机制同源**——循环性防护的判别力测试。
+///
+/// 机制（读代码 + 实测）：起脚窗口内 `committed` 的 tick，`evaluate_defensive_action`
+/// 的不可回溯守卫直接返回 `DefensiveAction::None`。⇒ 射门 tick 上的防守意图**必然是
+/// `none`**。实测 seed 1/2/3：射门 tick 上的防守意图 **21/21、21/21、14/14** 全是 `none`。
+///
+/// 因此 `def_none` 对 `final_third`（参考集谓词 = `ends_shot`）的 AUC 是**循环的**，
+/// 已被标注 `[循环·仅对照]`，不得作为证据。
+///
+/// ⚠️ 本测试**钉住这条机制**：若哪天引擎改了（提交后防守侧不再被强制 `None`），
+/// 本测试变红，那条「循环」标注必须一起更新——不让一条陈旧的解释留在产物里。
+#[test]
+fn def_none_signal_is_mechanically_tied_to_shots() {
+    for seed in [1u64, 2, 3] {
+        let dm = observe(seed);
+        let shot_ts: std::collections::BTreeSet<u64> = dm
+            .events
+            .iter()
+            .filter(|e| e.type_ == fm_engine::EventType::Shot)
+            .map(|e| (e.t * 1000.0).round() as u64)
+            .collect();
+        assert!(!shot_ts.is_empty(), "seed {seed} 无射门事件——本测试无判别力");
+        let mut on_shot = 0usize;
+        let mut on_shot_none = 0usize;
+        for d in &dm.defensive_intents {
+            if shot_ts.contains(&((d.t.value * 1000.0).round() as u64)) {
+                on_shot += 1;
+                if d.kind == DefensiveIntentKind::None {
+                    on_shot_none += 1;
+                }
+            }
+        }
+        assert!(on_shot > 0, "seed {seed}：没有一个防守机会落在射门 tick 上——样本异常");
+        assert_eq!(
+            on_shot_none, on_shot,
+            "seed {seed}：射门 tick 上的防守意图 {on_shot_none}/{on_shot} 是 `none`，\
+             但守卫要求**全部**为 `none`（`committed` 不可回溯）。\
+             若引擎改了这条时序，`def_none` 的「循环」标注须一起更新。"
+        );
+    }
+    println!("射门 tick 上的防守意图恒为 `none`（不可回溯守卫）——`def_none` 与 `ends_shot` 机制同源");
+}
+
+/// **重跑 gate：与 P16 基线并列对照**（Slice 4 的主产出）。
+///
+/// 断言三件事：
+/// ① **P16 基线复现**——`forward_m/s` 对 `final_third` 仍 ≈0.855、
+///    对 `build_up` vs `progression` 仍 ≈0.461（否则对照表不可比）；
+/// ② **意图特征不足以分开 `build_up` / `progression`**——所有**非循环**意图特征的
+///    `|AUC−0.5|` 都 ≤ 0.15（干净战场：两档都含 `!has_shot`，不受 `def_none` 循环影响）；
+/// ③ **`final_third` 的意图信号**：`window_opened` / `setup_share` 应强
+///    （起脚窗口是射门的前置），但 `def_none` 除外（`[循环·仅对照]`）。
+///
+/// ⚠️ 容差 0.15 的依据：P16 的空间侧最强非循环量 0.634（`|Δ|=0.134`），
+/// 故 0.15 是「不比 P16 已知的最强空间量更弱」的**同尺度**门槛。
+/// 越出即「意图特征分开了这两档」——那是一个**新发现**，裁决须相应改写。
+#[test]
+fn gate_rerun_and_p16_baseline_side_by_side() {
+    let pw = pool_gate_seeds_with_intents();
+    let t = crate::phasegate::verdict_table(&pw.pool, &pw.intents);
+    println!("phaseability gate 重跑（{}）：", pw.pool.caliber_line());
+    println!("-- final_third vs 其余 --");
+    for r in &t.final_vs_rest {
+        if r.auc.is_some() {
+            println!("   {:<34} AUC={:.3} [{:?}]", r.feature, r.auc.unwrap(), r.provenance);
+        }
+    }
+    println!("-- build_up vs progression --");
+    for r in &t.build_vs_prog {
+        if r.auc.is_some() {
+            println!("   {:<34} AUC={:.3} [{:?}]", r.feature, r.auc.unwrap(), r.provenance);
+        }
+    }
+    // ① P16 基线复现。
+    let p16_final = t
+        .final_vs_rest
+        .iter()
+        .find(|r| r.feature == "forward_m/s[空间]")
+        .and_then(|r| r.auc)
+        .expect("final_third 的 forward_m/s AUC 应可算");
+    assert!(
+        (p16_final - 0.855).abs() <= 0.05,
+        "P16 基线未复现：forward_m/s 对 final_third AUC = {p16_final:.3}（P16 实测 0.855）——\
+         对照表不可比，先查池化/参考集是否与 P16 同源"
+    );
+    let p16_bp = t.p16_baseline_build_vs_prog().expect("P16 的 build vs prog AUC 应可算");
+    assert!(
+        (p16_bp - 0.461).abs() <= 0.06,
+        "P16 基线未复现：forward_m/s 对 build_up vs progression AUC = {p16_bp:.3}（P16 实测 0.461）"
+    );
+    // ② 干净战场：非循环意图特征分不开 build_up / progression。
+    //    ⚠️ **样本量门槛先于断言**（见 `MIN_SIDE_FOR_SEPARABILITY` 的 doc）：
+    //    本 change 实测到一次**假发现**——`first_window_frac` 在 pos=4/neg=8 上算出
+    //    AUC 0.281，看着像「意图分开了两档」，实为 12 个样本上的噪声。
+    //    样本不足的行**不参与断言**，但**必须打印**（不得静默跳过）。
+    let mut undersized: Vec<&str> = Vec::new();
+    for r in &t.build_vs_prog {
+        if r.provenance != crate::phasegate::Provenance::Intent {
+            continue; // 空间量另有 P16 的结论；循环量另有标注
+        }
+        let Some(a) = r.auc else { continue };
+        if !r.is_adequately_sampled() {
+            println!(
+                "   [样本不足·不作证据] {}：AUC={a:.3} {}",
+                r.feature,
+                r.undersized_note().unwrap_or_default()
+            );
+            undersized.push(r.feature);
+            continue;
+        }
+        assert!(
+            (a - 0.5).abs() <= 0.15,
+            "意图特征 `{}` 把 build_up 与 progression 分开了（AUC = {a:.3}，|Δ| = {:.3} > 0.15，\
+             pos={} neg={} 样本充足）——这是**新发现**，裁决必须改写（当前裁决建立在「分不开」上）。\
+             ⚠️ 先排除循环/混淆（两档 motif 都含 `!has_shot`，理论上不受 `def_none` 影响）。",
+            r.feature,
+            (a - 0.5).abs(),
+            r.pos_n,
+            r.neg_n
+        );
+    }
+    assert!(
+        !undersized.is_empty(),
+        "本测试**期望**至少有一条意图特征在两档间样本不足（`first_window_frac` / `max_window_ticks`：\
+         两档几乎从不开窗）。若一条都没有，说明样本量门槛已失效（或数据变了）——\
+         届时须重新核对「哪些行算证据」，不要让一条空的分支留在测试里。"
+    );
+    // ③ final_third 的意图信号：起脚窗口类特征应强。
+    for name in ["window_opened", "setup_share"] {
+        let a = t
+            .final_vs_rest
+            .iter()
+            .find(|r| r.feature == name)
+            .and_then(|r| r.auc)
+            .unwrap_or_else(|| panic!("`{name}` 的 AUC 应可算"));
+        assert!(
+            a > 0.9,
+            "`{name}` 对 final_third 的 AUC = {a:.3} 应 > 0.9（起脚窗口是射门的前置）——\
+             低于说明意图接出与射门脱节"
+        );
+    }
+    // ④ `def_none` 的循环性必须**在表里可见**（标了 `[循环·仅对照]`）。
+    assert!(
+        t.final_vs_rest
+            .iter()
+            .any(|r| r.feature.contains("循环") && r.provenance == crate::phasegate::Provenance::Circular),
+        "表中必须有一条标为 `[循环·仅对照]` 的特征（`def_none`）——否则读者会把它的高 AUC \
+         当成判别力证据（它其实是 `ends_shot` 的同义反复）"
+    );
+}
+
+/// **再净化一次**——接入意图信号后，重新做一次 motif 混淆净化（design §3 的要求）。
+///
+/// 判据：在三个净化臂（current / drop_restart / drop_passcount）下，
+/// **所有非循环意图特征**对 `build_up` vs `progression` 的 AUC 都仍 ≤0.15 偏离 0.5。
+///
+/// ⚠️ 这条**只覆盖意图特征**：空间侧的净化已在 `purification_reproduces_the_p16_verdict`
+/// 里做（同管线、同反证条）。本测试是它在意图侧的**对应物**——「接入新信号后必须再净化
+/// 一次，否则分不清分开是因为意图还是因为传球数/重开」。
+#[test]
+fn purification_over_intent_features_reproduces_the_verdict() {
+    let pw = pool_gate_seeds_with_intents();
+    let rows = crate::phasegate::purification_over_intent(&pw.pool, &pw.intents);
+    println!("意图特征的净化（{}）：build_up vs progression", pw.pool.caliber_line());
+    for (arm, feats) in &rows {
+        println!("-- {arm} --");
+        for r in feats {
+            println!(
+                "   {:<34} AUC={:?}  [pos={} neg={} skip={}]",
+                r.feature,
+                r.auc.map(|a| (a * 1000.0).round() / 1000.0),
+                r.pos_n,
+                r.neg_n,
+                r.skipped
+            );
+        }
+    }
+    // 每个臂下，非循环意图特征都不得分开两档。
+    //
+    // ⚠️ **样本量门槛同样适用**（`MIN_SIDE_FOR_SEPARABILITY`）：`purification_over_intent`
+    // 返回的只有 AUC，故这里另查一遍每侧的样本量——做法是**复算**同一对集合的规模，
+    // 而不是猜。这是与 `gate_rerun_and_p16_baseline_side_by_side` 相同的判据，不是另立一套。
+    let circular: Vec<&str> = crate::phasegate::INTENT_FEATURES
+        .iter()
+        .filter(|s| s.provenance == crate::phasegate::Provenance::Circular)
+        .map(|s| s.name)
+        .collect();
+    let _ = &circular;
+    let mut undersized_seen = 0usize;
+    for (arm, feats) in &rows {
+        for r in feats {
+            if r.provenance == crate::phasegate::Provenance::Circular {
+                continue;
+            }
+            let Some(a) = r.auc else { continue };
+            // ⚠️ **逐行**判样本量（不是按臂）：臂的集合可能很大，但这条特征可能只在
+            // 少数 episode 上可算（实测 `first_window_frac` 在两档间 pos=4 / neg=8）。
+            if !r.is_adequately_sampled() {
+                println!(
+                    "   [样本不足·不作证据] {arm}/{}：AUC={a:.3} {}",
+                    r.feature,
+                    r.undersized_note().unwrap_or_default()
+                );
+                undersized_seen += 1;
+                continue;
+            }
+            assert!(
+                (a - 0.5).abs() <= 0.15,
+                "净化臂 `{arm}` 下意图特征 `{}` 的 AUC = {a:.3}（|Δ| = {:.3}，pos={} neg={}）——\
+                 它把 build_up / progression 分开了。裁决须改写。",
+                r.feature,
+                (a - 0.5).abs(),
+                r.pos_n,
+                r.neg_n
+            );
+        }
+    }
+    assert!(
+        undersized_seen > 0,
+        "本测试**期望**有若干行因样本不足而不作证据（`first_window_frac` 等只在小部分 episode 上可算）\
+         ——一条都没有说明样本量门槛失效"
+    );
+    println!("三臂净化下，样本充足的意图特征均分不开 build_up / progression");
 }
