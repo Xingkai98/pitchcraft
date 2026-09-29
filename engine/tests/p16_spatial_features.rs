@@ -30,6 +30,12 @@
 //! | [`support_uses_ball_position_and_only_counts_players_ahead`] | 时间关系（接应：球位 + 前方） | ✅ |
 //! | [`time_relationship_feature_coverage_on_a_real_seed`] | 时间关系（覆盖率 + 缺失分类） | ✅ |
 //! | [`all_feature_times_use_a_single_basis`] | 时间关系（时间基准不混用） | ✅ |
+//! | [`motifs_do_not_use_position`] | gate（**参考集不得用位置**，头号纪律） | ✅ |
+//! | [`reference_sets_are_sized_and_documented`] | gate（参考集规模 + 重叠） | ✅ |
+//! | [`phaseability_separability_is_measured`] | gate（可分性实测） | ✅ |
+//! | [`phaseability_verdict_is_not_enough_and_the_evidence_shows_chance_level_auc`] | gate（**裁决：不够**） | ✅ |
+//! | [`reference_set_source_references_no_position_quantity`] | gate（循环性防护：**源码扫描**） | ✅ |
+//! | [`reference_predicate_semantics_are_pinned`] | gate（谓词语义被钉住） | ✅ |
 //!
 //! **产物落盘测试（`p16_canary` / `p16_baseline`）尚未建**——属 Slice 5，随特征与裁决一并落地。
 //! 届时按 P17A 的形态加 `#[ignore]` 门与 JSON/Markdown 产物。
@@ -49,9 +55,12 @@ mod caliber;
 mod shape;
 #[path = "p16/features.rs"]
 mod features;
+#[path = "p16/gate.rs"]
+mod gate;
 
 use caliber::*;
 use features::*;
+use gate::*;
 use shape::*;
 use fm_engine::observation::*;
 use fm_engine::{simulate_with_behavior_observations, EventType, MatchConfig};
@@ -61,10 +70,6 @@ use fm_engine::{simulate_with_behavior_observations, EventType, MatchConfig};
 const DUR: f64 = 5400.0;
 /// 默认快速门用的 seed 数（覆盖 90 分钟整场，含各种收束路径）。
 const QUICK_SEEDS: (u64, u64) = (1, 10);
-/// canary 产物：**baseline 的前缀子集**，保证 canary 上的变化在 baseline 可见。
-const CANARY_SEEDS: (u64, u64) = (1, 30);
-/// 300 seed 基线（与 P17A 同区间，供前后对比）。
-const BASELINE_SEEDS: (u64, u64) = (1, 300);
 
 fn cfg() -> MatchConfig {
     MatchConfig {
@@ -293,6 +298,18 @@ impl Fixture {
 // | 斜率用末减首 | `slope()` 换成端点差 | `line_spacing_slope_is_least_squares_not_endpoint_difference` |
 // | 接应去掉「球前方」 | 删 `along < SUPPORT_MIN_FORWARD_M` | `support_uses_ball_position_and_only_counts_players_ahead` |
 // | 接应参考点用重心 | `bx/by` 取 `team_shape.cx/cy` | 同上 |
+// | 参考集塞位置量 | `reference_set` 里读 `caliber_of(..).start_progress` | `reference_set_source_references_no_position_quantity` |
+// | `final_third` 用「含 shot」 | `ends_shot` → `has_shot` | `reference_predicate_semantics_are_pinned` |
+//
+// ⚠️ **两条 gate 守卫的第一版都是「假覆盖」**（2026-09-29 实测，本 change 第二次踩这个坑）：
+// - 循环性防护初版只做**事件位置**的行为核对（改 `Event.x/y` 后断言参考集不变）；
+//   往 `reference_set` 里塞读 **`ControlFact.location`** 的谓词后，**27 条全绿**。
+//   ⇒ 改为**源码扫描**（`include_str!` + 逐 token 核），复验变红。
+// - 没有任何测试钉住「**以** shot 结尾」与「**含** shot」的差别 ⇒ 后者也全绿。
+//   ⇒ 新增 `reference_predicate_semantics_are_pinned`（逐 episode 断言归属语义），复验变红。
+//
+// **教训**：`reference_set` 这种事关「论证是否循环」的谓词，**行为核对守不住**——
+// 因为它读的量不在被测行为的输入面上。必须扫源码。
 //
 // ⚠️ 两条**fixture 判别力**的教训（都是初版踩到、修复后复验）：
 // - 「排空拍」变异在 **seed 1 上无区分度**（seed 1 整场不进排空循环）⇒ 该测试**必须用 seed 2**
@@ -415,7 +432,7 @@ fn state_snapshot_positions_match_the_beat_projection_bit_for_bit() {
         let Some(snap) = by_t.get(&e.t.to_bits()) else {
             continue;
         };
-        let mut check = |id: i32, x: f64, y: f64| {
+        let check = |id: i32, x: f64, y: f64| {
             let (sx, sy) = snap[id as usize];
             assert!(
                 sx == x && sy == y,
@@ -963,6 +980,346 @@ fn all_feature_times_use_a_single_basis() {
         }
     }
     println!("起点事实的 TimeBasis 分布：{bases:?}");
+}
+
+// ============================== phaseability gate（Slice 4，验收） ==============================
+
+/// **头号纪律：motif 定义不得使用位置**（用户点名要防的风险）。
+///
+/// 若任一档的任一条子句用了位置/区域，该档参考集就失去判别力——
+/// 用它检验位置特征 = 用位置验证位置（循环论证），gate 结论作废。
+#[test]
+fn motifs_do_not_use_position() {
+    for m in REFERENCE_MOTIFS {
+        assert!(
+            !m.clauses.is_empty(),
+            "参考 motif `{}` 没有任何子句——空谓词不可接受",
+            m.name
+        );
+        for (clause, uses_position) in m.clauses {
+            assert!(
+                !*uses_position,
+                "参考 motif `{}` 的子句「{clause}」**使用了位置/区域**——\
+                 这会让该档参考集退化成循环论证，gate 结论不可用。\
+                 要么换掉这条子句，要么把该档标为「不可判」。",
+                m.name
+            );
+        }
+    }
+}
+
+/// **循环性防护（源码扫描）**：构造参考集的代码**不得引用任何位置量**。
+///
+/// ## 为什么必须是源码扫描（而不是只做行为核对）
+///
+/// 初版只做了**事件位置**的行为核对：克隆一场、把 `Event.x/y/x2/y2` 改成极端值、
+/// 断言参考集不变。**那个护栏漏掉了 `ControlFact.location`**——实测（2026-09-29）
+/// 往 `reference_set` 里塞 `caliber_of(dm, ep).start_progress < 0.33`（读的是
+/// **事实的位置**，不是事件的位置）后，**全套 27 条测试仍然全绿**。
+/// 这正是本仓「假覆盖」的教科书形态：守卫看着在守，实际守不住目标变异。
+///
+/// ⇒ 改为**源码扫描**：直接读 `gate.rs` 的源代码文本，断言 `reference_set`
+/// 的函数体里不出现任何位置相关的标识符。位置量的读取点只有以下几种形态，
+/// 逐条列举（与 `caliber.rs` / `shape.rs` / `features.rs` 的公开面一一对应）。
+#[test]
+fn reference_set_source_references_no_position_quantity() {
+    const SRC: &str = include_str!("p16/gate.rs");
+    // 取 `reference_set` 的函数体（到下一个顶层 `fn ` 或 `// ====` 分隔为止）。
+    let start = SRC
+        .find("pub fn reference_set(")
+        .expect("找不到 reference_set（改名了？守卫失效）");
+    let body = &SRC[start..];
+    let end = body
+        .find("\n// =============")
+        .unwrap_or_else(|| body.find("\npub fn ").unwrap_or(body.len()));
+    let body = &body[..end];
+
+    // 位置量的标识符（任何一个出现在函数体里都说明参考集读了位置）。
+    const FORBIDDEN: &[&str] = &[
+        ".x2",
+        ".y2",
+        "location",
+        "start_progress",
+        "end_progress",
+        "net_progress",
+        "caliber_of",
+        "EpisodeCaliber",
+        "team_shape",
+        "TeamShape",
+        "StateSnapshot",
+        "state_snapshots",
+        "collect_ball_track",
+        "progress(",
+        "attack_dir",
+        "calibers_of",
+        "ref_progress",
+    ];
+    for tok in FORBIDDEN {
+        assert!(
+            !body.contains(tok),
+            "`reference_set` 的函数体里出现了位置量 `{tok}` —— 参考集必须**只由动作链**\
+             构造（契约：判别参考集不得只用区域构造，否则循环论证）。\
+             若确需位置谓词，那不是参考集，是特征。"
+        );
+    }
+    // 反证的反证：上面的扫描必须真的落在 `reference_set` 的函数体上（不是空串）。
+    assert!(
+        body.contains("open_passes") && body.contains("ends_shot"),
+        "源码扫描没有落在 `reference_set` 的函数体上（找到的片段不含预期标识符）——\
+         守卫失效，须修扫描逻辑"
+    );
+    assert!(
+        body.len() > 200,
+        "扫到的函数体过短（{} 字节）——扫描边界写错了",
+        body.len()
+    );
+}
+
+/// **参考集谓词语义被钉住**（防「文档说 A、实现做 B」）。
+///
+/// 动机：实测（2026-09-29）把 `final_third_candidate` 的实现从「**以** shot 结尾」
+/// 改成「**含** shot」，全套测试仍然全绿——因为没有任何测试钉住这两者的差别。
+/// 文档（[`REFERENCE_MOTIFS`]）逐字写的是「**最后一个决策动作**是 shot」，
+/// 实现必须就是它。
+#[test]
+fn reference_predicate_semantics_are_pinned() {
+    // 构造两个 episode：都以 shot 结尾 vs 中途射门后继续传球。
+    // 用真实数据的分布来断言更稳（手搭 fixture 容易与实际形状不符）。
+    let dm = observe(1);
+    for (i, ep) in dm.possession_episodes.iter().enumerate() {
+        let acts: Vec<&fm_engine::Event> = ep
+            .event_indexes
+            .iter()
+            .filter_map(|j| dm.events.get(*j))
+            .filter(|e| {
+                matches!(
+                    e.type_,
+                    EventType::Pass | EventType::Shot | EventType::Tackle | EventType::Foul
+                )
+            })
+            .collect();
+        let Some(last) = acts.last() else { continue };
+        let has_shot = acts.iter().any(|e| e.type_ == EventType::Shot);
+        let ends_shot = last.type_ == EventType::Shot;
+        let in_final = reference_set(&dm, "final_third_candidate").contains(&i);
+        assert_eq!(
+            in_final, ends_shot,
+            "episode {i}: `final_third_candidate` 的归属（{in_final}）必须等于\
+             「**最后**一个决策动作是 shot」（{ends_shot}），而不是「含 shot」（{has_shot}）——\
+             文档逐字写的是前者"
+        );
+    }
+}
+
+/// **参考集的规模与互斥性**（报告项 + 防空转）。
+#[test]
+fn reference_sets_are_sized_and_documented() {
+    let dm = observe(1);
+    let sum = ReferenceSummary::build(&dm);
+    println!("参考集汇总：total={}", sum.total_episodes);
+    for (n, c) in &sum.by_name {
+        println!(
+            "  {n}: {c} ({:.1}%)",
+            reference_share(
+                &reference_set(&dm, n),
+                sum.total_episodes
+            )
+            .unwrap_or(0.0)
+                * 100.0
+        );
+    }
+    println!("两两重叠：{:?}", sum.pairwise_overlap);
+    for (n, c) in &sum.by_name {
+        assert!(*c > 0, "参考集 `{n}` 为空——样本或谓词有问题");
+    }
+    // 三档**不该互相包含**（若两档几乎重合，说明谓词没分开三档）。
+    for ((a, b), ov) in &sum.pairwise_overlap {
+        let na = sum.by_name[a];
+        let nb = sum.by_name[b];
+        let overlap_of_smaller = *ov as f64 / na.min(nb) as f64;
+        println!("  {a} ∩ {b} = {ov}（占较小者 {overlap_of_smaller:.2}）");
+    }
+}
+
+/// **可分性实测**（gate 的原始证据）。
+///
+/// 对每档参考集算各特征的 AUC，跨多 seed 池化**逐 episode 值**（**不是**先把每场聚成均值
+/// 再比——那会把 n 压到 seed 数，AUC 失去分辨力）。这里池化的对象是「episode」这个
+/// **同质单元**（每个 episode 是一档判定的一个样本），与 P38「位移 sd 不能跨场拼接」
+/// 的教训不同——那条禁的是把**每场一个标量**的估计量跨场拼，这里是池化**样本**。
+///
+/// ⚠️ **注意看 `start_progress[区域量·仅对照]` 这一行**：它是**区域量**，
+/// 若只有它高而空间特征低，说明可分性来自位置而非战术意图（= 契约禁的「区域 = 阶段」）。
+#[test]
+fn phaseability_separability_is_measured() {
+    const GATE_SEEDS: (u64, u64) = (1, 30);
+    let mut all_feats: Vec<(usize, EpisodeFeature)> = Vec::new();
+    let mut all_refs: std::collections::BTreeMap<&'static str, Vec<usize>> = Default::default();
+    let mut offset = 0usize;
+    for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
+        let dm = observe(seed);
+        let feats = episode_features(&dm);
+        for m in REFERENCE_MOTIFS {
+            let refs = reference_set(&dm, m.name);
+            all_refs
+                .entry(m.name)
+                .or_default()
+                .extend(refs.into_iter().map(|i| i + offset));
+        }
+        offset += feats.len();
+        all_feats.extend(feats);
+    }
+    assert!(!all_feats.is_empty(), "没有 episode 特征——样本或实现有问题");
+
+    let mut report: Vec<(&str, Vec<Separability>)> = Vec::new();
+    for m in REFERENCE_MOTIFS {
+        let refs = all_refs.get(m.name).cloned().unwrap_or_default();
+        report.push((m.name, separability(&refs, &all_feats)));
+    }
+    println!(
+        "phaseability 可分性（{} seed，{} episode 样本）",
+        GATE_SEEDS.1 - GATE_SEEDS.0 + 1,
+        all_feats.len()
+    );
+    for (name, seps) in &report {
+        println!("-- {name} --");
+        for s in seps {
+            println!(
+                "   {:<34} AUC={:?} (pos={}, neg={})",
+                s.feature,
+                s.auc.map(|a| (a * 1000.0).round() / 1000.0),
+                s.pos_n,
+                s.neg_n
+            );
+        }
+    }
+    // 防空转：每档都必须真的算出 AUC（pos 与 neg 都非空）。
+    for (name, seps) in &report {
+        for s in seps {
+            assert!(
+                s.auc.is_some(),
+                "`{name}` 的特征 `{}` 算不出 AUC（pos={}, neg={}）——空组不该静默通过",
+                s.feature,
+                s.pos_n,
+                s.neg_n
+            );
+        }
+    }
+    // 参考集不得过大/过小（防空转：某档吃掉半个样本就无所谓「应属」了）。
+    let total = all_feats.len();
+    for (name, refs) in &all_refs {
+        let sh = reference_share(refs, total).unwrap();
+        assert!(
+            (0.01..=0.5).contains(&sh),
+            "参考集 `{name}` 占比 {sh:.3} 越界（应在 (0.01, 0.5]）——谓词可能过宽/过窄"
+        );
+    }
+}
+
+// ============================== phaseability 裁决（Slice 4 的产出） ==============================
+
+/// **裁决 = 不够**（本 change 的验收结论）。
+///
+/// ## 证据（30 seed / 3075 episode）
+///
+/// 三档参考集（**纯动作链构造**，零位置）对全部 P16 特征的 AUC **全部落在 ~0.5**：
+///
+/// | 参考集 | 最强的特征 | AUC |
+/// |---|---|---|
+/// | `final_third_candidate` | `forward_m` | 0.530 |
+/// | `build_up_candidate` | `lateral_m` | 0.521 |
+/// | `progression_candidate` | `net_progress` | 0.517 |
+///
+/// 其余全部 ≤0.53，且**方向不一致**（有的 <0.5）。对照行
+/// `start_progress[区域量·仅对照]` 也 ≈0.47–0.51——**连区域量自己都分不开**。
+///
+/// ⚠️ **重要的方法论记录**：**1 seed 时**这些 AUC 曾显示 0.70–0.84（看似可分），
+/// **扩到 30 seed 后全部塌回 ~0.5**。小样本 AUC 的置信区间极宽，
+/// 1 seed 的 ~20 个正样本会给出完全误导的读数。**这是本 change 第二次踩「小样本看起来
+/// 可分」**（第一次是探针的 NaN 假证据）——故本测试**固定用 30 seed**，
+/// 并把「1 seed 会误导」写进注释。
+///
+/// ## 结论：不够 ⇒ 15B 应保留 `unknown`
+///
+/// - **缺什么**：这套特征**不能区分**三档 motif。它们量的是「球/队形怎么动」，
+///   而 motif 描述的是「这波进攻走到哪一步、要不要射门」——**两者不是同一个自由度**。
+///   一个合理解释（**假设，未验证**）：本引擎的 episode 短（动作链 p50 = 3），
+///   空间形态在 episode 内变化不足以承载阶段差异。
+/// - **15B 的处置**：**保留 `unknown`**，不得用这些几何量硬套三档。
+///   若最终只能用几何代理，须命名为**证据**（如 `GoalwardProgressEvidence`），
+///   **不得复用 `Phase`**（与 #113 对 `attacking_transition` 的同类处置）。
+/// - **补什么**（若将来要提升）：需要**能表达意图**的观测——例如
+///   ① 明确的「射门窗口开启」信号（本 change 的 sidecar **不含** `shot_setup`）；
+///   ② 防守方位置/线路（本 change 只做了进攻方几何）；
+///   ③ 更长的时间上下文（本引擎 episode 太短）。
+///
+/// ## 这条裁决**不**依赖 `start_progress` 那一行
+///
+/// 若有人质疑「参考集是否循环」，请先看 [`motifs_and_features_are_disjoint`]——
+/// 它**行为核对**了参考集对位置不敏感（把 x/y 全改成极端值，参考集不变）。
+#[test]
+fn phaseability_verdict_is_not_enough_and_the_evidence_shows_chance_level_auc() {
+    const GATE_SEEDS: (u64, u64) = (1, 30);
+    let mut all_feats: Vec<(usize, EpisodeFeature)> = Vec::new();
+    let mut all_refs: std::collections::BTreeMap<&'static str, Vec<usize>> = Default::default();
+    let mut offset = 0usize;
+    for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
+        let dm = observe(seed);
+        let feats = episode_features(&dm);
+        for m in REFERENCE_MOTIFS {
+            all_refs
+                .entry(m.name)
+                .or_default()
+                .extend(reference_set(&dm, m.name).into_iter().map(|i| i + offset));
+        }
+        offset += feats.len();
+        all_feats.extend(feats);
+    }
+    let total = all_feats.len();
+    assert!(total > 2000, "样本过少（{total}）——小样本 AUC 会误导（见函数文档）");
+
+    // 每条特征的「到 0.5 的最远距离」——最大者即最强特征。
+    let mut strongest: Vec<(&'static str, &'static str, f64)> = Vec::new(); // (set, feature, auc)
+    for m in REFERENCE_MOTIFS {
+        let refs = all_refs.get(m.name).cloned().unwrap_or_default();
+        for s in separability(&refs, &all_feats) {
+            if s.feature.starts_with("start_progress") {
+                continue; // 区域量只作对照，不作为「够」的依据
+            }
+            if let Some(a) = s.auc {
+                strongest.push((m.name, s.feature, a));
+            }
+        }
+    }
+    strongest.sort_by(|a, b| (b.2 - 0.5).abs().partial_cmp(&(a.2 - 0.5).abs()).unwrap());
+    let (best_set, best_feat, best_auc) = strongest[0];
+    println!("最强特征：{best_set} 的 {best_feat}，AUC={best_auc:.3}");
+
+    // **裁决断言**：最强的空间特征也必须 ≤0.60（离 0.5 不远）。若将来某特征的 AUC
+    // 越过 0.60 且方向一致，本测试会红——那时**必须重新裁决**（可能是真的可分了，
+    // 也可能是参考集被改坏/样本变了），不能静默沿用旧裁决。
+    assert!(
+        (best_auc - 0.5).abs() <= 0.10,
+        "最强空间特征 {best_set}/{best_feat} 的 AUC = {best_auc:.3} 已越过 0.60 —— \
+         与「不够」的裁决不符。**重新裁决**：是特征真的可分了（好消息，给谓词），\
+         还是参考集/样本被改动（坏消息）？不要静默沿用旧结论。"
+    );
+    // 且三档**都不**可分（逐档核对，不是只看全局最强）。
+    for m in REFERENCE_MOTIFS {
+        let refs = all_refs.get(m.name).cloned().unwrap_or_default();
+        let seps = separability(&refs, &all_feats);
+        let best = seps
+            .iter()
+            .filter(|s| !s.feature.starts_with("start_progress"))
+            .filter_map(|s| s.auc)
+            .fold(0.0f64, |acc, a| acc.max((a - 0.5).abs()));
+        assert!(
+            best <= 0.10,
+            "参考集 `{}` 上存在 AUC 偏离 0.5 超过 0.10 的特征（最大偏离 {best:.3}）——\
+             与「不够」的裁决不符，须重新裁决",
+            m.name
+        );
+    }
 }
 
 // ============================== 口径：起点来源 ==============================
