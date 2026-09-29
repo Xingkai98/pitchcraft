@@ -87,8 +87,8 @@ impl RateAuc {
         assert!(
             self.skipped_in_set == 0,
             "探针判红：`{label}` 在参考集内有 {} 个样本缺特征（pos={}, neg={}）——\
-             缺失分布在两侧不均时 AUC 会被选择效应污染。若这是预期的，用 `rate_auc_unchecked` \
-             并显式记录，不要让它在默认路径里静默发生。",
+             缺失分布在两侧不均时 AUC 会被选择效应污染。若这是预期的，请**显式记录**\
+             （`RateAuc` 的 `skipped_in_set` 已可读），不要让它在默认路径里静默发生。",
             self.skipped_in_set,
             self.pos_n,
             self.neg_n

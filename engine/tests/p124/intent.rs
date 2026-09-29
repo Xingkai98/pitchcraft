@@ -25,7 +25,7 @@
 //! | `pressure_share` | `pressure_state_ticks > 0` 的拍数 / 有效拍数 | 有效拍数为 0 → `None` |
 //! | `pressure_mean` | `pressure_state_ticks` 的逐拍均值 | 有效拍数为 0 → `None` |
 //! | `def_per_s` | 防守机会数 / 时长（**累计量须按秒归一**，见 [`EpisodeIntent::def_per_s`]） | 时长不可得或 ≤0 → `None` |
-//! | `def_contain_share` 等 | 各类防守动作占该 episode 防守机会的比例 | **无机会 → `None`**（不是 0） |
+//! | `def_share[*]`（五类） | 各类防守动作占该 episode 防守机会的比例 | **无机会 → `None`**（不是 0） |
 //!
 //! ⚠️ **bool 的缺失**：`window_opened` 是 bool，**没有 `None`**——但它有**判别力前提**：
 //! 该 episode 必须有**有效拍**（否则「没开窗」与「没有观测」混为一谈）。故

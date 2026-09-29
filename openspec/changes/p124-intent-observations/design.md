@@ -15,7 +15,7 @@ P16（已完成）                     P124（本 change）
 
 ## 2. 要接出的信号（引擎内已有，sidecar 没有）
 
-### 2.1 起脚窗口（`ShotSetup`，`lib.rs:2236`）
+### 2.1 起脚窗口（`ShotSetup`）
 
 | 字段 | 语义 | 为什么是「意图」 |
 |---|---|---|
@@ -28,7 +28,7 @@ P16（已完成）                     P124（本 change）
 **注意**：`shot_setup` 是**单场单例**（`st.shot_setup: Option<ShotSetup>`），
 即任一时刻最多一个持球者在起脚序列中——采样时取当下值即可。
 
-### 2.2 防守动作与压迫（`DefensiveAction`，`lib.rs:1093`）
+### 2.2 防守动作与压迫（`DefensiveAction`）
 
 | 量 | 语义 |
 |---|---|

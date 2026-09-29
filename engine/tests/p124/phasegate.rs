@@ -217,7 +217,7 @@ impl GateRow {
 
 /// 对某一对参考集，算**空间 + 意图全部特征**的可分性。
 ///
-/// `sets_where` = 给定池化空间与档名，取出该档的全局下标集。
+/// `set_a` / `set_b` = 两个档的全局下标集（由 `zone_sets` / `set_where` 取出）。
 pub fn gate_rows(
     p: &Pooled,
     intents: &[EpisodeIntent],
@@ -255,7 +255,12 @@ pub fn gate_rows(
 ///
 /// ⚠️ 与 `probe::rate_auc` 同实现，但那条只吃 `EpisodeFeature` 的固定函数指针；
 /// 这里要按 `SPATIAL_FEATURES` 表遍历，故另写一份**逐值判红**的等价实现。
-/// 两者的**判别力**由 `spatial_rows_match_the_p16_separability` 守（同输入同输出）。
+/// 两者的**等价**由 `rate_auc_spatial_matches_the_probe_implementation` 守
+/// （同输入逐位同输出）。
+///
+/// ⚠️ **第 6 轮审阅纠正**：此处曾声称等价「由 `spatial_rows_match_the_p16_separability` 守」
+/// ——**那是假覆盖**：那条测试比的是 **P16 的第三个实现**（`gate::separability`），
+/// `probe::rate_auc` 从不被它调用。现已补真正的等价测试。
 fn rate_auc_spatial(
     p: &Pooled,
     set_a: &[usize],
@@ -296,7 +301,7 @@ fn rate_auc_spatial(
 
 /// 意图特征的 AUC（用 `intents[i]`，与 `p.feats[i]` **同一下标空间**）。
 ///
-/// ⚠️ **下标空间**：`intents` 与 `p.feats` 必须同长同序（由 `pool_intents` 保证并断言）。
+/// ⚠️ **下标空间**：`intents` 与 `p.feats` 必须同长同序（由 `pool::pool_gate_seeds_with_intents` 保证并断言）。
 /// 这是 P16 join bug 的直接防线——两条平行数组一旦错位，**两侧各自看都自洽**。
 fn rate_auc_intent(
     p: &Pooled,

@@ -35,6 +35,8 @@
 //! | [`gate_rerun_and_p16_baseline_side_by_side`] | gate（重跑 + 基线并列） | ✅ |
 //! | [`purification_over_intent_features_reproduces_the_verdict`] | gate（**再净化一次**） | ✅ |
 //! | [`verdict_best_intent_row_is_adequately_sampled`] | 裁决（最强行样本充足 + 方向） | ✅ |
+//! | [`rate_auc_spatial_matches_the_probe_implementation`] | gate（两个 AUC 实现逐位等价，第 6 轮纠正的假覆盖） | ✅ |
+//! | [`public_fields_have_readers`] | 元（死字段扫描，同族缺陷的机制化防线） | ✅ |
 //! | [`identical_inputs_produce_byte_identical_output`] | 产物（确定性） | ✅ |
 //! | [`rendered_json_is_structurally_valid`] | 产物（JSON 结构合法） | ✅ |
 //! | [`json_validator_rejects_the_known_bad_shapes`] | 产物（校验器判别力） | ✅ |
@@ -949,6 +951,20 @@ fn intent_feature_coverage_is_reported() {
         cov.episodes_without_def_opportunities,
         cov.episodes
     );
+    // ②c 「**没有观测**」与「**有观测但没意图**」是两种不同事实（本模块的缺失语义核心）。
+    //     `episodes_without_ticks` 记前者——它必须**远小于**全部（实测仅 1 例），
+    //     且**不得**为 0 与「全部有观测」混为一谈（此处断言它可读、口径正确）。
+    //     （第 6 轮审阅指出该字段曾写后不读——本条给它一个读取点。）
+    println!(
+        "  无有效拍的 episode = {}/{}（「没有观测」，与「有观测但没意图」不同）",
+        cov.episodes_without_ticks, cov.episodes
+    );
+    assert!(
+        cov.episodes_without_ticks < cov.episodes / 10,
+        "「无有效拍」的 episode 有 {}/{}——过多说明意图快照在两档窗口外大面积缺失",
+        cov.episodes_without_ticks,
+        cov.episodes
+    );
     let def_rates: std::collections::BTreeSet<u64> = all
         .iter()
         .filter_map(|e| e.def_per_s())
@@ -1403,12 +1419,6 @@ fn purification_over_intent_features_reproduces_the_verdict() {
     // ⚠️ **样本量门槛同样适用**（`MIN_SIDE_FOR_SEPARABILITY`）：`purification_over_intent`
     // 返回的只有 AUC，故这里另查一遍每侧的样本量——做法是**复算**同一对集合的规模，
     // 而不是猜。这是与 `gate_rerun_and_p16_baseline_side_by_side` 相同的判据，不是另立一套。
-    let circular: Vec<&str> = crate::phasegate::INTENT_FEATURES
-        .iter()
-        .filter(|s| s.provenance == crate::phasegate::Provenance::Circular)
-        .map(|s| s.name)
-        .collect();
-    let _ = &circular;
     let mut undersized_seen = 0usize;
     for (arm, feats) in &rows {
         for r in feats {
@@ -2237,4 +2247,139 @@ fn intent_feature_definitions_are_pinned() {
         Some(3),
         "`max_window_ticks` 应是窗口内已消耗决策 tick 的最大值（3）"
     );
+}
+
+/// **`phasegate::rate_auc_spatial` 与 `probe::rate_auc` 逐位等价**——第 6 轮审阅纠正的**假覆盖**。
+///
+/// ## 来由
+///
+/// `phasegate.rs` 的 doc 曾声称两者等价「由 `spatial_rows_match_the_p16_separability` 守」
+/// ——**那是假的**：那条测试比的是 **P16 的第三个实现**（`gate::separability`），
+/// `probe::rate_auc` 从不被它调用。⇒ 若 `rate_auc_spatial` 与 `probe::rate_auc` 分叉，
+/// **没有任何测试会红**（本仓「假覆盖」形态，与第 1 轮 P0-2 同型）。
+///
+/// 本测试直接对**同一输入**跑两个实现，逐位比 AUC 与全账。
+#[test]
+fn rate_auc_spatial_matches_the_probe_implementation() {
+    let p = pool_gate_seeds();
+    let sets = crate::phasegate::zone_sets(&p);
+    let get = |name: &str| -> Vec<usize> {
+        sets.iter().find(|(n, _)| *n == name).map(|(_, v)| v.clone()).unwrap_or_default()
+    };
+    for zone in ["final_third_candidate", "build_up_candidate", "progression_candidate"] {
+        let set = get(zone);
+        let rest = crate::probe::complement(&p, &set);
+        // `probe::rate_auc` 只吃固定函数指针 ⇒ 逐条用手写闭包表喂它（与 SPATIAL_FEATURES 同源）。
+        let probe_impls: [(&str, fn(&crate::gate::EpisodeFeature) -> Option<f64>); 8] = [
+            ("net_progress[空间]", |e| e.net_progress),
+            ("forward_m[空间]", |e| e.forward_m),
+            ("backward_m[空间]", |e| e.backward_m),
+            ("lateral_m[空间]", |e| e.lateral_m),
+            ("depth_slope[空间]", |e| e.depth_slope),
+            ("support_frames_share[空间]", |e| e.support_frames_share),
+            ("start_progress[区域量·仅对照]", |e| Some(e.start_progress)),
+            ("forward_m/s[空间]", |e| Some(e.forward_m? / e.duration_s?)),
+        ];
+        let mine = crate::phasegate::gate_rows(
+            &p,
+            &vec![Default::default(); p.feats.len()],
+            &set,
+            &rest,
+            "x",
+        );
+        let mut compared = 0usize;
+        for (name, f) in probe_impls {
+            let a = crate::probe::rate_auc(&p, &set, &rest, name, f);
+            let b = mine
+                .iter()
+                .find(|r| r.feature == name)
+                .unwrap_or_else(|| panic!("phasegate 应产出 `{name}`"));
+            // AUC 与三个计数**逐位**相等（`Option<f64>` 用 `==` 比——`None == None` 为真）。
+            assert_eq!(
+                a.auc.map(|x| x.to_bits()),
+                b.auc.map(|x| x.to_bits()),
+                "档 `{zone}` 特征 `{name}`：`probe::rate_auc` 与 `phasegate` 的 AUC 不同位\
+                 （{a:?} vs {b:?}）——两个实现已分叉，而**只有本测试会发现**"
+            );
+            assert_eq!(a.pos_n, b.pos_n, "`{name}` pos_n 不同");
+            assert_eq!(a.neg_n, b.neg_n, "`{name}` neg_n 不同");
+            assert_eq!(a.skipped_in_set, b.skipped, "`{name}` 跳过数不同");
+            compared += 1;
+        }
+        // 防空转：必须真的比过全部 8 条（不是空循环通过）。
+        assert_eq!(compared, 8, "档 `{zone}` 只比了 {compared} 条——表被改短了？");
+    }
+    println!("`probe::rate_auc` 与 `phasegate::rate_auc_spatial`：3 档 × 8 条逐位同输出");
+}
+
+// ============================== 同族缺陷的机制化守卫（第 6 轮后新增） ==============================
+
+/// **`pub` 字段必须有读取点**——死字段（写后不读）的机制化防线。
+///
+/// 实例（本 change 被抓到的）：`RateAuc.skipped_missing`（恒等于另一字段）、
+/// `Provenance.worktree_status`（写后不读）、`IntentCoverage::share`（从未调用）。
+///
+/// ## 判据（**跨文件**计数——第 6 轮修复时首版按单文件计数，会漏「declared in A、read in B」）
+///
+/// 对 `tests/p124/*.rs` 每个 `pub <name>: <T>` 字段：在**全部** p124 文件的**剥注释后**
+/// 语料里统计 `<name>` 的出现次数，要求 **≥ 3**（1 声明 + 1 赋值 + ≥1 读取）。
+/// 若只有 2 次（声明 + 赋值），即为死字段。
+///
+/// ⚠️ 能力边界：名字计数**不是**数据流分析——`let x = self.f; let _ = x;` 这类会漏，
+/// 而「名字在别处偶然出现」会误放。挡的是本 change 实际发生的死字段形态。
+#[test]
+fn public_fields_have_readers() {
+    let files: [(&str, &str); 7] = [
+        ("p124_intent_observations.rs", include_str!("p124_intent_observations.rs")),
+        ("p124/probe.rs", include_str!("p124/probe.rs")),
+        ("p124/purify.rs", include_str!("p124/purify.rs")),
+        ("p124/pool.rs", include_str!("p124/pool.rs")),
+        ("p124/intent.rs", include_str!("p124/intent.rs")),
+        ("p124/phasegate.rs", include_str!("p124/phasegate.rs")),
+        ("p124/report.rs", include_str!("p124/report.rs")),
+    ];
+    // 全局语料（剥注释）：一次算好每个名字的总出现次数。
+    let mut code = String::new();
+    for (_, text) in files {
+        for line in text.lines() {
+            code.push_str(&line[..line.find("//").unwrap_or(line.len())]);
+            code.push('\n');
+        }
+    }
+    let mut dead: Vec<(String, String)> = Vec::new();
+    let mut checked = 0usize;
+    for (fname, text) in files {
+        for line in text.lines() {
+            let code_line = &line[..line.find("//").unwrap_or(line.len())];
+            let t = code_line.trim();
+            let Some(rest) = t.strip_prefix("pub ") else { continue };
+            let Some(colon) = rest.find(':') else { continue };
+            let name = rest[..colon].trim();
+            if name.is_empty()
+                || name.contains(' ')
+                || name.contains('(')
+                || ["fn", "struct", "enum", "const", "use", "mod", "type", "trait", "impl"]
+                    .contains(&name)
+            {
+                continue;
+            }
+            checked += 1;
+            // 跨文件总出现次数（1 声明 + 1 赋值 = 2 ⇒ 死字段）。
+            let occurrences = code.match_indices(name).count();
+            if occurrences <= 2 {
+                dead.push((fname.to_string(), name.to_string()));
+            }
+        }
+    }
+    assert!(
+        dead.is_empty(),
+        "以下 `pub` 字段疑似**死字段**（剥注释后只有声明 + 赋值，无跨文件读取点，共 {}）：\n{}",
+        dead.len(),
+        dead.iter().map(|(f, n)| format!("  {f}: {n}")).collect::<Vec<_>>().join("\n")
+    );
+    assert!(
+        checked > 20,
+        "只查到 {checked} 个 pub 字段——判据可能失效（期望数十个）"
+    );
+    println!("`pub` 字段：查过 {checked} 个，均有跨文件读取点");
 }
