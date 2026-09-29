@@ -3,7 +3,7 @@
 状态：Active roadmap
 最后更新：2026-09-26
 Canonical map：`.scratch/map.md` 的“行为真实性方向”
-当前 frontier：**#16 团队与局部空间特征（含 phaseability gate）**（GH #116；#15B 暂停，见 §4.5）
+当前 frontier：**#124 接出「意图」观测并重跑 phaseability gate**（GH #124；#16 已完成，见 §5）
 （#113 已全部裁定，无待决项）
 
 ## 1. 当前已经具备什么
@@ -292,10 +292,34 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 
 **⇒ #113 无待决项；15B 的开启条件只剩 #116 的 phaseability gate 结论。**
 
-## 5. #16：团队与局部空间特征（含 phaseability gate）← **当前 frontier**
+## 5. #16：团队与局部空间特征（含 phaseability gate）✅ 已完成（2026-09-29；PR #123）
 
 票据：GH [#116](https://github.com/Xingkai98/pitchcraft/issues/116) /
-`.scratch/issues/116-team-local-spatial-features.md`。
+`.scratch/issues/116-team-local-spatial-features.md`；实现 change
+`openspec/changes/p16-team-local-spatial-features/`（含 `REVIEW.md`：7 轮独立审阅）。
+
+### 5.1 裁决与下一步（2026-09-29）
+
+**裁决：部分够**——
+
+| 阶段 | 能否判定 | 证据（`forward_m/s` AUC） |
+|---|---|---|
+| `final_third` | ✅ 能 | **0.855**（30 seed）/ **0.862**（300 seed） |
+| `build_up` / `progression` | ❌ **判不了** | **0.461** / **0.431** |
+
+**强度**：审阅者**自己扫了 21 个空间量**想分开后两档，最强非循环量只 **0.634**
+⇒ 是「**空间量本身不足**」，不是「特征没选好」。主 session 另做了**混淆净化**
+（把两档差异逐项抽掉：0.461 / 0.437 / 0.490 / 空对照 0.500）——**抽掉哪个都没变好**。
+
+**落地**：G1 导出真实位置（每 tick 全量 22 人 → `DiagnosticMatch.state_snapshots`，
+**事件流零增量**、不改 `ControlFact` 闭集）；四类时间关系特征；口径以 `ControlFact` 为权威
+（两种口径使后场起点占比差 **3 倍**）。
+
+**给 15B**：`final_third` 是**几何证据不是战术意图**（须命名如 `GoalwardProgressEvidence`，
+**不得复用 `Phase`**）；另两档保留 `unknown`。
+
+**下一步 = #124**：接出「**意图**」类观测（`shot_setup` / 起脚窗口、防守方位置·线路——
+引擎内已有、sidecar 没有，**与 G1 同模式**）→ 重跑 gate。
 
 第一版只做当前引擎可靠提供的特征：
 

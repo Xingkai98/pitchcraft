@@ -55,11 +55,12 @@
 
 > 目标：从“匹配真实比赛统计”推进到“经过真实足球式的状态、空间和动作链”。
 > #15A 观察层已于 2026-09-24 完成，**#17A 行为链基线分析已完成**（2026-09-24，2026-09-25 在
-> main/`MODEL_VERSION=7` 上重算）。当前 frontier 是 **#16 团队与局部空间特征（含 phaseability gate）**
-> （GH #116）——它是 **#15B 的硬前置**：`build_up`/`progression`/`final_third` 三档在 #16 之前无判据
-> （只有坐标，而「区域 ≠ 阶段」是契约明禁）。
-> **#15B 已暂停**（GH #113 结论：`attacking_transition` 是 team-state，不作 possession phase 产出）；
-> **#113 已全部裁定**（2026-09-28，无待决项；见 roadmap §4.5）。
+> main/`MODEL_VERSION=7` 上重算）。**#16 已完成（2026-09-29，PR #123）**，裁决 **部分够**：
+> `final_third` 可判（AUC 0.855/0.862），**`build_up`/`progression` 判不了**（0.461/0.431）——
+> 审阅者扫了 21 个空间量，最强非循环量只 0.634 ⇒ **空间量本身不足**。
+> 当前 frontier 是 **#124**：接出「意图」类观测（`shot_setup`/起脚窗口、防守方位置·线路——
+> 引擎内已有、sidecar 没有，与 G1 同模式）→ 重跑 gate。
+> **#15B 暂停**（#113：`attacking_transition` 是 team-state）；**#113 已全部裁定**（无待决项）。
 > 权威路线：`.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3–§4.5、§5。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
 
@@ -119,18 +120,26 @@
     - **开工前须闭合七项**（谓词、多段切分、`attacking_transition` 边界、`unknown`/provenance、
       时间基准、fixture+变异、provenance 记录）**及与 #16 的接口张力**——
       见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.4。
-- `16` **团队与局部空间特征（含 phaseability gate）** 🚧 实现中
-  [★ #116](issues/116-team-local-spatial-features.md)（GH #116 侦察已合入；实现 change
-  `openspec/changes/p16-team-local-spatial-features/`，跟踪 GH #121）
+- `16` **团队与局部空间特征（含 phaseability gate）** ✅ 已完成（2026-09-29；PR #123）
+  [★ #116](issues/116-team-local-spatial-features.md)（GH #116 侦察）
+  [★ #124](issues/124-intent-observations.md)（GH #124：接出「意图」观测并重跑 gate ← **下一步**）
   - Blocked by: `12`, `13`（均已完成）
   - Type: Research
   - 问题：从当前坐标和 beat/off-ball 信息中，第一版可靠计算哪些宽度、纵深、线间距、支援和压力特征？
   - **本轮新增**：还须产出**面向 phaseability** 的带时间关系特征（球门向净推进 / 推进·回撤·横向转移 /
     线间距变化 / 接应与人数优势 / 球权后的时间序列）——原候选是静态快照，不足以判 `build_up`/`progression`/`final_third`
     （`build_up ≠ 后场`、`progression ≠ 球向前移动`）。
-  - **验收 = phaseability gate**：不只「特征算得出来」，还要裁决**三档能否判定**——
-    够则给出可执行谓词（15B 用），不够则明确缺什么、15B 该保留 `unknown` 还是补数据。
-  - 产物：特征定义及缺失数据处理规则；**不在此票据内改跑位逻辑**；**不实现 15B**。
+  - **验收 = phaseability gate**：不只「特征算得出来」，还要裁决**三档能否判定**。
+  - **裁决：部分够**——`final_third` 可判（`forward_m/s` AUC **0.855**/30 seed、**0.862**/300 seed）；
+    `build_up`/`progression` **判不了**（**0.461**/**0.431**）。审阅者**自己扫了 21 个空间量**，
+    最强非循环量只 0.634 ⇒ **「空间量本身不足」**，不是「特征没选好」。
+  - **落地**：引擎经 G1 导出真实位置（每 tick 全量 22 人 → `DiagnosticMatch.state_snapshots`，
+    **事件流零增量**、不改 `ControlFact` 闭集）；四类时间关系特征；
+    口径以 `ControlFact` 为权威（两种口径使后场起点差 **3 倍**：7.5% vs 23.5%）。
+  - **给 15B 的处置**：`final_third` 是**几何证据不是战术意图**，须命名为证据
+    （如 `GoalwardProgressEvidence`），**不得复用 `Phase`**；另两档保留 `unknown`。
+  - **下一步**：#124（接出射门窗口/防守线路等「意图」观测 → 重跑 gate）。
+  - 产物：OpenSpec change `p16-team-local-spatial-features`（含 `REVIEW.md`：7 轮独立审阅）；**不实现 15B**。
 - `17A` **#15A 行为链基线分析** ✅ 已完成（2026-09-24；2026-09-25 在 main/v7 上重算）
   - Blocked by: `15A`
   - Type: Prototype
