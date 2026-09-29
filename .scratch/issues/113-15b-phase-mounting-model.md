@@ -288,21 +288,48 @@ v3 误写作 `control_started`，该 fact kind 不存在）：在 `finalize_high
 **⇒ 教训**：`[武装,+4)` 与 `[事件.t,+4)` 在 tackle 上是**同一个窗口**。
 v1/v2 都把它们当成两套口径讲，是错的。
 
-## 八、待用户拍板（收敛）
+## 八、裁定（2026-09-28，用户采纳推荐）
 
-1. **缺失的那条 §11 理由**：回填 design §11（动冻结文档）还是在 #15B design 记偏离？
-2. **顺序**：`#16（含 gate）→ 15B` 确认？
-3. **是否为 team-state observation 立项** —— **已有实测结论（§6）：不立**。
-   转换的完整观测（起止 / 形态 `close_down` / 参与者）已现成于事件流，零新对象即可；
-   新建 `TransitionSpan` 是重复建设。**待用户确认。**
-4. **存量口径数字要不要一起修**：roadmap §4.3 记的 `1230 / 84 / 1106` 与本轮数字对不上
-   （能复现 1230 与 124，复现不到 84/1106）——是否立一条「口径显式化」收尾项？
-5. **判据冻结的守卫方式**：把「常数重标定后须复核」写进 #15B 开工前七项清单（roadmap §4.2），
-   还是靠 `engineFingerprint` 哨兵？
-6. **命名冲突**（roadmap §4.3 标「此条仍成立」，v3 曾漏）：主 spec `match-engine:641`
-   「控球阶段与攻防转换」讲的是引擎内部 team `attack`/`defend` + `transition_active`，
-   与 15B 的 possession phase 闭集**不是同一个概念**，勿混用同一名词。
-   它与本结论（该 label 是 team-state）**直接相关**。
-7. **`phase_segments` 的填充位置**（roadmap §4.1 明标「真决策，不要默认略过」）：
-   recorder 在 `into_diagnostic_match` 之前填，还是 `simulate_with_behavior_observations`
-   拿到 `DiagnosticMatch` 之后填？
+### 8.1 §11 那条缺失的理由 —— **记在 #15B design 的偏离里，不改 §11**
+
+**理由**：§11 的权威在 `.scratch/notes/match-behavior-observation-design.md`（828 行，
+状态 Approved for implementation 2026-09-23），而 P15A 的 OpenSpec change **明说不复制另一套**
+（`openspec/changes/p15-match-behavior-observation/design.md:3`「本 change 不复制另一套枚举或状态表，
+避免规范漂移」）。回填 §11 = 改一份**已被 P15A 验证依据引用**的冻结文档，代价是两处 design 对不上；
+而这条补充只是「为什么不产出某个 label」，属实现层偏离说明。
+**⇒ 写在 #15B design，并注明与 §11 的关系。**
+
+### 8.2 `phase_segments` 填充位置 —— **在 `DiagnosticMatch` 之后，由纯函数填**
+
+**理由（决定性差别在可测性）**：
+- 之后：`annotate_phases(&DiagnosticMatch) -> Vec<PhaseSegment>` 是**纯函数**，测判据 =
+  `annotate_phases(&手搭 fixture)`，**不用跑引擎**；且 phase 日后要用空间特征，recorder 手里没有。
+- 之前：判据要缠进 recorder 的提交点，且与「recorder 不参与决策」的定位冲突。
+P17A 已在用「只读消费 `DiagnosticMatch`」这个形状。
+
+### 8.3 判据冻结的守卫 —— **本项前提不成立，撤销**（2026-09-28 实测定论）
+
+原问题问的是「`gap = LOOSE_MAX_TICKS + 2` 与 `TRANSITION_TICKS` 的巧合被改后，
+design 里的判据会静默变假，怎么防」。
+
+**实测表明这个巧合不影响决策**：把 `LOOSE_MAX_TICKS` 2→1（此时 tackle 窗口**变为可挂载**），
+`close_down` **仍然出现**（seed 1 实测 44 → 52 拍）。即「窗口是 team-state」这条结论**与常数无关**——
+它的依据是「窗口同时驱动两队」（`press *= 2.0` + `close_down`），那是**代码结构**，不是窗口长度。
+
+**⇒ 无需守卫**。原第 5 项基于一个错误前提（把「可挂载性」当成了决策依据）。
+
+> ⚠️ 但**另一条**确实需要守卫，且已有做法：**窗口边界**（`+4` 与 `skip` 关系）若被重标定，
+> **重建公式**（`tackle 事件 + TRANSITION_TICKS`）会失效。这条写进 #15B design，
+> 并靠既有 `engineFingerprint` 哨兵（源变则基线红）兜住——沿用本仓既成做法，不新造机制。
+
+### 8.4 其余三项（原 2/4/6/7）
+
+| 项 | 裁定 |
+|---|---|
+| **顺序**（原 2） | `#16（含 phaseability gate）→ #15B`。**确认** |
+| **是否为 team-state observation 立项**（原 3） | **不立**（§6 实测：转换观测已现成） |
+| **存量口径数字**（原 4） | **已处理**：roadmap §4.3 已标 `1230/84/1106` **作废**，并注明可复现的是 `1230/124`。无遗留 |
+| **命名冲突**（原 6） | **写进 #15B design**：主 spec `match-engine:641` 的 `transition_active` 与 possession phase 闭集**不同概念**，勿混用同一名词。这是「防止后来者误用」的文档义务，不改 spec |
+| **`phase_segments` 填充**（原 7） | 见 8.2 |
+
+**⇒ #113 全部裁定完毕，无待决项。**
