@@ -247,8 +247,13 @@ pub struct Provenance {
     /// （实测：`canary.json` 记 `3baff0f`，但内嵌指纹对应当前工作树的源码）。
     ///
     /// P16 的教训是「不要求 `source_commit == HEAD`」（那会自失效）；但那条**不足以**
-    /// 表达「产出时是否含未提交改动」。故本栏如实记下——**内容绑定靠
-    /// `test_source_fingerprint`（硬门），本栏只补标签语义**，不参与 pass/fail。
+    /// 表达「产出时是否含未提交改动」。故本栏如实记下。
+    ///
+    /// ⚠️ **本栏参与 pass/fail**（第 4 轮审阅纠正）：它与 [`Self::worktree_override`]
+    /// 一起被**默认**测试读作内容不变量 —— `!(worktree_dirty && !worktree_override)`
+    /// （见 `on_disk_artifacts_share_the_current_source_fingerprint`）。
+    /// 若本栏被记成常量（撒谎）或绕过落盘门在脏树上写产物，该测试**直接判红**。
+    /// （此处曾写「只补标签语义，不参与 pass/fail」——那是第 2 轮修复后的残留假声明。）
     pub worktree_dirty: bool,
     /// 产出时是否设了 `P124_ALLOW_DIRTY`（**显式接受脏树**）。
     ///
@@ -262,6 +267,9 @@ pub struct Provenance {
     /// **纯内容不变量**：`!(worktree_dirty && !worktree_override)`
     /// ——「产物不得声称自己在脏树上产出，除非明确 override」。
     /// 该不变量在**干净树**上也能跑（它读产物内容，不需要造脏）：
+    /// ⚠️ **覆盖边界**：它在**产物不存在**时整段跳过（新 clone / CI 里
+    /// `target/p124-intent/` 为空 ⇒ 不变量不执行）。故它是「有产物时的守卫」，
+    /// **不替代**落盘门本身——落盘门由 [`artifact_write_guard`] 的纯函数测试覆盖。
     /// - 若门被绕过而在脏树上写了产物 ⇒ 产物记 `dirty=true, override=false` ⇒ **红**；
     /// - 若把 `worktree_dirty` 记成 `false`（撒谎）⇒ 与真跑 `git status` 不符 ⇒ **红**。
     pub worktree_override: bool,
