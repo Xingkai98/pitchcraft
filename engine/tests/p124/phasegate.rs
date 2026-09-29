@@ -290,7 +290,6 @@ fn rate_auc_spatial(
         auc: auc(&pos, &neg),
         pos_n: pos.len(),
         neg_n: neg.len(),
-        skipped_missing: skipped,
         skipped_in_set: skipped,
     }
 }
@@ -340,7 +339,6 @@ fn rate_auc_intent(
         auc: auc(&pos, &neg),
         pos_n: pos.len(),
         neg_n: neg.len(),
-        skipped_missing: skipped,
         skipped_in_set: skipped,
     }
 }

@@ -14,7 +14,7 @@
 //! | 纪律（design §4） | 本模块怎么保证 |
 //! |---|---|
 //! | NaN / 非有限显式判红 | [`require_finite`]：逐值判，**不依赖 `>`/`max` 的静默语义** |
-//! | 报「跳过几个 / 比较几个」 | [`RateAuc`] 同时带 `pos_n` / `neg_n` / `skipped_missing` |
+//! | 报「跳过几个 / 比较几个」 | [`RateAuc`] 同时带 `pos_n` / `neg_n` / `skipped_in_set` |
 //! | 反证条（已知应给高分） | 调用侧的对照臂（见 `purify.rs` 的 counter-proof） |
 //! | 参考集与特征**同一索引空间** | [`Pooled`]：`feats` 与 `facts` **同长同索引**，构造时断言；**无 `flatten`** |
 //!
@@ -50,7 +50,8 @@ pub fn require_finite(label: &str, v: f64) -> f64 {
 
 /// 一次被测收集的**完整账**——不只报分母。
 ///
-/// P16 的教训是「N 点通过」会被读成「大部分点通过了」；故**跳过数与比较数并列报**。
+/// P16 的教训是「N 点通过」会被读成「大部分点通过了」；故**跳过数与比较数并列报**
+/// （`pos_n` / `neg_n` / `skipped_in_set` 三个数一起读，不是只报分母）。
 #[derive(Debug, Clone, PartialEq)]
 pub struct RateAuc {
     /// 秩基 AUC。任一侧为空 → `None`（**不猜 0.5**）。
@@ -60,12 +61,17 @@ pub struct RateAuc {
     /// 不应属侧参与比较的样本数。
     pub neg_n: usize,
     /// 两侧合计**因特征缺失而跳过**的样本数（`None` / 非有限）。
-    pub skipped_missing: usize,
-    /// 两侧合计**在参考集内、但因特征缺失而跳过**的样本数（子集，见下）。
     ///
-    /// ⚠️ 与 `skipped_missing` 的区别：`skipped_missing` 是**逐集内**被跳过的，
-    /// 而本栏只统计「属于 pos/neg 集合却缺特征」的那些——缺失若在两侧分布不均，
-    /// AUC 会被**选择效应**污染。两个数并列报，正是为了让这种不均可见。
+    /// ## 为什么只有一个跳过计数（第 5 轮审阅纠正了一处夸大声明）
+    ///
+    /// 本结构曾**并列**两个字段（`skipped_missing` / `skipped_in_set`），doc 声称二者
+    /// 「有区别」。**代码里它们恒等**：所有 `rate_auc*` 实现都只遍历「属于 pos 或 neg 集合」
+    /// 的 episode（`if !a && !b { continue; }`），故**每一个跳过都在集合内**——
+    /// `let skipped_missing = skipped_in_set;` 是恒等赋值。留两个字段是**死字段 + 假声明**
+    /// （本 change 第 2/3/4/5 轮各抓到一次同族缺陷：doc 声称的机制代码里不存在）。
+    ///
+    /// ⇒ 只保留本栏。缺失若在两侧分布不均，AUC 会被**选择效应**污染——
+    /// 由 [`Self::require_clean`] 断言它为 0 来守。
     pub skipped_in_set: usize,
 }
 
@@ -286,12 +292,10 @@ pub fn rate_auc(
             None => skipped_in_set += 1,
         }
     }
-    let skipped_missing = skipped_in_set;
     RateAuc {
         auc: crate::gate::auc(&pos, &neg),
         pos_n: pos.len(),
         neg_n: neg.len(),
-        skipped_missing,
         skipped_in_set,
     }
 }

@@ -27,7 +27,7 @@
 | 纪律 | 落在哪 | 判别力怎么证的 |
 |---|---|---|
 | NaN/非有限**显式判红** | `probe.rs::require_finite`（**逐值**挂在 `rate_auc` 上） | `probe_rejects_non_finite_and_never_hides_skips` 喂 NaN/Inf 必须 panic；正常值不 panic |
-| 报「跳过几个 / 比较几个」 | `RateAuc{pos_n,neg_n,skipped_missing,skipped_in_set}` | 同上测试逐项打印；`require_clean` 断言集内跳过为 0 |
+| 报「跳过几个 / 比较几个」 | `RateAuc{pos_n,neg_n,skipped_in_set}` | 同上测试逐项打印；`require_clean` 断言集内跳过为 0 |
 | **参考集与特征同一索引空间**（**禁 `flatten`**） | `probe.rs::Pooled`：`feats`/`facts` 同长同索引 + 构造断言 | `pool_rejects_index_space_mismatch` 喂错位形态必须 panic |
 | **反证条** | `counter_proof_final_third` | `counter_proof_confirms_the_probe_is_intact`（复现 0.855 ±0.05） |
 | 谓词不得与 P16 分叉 | `purify.rs::motif_pred` | `motif_predicates_agree_with_the_p16_reference_set` 逐位比对 |
