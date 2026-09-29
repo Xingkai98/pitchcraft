@@ -2325,8 +2325,11 @@ fn rate_auc_spatial_matches_the_probe_implementation() {
 /// 语料里统计 `<name>` 的出现次数，要求 **≥ 3**（1 声明 + 1 赋值 + ≥1 读取）。
 /// 若只有 2 次（声明 + 赋值），即为死字段。
 ///
-/// ⚠️ 能力边界：名字计数**不是**数据流分析——`let x = self.f; let _ = x;` 这类会漏，
-/// 而「名字在别处偶然出现」会误放。挡的是本 change 实际发生的死字段形态。
+/// ⚠️ 能力边界（第 7 轮审阅实测，**不是推测**）：
+/// - `let x = self.f; let _ = x;` 这类**会漏**（不是数据流分析）；
+/// - **高频名**死字段（如 `share`）**会误放**——名字在别处偶然出现使计数 ≥ 3。
+///   本 change 历史的 `IntentCoverage::share` 恰是此形态（靠人工核发现，不是靠本守卫）。
+/// ⇒ 本守卫挡的是**唯一名**死字段；高频名死字段仍靠 rustc `dead_code` 警告 + 人工核。
 #[test]
 fn public_fields_have_readers() {
     let files: [(&str, &str); 7] = [

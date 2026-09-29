@@ -181,6 +181,10 @@ blob 逐一相等、index==HEAD tree）。后续所有轮次改用 `tar --exclud
 
 - ✅ `public_fields_have_readers`（已落地）：跨文件扫 `tests/p124/*` 的 `pub` 结构体字段，
   剥注释后名字总出现次数 ≤ 2（声明 + 赋值）即为死字段 ⇒ 红。**注入合成死字段验证判红**。
+  ⚠️ **已知边界（第 7 轮审阅实测）**：判据是**名字计数**，故对**高频名**（如 `share`）
+  的死字段会**放行**（名字在别处偶然出现 ⇒ 计数 ≥ 3）——而本 change 历史死字段
+  恰有 `IntentCoverage::share` 这一形态。⇒ 它挡的是**唯一名**死字段，不是全部；
+  高频名死字段仍靠 rustc `dead_code` 警告 + 人工核。**如实记录，不宣称已完备。**
 - ❌ `doc_referenced_symbols_exist`（**试做后放弃**）：扫 doc 注释里反引号标识符，
   要求凡形如本仓符号者都在代码里存在。**实测在正当文档上产生 66 条误报**——
   `intent_snapshots[i]`（下标写法）、`worktree_dirty=false`（字面量）、

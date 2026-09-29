@@ -159,7 +159,7 @@ pub const SPATIAL_FEATURES: &[(&str, fn(&crate::gate::EpisodeFeature) -> Option<
     ("forward_m/s[空间]", |e| Some(e.forward_m? / e.duration_s?)),
 ];
 
-/// 与 P16 的 `separability` **同表**的空间特征条数（前 [`SELF::P16_SEPARABILITY_ROWS`] 条）。
+/// 与 P16 的 `separability` **同表**的空间特征条数（[`SPATIAL_FEATURES`] 的前这么多条）。
 ///
 /// 守卫 `spatial_rows_match_the_p16_separability` 断言「实际比较到的条数 == 本常量」——
 /// 只按名字 `find` 会静默漏掉（独立审阅实测：名字带后缀 ⇒ 7 条里只有 1 条被比较）。
