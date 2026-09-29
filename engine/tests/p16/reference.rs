@@ -19,7 +19,6 @@
 //! 对「防止自己不小心写循环论证」这个目的够用；对「防恶意构造」不够——
 //! 那需要类型级隔离（把位置量封进一个 `Position` newtype，参考集侧不导入它）。
 
-use fm_engine::observation::*;
 use std::collections::BTreeMap;
 
 // ============================== 参考集（纯动作链 motif） ==============================
@@ -62,61 +61,56 @@ pub const REFERENCE_MOTIFS: &[ReferenceMotif] = &[
     },
 ];
 
-/// 构造某档参考集的 episode 下标集（**纯动作链**，零位置）。
-pub fn reference_set(dm: &DiagnosticMatch, name: &str) -> Vec<usize> {
-    let mut out = Vec::new();
-    for (i, ep) in dm.possession_episodes.iter().enumerate() {
-        let acts: Vec<&fm_engine::Event> = ep
-            .event_indexes
-            .iter()
-            .filter_map(|j| dm.events.get(*j))
-            .filter(|e| {
-                matches!(
-                    e.type_,
-                    fm_engine::EventType::Pass
-                        | fm_engine::EventType::Shot
-                        | fm_engine::EventType::Tackle
-                        | fm_engine::EventType::Foul
-                )
-            })
-            .collect();
-        if acts.is_empty() {
-            continue;
-        }
-        let is_delivery = |e: &fm_engine::Event| {
-            matches!(
-                e.detail.as_deref(),
-                Some("free_kick") | Some("throw_in") | Some("corner") | Some("goal_kick")
-            )
-        };
-        let open_passes = acts
-            .iter()
-            .filter(|e| {
-                e.type_ == fm_engine::EventType::Pass
-                    && !is_delivery(e)
-                    && e.result.as_deref() == Some("success")
-            })
-            .count();
-        let has_shot = acts.iter().any(|e| e.type_ == fm_engine::EventType::Shot);
-        let ends_shot = acts
-            .last()
-            .map(|e| e.type_ == fm_engine::EventType::Shot)
-            .unwrap_or(false);
-        let from_restart = matches!(
-            ep.start_reason,
-            EpisodeStartReason::Kickoff | EpisodeStartReason::RestartControl
-        );
-        let hit = match name {
-            "final_third_candidate" => ends_shot,
-            "build_up_candidate" => from_restart && open_passes >= 3 && !has_shot,
-            "progression_candidate" => open_passes >= 1 && !has_shot && !from_restart,
+/// 一个 episode 的**动作链事实**——参考集的**唯一**输入。
+///
+/// ## 为什么是这样一个类型（这是**结构性**隔离，不是纪律声明）
+///
+/// 契约要求判别参考集**不得由位置构造**（否则循环论证）。
+/// 文本扫描做不到这件事：实测（2026-09-29 第二轮独立审阅）把位置读取放进
+/// **另一个模块**的 helper、再用 `use` 在本文件调用，扫描**看不见**——
+/// 参考集已按位置剪裁，全套测试仍绿。
+///
+/// ⇒ 改为**类型级隔离**：本结构体**没有任何位置字段**，
+/// 且 [`reference_set`] 的签名**不接收观测层对象**（只接收 `&[ActionFacts]`）。
+/// 于是本文件里**任何** helper（无论定义在哪）都拿不到位置——
+/// 没有 `dm`，也没有可回推位置的字段。构造侧（`action_facts`）住在 `gate.rs`，
+/// 那里读事件、但**只提取动作类型/结果**这些非位置事实。
+///
+/// ⚠️ **剩余风险（如实记录）**：若有人往本结构体**加一个位置派生字段**，
+/// 类型隔离就被破坏。这一条由 `reference_set_source_references_no_position_quantity`
+/// 的**全文扫描**兜底（扫描本文件，位置 token 命中即红）——两层合起来才完整。
+/// （本 doc 刻意不写出那个字段名，否则会与扫描器自己的 token 表冲突——
+/// 本 change 已知的「注释里出现被扫字面量会红」形态。）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ActionFacts {
+    /// 开放比赛（排除定位球交付）的**成功**传球数。
+    pub open_success_passes: usize,
+    /// episode 内是否出现过 `shot`。
+    pub has_shot: bool,
+    /// **最后一个**决策动作是否是 `shot`。
+    pub ends_shot: bool,
+    /// episode 是否从重开开始（`start_reason ∈ {kickoff, restart_control}`）。
+    pub from_restart: bool,
+}
+
+/// 构造某档参考集的 episode 下标集。
+///
+/// **只吃 [`ActionFacts`]**——签名里没有观测层对象，故本函数及其任何 helper
+/// 都无法读到位置（见 [`ActionFacts`] 的说明）。
+pub fn reference_set(facts: &[ActionFacts], name: &str) -> Vec<usize> {
+    facts
+        .iter()
+        .enumerate()
+        .filter(|(_, f)| match name {
+            "final_third_candidate" => f.ends_shot,
+            "build_up_candidate" => f.from_restart && f.open_success_passes >= 3 && !f.has_shot,
+            "progression_candidate" => {
+                f.open_success_passes >= 1 && !f.has_shot && !f.from_restart
+            }
             _ => false,
-        };
-        if hit {
-            out.push(i);
-        }
-    }
-    out
+        })
+        .map(|(i, _)| i)
+        .collect()
 }
 
 /// 一档参考集的规模（覆盖率）。
@@ -131,37 +125,4 @@ pub fn reference_share(refs: &[usize], total: usize) -> Option<f64> {
 pub fn overlaps(a: &[usize], b: &[usize]) -> usize {
     let sb: std::collections::BTreeSet<usize> = b.iter().copied().collect();
     a.iter().filter(|i| sb.contains(i)).count()
-}
-
-/// 参考集规模与重叠的汇总（供报告）。
-#[derive(Debug, Clone, Default)]
-pub struct ReferenceSummary {
-    pub total_episodes: usize,
-    pub by_name: BTreeMap<&'static str, usize>,
-    pub pairwise_overlap: BTreeMap<(&'static str, &'static str), usize>,
-}
-
-impl ReferenceSummary {
-    pub fn build(dm: &DiagnosticMatch) -> Self {
-        let mut s = ReferenceSummary {
-            total_episodes: dm.possession_episodes.len(),
-            ..Default::default()
-        };
-        let sets: Vec<(&'static str, Vec<usize>)> = REFERENCE_MOTIFS
-            .iter()
-            .map(|m| (m.name, reference_set(dm, m.name)))
-            .collect();
-        for (n, r) in &sets {
-            s.by_name.insert(n, r.len());
-        }
-        for i in 0..sets.len() {
-            for j in i + 1..sets.len() {
-                let ov = overlaps(&sets[i].1, &sets[j].1);
-                if ov > 0 {
-                    s.pairwise_overlap.insert((sets[i].0, sets[j].0), ov);
-                }
-            }
-        }
-        s
-    }
 }

@@ -124,9 +124,9 @@
 - [x] 确定性测试（`identical_inputs_produce_byte_identical_output`：同输入两次逐字节相同）
 - [x] 产物落盘门（`p16_canary` 30 seed / `p16_baseline` 300 seed，均 `#[ignore]`）
 - [x] **代码审阅闭环**：独立只读 subagent 审阅 → 修复 → 再审阅 → 全过。
-      四轮独立审阅（设计层 3 轮 + 实现层 2 轮，均为**新起的零上下文 subagent**），
+      五轮独立审阅（设计层 3 + 实现层 3，均为**新起的零上下文 subagent**），
       抓到并修复：**2 条 P0**（采样点漏拍 / **join bug 使裁决算错、两版结论作废**）、
-      **4 条假覆盖**（源码扫描漏 token ×2 / 测试从没调 `simulate()` / 覆盖测试判别力边界）、
+      **5 条假覆盖**（源码扫描漏 token ×3 / 测试从没调 `simulate()` / 覆盖测试判别力边界）、
       1 条**错误机制**（把 bug 症状写成「小样本误导」）。
       完整记录：`REVIEW.md`。
 

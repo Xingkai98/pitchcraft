@@ -36,6 +36,80 @@
 use crate::caliber::*;
 use crate::features::*;
 use crate::reference::*;
+
+/// 一场比赛的**三档参考集下标**（对内经 [`action_facts`] → [`reference_set`]，
+/// 故参考集本身够不着位置；本适配器只做「过滤无动作 episode」与下标对齐）。
+pub fn reference_sets(dm: &DiagnosticMatch) -> Vec<(&'static str, Vec<usize>)> {
+    let facts = action_facts(dm);
+    REFERENCE_MOTIFS
+        .iter()
+        .map(|m| {
+            let mut idx = Vec::new();
+            for (i, f) in facts.iter().enumerate() {
+                let Some(f) = f else { continue };
+                if reference_set(std::slice::from_ref(f), m.name).contains(&0) {
+                    idx.push(i);
+                }
+            }
+            (m.name, idx)
+        })
+        .collect()
+}
+
+/// 从一场比赛抽取每 episode 的**动作链事实**（参考集的唯一输入）。
+///
+/// **它读事件、但只提取非位置事实**（动作类型 / `result` / `detail` 是否定位球 /
+/// `start_reason`）。构造出的 [`ActionFacts`] **不含任何位置字段**，
+/// 故 [`reference_set`] 结构上够不着位置（见 `ActionFacts` 的说明）。
+pub fn action_facts(dm: &DiagnosticMatch) -> Vec<Option<ActionFacts>> {
+    dm.possession_episodes
+        .iter()
+        .map(|ep| {
+            let acts: Vec<&fm_engine::Event> = ep
+                .event_indexes
+                .iter()
+                .filter_map(|j| dm.events.get(*j))
+                .filter(|e| {
+                    matches!(
+                        e.type_,
+                        fm_engine::EventType::Pass
+                            | fm_engine::EventType::Shot
+                            | fm_engine::EventType::Tackle
+                            | fm_engine::EventType::Foul
+                    )
+                })
+                .collect();
+            if acts.is_empty() {
+                return None;
+            }
+            let is_delivery = |e: &fm_engine::Event| {
+                matches!(
+                    e.detail.as_deref(),
+                    Some("free_kick") | Some("throw_in") | Some("corner") | Some("goal_kick")
+                )
+            };
+            Some(ActionFacts {
+                open_success_passes: acts
+                    .iter()
+                    .filter(|e| {
+                        e.type_ == fm_engine::EventType::Pass
+                            && !is_delivery(e)
+                            && e.result.as_deref() == Some("success")
+                    })
+                    .count(),
+                has_shot: acts.iter().any(|e| e.type_ == fm_engine::EventType::Shot),
+                ends_shot: acts
+                    .last()
+                    .map(|e| e.type_ == fm_engine::EventType::Shot)
+                    .unwrap_or(false),
+                from_restart: matches!(
+                    ep.start_reason,
+                    EpisodeStartReason::Kickoff | EpisodeStartReason::RestartControl
+                ),
+            })
+        })
+        .collect()
+}
 use fm_engine::observation::*;
 use std::collections::BTreeMap;
 
@@ -176,4 +250,45 @@ pub fn separability(
             }
         })
         .collect()
+}
+
+/// 参考集规模与重叠的汇总（供报告）。
+#[derive(Debug, Clone, Default)]
+pub struct ReferenceSummary {
+    pub total_episodes: usize,
+    pub by_name: BTreeMap<&'static str, usize>,
+    pub pairwise_overlap: BTreeMap<(&'static str, &'static str), usize>,
+}
+
+impl ReferenceSummary {
+    pub fn build(dm: &DiagnosticMatch) -> Self {
+        let mut s = ReferenceSummary {
+            total_episodes: dm.possession_episodes.len(),
+            ..Default::default()
+        };
+        let sets: Vec<(&'static str, Vec<usize>)> = REFERENCE_MOTIFS
+            .iter()
+            .map(|m| {
+                let all = reference_sets(dm);
+                let v = all
+                    .iter()
+                    .find(|(n, _)| *n == m.name)
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default();
+                (m.name, v)
+            })
+            .collect();
+        for (n, r) in &sets {
+            s.by_name.insert(n, r.len());
+        }
+        for i in 0..sets.len() {
+            for j in i + 1..sets.len() {
+                let ov = overlaps(&sets[i].1, &sets[j].1);
+                if ov > 0 {
+                    s.pairwise_overlap.insert((sets[i].0, sets[j].0), ov);
+                }
+            }
+        }
+        s
+    }
 }

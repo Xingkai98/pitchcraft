@@ -1085,12 +1085,30 @@ fn motifs_do_not_use_position() {
 /// 实测：把位置读取放进**体外 helper** 再在体内调用，**全套 32 条仍绿**，
 /// 而参考集已真的用上位置（`build_up` vs `progression` 的 AUC 从 0.461 移到 0.552）。
 ///
-/// ⇒ 结构性修复：参考集（含其全部 helper）**拆到独立文件 `p16/reference.rs`**，
-/// 本守卫扫**该文件全文**。任何 helper 都必须在文件内，故全文扫描**覆盖调用闭包**。
+/// ⇒ 第一层修复：参考集拆到独立文件 `p16/reference.rs`，本文扫描**该文件全文**。
 ///
-/// ⚠️ **能力边界（如实记录）**：这仍不是形式化证明（没有真正的调用图分析）。
-/// 它挡「不小心写循环论证」，挡不住「刻意用晦涩别名读位置」——
-/// 那需要类型级隔离（把位置量封进 `Position` newtype，参考集侧不导入）。
+/// ## ⚠️ 但「拆文件」**不足以**保证——第二层是**类型隔离**（第三轮独立审阅的 P1）
+///
+/// 拆文件只搬走了**现有** helper，**没有任何机制阻止**再往 `gate.rs` 加一个：
+/// 实测（2026-09-29）把位置读取放进 `gate.rs` 的 `pub fn __pos_gate`、
+/// 在 `reference.rs` 里 `use crate::gate::__pos_gate` 并调用——**全套仍绿**，
+/// 而参考集已按位置剪裁（`build_up` 从 17 条降到 9 条）。
+/// 文本扫描**结构上做不到**这件事（无调用图分析），
+/// 故「任何 helper 必须在文件内 ⇒ 覆盖调用闭包」那句是**事实错误**，已删。
+///
+/// ⇒ 第二层修复：**类型隔离**。参考集只吃 [`ActionFacts`]（**无任何位置字段**），
+/// `reference_set` 的签名**不接收观测层对象**。构造侧 `gate.rs::action_facts`
+/// 读事件但**只提取动作类型/结果**。故 `reference.rs` 里**任何** helper
+/// （不论定义在哪）都拿不到位置。
+///
+/// **两层合起来**：类型隔离挡「拿到位置」，全文扫描挡「往 `ActionFacts` 加位置字段」
+/// （本测试另断言 `reference.rs` 不含 `DiagnosticMatch`——那是唯一能回推位置的入口）。
+///
+/// ⚠️ **剩余能力边界（如实记录）**：仍非形式化证明。若有人**同时**给 `ActionFacts`
+/// 加一个改名后的位置字段、并在 `gate.rs` 填充、且该字段名不在本文的 token 表里，
+/// 两层的**文本**那一层看不见（类型那一层此时也已失效——因为 `ActionFacts` 被污染了）。
+/// 真正完备需要位置量在**类型系统层面**不可达（如独立的 crate 边界）。
+/// 本 change 的两层防护对「防自己不小心写循环论证」够用，对「防刻意构造」不够。
 #[test]
 fn reference_set_source_references_no_position_quantity() {
     // 扫**整个** `reference.rs`（不是某个函数体）——这是本守卫的关键。
@@ -1134,10 +1152,19 @@ fn reference_set_source_references_no_position_quantity() {
     }
     // 反证的反证：扫描必须真的落在参考集代码上（不是空文件 / 扫错路径）。
     assert!(
-        SRC.contains("open_passes") && SRC.contains("ends_shot") && SRC.contains("reference_set"),
+        SRC.contains("reference_set")
+            && SRC.contains("ActionFacts")
+            && SRC.contains("open_success_passes")
+            && SRC.contains("ends_shot"),
         "源码扫描没有落在参考集代码上——守卫失效，须修扫描目标"
     );
     assert!(SRC.len() > 500, "扫到的文件过短（{} 字节）", SRC.len());
+    // **类型隔离的正面证据**：`reference.rs` 不得出现 `DiagnosticMatch`——
+    // 那是**唯一**能回推位置的入口。一旦它能拿到 `DiagnosticMatch`，类型隔离就破了。
+    assert!(
+        !SRC.contains("DiagnosticMatch"),
+        "`p16/reference.rs` 出现了 `DiagnosticMatch` —— 参考集必须只吃无位置的 `ActionFacts`"
+    );
 }
 
 /// **参考集谓词语义被钉住**（防「文档说 A、实现做 B」）。
@@ -1166,7 +1193,11 @@ fn reference_predicate_semantics_are_pinned() {
         let Some(last) = acts.last() else { continue };
         let has_shot = acts.iter().any(|e| e.type_ == EventType::Shot);
         let ends_shot = last.type_ == EventType::Shot;
-        let in_final = reference_set(&dm, "final_third_candidate").contains(&i);
+        let in_final = reference_sets(&dm)
+            .iter()
+            .find(|(n, _)| *n == "final_third_candidate")
+            .map(|(_, v)| v.contains(&i))
+            .unwrap_or(false);
         assert_eq!(
             in_final, ends_shot,
             "episode {i}: `final_third_candidate` 的归属（{in_final}）必须等于\
@@ -1186,7 +1217,11 @@ fn reference_sets_are_sized_and_documented() {
         println!(
             "  {n}: {c} ({:.1}%)",
             reference_share(
-                &reference_set(&dm, n),
+                &reference_sets(&dm)
+                    .iter()
+                    .find(|(nm, _)| nm == n)
+                    .map(|(_, v)| v.clone())
+                    .unwrap_or_default(),
                 sum.total_episodes
             )
             .unwrap_or(0.0)
@@ -1236,7 +1271,11 @@ fn phaseability_separability_is_measured() {
         );
         let local_count = dm.possession_episodes.len();
         for m in REFERENCE_MOTIFS {
-            let refs = reference_set(&dm, m.name);
+            let refs = reference_sets(&dm)
+                .iter()
+                .find(|(nm, _)| *nm == m.name)
+                .map(|(_, v)| v.clone())
+                .unwrap_or_default();
             all_refs
                 .entry(m.name)
                 .or_default()
@@ -1376,7 +1415,15 @@ fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
             all_refs
                 .entry(m.name)
                 .or_default()
-                .extend(reference_set(&dm, m.name).into_iter().map(|i| i + offset));
+                .extend(
+                    reference_sets(&dm)
+                        .iter()
+                        .find(|(nm, _)| *nm == m.name)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|i| i + offset),
+                );
         }
         // ⚠️ **下标必须抬成全局**（v1 的 join bug 就在这一行少写了 `i + offset`）。
         all_feats.extend(feats.into_iter().map(|(i, f)| (i + offset, f)));
@@ -1762,7 +1809,15 @@ pub fn run_and_write(
             all_refs
                 .entry(m.name)
                 .or_default()
-                .extend(reference_set(&dm, m.name).into_iter().map(|i| i + offset));
+                .extend(
+                    reference_sets(&dm)
+                        .iter()
+                        .find(|(nm, _)| *nm == m.name)
+                        .map(|(_, v)| v.clone())
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|i| i + offset),
+                );
         }
         // 逐 episode 的特征覆盖
         for ep in &dm.possession_episodes {
