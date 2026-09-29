@@ -98,9 +98,12 @@
 
 ## Slice 5 — 产物与审阅
 
-- [ ] 特征定义文档 + 覆盖率报告 + 裁决（含证据与回放定位）
-- [ ] 产物自带 provenance（口径版本 + 引擎源码指纹 + seed 集）
-- [ ] 确定性测试（同输入两次运行逐字节相同）
+- [x] 特征定义文档 + 覆盖率报告 + 裁决（`tests/p16/report.rs` → `target/p16-baseline/*.md|json`；
+      含四段：口径覆盖率 / 静态队形 / 时间关系 / phaseability 裁决 + 已知缺口清单）
+- [x] 产物自带 provenance（`caliber_version` + `engine_source_fingerprint` +
+      `sidecar_schema_fingerprint` + **`has_state_snapshots`** + seed 集 + 口径常量快照）
+- [x] 确定性测试（`identical_inputs_produce_byte_identical_output`：同输入两次逐字节相同）
+- [x] 产物落盘门（`p16_canary` 30 seed / `p16_baseline` 300 seed，均 `#[ignore]`）
 - [ ] **代码审阅闭环**：独立只读 subagent 审阅 → 修复 → 再审阅 → 全过
 
 ## 停止条件

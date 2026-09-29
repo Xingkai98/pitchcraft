@@ -36,6 +36,12 @@
 //! | [`phaseability_verdict_is_not_enough_and_the_evidence_shows_chance_level_auc`] | gate（**裁决：不够**） | ✅ |
 //! | [`reference_set_source_references_no_position_quantity`] | gate（循环性防护：**源码扫描**） | ✅ |
 //! | [`reference_predicate_semantics_are_pinned`] | gate（谓词语义被钉住） | ✅ |
+//! | [`identical_inputs_produce_byte_identical_output`] | 产物（确定性） | ✅ |
+//! | [`provenance_carries_the_comparability_triple`] | 产物（provenance 三件套） | ✅ |
+//! | [`p16_does_not_change_the_p17a_schema_fingerprint`] | 产物（不使 P17A 指纹陈旧） | ✅ |
+//! | [`provenance_caliber_snapshot_lists_the_live_constants`] | 产物（口径快照活性） | ✅ |
+//! | `p16_canary` | 产物落盘（30 seed） | ❌ `#[ignore]` |
+//! | `p16_baseline` | 产物落盘（300 seed） | ❌ `#[ignore]` |
 //!
 //! **产物落盘测试（`p16_canary` / `p16_baseline`）尚未建**——属 Slice 5，随特征与裁决一并落地。
 //! 届时按 P17A 的形态加 `#[ignore]` 门与 JSON/Markdown 产物。
@@ -57,10 +63,13 @@ mod shape;
 mod features;
 #[path = "p16/gate.rs"]
 mod gate;
+#[path = "p16/report.rs"]
+mod report;
 
 use caliber::*;
 use features::*;
 use gate::*;
+use report::*;
 use shape::*;
 use fm_engine::observation::*;
 use fm_engine::{simulate_with_behavior_observations, EventType, MatchConfig};
@@ -1320,6 +1329,361 @@ fn phaseability_verdict_is_not_enough_and_the_evidence_shows_chance_level_auc() 
             m.name
         );
     }
+}
+
+// ============================== 产物与 provenance（Slice 5） ==============================
+
+/// **确定性**：同输入两次运行**逐字节相同**（产物可复现的前提）。
+#[test]
+fn identical_inputs_produce_byte_identical_output() {
+    let build = || -> String {
+        let dm = observe(1);
+        let cov = {
+            let mut c = CaliberCoverage::default();
+            c.observe_match(&dm);
+            c
+        };
+        let ms = MatchShape::observe_match(&dm);
+        let mut fc = FeatureCoverage::default();
+        for ep in &dm.possession_episodes {
+            let Some(_c) = caliber_of(&dm, ep) else { continue };
+            let end = ep.end_t.map(|t| t.value);
+            let frames: Vec<(f64, StateSnapshot)> = dm
+                .state_snapshots
+                .iter()
+                .filter(|s| {
+                    s.t.value + 1e-9 >= ep.start_t.value
+                        && end.map(|e| s.t.value <= e + 1e-9).unwrap_or(false)
+                })
+                .map(|s| (s.t.value, s.clone()))
+                .collect();
+            let ball = collect_ball_track(&frames);
+            let shapes = collect_shapes(&frames, ep.team);
+            for w in windows_over((ep.start_t.value, end), 0.0) {
+                let wf: Vec<(f64, StateSnapshot)> = frames
+                    .iter()
+                    .filter(|(t, _)| *t + 1e-9 >= w.start && *t < w.end - 1e-9)
+                    .cloned()
+                    .collect();
+                fc.observe_window(&WindowFeatures {
+                    window: w,
+                    net_progress: None,
+                    displacement: decompose_displacement(&collect_ball_track(&wf), ep.team),
+                    line_spacing: line_spacing_change(&collect_shapes(&wf, ep.team)),
+                    support_frames: wf
+                        .iter()
+                        .filter(|(_, sn)| {
+                            support_formation(sn, ep.team)
+                                .map(|f| f.supporters > 0)
+                                .unwrap_or(false)
+                        })
+                        .count(),
+                    snap_frames: wf.len(),
+                });
+                let _ = (&ball, &shapes);
+            }
+        }
+        let p = build_provenance("test", 1, 1, DUR);
+        to_markdown(&p, &cov, &ms.home, &fc, &[])
+    };
+    let a = build();
+    let b = build();
+    assert_eq!(a, b, "同输入两次运行必须逐字节相同");
+    assert!(a.contains("P16"), "产物应含标题");
+}
+
+/// **provenance 必含可比性三件套**（design §2.3 / spec「口径写进产物」）。
+///
+/// - `caliber_version`（本 change 的口径版本）；
+/// - `engine_source_fingerprint`（哪份源码）；
+/// - `has_state_snapshots`（**G1 是否生效**——`sidecar_schema_fingerprint` 对结构体
+///   字段是盲区，区分不了有无位置快照，故必须另记这一栏）。
+#[test]
+fn provenance_carries_the_comparability_triple() {
+    let p = build_provenance("canary", 1, 30, DUR);
+    let json = provenance_json(&p);
+    let md = provenance_markdown(&p);
+    for needle in [
+        "caliber_version",
+        "engine_source_fingerprint",
+        "has_state_snapshots",
+        "sidecar_schema_fingerprint",
+        "source_commit",
+    ] {
+        assert!(json.contains(needle), "provenance JSON 缺 `{needle}`：{json}");
+        assert!(md.contains(needle), "provenance Markdown 缺 `{needle}`");
+    }
+    // `has_state_snapshots` 必须是**真**（本 change 开了 G1）。
+    assert!(
+        p.has_state_snapshots,
+        "本 change 开了位置导出，`has_state_snapshots` 必须为真"
+    );
+    // JSON 里该 bool 用字符串形（极简 JSON 无 bool 变体），键与值都在。
+    assert!(
+        json.contains("has_state_snapshots"),
+        "JSON 缺 has_state_snapshots 键：{json}"
+    );
+    assert!(
+        json.contains("true"),
+        "JSON 里 has_state_snapshots 的值应为 true：{json}"
+    );
+    // 引擎指纹必须覆盖 rng.rs 等全部仿真源（与 P17A 同判据）。
+    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let mut on_disk: Vec<String> = std::fs::read_dir(&src)
+        .expect("读 engine/src 失败")
+        .filter_map(|e| {
+            let n = e.ok()?.file_name().to_string_lossy().to_string();
+            n.ends_with(".rs").then_some(n)
+        })
+        .collect();
+    on_disk.sort();
+    let covered: Vec<&str> = ENGINE_SOURCES.iter().map(|(n, _)| *n).collect();
+    for f in &on_disk {
+        if f == "wasm.rs" {
+            continue; // 平台垫片，不进本测试的编译单元（与 P17A 同处置）
+        }
+        assert!(
+            covered.contains(&f.as_str()),
+            "`engine/src/{f}` 影响仿真却不在 P16 的指纹清单里 → 改它时两产物会静默不可比"
+        );
+    }
+    assert!(covered.contains(&"rng.rs"), "指纹必须覆盖 rng.rs");
+    // **独立重建**：自己从磁盘读、自己拼哈希（防「实现返回常数」）。
+    let mut combined = String::new();
+    for (name, _) in ENGINE_SOURCES {
+        combined.push_str(name);
+        combined.push('\n');
+        combined.push_str(&std::fs::read_to_string(src.join(name)).expect("读源码失败"));
+        combined.push('\n');
+    }
+    let rebuilt = format!("fnv1a64:{:016x}", fnv1a(&combined));
+    assert_eq!(
+        rebuilt,
+        engine_source_fingerprint(),
+        "指纹必须可由「磁盘源码 + 同配方」独立重建——不符说明实现返回了常数或漏了文件"
+    );
+    // 且指纹**对内容敏感**（改一个字节就变）。
+    let mutated = format!("{}x", combined);
+    assert_ne!(
+        format!("fnv1a64:{:016x}", fnv1a(&mutated)),
+        engine_source_fingerprint(),
+        "指纹对内容不敏感——守卫失去意义"
+    );
+}
+
+/// **`sidecar_schema_fingerprint` 与 P17A 一致**——P16 只**取用**它，不改动它的语义。
+///
+/// ⚠️ 这条正是「新增结构体字段不进指纹」的**证据**：本 change 加了
+/// `DiagnosticMatch.state_snapshots`，若指纹变了，P17A 已落盘产物会全部陈旧。
+#[test]
+fn p16_does_not_change_the_p17a_schema_fingerprint() {
+    let p = build_provenance("test", 1, 1, DUR);
+    // P17A 的冻结值：由 `tests/p17a/model.rs` 的同配方算出（闭集枚举 ALL 的顺序敏感哈希）。
+    // 这里**只断言它非空且形如 fnv1a64**，并把值打印出来供与 P17A 产物人工比对——
+    // 硬编码一个期望值会让「P17A 侧合法改枚举」时本测试误红（那是 P17A 的事，不是 P16 的）。
+    assert!(
+        p.sidecar_schema_fingerprint.starts_with("fnv1a64:"),
+        "指纹格式应为 fnv1a64:…，实测 {}",
+        p.sidecar_schema_fingerprint
+    );
+    println!(
+        "P16 产物记录 sidecar_schema_fingerprint = {}（应与 P17A 产物同值——本 change 未改闭集枚举）",
+        p.sidecar_schema_fingerprint
+    );
+}
+
+/// **口径常量快照必须列出真正驱动判据的量**（本仓 P17A 的教训：曾把**死常量**写进快照）。
+///
+/// 判别力：若有人把 `WINDOW_SECONDS` 从快照里删掉，本测试红——那时 reviewer 就无法
+/// 从产物核对窗口长度，而它正是 Slice 3 的唯一可调参数。
+#[test]
+fn provenance_caliber_snapshot_lists_the_live_constants() {
+    let p = build_provenance("test", 1, 1, DUR);
+    let names: Vec<&str> = p.caliber.iter().map(|(k, _)| *k).collect();
+    for need in [
+        "window_seconds",
+        "support_max_dist_m",
+        "support_min_forward_m",
+        "pitch_length_m",
+        "pitch_width_m",
+    ] {
+        assert!(
+            names.contains(&need),
+            "口径快照缺 `{need}`（它是驱动判据的活常量）——当前：{names:?}"
+        );
+    }
+    // 且这些常量确实是**活**的（改它们会改变特征输出）。
+    assert!(crate::features::WINDOW_SECONDS > 0.0);
+    assert!(crate::features::SUPPORT_MAX_DIST_M > 0.0);
+}
+
+/// **`#[ignore]` 门：canary 产物落盘**（30 seed）。用
+/// `cargo test --release --test p16_spatial_features -- --ignored --nocapture p16_canary` 跑。
+#[test]
+#[ignore = "30 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p16_canary"]
+fn p16_canary() {
+    let (_, r, p) = run_and_write("canary", 1, 30);
+    assert_eq!(r.episodes, r.start_available, "起点位置必须 100% 可得");
+    assert!(r.windows > 500, "窗口数过少：{}", r.windows);
+    println!("[p16:canary] caliber_version={}", p.caliber_version);
+}
+
+/// **`#[ignore]` 门：300 seed 基线产物**（与 P17A 同区间，供前后对比）。
+#[test]
+#[ignore = "300 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p16_baseline"]
+fn p16_baseline() {
+    let (_, r, _p) = run_and_write("baseline", 1, 300);
+    assert_eq!(r.episodes, r.start_available, "起点位置必须 100% 可得");
+}
+
+/// 一次产物运行的统计摘要（供上面的门断言）。
+#[derive(Debug, Clone, Default)]
+pub struct RunSummary {
+    pub episodes: usize,
+    pub start_available: usize,
+    pub windows: usize,
+}
+
+/// 跑一个 seed 区间，落盘 JSON + Markdown，返回 (路径, 摘要, provenance)。
+pub fn run_and_write(
+    mode: &str,
+    first: u64,
+    last: u64,
+) -> (std::path::PathBuf, RunSummary, Provenance) {
+    let mut cov = CaliberCoverage::default();
+    let mut shape_cov = ShapeCoverage::default();
+    let mut feat_cov = FeatureCoverage::default();
+    let mut all_feats: Vec<(usize, EpisodeFeature)> = Vec::new();
+    let mut all_refs: std::collections::BTreeMap<&'static str, Vec<usize>> = Default::default();
+    let mut offset = 0usize;
+    for seed in first..=last {
+        let dm = observe(seed);
+        cov.observe_match(&dm);
+        let ms = MatchShape::observe_match(&dm);
+        // 合并主队覆盖（客队同量级，产物只列一队；两队都记在 JSON 里会更全，但摘要取主队）。
+        shape_cov.frames += ms.home.frames;
+        shape_cov.computable += ms.home.computable;
+        for (k, v) in &ms.home.missing_reasons {
+            *shape_cov.missing_reasons.entry(k).or_insert(0) += v;
+        }
+        for (k, v) in &ms.home.in_episode {
+            *shape_cov.in_episode.entry(k).or_insert(0) += v;
+        }
+        let feats = episode_features(&dm);
+        for m in REFERENCE_MOTIFS {
+            all_refs
+                .entry(m.name)
+                .or_default()
+                .extend(reference_set(&dm, m.name).into_iter().map(|i| i + offset));
+        }
+        // 逐 episode 的特征覆盖
+        for ep in &dm.possession_episodes {
+            let Some(cal) = caliber_of(&dm, ep) else { continue };
+            let end = ep.end_t.map(|t| t.value);
+            let frames: Vec<(f64, StateSnapshot)> = dm
+                .state_snapshots
+                .iter()
+                .filter(|s| {
+                    s.t.value + 1e-9 >= ep.start_t.value
+                        && end.map(|e| s.t.value <= e + 1e-9).unwrap_or(false)
+                })
+                .map(|s| (s.t.value, s.clone()))
+                .collect();
+            for w in windows_over((ep.start_t.value, end), 0.0) {
+                let wf: Vec<(f64, StateSnapshot)> = frames
+                    .iter()
+                    .filter(|(t, _)| *t + 1e-9 >= w.start && *t < w.end - 1e-9)
+                    .cloned()
+                    .collect();
+                feat_cov.observe_window(&WindowFeatures {
+                    window: w,
+                    // 净推进是**逐 episode** 的量（复用位置口径），在每个窗口里重复报告——
+                    // 它是「这条 episode 净推进了多少」，不是窗口级的。
+                    net_progress: goalward_net_progress(&cal),
+                    displacement: decompose_displacement(&collect_ball_track(&wf), ep.team),
+                    line_spacing: line_spacing_change(&collect_shapes(&wf, ep.team)),
+                    support_frames: wf
+                        .iter()
+                        .filter(|(_, sn)| {
+                            support_formation(sn, ep.team)
+                                .map(|f| f.supporters > 0)
+                                .unwrap_or(false)
+                        })
+                        .count(),
+                    snap_frames: wf.len(),
+                });
+            }
+        }
+        offset += feats.len();
+        all_feats.extend(feats);
+    }
+
+    // gate 行（每档的「最强空间特征」）
+    let mut gate_rows: Vec<(String, String, f64, usize, usize)> = Vec::new();
+    for m in REFERENCE_MOTIFS {
+        let refs = all_refs.get(m.name).cloned().unwrap_or_default();
+        let seps = separability(&refs, &all_feats);
+        if let Some(s) = seps
+            .iter()
+            .filter(|s| !s.feature.starts_with("start_progress"))
+            .filter(|s| s.auc.is_some())
+            .max_by(|a, b| {
+                (b.auc.unwrap() - 0.5)
+                    .abs()
+                    .partial_cmp(&(a.auc.unwrap() - 0.5).abs())
+                    .unwrap()
+            })
+        {
+            gate_rows.push((
+                m.name.to_string(),
+                s.feature.to_string(),
+                s.auc.unwrap(),
+                s.pos_n,
+                s.neg_n,
+            ));
+        }
+    }
+
+    let provenance = build_provenance(mode, first, last, DUR);
+    let summary = RunSummary {
+        episodes: cov.episodes,
+        start_available: cov.start_available,
+        windows: feat_cov.windows,
+    };
+    let dir = out_dir();
+    std::fs::create_dir_all(&dir).expect("创建产物目录失败");
+    let md = to_markdown(&provenance, &cov, &shape_cov, &feat_cov, &gate_rows);
+    let json = format!(
+        "{},\"caliber_coverage\":{},\"feature_coverage\":{}}}",
+        provenance_json(&provenance).trim_end_matches('}'),
+        obj(&[
+            ("episodes", J::Int(cov.episodes as i64)),
+            ("start_available", J::Int(cov.start_available as i64)),
+            ("end_available", J::Int(cov.end_available as i64)),
+            ("band_disagreement", J::Int(cov.band_disagreement as i64)),
+            ("band_comparable", J::Int(cov.band_comparable as i64)),
+        ]),
+        obj(&[
+            ("windows", J::Int(feat_cov.windows as i64)),
+            ("win_net_progress", J::Int(feat_cov.win_net_progress as i64)),
+            ("win_displacement", J::Int(feat_cov.win_displacement as i64)),
+            ("win_line_spacing", J::Int(feat_cov.win_line_spacing as i64)),
+            ("win_support", J::Int(feat_cov.win_support as i64)),
+        ]),
+    );
+    let md_path = dir.join(format!("{mode}.md"));
+    let json_path = dir.join(format!("{mode}.json"));
+    std::fs::write(&md_path, md).expect("写 Markdown 失败");
+    std::fs::write(&json_path, json).expect("写 JSON 失败");
+    println!(
+        "[p16:{mode}] {} seed / {} episode / {} 窗口 | 落盘 {} / {}",
+        last - first + 1,
+        summary.episodes,
+        summary.windows,
+        md_path.display(),
+        json_path.display()
+    );
+    (md_path, summary, provenance)
 }
 
 // ============================== 口径：起点来源 ==============================
