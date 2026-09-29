@@ -92,9 +92,54 @@
 
 ## Slice 3 — 意图类特征
 
-- [ ] 逐 episode 定义意图特征（如：起脚窗口是否开启/开启时刻/窗口内犹豫时长；防守方式分布；受压程度）
-- [ ] 每条：定义 + 覆盖率 + 缺失原因分类
-- [ ] **不得从位置反推意图**（那是 P16 已证不足的做法）
+- [x] 逐 episode 定义意图特征（如：起脚窗口是否开启/开启时刻/窗口内犹豫时长；防守方式分布；受压程度）
+- [x] 每条：定义 + 覆盖率 + 缺失原因分类
+- [x] **不得从位置反推意图**（那是 P16 已证不足的做法）
+
+### Slice 3 特征清单（`tests/p124/intent.rs`，30 seed / 3075 episode）
+
+| 特征 | 定义 | 覆盖率 | 缺失原因 |
+|---|---|---|---|
+| `window_opened` | episode 内是否出现过起脚窗口（`in_window` ≥1 拍） | 全可算 | 无（bool；判别力前提 = 有有效拍） |
+| `window_share` | `in_window` 拍数 / 有效拍数 | **1.000** | 无有效拍（4 例） |
+| `setup_share` | `has_shot_setup` 拍数 / 有效拍数 | **1.000** | 无有效拍（4 例） |
+| `first_window_frac` | 首次进窗的归一化时刻 `(t−start)/(end−start)` | 0.171 | 未开窗或时长为 0（2550 例） |
+| `max_window_ticks` | `window_ticks` 最大值（窗口内**犹豫**时长） | 0.171 | 未开窗（2550 例） |
+| `pressure_share` | `pressure_state_ticks > 0` 拍数 / 有效拍数 | **1.000** | 无有效拍（4 例） |
+| `pressure_mean` | `pressure_state_ticks` 逐拍均值（**未归一**） | **1.000** | 无有效拍（4 例） |
+| `def_per_s` | 防守机会数 / 时长（**累计量须归一**） | 1.000 | 时长不可得或为 0（1 例） |
+| `def_share[*]` | 五类防守动作占该 episode 机会的比例 | 0.969 | **无机会（94 例）→ `None` 不是 0** |
+
+### Slice 3 的**类型隔离**（铁律的落点，不是风格选择）
+
+`match_intents` **不接收 `DiagnosticMatch`**，只收三个无位置切片
+（`&[IntentSnapshot]` / `&[DefensiveIntent]` / `&[PossessionEpisode]`）——
+position 只活在 `dm.state_snapshots`，故意图特征及其**任何** helper（无论定义在哪）
+**结构上够不着位置**。这是 P16 最终采用的类型隔离做法（文本扫描做不到——见
+`p16/reference.rs`）。文本扫描（`intent_features_cannot_reach_positions`）只作回归下限。
+
+### Slice 3 的定向变异（**实跑均红**）
+
+| 定向变异 | 抓它的测试 |
+|---|---|
+| `match_intents` 改收 `DiagnosticMatch`（破类型隔离） | `intent_features_cannot_reach_positions` |
+| 逐 tick 通道去掉时间下界 `>= start` | `intent_features_share_the_index_space_with_calibers` + `intent_feature_coverage_is_reported` |
+| 稀疏通道改为**按下标**过滤（`i % 3`） | `defensive_intents_are_attributed_by_time_window_not_by_index` |
+
+⚠️ **第 3 条是变异测试逼出来的缺口**：最初我以为「无机会 → None」+ 下标空间两条测试
+覆盖了防守通道——**实测该变异全套 16 条仍绿**。⇒ 补写按时间窗归因的守卫
+（含闭区间边界与**窗外动作 = `Some(0.0)` 而非 `None`** 的语义区分）。
+
+### ⚠️ 首版守卫被自己判红两次（记录，不掩盖）
+
+1. `intent_features_cannot_reach_positions` 的文本扫描**没剥注释** ⇒
+   `intent.rs` 文档里为解释纪律而写的 `StateSnapshot` 被当成违规代码。
+   （修：先剥 `//` 之后的全部内容——与 P15 守卫同法。）
+2. 同一条扫描用 `.pos` 作 token ⇒ **命中 `Iter::position(`**（实测 2 处误报）。
+   （修：改用无歧义的 `pos[`。）
+3. `defensive_intents_are_attributed_by_time_window_not_by_index` 首版把窗外动作
+   期望成 `None` ⇒ 被自己判红。正确语义是 **`Some(0.0)`**（「有机会但 0 次是该动作」）；
+   `None` 在本模块专表「**没有机会**」。这条区分本身是缺失语义的一部分，已写进断言。
 
 ## Slice 4 — 重跑 phaseability gate
 

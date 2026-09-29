@@ -17,6 +17,17 @@
 //! | [`pool_rejects_index_space_mismatch`] | 探针（**判别力**：索引空间错位即红） | ✅ |
 //! | [`motif_predicates_agree_with_the_p16_reference_set`] | 净化（谓词与 P16 同源） | ✅ |
 //! | [`purification_reproduces_the_p16_verdict`] | 净化（本 change 的 Slice 1 产出） | ✅ |
+//! | [`intent_export_is_tick_aligned_with_positions`] | 意图接出（两条通道同拍） | ✅ |
+//! | [`intent_export_never_enters_the_formal_path`] | 意图接出（正式路径逐字节 + 空操作） | ✅ |
+//! | [`intent_semantics_are_pinned`] | 意图接出（三态语义被钉住） | ✅ |
+//! | [`defensive_intents_are_sparse_and_well_formed`] | 意图接出（稀疏 + 分母 + `defender` 语义） | ✅ |
+//! | [`contact_intents_match_the_event_stream`] | 意图接出（**独立来源**交叉核对） | ✅ |
+//! | [`committed_is_not_observable_at_the_per_tick_sampling_point`] | 意图接出（**已知缺口**被钉住） | ✅ |
+//! | [`intent_features_share_the_index_space_with_calibers`] | 意图特征（下标空间同 P16） | ✅ |
+//! | [`intent_features_cannot_reach_positions`] | 意图特征（**铁律**：够不着位置） | ✅ |
+//! | [`intent_feature_coverage_is_reported`] | 意图特征（覆盖率 + 缺失分类） | ✅ |
+//! | [`def_share_is_none_when_there_was_no_opportunity`] | 意图特征（缺失语义） | ✅ |
+//! | [`defensive_intents_are_attributed_by_time_window_not_by_index`] | 意图特征（**时间窗归因**，变异逼出） | ✅ |
 //!
 //! 跑法：
 //!
@@ -32,6 +43,8 @@ mod probe;
 mod purify;
 #[path = "p124/pool.rs"]
 mod pool;
+#[path = "p124/intent.rs"]
+mod intent;
 
 // 复用 P16 的管线（**只读**：不改 `tests/p16/*`，只 include 其模块）。
 //
@@ -55,7 +68,8 @@ mod gate;
 mod reference;
 
 use fm_engine::observation::{
-    BehaviorObservationRecorder, DefensiveIntentKind, IntentState, ObservedTime,
+    BehaviorObservationRecorder, DefensiveIntent, DefensiveIntentKind, DiagnosticMatch,
+    IntentSnapshot, IntentState, ObservedTime,
 };
 use pool::*;
 use probe::*;
@@ -727,4 +741,322 @@ fn contact_intents_match_the_event_stream() {
             "seed {seed} 没有任何 `tackle` 意图——上面的等式在 0==0 上恒真，无判别力"
         );
     }
+}
+
+// ============================== Slice 3：意图类特征 ==============================
+
+/// 抽一场比赛的意图特征（**与 `episode_features` 同一下标空间**）。
+///
+/// ⚠️ **类型隔离的调用姿态**：只从 `dm` 里取**三个无位置通道**（意图快照 / 保守事件 /
+/// episode 列表），**绝不把 `dm` 本身**传进意图模块——位置（`state_snapshots`）
+/// 因此结构上到不了特征计算（见 `intent.rs` 的 `match_intents` doc）。
+fn intents_of(dm: &DiagnosticMatch) -> Vec<crate::intent::EpisodeIntent> {
+    crate::intent::match_intents(&dm.intent_snapshots, &dm.defensive_intents, &dm.possession_episodes)
+}
+
+/// **意图特征的下标空间与 P16 的口径特征逐位对齐**——P16 join bug 的直接防线。
+///
+/// P16 的裁决测试断言 `episode_features(&dm).len() == dm.possession_episodes.len()`；
+/// 本 change 又加了一条平行数组（意图特征）。**两条数组必须同长同序**，否则
+/// 「用意图特征解释某个 episode」时会把标签套到别的 episode 上——而**两侧各自看都自洽**。
+#[test]
+fn intent_features_share_the_index_space_with_calibers() {
+    for seed in [1u64, 2, 7] {
+        let dm = observe(seed);
+        let feats = crate::gate::episode_features(&dm);
+        let intents = intents_of(&dm);
+        assert_eq!(
+            feats.len(),
+            dm.possession_episodes.len(),
+            "seed {seed}：口径特征数 != episode 数（P16 已守的口径）"
+        );
+        assert_eq!(
+            intents.len(),
+            dm.possession_episodes.len(),
+            "seed {seed}：意图特征数 {} != episode 数 {}——意图通道静默跳过了一些 episode，\
+             下标空间已与本地下标错位（P16 join bug 的同型）",
+            intents.len(),
+            dm.possession_episodes.len()
+        );
+        // 逐位核对：第 i 条意图特征对应的 episode 时间窗，必须与该 episode 的 start_t 一致。
+        for (i, (it, ep)) in intents.iter().zip(dm.possession_episodes.iter()).enumerate() {
+            let end = ep.end_t.map(|t| t.value).unwrap_or(
+                dm.intent_snapshots.last().map(|s| s.t.value).unwrap_or(0.0),
+            );
+            assert_eq!(
+                it.duration_s,
+                ep.end_t.map(|t| t.value - ep.start_t.value),
+                "seed {seed}：第 {i} 条意图特征的时长与该 episode 的不符——下标空间不同步"
+            );
+            // `valid_ticks` 与直接按窗过滤的结果一致（本条独立复算，不采信上面的构造）。
+            let direct = dm
+                .intent_snapshots
+                .iter()
+                .filter(|s| s.t.value + 1e-9 >= ep.start_t.value && s.t.value <= end + 1e-9)
+                .count();
+            assert_eq!(
+                it.valid_ticks, direct,
+                "seed {seed}：第 {i} 条意图特征的 `valid_ticks`（{}）与直接按窗过滤（{direct}）不一致",
+                it.valid_ticks
+            );
+        }
+    }
+}
+
+/// **意图模块结构上够不着位置**——铁律「不得从位置反推意图」的落点。
+///
+/// 两条判据：
+/// ① `intent.rs` **源码里没有**任何位置 token（`state_snapshots` / `pos` / `ball` / `.x` …）；
+/// ② `match_intents` 的签名**不接收 `DiagnosticMatch`**（唯一的构造侧，故类型隔离完整）。
+///
+/// ⚠️ **判据 ①（文本扫描）单独不够**：P16 实测「把位置读取放进别的文件的 helper 再 `use`
+/// 进来」可绕过扫描。故真正的保证是 ②（类型隔离）——① 只是回归下限。
+/// 两者合起来才覆盖「本文件里写位置」与「本文件外借位置」。
+#[test]
+fn intent_features_cannot_reach_positions() {
+    let src = include_str!("p124/intent.rs");
+    let prod = src.split("#[cfg(test)]").next().expect("源文件应有测试段");
+    // ⚠️ **先剥注释**（本仓 P15 守卫同法）：本文件的文档里**必须**写「不得读
+    // `state_snapshots` / `StateSnapshot`」来解释这条纪律——不剥注释的话，
+    // **解释规则的注释**会被当成违规代码（实测：首版即被 `StateSnapshot` 误报）。
+    // 剥的是每行 `//` 之后的全部内容（覆盖 `//` / `//!` / `///`），保留行结构。
+    let code: String = prod
+        .lines()
+        .map(|l| &l[..l.find("//").unwrap_or(l.len())])
+        .collect::<Vec<_>>()
+        .join("\n");
+    // ⚠️ token 必须**无歧义**：`.pos` 会命中 `Iter::position(`（实测首版即被误报），
+    // 故位置字段用 `pos[` / `.ball`（后者在代码里只会是位置字段，不会撞别的方法名）。
+    for token in [
+        "state_snapshots",
+        "StateSnapshot",
+        "DiagnosticMatch",
+        "pos[",
+        ".ball",
+        "PITCH_LENGTH",
+        "attack_dir",
+        "progress(",
+    ] {
+        assert!(
+            !code.contains(token),
+            "`intent.rs` 的**代码**里出现位置 token `{token}`——意图特征不得读位置\
+             （P16 已证空间量不足）。注释里提到这些名字是允许的（那是纪律说明），\
+             但代码里出现即违规。"
+        );
+    }
+    // ② 类型隔离：签名只收三个无位置通道。
+    assert!(
+        prod.contains("pub fn match_intents(\n    snaps: &[IntentSnapshot],\n    defensive: &[DefensiveIntent],\n    episodes: &[PossessionEpisode],\n)"),
+        "`match_intents` 的签名变了——它必须**只**收三个无位置通道（意图快照 / 保守事件 / episode 列表），\
+         不得接收 `DiagnosticMatch`（那会让位置结构上可达）。当前签名见 `intent.rs`。"
+    );
+}
+
+/// **意图特征的覆盖率与缺失分类**（Slice 3 的交付物之一）。
+///
+/// 断言：① 每条特征都有**可算的** episode（不是全缺）；② 缺失原因都落在闭集里；
+/// ③ 「没有观测」与「有观测但值缺」分开记账（`valid_ticks == 0` vs 特征 `None`）。
+#[test]
+fn intent_feature_coverage_is_reported() {
+    let mut cov = crate::intent::IntentCoverage::default();
+    let mut all: Vec<crate::intent::EpisodeIntent> = Vec::new();
+    for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
+        let dm = observe(seed);
+        for it in intents_of(&dm) {
+            cov.observe(&it);
+        }
+        all.extend(intents_of(&dm));
+    }
+    assert_eq!(cov.episodes, all.len(), "覆盖率分母 != 样本数");
+    println!(
+        "意图特征覆盖率（{} seed / {} episode）：",
+        GATE_SEEDS.1 - GATE_SEEDS.0 + 1,
+        cov.episodes
+    );
+    for (k, c) in &cov.computed {
+        println!("  可算 {k}: {c}（{:.3}）", *c as f64 / cov.episodes as f64);
+    }
+    for (k, c) in &cov.missing {
+        println!("  缺失 {k}: {c}");
+    }
+    // ① 每条特征至少在一部分 episode 上可算（否则该特征无信息）。
+    for name in [
+        "window_share",
+        "setup_share",
+        "pressure_share",
+        "pressure_mean",
+        "def_per_s",
+    ] {
+        let c = cov.computed.get(name).copied().unwrap_or(0);
+        assert!(
+            c > cov.episodes / 2,
+            "意图特征 `{name}` 只在 {c}/{} episode 上可算——覆盖率过低，该特征不承载信息",
+            cov.episodes
+        );
+    }
+    // ② `first_window_frac` / `max_window_ticks` 只在**开窗**的 episode 上可算——
+    //    覆盖少是**预期的**（窗口稀疏），但要 >0（否则该特征恒缺）。
+    for name in ["first_window_frac", "max_window_ticks"] {
+        let c = cov.computed.get(name).copied().unwrap_or(0);
+        assert!(
+            c > 0,
+            "意图特征 `{name}` 一个 episode 都算不出来——窗口从未被观测到？"
+        );
+    }
+    // ③ 控制条：三档的窗口开启率必须**显著不同**——这是意图信号携带 phase 信息的**直接证据**
+    //    （P16 的 final_third 空间特征 0.855 之所以可能，正因为射门与三档强相关）。
+    let mut open_by_zone: std::collections::BTreeMap<&str, (usize, usize)> = Default::default();
+    let mut idx = 0usize;
+    for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
+        let dm = observe(seed);
+        let facts = crate::gate::action_facts(&dm);
+        let intents = intents_of(&dm);
+        for (i, f) in facts.iter().enumerate() {
+            let Some(f) = f else { continue };
+            let zone = if f.ends_shot {
+                "final_third"
+            } else if f.from_restart && f.open_success_passes >= 3 && !f.has_shot {
+                "build_up"
+            } else if !f.from_restart && f.open_success_passes >= 1 && !f.has_shot {
+                "progression"
+            } else {
+                continue;
+            };
+            let e = open_by_zone.entry(zone).or_insert((0, 0));
+            e.0 += 1;
+            if intents[i].window_opened {
+                e.1 += 1;
+            }
+        }
+        idx += 1;
+    }
+    for (zone, (n, opened)) in &open_by_zone {
+        println!(
+            "  {zone}: {opened}/{n} = {:.3} 开窗",
+            *opened as f64 / *n as f64
+        );
+    }
+    let rate = |z: &str| {
+        let (n, o) = open_by_zone[z];
+        o as f64 / n as f64
+    };
+    assert!(
+        rate("final_third") > rate("progression") + 0.2,
+        "final_third 的开窗率（{:.3}）必须显著高于 progression（{:.3}）——\
+         否则「起脚窗口」这条意图信号不承载 phase 信息，整个 Slice 2 的接出白做",
+        rate("final_third"),
+        rate("progression")
+    );
+    assert!(
+        rate("build_up") < 0.5,
+        "build_up 的开窗率 {:.3} 过高——build_up 是「未进入射门」的档，不该大量开窗",
+        rate("build_up")
+    );
+    let _ = idx;
+}
+
+/// **`def_share` 无机会时是 `None` 而不是 0**——缺失语义的判别力测试。
+///
+/// 用**手工 fixture**（生产可达形态：一个无防守机会的 episode）验证。
+/// ⚠️ 不用生产不可达的取值（本仓 P15/P17A 教训）：「无防守机会」在真实数据里确实出现
+/// （实测 30 seed 有 94 个 episode）。
+#[test]
+fn def_share_is_none_when_there_was_no_opportunity() {
+    // 一个只含 1 拍的 episode，窗口内**没有**防守事件。
+    let snaps = vec![IntentSnapshot {
+        t: ObservedTime::state_commit(1.0),
+        state: IntentState::no_shot_setup(0),
+    }];
+    let it = crate::intent::episode_intent(&snaps, &[], 1.0, 1.0, Some(1.0));
+    assert_eq!(it.def_opportunities, 0);
+    for k in fm_engine::observation::DefensiveIntentKind::ALL {
+        assert!(
+            it.def_share_of(*k).is_none(),
+            "无防守机会时 `{}` 的比例必须记 `None`——记 0 会把「没机会」读成「全是别的动作」",
+            k.as_str()
+        );
+    }
+    // 反证条：同一个构造，**加一条**防守事件后比例必须变成 `Some`（否则上面是恒真）。
+    let with_one = vec![DefensiveIntent {
+        t: ObservedTime::state_commit(1.0),
+        kind: fm_engine::observation::DefensiveIntentKind::Contain,
+        defender: None,
+    }];
+    let it2 = crate::intent::episode_intent(&snaps, &with_one, 1.0, 1.0, Some(1.0));
+    assert_eq!(it2.def_opportunities, 1);
+    assert_eq!(
+        it2.def_share_of(fm_engine::observation::DefensiveIntentKind::Contain),
+        Some(1.0),
+        "反证条：有 1 条 contain 机会时，contain 比例必须是 1.0——否则上面「全 None」恒真"
+    );
+}
+
+/// **稀疏防守通道按「时间窗」归因，不按下标**——定向变异抓出来的缺口守卫。
+///
+/// ## 来由（**这条是被变异测试逼出来的，不是先想到的**）
+///
+/// 我最初以为 `def_share_is_none_when_there_was_no_opportunity` + 下标空间测试
+/// 覆盖了防守通道。**定向变异显示没有**：把 `episode_intent` 里防守事件的
+/// `if d.t.value ∈ [start, end]` 换成任一**不按时间**的过滤（实测用 `i % 3`），
+/// **全套 16 条仍绿**——因为既有的两条测试要么用空防守列表、要么只核对逐 tick 通道。
+///
+/// ⇒ 本测试用**手工 fixture** 直接钉住时间窗语义：三条防守事件，两条落在窗内、
+/// 一条落在窗外。判据是**窗外那条不计入**。
+///
+/// ⚠️ fixture 取值**生产可达**（本仓 P15/P17A 教训）：episode 窗 `[10, 20]` 与
+/// 相邻窗的防守事件都是真实形态（事件时间恒等于某个 tick 的 `t`）。
+#[test]
+fn defensive_intents_are_attributed_by_time_window_not_by_index() {
+    let def = |t: f64, k: DefensiveIntentKind| DefensiveIntent {
+        t: ObservedTime::state_commit(t),
+        kind: k,
+        defender: None,
+    };
+    let defensive = vec![
+        def(5.0, DefensiveIntentKind::Foul),    // 窗**前**（属上一个 episode）
+        def(12.0, DefensiveIntentKind::Contain), // 窗内
+        def(18.0, DefensiveIntentKind::Jockey),  // 窗内
+        def(25.0, DefensiveIntentKind::Tackle),  // 窗**后**（属下一个 episode）
+    ];
+    let snaps = vec![IntentSnapshot {
+        t: ObservedTime::state_commit(10.0),
+        state: IntentState::no_shot_setup(0),
+    }];
+    let it = crate::intent::episode_intent(&snaps, &defensive, 10.0, 20.0, Some(10.0));
+    assert_eq!(
+        it.def_opportunities, 2,
+        "窗 [10,20] 内应只有 2 条防守事件（12.0 与 18.0）——\
+         实测 {} 条，说明归因**不是按时间窗**（按了下标？）",
+        it.def_opportunities
+    );
+    assert_eq!(
+        it.def_share_of(DefensiveIntentKind::Contain),
+        Some(0.5),
+        "contain 应占 1/2"
+    );
+    assert_eq!(
+        it.def_share_of(DefensiveIntentKind::Jockey),
+        Some(0.5),
+        "jockey 应占 1/2"
+    );
+    // ⚠️ 窗外的动作必须表现为 **`Some(0.0)`**（「本 episode 有 2 次机会，其中 0 次是 foul」），
+    // **不是** `None`——`None` 在本模块是「**没有机会**」的语义（见 `def_share` 的 doc）。
+    // 首版我写成了 `None`，被本测试自己判红：那会把「窗外的 foul」与「没有观测」混为一谈。
+    assert_eq!(
+        it.def_share_of(DefensiveIntentKind::Foul),
+        Some(0.0),
+        "窗前的 foul **不得**计入本 episode（应为 0/2）——若为 0.5 说明归因漏了时间下界"
+    );
+    assert_eq!(
+        it.def_share_of(DefensiveIntentKind::Tackle),
+        Some(0.0),
+        "窗后的 tackle **不得**计入本 episode（应为 0/2）——若为 0.5 说明归因漏了时间上界"
+    );
+    // 边界（闭区间）：恰好落在 start / end 上的事件**计入**（与 P16 的帧过滤同口径）。
+    let edge = vec![def(10.0, DefensiveIntentKind::Foul), def(20.0, DefensiveIntentKind::Foul)];
+    let it_edge = crate::intent::episode_intent(&snaps, &edge, 10.0, 20.0, Some(10.0));
+    assert_eq!(
+        it_edge.def_opportunities, 2,
+        "闭区间 `[start, end]` 的边界事件应计入（与 P16 帧过滤同口径）"
+    );
 }
