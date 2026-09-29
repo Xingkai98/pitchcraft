@@ -25,9 +25,24 @@
 //! | [`committed_is_not_observable_at_the_per_tick_sampling_point`] | 意图接出（**已知缺口**被钉住） | ✅ |
 //! | [`intent_features_share_the_index_space_with_calibers`] | 意图特征（下标空间同 P16） | ✅ |
 //! | [`intent_features_cannot_reach_positions`] | 意图特征（**铁律**：够不着位置） | ✅ |
-//! | [`intent_feature_coverage_is_reported`] | 意图特征（覆盖率 + 缺失分类） | ✅ |
+//! | [`intent_feature_coverage_is_reported`] | 意图特征（覆盖率 + 缺失分类 + **防守通道端到端**） | ✅ |
 //! | [`def_share_is_none_when_there_was_no_opportunity`] | 意图特征（缺失语义） | ✅ |
 //! | [`defensive_intents_are_attributed_by_time_window_not_by_index`] | 意图特征（**时间窗归因**，变异逼出） | ✅ |
+//! | [`intent_feature_definitions_are_pinned`] | 意图特征（**定义被钉住**：首个/最后一拍、压迫恒真、判别位） | ✅ |
+//! | [`spatial_rows_match_the_p16_separability`] | gate（空间侧对照基线**逐条**同输出） | ✅ |
+//! | [`def_none_signal_is_mechanically_tied_to_shots`] | gate（**循环性**：`def_none`） | ✅ |
+//! | [`window_features_are_mechanically_tied_to_shots`] | gate（**循环性**：窗口三条，P0-1） | ✅ |
+//! | [`gate_rerun_and_p16_baseline_side_by_side`] | gate（重跑 + 基线并列） | ✅ |
+//! | [`purification_over_intent_features_reproduces_the_verdict`] | gate（**再净化一次**） | ✅ |
+//! | [`verdict_best_intent_row_is_adequately_sampled`] | 裁决（最强行样本充足 + 方向） | ✅ |
+//! | [`identical_inputs_produce_byte_identical_output`] | 产物（确定性） | ✅ |
+//! | [`rendered_json_is_structurally_valid`] | 产物（JSON 结构合法） | ✅ |
+//! | [`json_validator_rejects_the_known_bad_shapes`] | 产物（校验器判别力） | ✅ |
+//! | [`merge_into_object_strips_exactly_one_brace`] | 产物（剥一个 `}`） | ✅ |
+//! | [`provenance_carries_the_comparability_triple`] | 产物（可比性三件套） | ✅ |
+//! | [`provenance_records_worktree_state`] | 产物（工作树状态，P1-2） | ✅ |
+//! | [`on_disk_artifacts_share_the_current_source_fingerprint`] | 产物（与源码同源） | ✅ |
+//! | `p124_canary` / `p124_baseline` | 产物落盘 | ❌ `#[ignore]` |
 //!
 //! 跑法：
 //!
@@ -907,6 +922,41 @@ fn intent_feature_coverage_is_reported() {
             "意图特征 `{name}` 一个 episode 都算不出来——窗口从未被观测到？"
         );
     }
+    // ②b **防守通道的端到端守卫**（独立审阅抓到的 P1-1）。
+    //
+    // ⚠️ 为什么需要它：上面 ① 只断言 `def_per_s`「可算 > episodes/2」——而**丢掉整条
+    // 防守通道**后，`def_opportunities` 恒 0 ⇒ `def_per_s = Some(0/d)` **仍算「可算」**，
+    // 断言照过。实测：把 `match_intents` 里防守事件换成 `&[]`，**全套 27 条测试全绿**，
+    // 而 5 条 `def_*` 特征全部失效。这是本 change 的核心交付之一，**必须端到端守**。
+    //
+    // 三条互补判据：
+    //  (a) `def_share[*]` 必须在一部分 episode 上真的可算（丢失通道 → 恒缺）；
+    //  (b) 「无防守机会」的 episode 数必须**远小于**全部（丢失通道 → 等于全部）；
+    //  (c) `def_per_s` 不得是常量（丢失通道 → 恒 0.0）。
+    let def_share_computed = cov.computed.get("def_share[*]").copied().unwrap_or(0);
+    assert!(
+        def_share_computed > cov.episodes / 2,
+        "`def_share[*]` 只在 {def_share_computed}/{} episode 上可算——防守通道可能整条失效\
+         （丢失后此数恒 0）",
+        cov.episodes
+    );
+    assert!(
+        cov.episodes_without_def_opportunities < cov.episodes / 4,
+        "「无防守机会」的 episode 有 {}/{}——占超过 1/4，防守通道可能整条失效\
+         （丢失后此数 == episodes）",
+        cov.episodes_without_def_opportunities,
+        cov.episodes
+    );
+    let def_rates: std::collections::BTreeSet<u64> = all
+        .iter()
+        .filter_map(|e| e.def_per_s())
+        .map(|v| (v * 1e6).round() as u64)
+        .collect();
+    assert!(
+        def_rates.len() > 10,
+        "`def_per_s` 只有 {} 个不同取值（可能恒为常量 0.0）——防守通道失效？",
+        def_rates.len()
+    );
     // ③ 控制条：三档的窗口开启率必须**显著不同**——这是意图信号携带 phase 信息的**直接证据**
     //    （P16 的 final_third 空间特征 0.855 之所以可能，正因为射门与三档强相关）。
     let mut open_by_zone: std::collections::BTreeMap<&str, (usize, usize)> = Default::default();
@@ -1079,29 +1129,64 @@ fn spatial_rows_match_the_p16_separability() {
     let get = |name: &str| -> Vec<usize> {
         sets.iter().find(|(n, _)| *n == name).map(|(_, v)| v.clone()).unwrap_or_default()
     };
+    let mut compared = 0usize;
     for zone in ["final_third_candidate", "build_up_candidate", "progression_candidate"] {
         let set = get(zone);
         let p16_rows = crate::gate::separability(&set, &p.feats);
         let mine = crate::phasegate::gate_rows(&p, &vec![Default::default(); p.feats.len()], &set, &crate::probe::complement(&p, &set), "x");
-        for r16 in &p16_rows {
-            if let Some(mine_row) = mine.iter().find(|m| m.feature == r16.feature) {
-                match (r16.auc, mine_row.auc) {
-                    (Some(a), Some(b)) => assert!(
-                        (a - b).abs() < 1e-12,
-                        "空间特征 `{}` 在档 `{zone}`：P16 `separability` 给 {a:.6}，\
-                         本模块给 {b:.6}——对照基线被换掉了，两侧不可比",
-                        r16.feature
-                    ),
-                    (None, None) => {}
-                    (x, y) => panic!(
-                        "空间特征 `{}` 在档 `{zone}`：一侧可算一侧不可算（P16={x:?} vs 本模块={y:?}）",
-                        r16.feature
-                    ),
-                }
+        // ⚠️ **按下标比对，不按名字 find**（独立审阅抓到的 P0）：
+        // 两侧特征名**不同**（本模块带 `[空间]` 后缀），`find(|m| m.feature == r16.feature)`
+        // 会**永不命中**——7 条里只有 `start_progress[区域量·仅对照]`（两侧同名的唯一一条）
+        // 真被比较，其余 6 条**静默跳过**。实测：把 `net_progress` 改读 `backward_m`
+        // （AUC 0.666→0.462）**全套测试仍绿**。
+        assert_eq!(
+            p16_rows.len(),
+            crate::phasegate::P16_SEPARABILITY_ROWS,
+            "P16 的 `separability` 表条数变了（本模块按下标比对，条数不同即错位）——\
+             请同步 `SPATIAL_FEATURES` 的前 {} 条",
+            crate::phasegate::P16_SEPARABILITY_ROWS
+        );
+        for (i, r16) in p16_rows.iter().enumerate() {
+            // 下标对齐：本模块的 `SPATIAL_FEATURES[i]` 与 P16 的第 `i` 条必须**同名**。
+            let mine_name = crate::phasegate::SPATIAL_FEATURES[i].0;
+            assert_eq!(
+                mine_name.trim_end_matches("[空间]"),
+                r16.feature,
+                "第 {i} 条空间特征两侧**不同源**：P16=`{}`，本模块=`{mine_name}`——\
+                 `SPATIAL_FEATURES` 的顺序/取值被改动了（对照基线不可比）",
+                r16.feature
+            );
+            let mine_row = mine
+                .iter()
+                .find(|m| m.feature == mine_name)
+                .unwrap_or_else(|| panic!("本模块应产出特征 `{mine_name}`"));
+            match (r16.auc, mine_row.auc) {
+                (Some(a), Some(b)) => assert!(
+                    (a - b).abs() < 1e-12,
+                    "空间特征 `{}` 在档 `{zone}`：P16 `separability` 给 {a:.6}，\
+                     本模块给 {b:.6}——对照基线被换掉了，两侧不可比",
+                    r16.feature
+                ),
+                (None, None) => {}
+                (x, y) => panic!(
+                    "空间特征 `{}` 在档 `{zone}`：一侧可算一侧不可算（P16={x:?} vs 本模块={y:?}）",
+                    r16.feature
+                ),
             }
+            compared += 1;
         }
     }
-    println!("空间侧 {} 档与 P16 的 `separability` 逐条同输出", 3);
+    // **防空转**：实际比较到的条数必须 = 表条数 × 档数（不是 1）。独立审阅实测旧版只有 3 条
+    // （1 条 × 3 档），而 doc 声称「每一条空间特征」。
+    assert_eq!(
+        compared,
+        crate::phasegate::P16_SEPARABILITY_ROWS * 3,
+        "只比较了 {compared} 条——旧版按名字 `find` 会静默漏掉（名字带后缀）。\
+         本守卫必须比较 **{} 条**（{} 条 × 3 档）",
+        crate::phasegate::P16_SEPARABILITY_ROWS * 3,
+        crate::phasegate::P16_SEPARABILITY_ROWS
+    );
+    println!("空间侧 3 档 × {} 条，与 P16 的 `separability` 按下标逐条同输出（比较 {compared} 条）", crate::phasegate::P16_SEPARABILITY_ROWS);
 }
 
 /// **`def_none` 的信号与射门机制同源**——循环性防护的判别力测试。
@@ -1231,28 +1316,59 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
          两档几乎从不开窗）。若一条都没有，说明样本量门槛已失效（或数据变了）——\
          届时须重新核对「哪些行算证据」，不要让一条空的分支留在测试里。"
     );
-    // ③ final_third 的意图信号：起脚窗口类特征应强。
-    for name in ["window_opened", "setup_share"] {
-        let a = t
-            .final_vs_rest
-            .iter()
-            .find(|r| r.feature == name)
-            .and_then(|r| r.auc)
-            .unwrap_or_else(|| panic!("`{name}` 的 AUC 应可算"));
+    // ③ **`final_third` 的意图侧没有可用证据**（独立审阅抓到 P0-1 后的更正）。
+    //
+    // ⚠️ **本断言曾经写反了**：旧版要求 `window_opened`/`setup_share` 的 AUC **> 0.9**
+    // ——而它们恰恰是**同义反复**（见 `window_features_are_mechanically_tied_to_shots`），
+    // 于是那条断言在**保护一个坏结论**。现在改为断言相反的事实：
+    // **剔除循环行后，final_third 上没有任何样本充足的、非循环的意图证据**。
+    let final_intent_evidence: Vec<&crate::phasegate::GateRow> = t
+        .final_vs_rest
+        .iter()
+        .filter(|r| r.provenance == crate::phasegate::Provenance::Intent)
+        .filter(|r| r.is_adequately_sampled())
+        .collect();
+    for r in &final_intent_evidence {
+        let a = r.auc.expect("样本充足的行应可算 AUC");
+        println!(
+            "   [final_third 意图·非循环·样本充足] {}：AUC={a:.3}（pos={} neg={}）",
+            r.feature, r.pos_n, r.neg_n
+        );
         assert!(
-            a > 0.9,
-            "`{name}` 对 final_third 的 AUC = {a:.3} 应 > 0.9（起脚窗口是射门的前置）——\
-             低于说明意图接出与射门脱节"
+            (a - 0.5).abs() < 0.9,
+            "`{}` 的 AUC {a:.3} 异常（越界？）",
+            r.feature
         );
     }
-    // ④ `def_none` 的循环性必须**在表里可见**（标了 `[循环·仅对照]`）。
     assert!(
-        t.final_vs_rest
-            .iter()
-            .any(|r| r.feature.contains("循环") && r.provenance == crate::phasegate::Provenance::Circular),
-        "表中必须有一条标为 `[循环·仅对照]` 的特征（`def_none`）——否则读者会把它的高 AUC \
-         当成判别力证据（它其实是 `ends_shot` 的同义反复）"
+        final_intent_evidence.is_empty()
+            || final_intent_evidence.iter().all(|r| {
+                // 允许弱信号（>0.5 但不足 0.75），不允许「强判据」。
+                r.auc.map(|a| (a - 0.5).abs() < 0.25).unwrap_or(true)
+            }),
+        "final_third 的**非循环样本充足**意图特征中出现了强判据（|Δ|≥0.25）——\
+         裁决的「意图侧无证据」表述须更新（先查它是否也是循环量）"
     );
+    // ④ 循环性必须**在表里可见**：窗口三条 + `def_none`（共 4 条），全部标 `[循环·仅对照]`。
+    //    它们的高 AUC 是 `ends_shot` 的同义反复，读者不得当判别力证据。
+    let circular_rows: Vec<&str> = t
+        .final_vs_rest
+        .iter()
+        .filter(|r| r.provenance == crate::phasegate::Provenance::Circular)
+        .map(|r| r.feature)
+        .collect();
+    assert_eq!(
+        circular_rows.len(),
+        4,
+        "final_third 表应有 **4** 条循环行（`window_opened`/`window_share`/`setup_share`/`def_none`），\
+         实际 {circular_rows:?}——独立审阅抓到旧版只标了 1 条，漏掉了 AUC 最高（0.966）的三条窗口特征"
+    );
+    for name in ["window_opened", "window_share", "setup_share", "def_none"] {
+        assert!(
+            circular_rows.iter().any(|f| f.starts_with(name)),
+            "`{name}` 必须标为循环（它在 final_third 上与 `ends_shot` 机制同源）"
+        );
+    }
 }
 
 /// **再净化一次**——接入意图信号后，重新做一次 motif 混淆净化（design §3 的要求）。
@@ -1614,7 +1730,24 @@ fn on_disk_artifacts_share_the_current_source_fingerprint() {
 }
 
 /// 写一份产物到盘（`{name}.md` + `{name}.json`）——落盘测试共用。
+///
+/// ⚠️ **工作树脏时拒绝落盘**（独立审阅 P1-2 的处置）：产物记的是**产出时的 HEAD**，
+/// 若工作树有未提交改动，产物内容与 commit 标签就**说不通**（实测：`canary.json` 记
+/// `3baff0f`，而内嵌指纹对应当前工作树源码）。**内容绑定**靠 `test_source_fingerprint`
+/// （硬门），本检查补的是**标签语义**——让「产物来自哪份源码」不再有歧义。
+///
+/// 要**故意**在脏树上落盘（例如本地调试），设 `P124_ALLOW_DIRTY=1`——此时 provenance
+/// 的 `worktree_dirty` 记 `true`，读者可据此判断。
 fn write_artifacts(name: &str) -> String {
+    if crate::report::worktree_is_dirty() && std::env::var("P124_ALLOW_DIRTY").is_err() {
+        panic!(
+            "工作树有未提交改动，拒绝落盘产物——产物的 `source_commit` 会是当时的 HEAD，\
+             与产物内容（含未提交改动）说不通（独立审阅 P1-2）。\
+             请先提交，或设 `P124_ALLOW_DIRTY=1` 明确接受（provenance 会记 `worktree_dirty=true`）。\n\
+             git status --porcelain:\n{}",
+            crate::report::worktree_status_porcelain()
+        );
+    }
     let (md, json) = render_artifacts(name);
     let dir = crate::report::out_dir();
     std::fs::create_dir_all(&dir).unwrap_or_else(|e| panic!("建目录 {} 失败：{e}", dir.display()));
@@ -1730,6 +1863,27 @@ fn provenance_carries_the_comparability_triple() {
     }
 }
 
+/// **provenance 记录工作树状态**（P1-2 的处置）——内容绑定之外的**标签语义补充**。
+#[test]
+fn provenance_records_worktree_state() {
+    let p = crate::report::build_provenance("test", 1, 1, DUR);
+    // 本栏**必须**与真跑的 `git status --porcelain` 一致（不是硬编码）。
+    let dirty = crate::report::worktree_is_dirty();
+    assert_eq!(
+        p.worktree_dirty, dirty,
+        "provenance 的 `worktree_dirty`（{}）与真跑的 `git status --porcelain`（{dirty}）不符",
+        p.worktree_dirty
+    );
+    // 反证条：本栏**能被观测到为 true**——在本测试进程里无法可靠造脏（会改仓库），
+    // 故改为断言「字段存在且类型正确、且 MD/JSON 都有它」（内容活性由落盘门覆盖）。
+    let md = crate::report::provenance_markdown(&p);
+    let json = crate::report::provenance_json(&p);
+    assert!(md.contains("`worktree_dirty`"), "MD provenance 缺 `worktree_dirty`");
+    assert!(json.contains("\"worktree_dirty\""), "JSON provenance 缺 `worktree_dirty`");
+    // 键名在两份产物里**逐字一致**（P16 的教训：别名会让交叉 grep 失效）。
+    assert!(md.contains(&format!("| `worktree_dirty` | `{}` |", p.worktree_dirty)));
+}
+
 /// **本 change 不使 P16 的产物指纹陈旧**——`test_source_fingerprint` 覆盖本 change 的源码，
 /// 而 **engine 侧指纹**（`engine_source_fingerprint`）与 P16 是**同一清单**：
 /// 本 change 改了 `engine/src/*`（接了意图观测），故 P16 的落盘产物会陈旧——**那是预期的**
@@ -1808,5 +1962,201 @@ fn verdict_best_intent_row_is_adequately_sampled() {
         !undersized.contains(&best.feature),
         "裁决选出的「最强」不允许是样本不足行 `{}`",
         best.feature
+    );
+    // **方向也钉住**（独立审阅实测：把 `max_by` 换成 `min_by` 方向反转后全套仍绿）。
+    // 「最强」的定义是 **|AUC − 0.5| 最大**——反转会选出最弱的那条（如 `setup_share` 0.500），
+    // 产物就会写「最强意图特征：X，AUC=0.500」，标签假而裁决文字仍真 ⇒ 静默误导。
+    let expect_max = t
+        .build_vs_prog
+        .iter()
+        .filter(|r| r.provenance == crate::phasegate::Provenance::Intent)
+        .filter(|r| r.is_adequately_sampled())
+        .filter_map(|r| r.auc)
+        .map(|a| (a - 0.5).abs())
+        .fold(f64::NEG_INFINITY, f64::max);
+    let got = (best.auc.unwrap() - 0.5).abs();
+    assert!(
+        (got - expect_max).abs() < 1e-12,
+        "裁决的「最强」选的是 `{}`（|Δ|={got:.4}），但样本充足的非循环意图行里 |Δ| 最大是          {expect_max:.4}——`max_by` 的**方向**被改动了（应选 |AUC−0.5| 最大者）",
+        best.feature
+    );
+}
+
+/// **窗口三条特征与射门机制同源**——P0-1 的机制守卫（与 `def_none` 那条同形）。
+///
+/// ## 机制（读代码 + 实测，**独立审阅抓到，比 `def_none` 更强**）
+///
+/// **非头球射门只能由起脚窗口产出**（`CarrierExecution::Shoot` 是唯一生产者），
+/// 且窗口的时长预算只有 ~1 拍——**那一拍就是射门前一拍**。实测 30 seed：
+/// `final_third` episode 的 `in_window` 拍数分布 `{0: 33, 1: 493, 2: 15}`，
+/// **493/541 的窗口拍恰好落在「射门前一拍」**。
+/// ⇒ `window_opened` 在 `final_third` 上 ≈「本 episode 以射门收尾」的另一写法，
+/// 而参考集谓词 `ends_shot` 的**定义就是这个**。
+///
+/// ## 本测试钉住两件事
+///
+/// ① **机制**：`final_third` episode 的窗口拍，绝大多数是射门前一拍（≥0.85）；
+/// ② **判别力**：窗口三条在 `final_third` 表里必须标 `[循环·仅对照]`。
+///
+/// ⚠️ 若哪天引擎改了（例如窗口能开很久、或射门能从别的路径产生），本测试变红，
+/// 那条「循环」标注必须一起更新——不让一条陈旧的解释留在产物里（同 `def_none` 的处置）。
+#[test]
+fn window_features_are_mechanically_tied_to_shots() {
+    let mut hist: std::collections::BTreeMap<usize, usize> = Default::default();
+    let mut total = 0usize;
+    let mut pre_shot = 0usize;
+    for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
+        let dm = observe(seed);
+        let shot_ts: std::collections::BTreeSet<i64> = dm
+            .events
+            .iter()
+            .filter(|e| e.type_ == fm_engine::EventType::Shot)
+            .map(|e| (e.t * 1000.0).round() as i64)
+            .collect();
+        let facts = crate::gate::action_facts(&dm);
+        for (i, f) in facts.iter().enumerate() {
+            let Some(f) = f else { continue };
+            if !f.ends_shot {
+                continue;
+            }
+            let ep = &dm.possession_episodes[i];
+            let end = ep
+                .end_t
+                .map(|t| t.value)
+                .unwrap_or(dm.intent_snapshots.last().map(|s| s.t.value).unwrap_or(0.0));
+            let ticks: Vec<i64> = dm
+                .intent_snapshots
+                .iter()
+                .filter(|s| {
+                    s.t.value + 1e-9 >= ep.start_t.value && s.t.value <= end + 1e-9
+                })
+                .filter(|s| s.state.in_window)
+                .map(|s| (s.t.value * 1000.0).round() as i64)
+                .collect();
+            *hist.entry(ticks.len()).or_insert(0) += 1;
+            total += 1;
+            // 「全部窗口拍都是射门前一拍」（`t + 1s` 是某个射门时刻）。
+            if !ticks.is_empty() && ticks.iter().all(|t| shot_ts.contains(&(*t + 1000))) {
+                pre_shot += 1;
+            }
+        }
+    }
+    println!("final_third={total} in_window 拍数分布={hist:?}；窗口拍全为射门前一拍 = {pre_shot}/{total}");
+    assert!(total > 100, "final_third 样本过少：{total}");
+    // ① 时长预算 ~1 拍：绝大多数 episode 只有 1 个窗口拍。
+    let one = *hist.get(&1).unwrap_or(&0);
+    assert!(
+        one * 2 > total,
+        "窗口拍数为 1 的 episode 只有 {one}/{total}——窗口的「1 拍预算」前提不成立，\
+         本条「机制同源」的理由须重写"
+    );
+    // ② 那些窗口拍就是射门前一拍。
+    let share = pre_shot as f64 / total as f64;
+    assert!(
+        share >= 0.85,
+        "窗口拍落在「射门前一拍」的比例只有 {share:.3}（{pre_shot}/{total}）——\
+         低于 0.85 说明窗口与射门的机制耦合已松动，`[循环·仅对照]` 的标注须复核"
+    );
+}
+
+/// **意图特征的「定义」被钉住**——P2 批（独立审阅：4 个语义漂移变异全部存活）。
+///
+/// ## 为什么需要（每条都对应一个**实测存活**的变异）
+///
+/// | 变异 | 后果 | 本测试的判据 |
+/// |---|---|---|
+/// | `first_window_frac` 改取**最后**一个 `in_window` 拍 | AUC 0.850→0.312 | 断言它 = **首个** `in_window` 拍的归一化时刻 |
+/// | `pressure_share` 用 `>= 0`（恒真） | AUC 0.372→0.500 | 断言「无压迫拍」**不计入** |
+/// | `window_opened` 改用 `has_shot_setup` | 判别位混用 | 断言「有序列但未进窗口」的拍**不算**开窗 |
+///
+/// ⚠️ **fixture 取值生产可达**（本仓 P15/P17A 教训）：三种拍都在真实数据里出现——
+/// 无序列 / 有序列未进窗口（推进相）/ 已进窗口（`intent_semantics_are_pinned` 已实测三者
+/// 都非空）。构造的是「这些拍在窗内的相对顺序」，不是生产不可达的组合。
+#[test]
+fn intent_feature_definitions_are_pinned() {
+    let snap = |t: f64, st: IntentState| IntentSnapshot {
+        t: ObservedTime::state_commit(t),
+        state: st,
+    };
+    // 推进相：有序列、未进窗口、无压迫。
+    let driving = IntentState {
+        has_shot_setup: true,
+        in_window: false,
+        window_ticks: 0,
+        drive_ticks_left: 7,
+        committed: false,
+        entry_pressure_bucket: 0,
+        pressure_state_ticks: 0,
+    };
+    // 窗口相：已进窗口（第 3 个决策 tick）。
+    let in_win = IntentState {
+        has_shot_setup: true,
+        in_window: true,
+        window_ticks: 3,
+        drive_ticks_left: 7,
+        committed: false,
+        entry_pressure_bucket: 0,
+        pressure_state_ticks: 2, // 有压迫
+    };
+    // 窗 `[10, 20]`，时长 10s。第 12s 进窗（首个 in_window 拍），第 18s 仍在窗口。
+    let snaps = vec![
+        snap(10.0, IntentState::no_shot_setup(0)), // 无序列
+        snap(12.0, in_win),                        // 首个 in_window
+        snap(14.0, driving),                       // 有序列未进窗口（推进相）
+        snap(18.0, in_win),                        // 又一个 in_window
+    ];
+    let it = crate::intent::episode_intent(&snaps, &[], 10.0, 20.0, Some(10.0));
+
+    // ① `window_opened` 来自 `in_window`（不是 `has_shot_setup`）：
+    //    本 episode 既有「有序列未进窗口」的拍（14s），也有 `in_window` 拍 ⇒ 两者都成立，
+    //    故这里改用**另一个只有推进相**的 episode 来分辨。
+    let only_driving = vec![snap(10.0, driving), snap(12.0, driving)];
+    let it_drive = crate::intent::episode_intent(&only_driving, &[], 10.0, 12.0, Some(2.0));
+    assert!(
+        it_drive.setup_share == Some(1.0),
+        "该 episode 每拍都有起脚序列 ⇒ `setup_share` 应为 1.0"
+    );
+    assert!(
+        !it_drive.window_opened,
+        "**有起脚序列但从未进窗口**（推进相）的 episode，`window_opened` 必须为 `false`\
+         ——它若为 `true`，说明这个特征读的是 `has_shot_setup` 而不是 `in_window`\
+         （独立审阅实测该变异全套测试仍绿）"
+    );
+    assert_eq!(
+        it_drive.window_share,
+        Some(0.0),
+        "从未进窗口 ⇒ `window_share` 应为 0.0（不是 None：本 episode 有有效拍）"
+    );
+
+    // ② `first_window_frac` = **首个** `in_window` 拍（12.0 → (12−10)/10 = 0.2），
+    //    不是最后一个（18.0 → 0.8）。
+    assert_eq!(
+        it.first_window_frac,
+        Some(0.2),
+        "`first_window_frac` 必须是**首个** `in_window` 拍的归一化时刻（0.2），\
+         实测 {:?}——若是 0.8 说明取的是最后一拍（独立审阅实测该变异存活）",
+        it.first_window_frac
+    );
+
+    // ③ `pressure_share` 只数**有压迫**的拍（`12.0` 与 `18.0` 两拍有压迫、10.0/14.0 无）⇒ 2/4。
+    assert_eq!(
+        it.pressure_share,
+        Some(0.5),
+        "`pressure_share` 应是「压迫 tick 数 > 0」的拍占比（2/4=0.5）——\
+         实测 {:?}；若是 1.0 说明条件写成了恒真（`>= 0`）",
+        it.pressure_share
+    );
+    assert_eq!(
+        it.pressure_mean,
+        Some(1.0),
+        "`pressure_mean` 应是逐拍均值 (0+2+0+2)/4 = 1.0（**含无压迫拍**，不是只对有压迫的拍取均值）\
+         ——实测 {:?}；若为 2.0 说明分母只数了有压迫的拍",
+        it.pressure_mean
+    );
+    // ④ `max_window_ticks` = 该 episode 内 `window_ticks` 的最大值（3）。
+    assert_eq!(
+        it.max_window_ticks,
+        Some(3),
+        "`max_window_ticks` 应是窗口内已消耗决策 tick 的最大值（3）"
     );
 }

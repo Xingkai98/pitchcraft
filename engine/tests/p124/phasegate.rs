@@ -13,13 +13,31 @@
 //! 某条意图量若**在机制上**由「这个 episode 有没有射门」决定，而参考集谓词恰好就是
 //! `ends_shot`，那它「能分开 final_third」是**同义反复**，不是判别力。
 //!
-//! 本 change 实测到一例：`def_none`（防守方「无动作」比例）对 final_third 的 AUC 高达
-//! **0.934**——但机制是：起脚窗口内 `committed` 的 tick，防守侧被守卫强制选 `None`
-//! （`evaluate_defensive_action` 的不可回溯分支）。实测 seed 1/2/3 上
-//! **射门 tick 上的防守意图 21/21、21/21、14/14 全是 `none`**。
-//! ⇒ `def_none` 与 `ends_shot` **机制同源**，其 AUC 是**循环的**，
-//! 须标注为 `[循环·仅对照]`，**不得**作为「意图能判 final_third」的证据。
-//! 由 `def_none_signal_is_mechanically_tied_to_shots` 钉住这条机制。
+//! 本 change 实测到**两条**这种循环（**第二条是独立审阅抓到的，比第一条更强**）：
+//!
+//! **① `def_none`（防守方「无动作」比例）—— AUC 0.934。**
+//! 机制：起脚窗口内 `committed` 的 tick，防守侧被守卫强制选 `None`
+//! （`evaluate_defensive_action` 的不可回溯分支）。seed 1/2/3 实测：
+//! 射门 tick 上的防守意图 **21/21、21/21、14/14 全是 `none`**。
+//!
+//! **② `window_opened` / `window_share` / `setup_share` —— AUC 0.966（全表最强）。**
+//! 机制：**非头球射门只能由起脚窗口产出**（`CarrierExecution::Shoot` 是唯一生产者），
+//! 且窗口的时长预算只有 ~1 拍，**那一拍就是射门前一拍**。
+//! 实测 30 seed：`final_third` episode 的 `in_window` 拍数分布
+//! `{0: 33, 1: 493, 2: 15}`——**493/541 的窗口拍恰好是「射门前一拍」**。
+//! ⇒ 该特征在 `final_third` 上几乎是「本 episode 以射门收尾」的**另一种写法**，
+//! 而参考集谓词 `ends_shot` 的**定义就是这个**。
+//! 决定性证据（leave-one-out）：**剔除「射门前一拍」后 AUC 从 0.966 塌到 0.510**。
+//!
+//! ⇒ 三条窗口特征与 `def_none` **同为循环**，全部标注 `[循环·仅对照]`，
+//! **不得**作为「意图能判 final_third」的证据。机制分别由
+//! `def_none_signal_is_mechanically_tied_to_shots` 与
+//! `window_features_are_mechanically_tied_to_shots` 钉住。
+//!
+//! ⚠️ **`final_third` 的意图侧因此没有可用证据**：剔除循环行后，只剩 `def_per_s` 0.694（弱）
+//! 与 `first_window_frac` 0.850（neg 样本不足）——**没有任何样本充足的、非循环的意图特征
+//! 能判 `final_third`**。「`final_third` 可判」仍然成立，但它的证据是**空间**的
+//! `forward_m/s` = 0.855（P16），**不是**意图。
 //!
 //! `build_up` vs `progression` 那一对**不受此循环影响**（两档 motif 都含 `!has_shot`），
 //! 故它是本 change 检验意图信号的**干净战场**。
@@ -51,22 +69,23 @@ pub struct FeatureSpec {
 
 /// 意图特征清单（**本 change 的全部意图量**）。
 ///
-/// ⚠️ `def_none` 标 [`Provenance::Circular`]——它测的是「防守方无动作」，
-/// 而起脚窗口内已提交射门的 tick 会被守卫强制选 `None`（见模块头）。
+/// ⚠️ **三条窗口特征 + `def_none` 标 [`Provenance::Circular`]**（见模块头的两条机制）：
+/// `window_opened` / `window_share` / `setup_share` 与 `def_none` 在 `final_third` 上
+/// 与参考集谓词 `ends_shot` **机制同源**，其 AUC 是同义反复。
 pub const INTENT_FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
-        name: "window_opened",
-        provenance: Provenance::Intent,
+        name: "window_opened[循环·仅对照]",
+        provenance: Provenance::Circular,
         value: |e| Some(if e.window_opened { 1.0 } else { 0.0 }),
     },
     FeatureSpec {
-        name: "window_share",
-        provenance: Provenance::Intent,
+        name: "window_share[循环·仅对照]",
+        provenance: Provenance::Circular,
         value: |e| e.window_share,
     },
     FeatureSpec {
-        name: "setup_share",
-        provenance: Provenance::Intent,
+        name: "setup_share[循环·仅对照]",
+        provenance: Provenance::Circular,
         value: |e| e.setup_share,
     },
     FeatureSpec {
@@ -121,8 +140,13 @@ pub const INTENT_FEATURES: &[FeatureSpec] = &[
     },
 ];
 
-/// P16 的空间特征（**逐字复刻** `p16/gate.rs::separability` 的 `specs` 表，
-/// 含 `[区域量·仅对照]` 标注）——用于并列对照。
+/// P16 的空间特征——**前 7 条与 `p16/gate.rs::separability` 的 `specs` 表
+/// 逐条同序**（这是 `spatial_rows_match_the_p16_separability` 能按下标比对的前提），
+/// 第 8 条 `forward_m/s` 是 **P16 裁决测试**（不是 `separability`）用的基线。
+///
+/// ⚠️ **顺序是判据的一部分**：`spatial_rows_match_the_p16_separability` **按下标**
+/// 逐条比对前 7 条。改这里的顺序 = 让那条守卫比错对象（独立审阅抓到过一次
+/// 名字不匹配导致 6/7 条永不比较的假守卫，修复即改用下标）。
 pub const SPATIAL_FEATURES: &[(&str, fn(&crate::gate::EpisodeFeature) -> Option<f64>)] = &[
     ("net_progress[空间]", |e| e.net_progress),
     ("forward_m[空间]", |e| e.forward_m),
@@ -130,9 +154,16 @@ pub const SPATIAL_FEATURES: &[(&str, fn(&crate::gate::EpisodeFeature) -> Option<
     ("lateral_m[空间]", |e| e.lateral_m),
     ("depth_slope[空间]", |e| e.depth_slope),
     ("support_frames_share[空间]", |e| e.support_frames_share),
-    ("forward_m/s[空间]", |e| Some(e.forward_m? / e.duration_s?)),
     ("start_progress[区域量·仅对照]", |e| Some(e.start_progress)),
+    // 第 8 条：P16 的裁决基线（出自 P16 的裁决测试，不在 `separability` 的 7 条里）。
+    ("forward_m/s[空间]", |e| Some(e.forward_m? / e.duration_s?)),
 ];
+
+/// 与 P16 的 `separability` **同表**的空间特征条数（前 [`SELF::P16_SEPARABILITY_ROWS`] 条）。
+///
+/// 守卫 `spatial_rows_match_the_p16_separability` 断言「实际比较到的条数 == 本常量」——
+/// 只按名字 `find` 会静默漏掉（独立审阅实测：名字带后缀 ⇒ 7 条里只有 1 条被比较）。
+pub const P16_SEPARABILITY_ROWS: usize = 7;
 
 /// 一行可分性结果（空间或意图特征对某一对参考集）。
 #[derive(Debug, Clone)]

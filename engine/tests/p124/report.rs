@@ -240,6 +240,18 @@ pub struct Provenance {
     pub caliber: Vec<(&'static str, f64)>,
     /// 本 change 的测试源码指纹（含只读复用的 P16 模块）。
     pub test_source_fingerprint: String,
+    /// **产出时工作树是否脏**（`git status --porcelain` 非空）。
+    ///
+    /// ⚠️ **独立审阅抓到的问题（P1-2）**：产物的 `source_commit` 记的是**产出时的 HEAD**，
+    /// 而产物可能是在**未提交的工作树**上产出的——此时「产物内容 ↔ commit 标签」说不通
+    /// （实测：`canary.json` 记 `3baff0f`，但内嵌指纹对应当前工作树的源码）。
+    ///
+    /// P16 的教训是「不要求 `source_commit == HEAD`」（那会自失效）；但那条**不足以**
+    /// 表达「产出时是否含未提交改动」。故本栏如实记下——**内容绑定靠
+    /// `test_source_fingerprint`（硬门），本栏只补标签语义**，不参与 pass/fail。
+    pub worktree_dirty: bool,
+    /// 产出时 `git status --porcelain` 的原始输出（截断到 2000 字符；脏时才有意义）。
+    pub worktree_status: String,
 }
 
 /// `has_intent_snapshots` 的 provenance 取值来源（活探测，见 [`probe_has_intent_snapshots`]）。
@@ -262,6 +274,31 @@ pub fn build_provenance(mode: &str, seed_first: u64, seed_last: u64, duration: f
         config_duration_seconds: duration,
         caliber: caliber_snapshot(),
         test_source_fingerprint: test_source_fingerprint(),
+        worktree_dirty: worktree_is_dirty(),
+        worktree_status: worktree_status_porcelain(),
+    }
+}
+
+/// 工作树是否有未提交改动（`git status --porcelain` 非空）。
+///
+/// **调不起 git**（无 git 的 CI/容器）时返回 `false`——那与「干净」不可区分，
+/// 但本栏只是标签注释，不参与判据（见 [`Provenance::worktree_dirty`]）。
+pub fn worktree_is_dirty() -> bool {
+    !worktree_status_porcelain().is_empty()
+}
+
+/// `git status --porcelain` 的输出（截断到 2000 字符）。调不起 git 时返回空串。
+pub fn worktree_status_porcelain() -> String {
+    let out = std::process::Command::new("git")
+        .args(["status", "--porcelain"])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output();
+    match out {
+        Ok(o) if o.status.success() => {
+            let s = String::from_utf8_lossy(&o.stdout).to_string();
+            s.chars().take(2000).collect()
+        }
+        _ => String::new(),
     }
 }
 
@@ -339,6 +376,10 @@ pub fn provenance_markdown(p: &Provenance) -> String {
         "| `has_intent_snapshots` | `{}` |\n",
         p.has_intent_snapshots
     ));
+    out.push_str(&format!(
+        "| `worktree_dirty` | `{}` |\n",
+        p.worktree_dirty
+    ));
     out.push_str(&format!("| `seed_first` | `{}` |\n", p.seed_first));
     out.push_str(&format!("| `seed_last` | `{}` |\n", p.seed_last));
     out.push_str(&format!(
@@ -363,8 +404,8 @@ pub fn provenance_json(p: &Provenance) -> String {
     format!(
         "{{\"mode\":{},\"source_commit\":{},\"engine_version\":{},\"model_version\":{},\
          \"caliber_version\":{},\"engine_source_fingerprint\":{},\"test_source_fingerprint\":{},\
-         \"sidecar_schema_fingerprint\":{},\"has_intent_snapshots\":{},\"seed_first\":{},\
-         \"seed_last\":{},\"config_duration_seconds\":{},\"caliber\":{}}}",
+         \"sidecar_schema_fingerprint\":{},\"has_intent_snapshots\":{},\"worktree_dirty\":{},\
+         \"seed_first\":{},\"seed_last\":{},\"config_duration_seconds\":{},\"caliber\":{}}}",
         json_of(&J::S(p.mode.clone())),
         json_of(&J::S(p.source_commit.clone())),
         json_of(&J::S(p.engine_version.clone())),
@@ -374,6 +415,7 @@ pub fn provenance_json(p: &Provenance) -> String {
         json_of(&J::S(p.test_source_fingerprint.clone())),
         json_of(&J::S(p.sidecar_schema_fingerprint.clone())),
         json_of(&J::S(p.has_intent_snapshots.to_string())),
+        json_of(&J::S(p.worktree_dirty.to_string())),
         json_of(&J::Int(p.seed_first as i64)),
         json_of(&J::Int(p.seed_last as i64)),
         json_of(&J::F(p.config_duration_seconds)),

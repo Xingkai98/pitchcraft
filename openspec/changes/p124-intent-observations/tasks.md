@@ -153,13 +153,16 @@ position 只活在 `dm.state_snapshots`，故意图特征及其**任何** helper
 **`final_third` vs 其余**（P16 基线 `forward_m/s` = 0.855 已复现）：
 
 | 特征 | AUC | 种类 |
-|---|---|---|
-| `forward_m/s[空间]`（P16 最强） | **0.855** | 空间 |
-| `window_opened` / `window_share` / `setup_share` | **0.966** | 意图 |
-| `first_window_frac` | 0.850 | 意图 |
+|---|---|---|---|
+| `forward_m/s[空间]`（P16 最强，**本 change 唯一可用的 final_third 证据**） | **0.855** | 空间 |
+| `window_opened` / `window_share` / `setup_share[循环·仅对照]` | 0.966 | **循环**（见下，P0-1） |
 | `def_none[循环·仅对照]` | 0.934 | **循环**（见下） |
-| `def_per_s` | 0.694 | 意图 |
+| `first_window_frac` | 0.850 | 意图（**neg 样本不足，不作证据**） |
+| `def_per_s` | 0.694 | 意图（弱） |
 | 其余意图特征 | 0.28–0.69 | 意图 |
+
+⚠️ **`final_third` 的「可判」不来自意图**：剔除循环行与样本不足行后，
+意图侧**没有任何**样本充足的、非循环的强判据（详见下方循环性发现）。
 
 **`build_up` vs `progression`**（P16 基线 `forward_m/s` = 0.461 已复现）：
 
@@ -171,14 +174,27 @@ position 只活在 `dm.state_snapshots`，故意图特征及其**任何** helper
 
 ⇒ **意图信号救不了 `build_up` / `progression`**。这是本 change 对 P16 裁决的**确认**（非推翻）。
 
-### ⚠️ 循环性发现（本 change 实测，**必须读**）
+### ⚠️ 循环性发现（**两条**，本 change 实测；**第二条是独立审阅抓到的，比第一条更强**）
 
-`def_none`（防守方「无动作」比例）对 `final_third` 的 AUC 高达 **0.934**——
-**但它是循环的**：起脚窗口内 `committed` 的 tick，`evaluate_defensive_action` 的
-不可回溯守卫直接返回 `DefensiveAction::None`。实测 seed 1/2/3：**射门 tick 上的防守意图
-21/21、21/21、14/14 全是 `none`**。⇒ `def_none` 与参考集谓词 `ends_shot` **机制同源**，
-AUC 是同义反复。已标注 `[循环·仅对照]`，**不得**作为判别力证据。
-由 `def_none_signal_is_mechanically_tied_to_shots` 钉住机制。
+**① `def_none`（防守方「无动作」比例）—— AUC 0.934。**
+机制：起脚窗口内 `committed` 的 tick，`evaluate_defensive_action` 的不可回溯守卫直接返回
+`DefensiveAction::None`。实测 seed 1/2/3：**射门 tick 上的防守意图 21/21、21/21、14/14
+全是 `none`**。已标 `[循环·仅对照]`，由 `def_none_signal_is_mechanically_tied_to_shots` 守。
+
+**② `window_opened` / `window_share` / `setup_share` —— AUC 0.966（全表最强）。**
+⚠️ **实现者首版漏了这条**（只标了 `def_none`），且 `gate_rerun…` 的 ③ 条断言曾**主动要求**
+这三条 >0.9——**一条守卫在保护一个坏结论**。独立审阅抓到：
+非头球射门**只能**由起脚窗口产出，且窗口时长预算 ~1 拍、**那一拍就是射门前一拍**。
+实测 30 seed：`final_third` 的 `in_window` 拍数分布 `{0: 33, 1: 493, 2: 15}`
+⇒ **493/541 的窗口拍恰好是「射门前一拍」**。决定性证据（leave-one-out）：
+**剔除射门前一拍后 AUC 从 0.966 塌到 0.510**。
+⇒ 三条窗口特征与 `def_none` 同为循环，全部标 `[循环·仅对照]`，
+由 `window_features_are_mechanically_tied_to_shots` 守；③ 条断言已**改为断言相反的事实**
+（「final_third 的意图侧没有可用证据」，并断言循环行恰为 4 条）。
+
+⇒ **`final_third` 的意图侧因此没有可用证据**：剔除循环行后只剩 `def_per_s` 0.694（弱）
+与 `first_window_frac`（neg 样本不足）。「`final_third` 可判」仍成立，
+但证据是**空间**的 `forward_m/s` = 0.855（P16），**不是**意图。
 
 ### ⚠️ 一次**假发现**被样本量门槛拦下（本 change 的关键纪律）
 
@@ -202,6 +218,12 @@ AUC 标准误差 ≈0.184，0.219 不到 1.2σ，**纯噪声**。
 |---|---|
 | intent 数组与 feats 下标错位（`+1`） | `gate_rerun_and_p16_baseline_side_by_side` + `purification_over_intent_features_reproduces_the_verdict` |
 | 样本量门槛设 0（取消门槛） | 同上两条（**门槛本身承载判据**） |
+| **空间侧 `net_progress` 改读 `backward_m`**（对照基线被换掉） | **独立审阅抓到旧版守卫是假的**（按名字 `find`，6/7 条永不比较）；修复后由 `spatial_rows_match_the_p16_separability` 按下标逐条守住 |
+| **`best_intent` 的 `max_by` 换成 `min_by`**（方向反转） | `verdict_best_intent_row_is_adequately_sampled`（**独立审阅抓到旧版无方向断言**） |
+| **整条防守通道丢弃**（`match_intents` 传 `&[]`） | `intent_feature_coverage_is_reported` 的 ②b 三条（**独立审阅抓到旧版全套仍绿**） |
+| `first_window_frac` 改取**最后**一拍 | `intent_feature_definitions_are_pinned`（**独立审阅抓到**） |
+| `pressure_share` 改 `>= 0`（恒真） | 同上（**独立审阅抓到**） |
+| `window_opened` 改用 `has_shot_setup`（混判别位） | 同上（**独立审阅抓到**） |
 
 ### 硬约束检查
 
@@ -222,7 +244,7 @@ AUC 标准误差 ≈0.184，0.219 不到 1.2σ，**纯噪声**。
 
 | 档 | 裁决 | 依据 |
 |---|---|---|
-| `final_third` | 可判（**仍是几何证据**） | P16 的 `forward_m/s` = 0.855 复现；意图侧 `window_opened`/`setup_share` 0.966（但见循环条），`first_window_frac` 0.850 |
+| `final_third` | 可判（**仍是几何证据**） | P16 的 `forward_m/s` = 0.855 复现。**意图侧无可用证据**：0.966 那三条是循环（见上），其余不足以判 |
 | `build_up` / `progression` | **不够** | 全部**样本充足**的非循环意图特征落在 **0.449–0.546**（\|Δ\|≤0.06）⇒ 与随机无异 |
 
 **给 15B 的处置**：
