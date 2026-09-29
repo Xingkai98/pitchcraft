@@ -52,6 +52,7 @@ const FLOAT_DECIMALS: usize = 4;
 
 /// 极简 JSON（与 P17A 同形态；零依赖）。
 #[derive(Debug, Clone)]
+#[allow(dead_code)] // `Null` 是 JSON 的通用变体，保留以对齐 P17A 的极简 JSON 形态
 pub enum J {
     Null,
     Int(i64),
@@ -65,11 +66,6 @@ pub fn obj(pairs: &[(&str, J)]) -> String {
         .map(|(k, v)| format!("\"{}\":{}", k, json_of(v)))
         .collect();
     format!("{{{}}}", inner.join(","))
-}
-
-pub fn arr(items: &[J]) -> String {
-    let inner: Vec<String> = items.iter().map(json_of).collect();
-    format!("[{}]", inner.join(","))
 }
 
 fn json_of(v: &J) -> String {
@@ -113,6 +109,19 @@ pub struct Provenance {
     pub caliber: Vec<(&'static str, f64)>,
 }
 
+/// `has_state_snapshots` 的取值来源：**真的查一次 opt-in 路径是否产快照**，
+/// 而不是硬编码 `true`——否则这一栏区分不了任何东西（审阅 P2-8）。
+/// 取样一场 1 秒的比赛即可（有快照则为真），代价可忽略。
+fn probe_has_state_snapshots() -> bool {
+    let cfg = fm_engine::MatchConfig {
+        match_duration_seconds: 5.0,
+        demo_mode: false,
+        model_version: MODEL_VERSION,
+    };
+    let dm = fm_engine::simulate_with_behavior_observations(1, cfg);
+    !dm.state_snapshots.is_empty()
+}
+
 pub fn build_provenance(mode: &str, seed_first: u64, seed_last: u64, duration: f64) -> Provenance {
     let (fingerprint, _sizes) = sidecar_schema_fingerprint_p16();
     Provenance {
@@ -123,7 +132,7 @@ pub fn build_provenance(mode: &str, seed_first: u64, seed_last: u64, duration: f
         caliber_version: CALIBER_VERSION.to_string(),
         engine_source_fingerprint: engine_source_fingerprint(),
         sidecar_schema_fingerprint: fingerprint,
-        has_state_snapshots: true,
+        has_state_snapshots: probe_has_state_snapshots(),
         seed_first,
         seed_last,
         config_duration_seconds: duration,
@@ -353,13 +362,23 @@ pub fn to_markdown(
     }
 
     out.push_str("\n## 4. phaseability 裁决（Slice 4）\n\n");
-    out.push_str("**裁决：不够。** 三档参考集（纯动作链构造，零位置）对全部特征的 AUC ≈0.5：\n\n");
-    out.push_str("| 参考集 | 最强空间特征 | AUC | 正样本 | 负样本 |\n|---|---|---|---|---|\n");
+    out.push_str("**裁决：部分够。** 只能判 `final_third`；`build_up` 与 `progression` 判不了。\n\n");
+    out.push_str("判据用**时长归一**的 `forward_m/s`（累计位移随时长增长，未归一会引入混淆；\n");
+    out.push_str("各档时长中位数：`build_up` 78 s / `progression` 45 s / `final_third` 40 s——\n");
+    out.push_str("`build_up` 约为另两档的 1.7 倍，故必须先归一）：\n\n");
+    out.push_str("| 对照 | 特征 | AUC | 正样本 | 负样本 |\n|---|---|---|---|---|\n");
     for (set, ft, a, pos, neg) in gate_rows {
         out.push_str(&format!("| {set} | {ft} | {a:.3} | {pos} | {neg} |\n"));
     }
-    out.push_str("\n⇒ **15B 应保留 `unknown`**；不得用几何量硬套三档；若只能用几何代理，\n");
-    out.push_str("须命名为**证据**（如 `GoalwardProgressEvidence`），**不得复用 `Phase`**。\n");
+    out.push_str("\n- `final_third` vs 其余 AUC 高且方向一致（final_third 的球门向推进**速率**更高，\n");
+    out.push_str("  与足球直觉一致）⇒ **可分开**；\n");
+    out.push_str("- `build_up` vs `progression` AUC ≈0.5 ⇒ **分不开**（未归一时的「可分」是时长/\n");
+    out.push_str("  传球次数混淆，且 motif 定义本身就含传球次数——分开了也说不清）。\n\n");
+    out.push_str("⇒ **`final_third`** 有可执行判据的**候选**，但它是**几何证据不是战术意图**——\n");
+    out.push_str("若 15B 用它，须命名为**证据**（如 `GoalwardProgressEvidence`），**不得复用 `Phase`**。\n");
+    out.push_str("⇒ **`build_up` / `progression`**：**保留 `unknown`**；要分开需要能表达意图的观测。\n");
+    out.push_str("\n⚠️ **本裁决经两版作废**：v1「不够」败于 join bug（全局下标 vs 逐场本地下标）；\n");
+    out.push_str("v2「不够 + 小样本误导」把该 bug 的症状写成了统计学教训。详见测试文件的裁决 doc。\n");
     out
 }
 

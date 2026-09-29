@@ -28,7 +28,10 @@
 //!
 //! ⚠️ **循环性防护**：检验用的特征**不得**与构造参考集的 motif 共用同一个量。
 //! 本模块的 motif 全部是**动作类型**，特征是**空间量**——两者**结构上不相交**。
-//! 这一条由 [`motifs_do_not_use_position`] 与 [`motifs_and_features_are_disjoint`] 守。
+//! 这一条由 `motifs_do_not_use_position`（子句自述核对）与
+//! `reference_set_source_references_no_position_quantity`（**源码扫描**）守。
+//! ⚠️ 早先这里引用过一个 `motifs_and_features_are_disjoint`——**它不存在**
+//! （只有过事件位置的行为核对版，已因盲区被源码扫描取代）。删掉这个死引用。
 
 use crate::caliber::*;
 use crate::features::*;
@@ -167,6 +170,9 @@ pub struct EpisodeFeature {
     /// 位置口径的**起点推进度**（方向归一）——这是「区域」量，**只用于对照**，
     /// **不得**作为 phase 谓词（见契约）。
     pub start_progress: f64,
+    /// episode 时长（秒）——**混淆变量**：累计位移随它增长，
+    /// 故分离必须检查「是否只是长 vs 短」。`end_t` 不可得时为 `None`。
+    pub duration_s: Option<f64>,
 }
 
 /// 从一场比赛抽出每个 episode 的特征（**逐 episode**，供分组比较）。
@@ -210,6 +216,7 @@ pub fn episode_features(dm: &DiagnosticMatch) -> Vec<(usize, EpisodeFeature)> {
                     Some(sup_frames as f64 / frames.len() as f64)
                 },
                 start_progress: c.start_progress,
+                duration_s: end.map(|e| e - ep.start_t.value),
             },
         ));
     }
