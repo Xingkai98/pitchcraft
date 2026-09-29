@@ -59,7 +59,7 @@
 > （GH #116）——它是 **#15B 的硬前置**：`build_up`/`progression`/`final_third` 三档在 #16 之前无判据
 > （只有坐标，而「区域 ≠ 阶段」是契约明禁）。
 > **#15B 已暂停**（GH #113 结论：`attacking_transition` 是 team-state，不作 possession phase 产出）；
-> 另需用户拍板 #113 的五项待决（见 roadmap §4.5）。
+> **#113 已全部裁定**（2026-09-28，无待决项；见 roadmap §4.5）。
 > 权威路线：`.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3–§4.5、§5。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
 
@@ -111,8 +111,9 @@
       却让已记录的 `sidecar_schema_fingerprint` 变陈旧，且无测试守该值）；
       改为在 #15B design 标「不作 possession phase 产出」。
     - **顺序**：`#16（含 phaseability gate）→ #15B`。
-    - **待用户拍板**（#113 §8）：§11 理由回填方式 / 是否立 team-state observation /
-      `phase_segments` 填充位置 / 判据冻结守卫方式 / 三档判据本身。**未定前不开 15B 实现。**
+    - **#113 已全部裁定**（2026-09-28）：§11 理由记在 #15B design 的偏离 / 不立 team-state
+      observation / `phase_segments` 由纯函数在 `DiagnosticMatch` 之后填 / 判据冻结项前提不成立（撤销）/
+      三档判据归 #116。**15B 的开启条件只剩 #116 的 phaseability gate 结论。**
     - 落地形态（填 sidecar 预留字段）与七项清单仍有效，但**先回答挂载模型**。
     - 详见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.5。
     - **开工前须闭合七项**（谓词、多段切分、`attacking_transition` 边界、`unknown`/provenance、
@@ -174,10 +175,9 @@
   - 问题：诊断信息如何以 debug overlay、逐球权暂停和事件链方式进入 viewer，而不污染正式演绎协议？
   - 产物：可视化诊断模式；正式 viewer 行为保持兼容。
 
-> **执行顺序（2026-09-24 决策；2026-09-27 修正）**：`#17A 立即分析` ✅ 已完成 →
-> **`拍板 #113 待决项`（当前）** → `#16 空间特征`（含 phaseability gate）→ `#15B`（暂停中，见 roadmap §4.5）→
-> 原序列 `#15B → #16` 是否维持，取决于设计票据的结论：
-> `#17B 可解释报告` → `#18 行为验证` → `#19 最小生成改造`。不要等 #15B/#16 全部完成才开始分析；
+> **执行顺序（2026-09-28 定）**：`#17A 立即分析` ✅ 已完成 → **`#16 空间特征`（含 phaseability gate）← 当前**
+> → `#15B`（暂停中，待 #16 的 gate 结论）→ `#17B 可解释报告` → `#18 行为验证` → `#19 最小生成改造`。
+> （原序列 `#15B → #16` 已因 #113 改为 `#16 → #15B`。）不要等 #15B/#16 全部完成才开始分析；
 > 也不要在 #17A 仅凭场均统计直接调参数。
 
 > 当前实施路线：P4（并行节拍核心）✅ 已完成；**P5（队形公式 + 攻防转换 + micro-motion）实施中**（`openspec/changes/p5-team-shape-and-transition/`）；P6（定位球 + 犯规规则层）已立项待规划；P7（战术决策系统）已立项，建议 P5→P6→P7 顺序。

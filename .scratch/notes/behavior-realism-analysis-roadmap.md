@@ -4,6 +4,7 @@
 最后更新：2026-09-26
 Canonical map：`.scratch/map.md` 的“行为真实性方向”
 当前 frontier：**#16 团队与局部空间特征（含 phaseability gate）**（GH #116；#15B 暂停，见 §4.5）
+（#113 已全部裁定，无待决项）
 
 ## 1. 当前已经具备什么
 
@@ -270,20 +271,26 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 | 扩张 possession 覆盖 contested | **类型缺陷**：`Contested` = 控制**未**确认、`PossessionEpisode` = 控制**已**确认，互斥由 `design §6` 转移表 / `§9.1` / `observation.rs` 的 `reject` 分支保证；合并是把「未确认」塞进「已确认」。**且会撞 §10 不变量与既有守卫**（`p15_behavior_observation.rs` 那批直接变红），**并毁 P17A 全部统计** |
 | 15B 现在单独做 | 三档（`build_up`/`progression`/`final_third`）在 #16 之前**确认无判据**（只有坐标，而「区域 ≠ 阶段」）；save 路径虽够得着，但那是把 team-state 标成 phase（类型错误）。整体产出 ≈ 零 |
 
-**仍待用户拍板**（不再阻塞设计，但阻塞实现，见 #113 §8 全 7 项）：
+**#113 已全部裁定（2026-09-28，无待决项）**：
 
-1. 缺失的 §11 理由：**回填 design §11**（动冻结文档）还是在 #15B design 记偏离？
-2. 是否为 **team-state observation** 立项 —— **实测结论：不立**（见 #113 §6）：
-   转换的**完整观测已现成**——窗口起止可从 `tackle` 事件（同 tick）/ `saved shot` 事件 +1
-   加 `TRANSITION_TICKS` 重建；**转换形态**由专用 mover 动作 `Mover.action == "close_down"` 给出
-   （20 场实测 870 拍，**窗口外 0**，即它恰是窗口的指纹）；参与者即该 tick 的 mover id。
-   新建 `TransitionSpan` 是重复建设。**待用户确认。**
-   （⚠️ 早前这里写「负空间表达」——**错**，它是正信号；已更正。）
-3. `phase_segments` 的**填充位置**（recorder 内 vs `simulate_with_behavior_observations` 后）；
-4. **判据冻结的守卫方式**（写进 §4.2 清单，还是靠 `engineFingerprint` 哨兵）；
-5. 三档 phase 的**可判定性判据**本身（待 #16）。
+1. **§11 理由** → **记在 #15B design 的偏离里，不改 §11**（§11 权威在 note，
+   而 P15A 的 OpenSpec change 明说不复制另一套；回填会让两处 design 打架）；
+2. **team-state observation** → **不立**。转换的**完整观测已现成**：窗口起止可从
+   `tackle` 事件（同 tick）/ `saved shot` 事件 +1 加 `TRANSITION_TICKS` 重建；
+   **形态**由专用 mover 动作 `Mover.action == "close_down"` 给出（20 场实测 870 拍、**窗口外 0**，
+   即它是窗口的指纹）；参与者即该 tick 的 mover id。新建 `TransitionSpan` 是重复建设。
+   （⚠️ 早前这里写「负空间表达」——**错**，它是**正信号**；已更正。）
+3. **`phase_segments` 填充** → **在 `DiagnosticMatch` 之后由纯函数填**（可测性决定性：
+   测判据 = `annotate_phases(&手搭 fixture)`，不用跑引擎；P17A 已用此形状）；
+4. **判据冻结守卫** → **本项前提不成立，撤销**：实测 `LOOSE_MAX_TICKS` 2→1（tackle 窗口**变为可挂载**）后
+   `close_down` **仍在**（44→52 拍）——「窗口是 team-state」依据的是**代码结构**（同时驱动两队），
+   **与常数无关**。仅「窗口边界重建公式」需随重标定复核，靠既有 `engineFingerprint` 哨兵兜住；
+5. **三档判据** → 归 **#116**（phaseability gate）。
 
-**在 1–5 落地前不动 15B 实现。**
+**其余**：顺序 `#16（含 gate）→ #15B` 确认；命名冲突（`match-engine:641` 的 `transition_active`
+≠ possession phase 闭集）写进 #15B design；存量口径数字已作废处理（roadmap §4.3）。
+
+**⇒ #113 无待决项；15B 的开启条件只剩 #116 的 phaseability gate 结论。**
 
 ## 5. #16：团队与局部空间特征（含 phaseability gate）← **当前 frontier**
 
@@ -366,7 +373,7 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 随后按 Paseo lifecycle 启动新的 change/session。
 
 **当前 frontier 是 #16（GH #116，含 phaseability gate）**，见 §5。
-另需用户拍板 #113 的待决项（见 §4.5）。
+**#113 已全部裁定**（2026-09-28，无待决项）。
 **#15B 已暂停**（2026-09-27；结论 2026-09-28 定，GH #113 经三轮对抗审阅）：
 
 - `attacking_transition` **是 team-state，不作 possession phase 产出**（§4.3）；
@@ -384,7 +391,7 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
   不要把后来的注记当契约——本轮发生过一次；且**行号引用会漂**，一律用符号名）。
 
 > **本节已被修过三次**（09-26、09-27、09-28）：最初让新会话启动 **P17A**（已完成，照做会重跑），
-> 随后改成 **#15B**（其后暂停），现改为「拍板 #113 的五项待决」。
+> 随后改成 **#15B**（其后暂停），现改为 **#16**（#113 已裁定，无待决项）。
 > 每次路线变化都要回来改这里——**这是新会话的第一入口，写错方向代价最大**。
 
 > **本节曾指错方向**（2026-09-26 更正）：原先写「启动 P17A behavior-chain baseline analysis」，
