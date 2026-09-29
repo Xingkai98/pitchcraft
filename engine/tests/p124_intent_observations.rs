@@ -42,6 +42,8 @@
 //! | [`provenance_carries_the_comparability_triple`] | 产物（可比性三件套） | ✅ |
 //! | [`provenance_records_worktree_state`] | 产物（工作树状态，P1-2） | ✅ |
 //! | [`on_disk_artifacts_share_the_current_source_fingerprint`] | 产物（与源码同源） | ✅ |
+//! | [`artifact_write_guard_has_discriminating_power`] | 产物（**落盘门有判别力**，第 2 轮 P1） | ✅ |
+//! | [`p124_fingerprint_covers_its_own_sources`] | 产物（指纹覆盖自己的源码） | ✅ |
 //! | `p124_canary` / `p124_baseline` | 产物落盘 | ❌ `#[ignore]` |
 //!
 //! 跑法：
@@ -1334,11 +1336,10 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
             "   [final_third 意图·非循环·样本充足] {}：AUC={a:.3}（pos={} neg={}）",
             r.feature, r.pos_n, r.neg_n
         );
-        assert!(
-            (a - 0.5).abs() < 0.9,
-            "`{}` 的 AUC {a:.3} 异常（越界？）",
-            r.feature
-        );
+        // ⚠️ 这里**曾有一条恒真断言** `assert!((a-0.5).abs() < 0.9)`——AUC ∈ [0,1]
+        // ⇒ `|AUC−0.5| ≤ 0.5 < 0.9` 恒成立，阈值永不触发（独立审阅第 2 轮抓到）。
+        // 真正生效的判据是下面紧跟的 `… < 0.25`（它经定向变异验证有区分度）。
+        let _ = a;
     }
     assert!(
         final_intent_evidence.is_empty()
@@ -1739,14 +1740,12 @@ fn on_disk_artifacts_share_the_current_source_fingerprint() {
 /// 要**故意**在脏树上落盘（例如本地调试），设 `P124_ALLOW_DIRTY=1`——此时 provenance
 /// 的 `worktree_dirty` 记 `true`，读者可据此判断。
 fn write_artifacts(name: &str) -> String {
-    if crate::report::worktree_is_dirty() && std::env::var("P124_ALLOW_DIRTY").is_err() {
-        panic!(
-            "工作树有未提交改动，拒绝落盘产物——产物的 `source_commit` 会是当时的 HEAD，\
-             与产物内容（含未提交改动）说不通（独立审阅 P1-2）。\
-             请先提交，或设 `P124_ALLOW_DIRTY=1` 明确接受（provenance 会记 `worktree_dirty=true`）。\n\
-             git status --porcelain:\n{}",
-            crate::report::worktree_status_porcelain()
-        );
+    // ⚠️ 判断走**纯函数**（见 `report::artifact_write_guard` 的 doc：内联版本无默认测试保护，
+    // 独立审阅第 2 轮实测 no-op 变异可存活整套）。
+    let dirty = crate::report::worktree_is_dirty();
+    let allow = std::env::var("P124_ALLOW_DIRTY").is_ok();
+    if let Err(why) = crate::report::artifact_write_guard(dirty, allow) {
+        panic!("{why}\ngit status --porcelain:\n{}", crate::report::worktree_status_porcelain());
     }
     let (md, json) = render_artifacts(name);
     let dir = crate::report::out_dir();
@@ -1861,6 +1860,50 @@ fn provenance_carries_the_comparability_triple() {
             "口径快照缺 `{need}`（它是驱动判据的活常量）——当前：{names:?}"
         );
     }
+}
+
+/// **落盘门有判别力**——独立审阅第 2 轮 P1 的处置。
+///
+/// ## 为什么单独测纯函数
+///
+/// 落盘门（`write_artifacts`）只在两个 `#[ignore]` 产物门里被调用，**默认套件从不执行它**。
+/// 实测：把 `worktree_is_dirty()` 改成恒 `false`，**整套 32 条仍绿**，
+/// 而脏树上产物门照写、写出 `worktree_dirty=false`——**正是 P1-2 要消灭的缺陷被原样复活**。
+/// ⇒ 本测试直接喂三种组合给纯函数 [`crate::report::artifact_write_guard`]。
+///
+/// ⚠️ **不能用「字段 == 它的来源函数」当判据**（那是把函数与自己比，对任何桩恒真）——
+/// 独立审阅第 2 轮指出的原版缺陷。本测试断言的是**决策行为**。
+#[test]
+fn artifact_write_guard_has_discriminating_power() {
+    use crate::report::artifact_write_guard;
+    // ① 脏 + 不允许 ⇒ **拒绝**（这是 P1-2 的核心：脏树不得静默落盘）。
+    assert!(
+        artifact_write_guard(true, false).is_err(),
+        "脏树 + 未设 `P124_ALLOW_DIRTY` 时必须**拒绝**落盘——否则产物会记一个与内容不符的 commit"
+    );
+    // ② 脏 + 显式允许 ⇒ 放行（且 provenance 会记 `worktree_dirty=true`）。
+    assert!(
+        artifact_write_guard(true, true).is_ok(),
+        "显式设 `P124_ALLOW_DIRTY=1` 时应放行（本地调试用途）"
+    );
+    // ③ 干净 ⇒ 放行。
+    assert!(
+        artifact_write_guard(false, false).is_ok(),
+        "干净树必须放行"
+    );
+    // 反证条：① 与 ③ 必须**结果不同**——否则本函数对 `dirty` 无区分度（恒 Err 或恒 Ok）。
+    assert_ne!(
+        artifact_write_guard(true, false).is_err(),
+        artifact_write_guard(false, false).is_err(),
+        "本函数对 `dirty` 无区分度（恒 Err 或恒 Ok）——不是守卫"
+    );
+    // 而 `worktree_is_dirty` 本身必须反映真实的 `git status`（两者都调同一个 porcelain）。
+    let real = !crate::report::worktree_status_porcelain().is_empty();
+    assert_eq!(
+        crate::report::worktree_is_dirty(),
+        real,
+        "`worktree_is_dirty()` 与真跑 `git status --porcelain` 不一致"
+    );
 }
 
 /// **provenance 记录工作树状态**（P1-2 的处置）——内容绑定之外的**标签语义补充**。

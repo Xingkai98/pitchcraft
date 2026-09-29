@@ -230,7 +230,9 @@ AUC 标准误差 ≈0.184，0.219 不到 1.2σ，**纯噪声**。
 - **不得把区域/坐标当阶段**：本 change **不产出任何** `Phase`；意图特征命名均为
   观测语义（`window_*` / `pressure_*` / `def_*`），空间侧沿用 P16 的 `[空间]` / `[区域量·仅对照]` 标注；
 - **几何代理须命名为证据**：本 change 未新增任何几何代理；
-- 空间侧的 8 条与 P16 的 `separability` **逐条同输出**（`spatial_rows_match_the_p16_separability` 守）。
+- 空间侧的**前 7 条**与 P16 的 `separability` **逐条同输出**（`spatial_rows_match_the_p16_separability`
+  按下标比对、断言比较条数 = 7×3 守）；第 8 条 `forward_m/s` 是 **P16 裁决测试**的基线，
+  不在 `separability` 的 7 条里（独立审阅第 2 轮指出此处曾误写「8 条」）。
 
 ## Slice 5 — 裁决与产物
 

@@ -1310,7 +1310,7 @@ impl IntentState {
 ///
 /// ⚠️ **两条通道的对齐是可用性的前提**：`intent_snapshots[i]` 与 `state_snapshots[i]`
 /// 必须指同一拍（`t` 逐位相同）。二者由 `lib.rs` 在同一处相邻提交，
-/// 并由测试 `intent_and_state_snapshots_are_tick_aligned` 守住——**不靠约定，靠断言**。
+/// 并由测试 `intent_export_is_tick_aligned_with_positions` 守住——**不靠约定，靠断言**。
 /// （P16 的 join bug 正是因为两个集合的下标空间不同步，见 `p16/reference.rs`。）
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct IntentSnapshot {

@@ -250,8 +250,6 @@ pub struct Provenance {
     /// 表达「产出时是否含未提交改动」。故本栏如实记下——**内容绑定靠
     /// `test_source_fingerprint`（硬门），本栏只补标签语义**，不参与 pass/fail。
     pub worktree_dirty: bool,
-    /// 产出时 `git status --porcelain` 的原始输出（截断到 2000 字符；脏时才有意义）。
-    pub worktree_status: String,
 }
 
 /// `has_intent_snapshots` 的 provenance 取值来源（活探测，见 [`probe_has_intent_snapshots`]）。
@@ -275,8 +273,32 @@ pub fn build_provenance(mode: &str, seed_first: u64, seed_last: u64, duration: f
         caliber: caliber_snapshot(),
         test_source_fingerprint: test_source_fingerprint(),
         worktree_dirty: worktree_is_dirty(),
-        worktree_status: worktree_status_porcelain(),
     }
+}
+
+/// **落盘前的工作树检查**（**纯函数**——`write_artifacts` 只调用它）。
+///
+/// ## 为什么必须是纯函数（独立审阅第 2 轮抓到的 P1）
+///
+/// 第 1 轮的处置（`write_artifacts` 里内联 `if worktree_is_dirty() && env.is_err() { panic }`）
+/// **没有任何默认测试保护**：`write_artifacts` 只在两个 `#[ignore]` 的产物门里被调用，
+/// 默认套件**从不执行它**。实测：把 `worktree_is_dirty()` 改成恒 `false`，
+/// **整套 32 条仍绿**，且脏树上产物门照写、写出 `worktree_dirty=false`
+/// ——**正是 P1-2 要消灭的缺陷被原样复活而套件不红**。
+///
+/// ⇒ 把判断抽成纯函数 `(dirty, allow_dirty)`，由默认测试覆盖全部三种组合
+/// （见 `artifact_write_guard_has_discriminating_power`）。
+///
+/// 返回 `Err(说明)` = 拒绝落盘；`Ok(())` = 允许。
+pub fn artifact_write_guard(dirty: bool, allow_dirty: bool) -> Result<(), String> {
+    if dirty && !allow_dirty {
+        return Err(format!(
+            "工作树有未提交改动，拒绝落盘产物——产物的 `source_commit` 会是当时的 HEAD，\
+             与产物内容（含未提交改动）说不通（独立审阅 P1-2）。\
+             请先提交，或设 `P124_ALLOW_DIRTY=1` 明确接受（provenance 会记 `worktree_dirty=true`）。"
+        ));
+    }
+    Ok(())
 }
 
 /// 工作树是否有未提交改动（`git status --porcelain` 非空）。
