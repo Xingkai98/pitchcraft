@@ -2,13 +2,23 @@
 
 ## Slice 1 — 口径定死（先于任何数字）
 
-- [ ] 定义**位置口径**模块：episode 起点取 `control_established.location`；
-      终点取同源的收束侧字段（**须先定是哪个**，见 design §5.2）
-- [ ] 加**守卫**：断言不混用「决策动作 `Event.x`」当位置
-      （可仿 P15A 的源码守卫形态，或对已知样本断言两口径的差）
-- [ ] 记录**门球放大器**：`goal_kick_land` 的落点区间 + 门球占重开比例（31.7% 实测）
-- [ ] 口径写进产物 provenance
-- [ ] 测试：口径守卫 + 反证条（**断言输入须对目标变异有区分度**，见 P36 教训）
+- [x] 定义**位置口径**模块：episode 起点取 `control_established.location`；
+      终点取同源的收束侧字段（**已定**：`t == end_t` 且带 `location` 的**最早**一条；
+      回退取窗内最后一条带位置事实。见 `engine/tests/p16/caliber.rs` 的 `closing_fact`
+      与 `OPEN-QUESTIONS.md` Q2）
+- [x] 加**守卫**：断言不混用「决策动作 `Event.x`」当位置
+      （`caliber_start_comes_from_control_fact_not_action_position` +
+      `caliber_guard_has_discriminating_power`：在 `EpisodeCaliber` 上造变异体，
+      断言两口径落在**不同推进带**——对目标变异有区分度）
+- [x] 记录**门球放大器**：`goal_kick_land` 的落点区间（归一后 `[0.50, 0.82]`）
+      + 门球占重开比例（`GOAL_KICK_RESTART_SHARE = 0.317`，本轮 100 seed 复现 1666/5258）
+- [x] 口径写进产物 provenance（`CALIBER_VERSION`；完整 provenance 随 Slice 5 的产物落地）
+- [x] 测试：口径守卫 + 反证条（**3 条定向变异实跑均红**，证据记在
+      `engine/tests/p16/caliber.rs` 模块头）
+
+**实测（100 seed / 10102 episodes）**：起点位置 100% 可得；终点位置 **86.8%** 可得
+（不可得的 13.2% 按 `end_reason` 分解在 `CaliberCoverage.end_missing_by_reason`）；
+两口径推进带分歧率 **25.7%**（复现侦察报告 §2 的 3 倍差）。
 
 ## Slice 2 — 静态特征接入
 
