@@ -202,8 +202,25 @@ change 口径明禁的）。实测往 `reference_set` 塞 `acts.last().map(|e| e
 
 产物记 `7c3f8b4`、HEAD 已是 `282faf2`。`test_source_fingerprint` 对**内容**敏感，
 但对「产物是否在最新 commit 上生成」不敏感（内容没变就同值）。
-**修复**：`on_disk_artifacts_share_...` 增加 `source_commit == 真实 HEAD` 断言
-（取 `P16_EXPECT_HEAD` 或 `git rev-parse HEAD`）。
+
+**修复（含一次失败的第一版）**：
+
+- **第一版（错）**：直接断言 `source_commit == HEAD`。**这是自失效的**——
+  产物是 gitignored 的**本地**文件，任何一次提交都把 HEAD 推过它记录的 commit。
+  实测：我在 `282faf2` 生成产物、随即提交本次修复（`fdff086`），守卫**当场红**。
+  「提交修复」这个动作本身就会弄红测试，说明判据选错了。
+- **第二版（对）**：判据是**内容**不是**标签**——
+  - **硬门**：`test_source_fingerprint` == 当前源码（源码一改就红，这才是「产物是否陈旧」）；
+  - 标签合理性：`source_commit` 须是 40 位十六进制、**且是 HEAD 的祖先**
+    （挡「来自别的分支/fork/编造」）；**不要求 == HEAD**（本地产物天然滞后一个提交）。
+
+⚠️ **第二版的祖先检查我第一遍也写成了假的**：用
+`.status().ok().map(|st| st.success())` + `if let Some(ok)` ——
+把 git 的**三种退出码**混成两种。git 对「不是祖先」返回 **1**、对「ref 不存在」返回 **128**；
+我用「`Ok` 才检查」的写法让 **128 也进了检查**，但 `success()` 对 128 是 `false`，
+于是「编造的 commit」**被静默放行**——实测变异存活。已改为**显式 match 三种退出码**
+（0 通过 / 1 panic「不是祖先」/ 128 panic「本仓库不存在」/ 其他 panic），
+只有「根本调不起 git」（`Err`）才跳过。这是我第二次在同一处写成假守卫。
 
 ### 缺陷 5（P0，**实现者据缺陷 1/2 的线索自查时发现**，比主 session 报的四条更严重）
 

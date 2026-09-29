@@ -1825,26 +1825,66 @@ fn on_disk_artifacts_share_the_current_source_fingerprint() {
              --test p16_spatial_features -- --ignored --nocapture`。当前源码指纹 = {current}",
             path.display()
         );
-        // ⚠️ **`source_commit` 必须等于真实 HEAD**（主 session 核验抓到的缺陷 4）：
-        // 先前只断言「非 unknown」，于是产物记着旧 commit（`7c3f8b4`）而 HEAD 已前进，
-        // 没有哨兵能发现。`test_source_fingerprint` 对**内容**敏感、但对
-        // 「产物是否在最新 commit 上生成」不敏感（内容没变就同值）。
-        let head = std::env::var("P16_EXPECT_HEAD").ok().or_else(|| {
-            // 无环境变量时尝试 git（只在开发机上有效；CI/无 git 时跳过这条）。
-            std::process::Command::new("git")
-                .args(["rev-parse", "HEAD"])
+        // ⚠️ **`source_commit` 的哨兵**（主 session 核验抓到的缺陷 4）。
+        //
+        // **不**断言 `source_commit == HEAD`——那是**自失效**的：产物是 gitignored 的
+        // **本地**文件，任何一次提交都会把 HEAD 推过它记录的 commit，
+        // 于是「提交修复」这个动作本身就会让 `cargo test` 变红。实测（2026-09-29）：
+        // 我在 `282faf2` 重生成产物、随即提交 `fdff086`（就是这次修复），守卫当场红。
+        //
+        // 正确的判据是**内容**，不是**标签**：
+        // - **硬门**：`test_source_fingerprint` == 当前源码（上面已断言）——
+        //   源码一改就红，这才是真正的「产物是否陈旧」；
+        // - **本处补的是标签合理性**：`source_commit` 必须形如 40 位十六进制，
+        //   且必须是 **HEAD 或其祖先**——挡住「产物来自别的分支/fork，或标签是编的」。
+        let recorded = text
+            .lines()
+            .find(|l| l.contains("`source_commit`"))
+            .and_then(|l| {
+                l.split('`')
+                    .filter(|t| t.len() == 40 && t.chars().all(|c| c.is_ascii_hexdigit()))
+                    .next_back()
+            })
+            .map(|s| s.to_string());
+        if let Some(rec) = recorded {
+            assert_ne!(
+                rec,
+                "unknown",
+                "落盘产物 `{}` 的 `source_commit` 是 unknown——产物门须传 \
+                 `P16_SOURCE_COMMIT=$(git rev-parse HEAD)`",
+                path.display()
+            );
+            // 祖先检查。⚠️ **必须区分三种退出码**（本仓「变异判红要排除编译失败」的同型教训）：
+            // git 对「不是祖先」返回 **1**，对「ref 不存在 / 不是仓库」返回 **128**。
+            // 早先把两者都当「跳过」（`.ok().map(success)` + `if let Some`），
+            // 于是**编造的 commit（128）会被静默放行**——实测变异存活（缺陷 4 的守卫我自己写成了假的）。
+            let out = std::process::Command::new("git")
+                .args(["merge-base", "--is-ancestor", &rec, "HEAD"])
                 .current_dir(env!("CARGO_MANIFEST_DIR"))
-                .output()
-                .ok()
-                .filter(|o| o.status.success())
-                .map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string())
-        });
-        if let Some(head) = head {
-            assert!(
-                text.contains(&head),
-                "落盘产物 `{}` 的 `source_commit` 不是当前 HEAD（{head}）——产物陈旧。\
-                 重跑：`P16_SOURCE_COMMIT=$(git rev-parse HEAD) cargo test --release \
-                 --test p16_spatial_features -- --ignored --nocapture`。",
+                .status();
+            match out {
+                Ok(st) if st.success() => {}
+                Ok(st) if st.code() == Some(1) => panic!(
+                    "落盘产物 `{}` 的 `source_commit`（{rec}）**不是 HEAD 的祖先**——\
+                     产物来自别的分支/fork。内容指纹已独立核对，但标签指向的历史对不上。",
+                    path.display()
+                ),
+                Ok(st) if st.code() == Some(128) => panic!(
+                    "落盘产物 `{}` 的 `source_commit`（{rec}）**在本仓库不存在**（git 退出 128）\
+                     ——标签是编的，或指向已被 rebase/gc 掉的历史。",
+                    path.display()
+                ),
+                Ok(st) => panic!(
+                    "`git merge-base --is-ancestor` 意外退出码 {:?}（产物 `{}`）",
+                    st.code(),
+                    path.display()
+                ),
+                // 只有「根本调不起 git」（无 git 的 CI/容器）才跳过——这是合法场景。
+                Err(_) => println!("无 git，跳过祖先检查"),
+            }
+        } else {
+            panic!(
+                "落盘产物 `{}` 里找不到 40 位十六进制的 `source_commit`——格式变了？",
                 path.display()
             );
         }
@@ -1853,7 +1893,10 @@ fn on_disk_artifacts_share_the_current_source_fingerprint() {
     if checked == 0 {
         println!("未发现落盘产物 → 跳过（新 worktree 的正常状态）");
     } else {
-        println!("核过 {checked} 份产物，均与当前源码同源（{current}）且 source_commit == HEAD");
+        println!(
+            "核过 {checked} 份产物：内容指纹 == 当前源码（{current}），且 source_commit \
+             是 HEAD 的祖先（标签合理；不要求 == HEAD，见守卫 doc）"
+        );
     }
 }
 
