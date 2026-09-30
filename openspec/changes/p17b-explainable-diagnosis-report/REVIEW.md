@@ -714,3 +714,137 @@ N-2 同一归因在 `design.md`/`tasks.md`/recon note 的残留、N-3 新 note �
 N-4 表头悬空测试名）**全在文档/守卫层**，不进产物、不挂断言、不改变任何结论，属建议收尾项。
 其中 **N-1 值得优先收**（它是「行 A 指向行 B、B 否认 A」的自相矛盾，最易误导下一个读者）；
 N-2 因 `design.md` 是权威稿，建议一并加收回注记。
+
+### 轮次 4 — 需修改（独立审阅 agent · Claude / paseo worktree `1g1x3st4` · 2026-09-30）
+
+**审阅对象**：`4dad5a467d799dfecdd2b164b7c99a2fa7a08615`（我 `git rev-parse HEAD` 自核）。
+默认套件实跑：`32 passed; 0 failed; 2 ignored`。产物在 `/tmp/p17b-r4` **干净重跑**（前台、无并发探针），
+磁盘件只读比对。每条变异都在 `git status` 干净 → 改动 → `git checkout --` 还原 → `git status` 确认
+pristine 的循环里跑；每条判红都亲眼见到**目标测试名 + `panicked at`**（排除编译失败）。
+
+任务要求：确认轮 3 的 N-1..N-4 是否真被修掉、且这次修复本身没引入新问题。
+结论提前说：**N-1/N-2/N-4 确实修好；N-3 反而引入了本轮唯一的 P1——新守卫的判别力比旧守卫更弱**
+（旧守卫能判红的三种输入，新守卫全部放行），且**轮 3 明确点名、作者声称已堵的 `kickoff` 逃逸仍原样存活**。
+
+#### 逐条核实 N-1..N-4
+
+| # | 轮 3 的原话 | 在 `4dad5a4` 上 | 独立证据 |
+|---|---|---|---|
+| **N-1** | 入口测试 doc 的 `close_down` 归因与 `evidence.rs` 自相矛盾（第三处拷贝） | **不成立（已真修）** | `p17b_diagnosis_report.rs:613-626` 改写成「依据是**靶点分流**，**不要**用终点距离」；我逐条核了源码事实：`compute_mover_candidates`（`engine/src/lib.rs:3295`）`Tackle → st.ball_pos` / `SaveCaught → attacking_forward(st, tr.attacking)`、`CLOSE_DOWN_STOP_DIST = 0.02`（归一化 ≈2 m，`:692`）**全部存在且与 doc 一致**。三处（入口测试 doc / `evidence.rs:441` / `reasons.rs:283`）现在互相一致。 |
+| **N-1（续）** | 建议 grep `188`/`168`/`追人` 找**第四处** | **发现第四处仍在**（见新发现 P2） | `grep` 全仓：`evidence.rs`/`reasons.rs`/入口测试/`design.md`/`tasks.md` 五处**已收回**；但 **`.scratch/notes/17b-recon-2026-09-30.md:180-183`（本轮被审提交未触及）仍写「实测 **188/513** … ⇒ 它们在**追人**」**，零注记。且该 note 被 `proposal.md:45`、`spec.md:22`、`tasks.md:9`、`.scratch/map.md:176`、`.scratch/notes/17b-handoff` 多处引用为设计依据。轮 3 报告（`:635`）点过这处，本轮只修了其点名的 `design.md`/`tasks.md`，漏了 `recon note`。 |
+| **N-2** | `design.md`/`tasks.md` 的更正引注 | **不成立（已真修，且未篡改冻结正文）** | `design.md:238-250` 是在原证据句**之后**插入 `>` 引言块（原句 `:236` 保留可读），分「数值层 188 是归一化混用 / 因果层 `close_down_stop` 打不到靶点」两层，并明写**「结论与纪律不变…但依据只能是靶点分流本身」**。`tasks.md:29` 的 MAJOR-2 行同步加注。**冻结设计的原句没有被改得读不通**——`design.md:235-236` 的源码事实句与 `:252-253` 的正式措辞纪律原样保留。 |
+| **N-3** | note 守卫三处可绕路径（引号内空格 / 值蒙混 / 只扫反引号内） | **三处已堵，但修复走了一条「收窄候选」的路，判别力反而变弱**（见新发现 P1） | ① 引号内空格：`` `逐条 RestartWindow 的起止` `` ⇒ **RED** ✅；② 裸 CamelCase：`**本层不给逐条 RestartWindow**` ⇒ **RED** ✅；③ snake_case 不存在字段：`foo_bar` ⇒ **RED** ✅。但沿路发现：**旧守卫能判红的 `location` / `restartwindow` / `chain.fake_field` 三种输入，新守卫全部放行**（变异表 M4-J/K/L）。 |
+| **N-4** | 表头 `spec_anomaly_coverage_blocks_carry_both_halves_and_the_guard_is_not_vacuous` 悬空 | **不成立（已真修）** | 表头 `:44-45` 现拆成两行；两名字**都是真函数**：`fn spec_anomaly_coverage_blocks_carry_both_halves`（`:1000`）与 `fn spec_anomaly_coverage_guard_is_not_vacuous`（`:1776`）。我另扫了表头全部 34 个 `` [`name`] `` 引用，除 `classify`/`coverage_of`（那是散文里指方法名，非测试登记）外**无新的悬空测试名**。 |
+
+#### 变异表（本轮独立重做；每条自核 pristine）
+
+> 变异注入点：`reasons.rs` 的 `A7` note（`ANOMALY_COVERAGE` 行）。「NEW」= HEAD（`4dad5a4`）的守卫，
+> 「OLD」= `dc15f12` 的守卫。判红 = 目标测试名 + `panicked at`。
+
+| # | 注入的 note 片段 | 期望 | OLD | NEW | 判读 |
+|---|---|---|---|---|---|
+| M4-A | `` `逐条 RestartWindow 的起止` ``（引号内含空格） | 判红 | RED | **RED** | ✅ 轮 3 逃逸(a)已堵 |
+| M4-B | `**本层不给逐条 RestartWindow**`（无引号） | 判红 | RED | **RED** | ✅ 轮 3 逃逸(③)已堵 |
+| M4-C | `` `foo_bar` ``（不存在的 snake 字段） | 判红 | RED | **RED** | ✅ 非空转 |
+| M4-D | `` `passC` ``（产物**值**，CamelCase） | 判红 | GREEN | **GREEN** | ❌ 仍逃逸（值蒙混，档①把值当键） |
+| M4-E | `` `restart_control` ``（产物**值**） | 判红 | GREEN | **GREEN** | ❌ 仍逃逸 |
+| M4-F | `` `kickoff` ``（**轮 3 的 M-NOTE-VALUE 原样重放**） | 判红 | GREEN | **GREEN** | ❌ **声称已堵，实测仍开** |
+| M4-G | `` `chain.fake_field` ``（真键 head + **假尾段**） | 判红 | **RED** | GREEN | ❌ **新守卫回归** |
+| M4-H | `` `fakename.team` ``（假 head + **真键尾段**） | 判红 | RED | GREEN | ❌ **新守卫回归** |
+| M4-I | `` `event_indexes.nope` `` | 判红 | RED | GREEN | ❌ **新守卫回归** |
+| M4-J | `` `location` ``（**守卫自己的动机字段**，全小写无下划线） | 判红 | **RED** | GREEN | ❌ **新守卫回归（最讽刺）** |
+| M4-K | `` `restartwindow` ``（全小写无下划线） | 判红 | **RED** | GREEN | ❌ **新守卫回归** |
+| M4-L | `` `nodes` `` / `` `team` `` / `` `player` ``（裸小写字段名） | 判红 | RED | GREEN | ❌ 新守卫回归 |
+| ABL-1 | 去掉档③ `as_value` 子句 | 应红 | — | **仍 GREEN** | 档③在当前 notes 上**不承重** |
+| ABL-2 | 去掉档④ `PROSE_OK` 子句 | 应红 | — | **仍 GREEN** | 档④在当前 notes 上**不承重** |
+| ABL-3 | 去掉 `keys.contains(head/tail)` 子句 | 应红 | — | **RED** | 该子句**在承重**（放行 `ControlFact.team` 等） |
+| ABL-4 | 去掉 `SOURCE_SIDE_OK` 子句 | 应红 | — | **RED** | 该子句**在承重** |
+
+#### 新发现
+
+- **[P1] 新 note 守卫的判别力**比旧守卫更弱**——它把「候选筛选」当成了「豁免」，于是**放行了旧守卫能判红的三类输入
+  - 机制（读断言体，`p17b_diagnosis_report.rs:1739-1763`）：
+    - `:1742` `if !(is_camel || is_snake) { continue; }`——**候选筛选**只看「同时含大小写」或「含 `_`」。
+      全小写无下划线的标识符（`location` / `team` / `player` / `nodes` / `restartwindow`）
+      **连 `checked` 都不进**，直接跳过 ⇒ 永不判红。
+    - `:1749-1750` `keys.contains(head) || keys.contains(tail)`——点号路径只核**两段**，
+      故 `chain.fake_field`（真键 head + 假尾）与 `fakename.team`（假 head + 真键尾）**全放行**。
+      旧守卫只取 `rsplit('.').next()`（尾段）比 `SOURCE_SIDE_OK`，故这两种都被判红。
+    - 更底层：`keys` 集仍是 `:1669-1678` 的**裸引号扫描**（201 个 token，含 33 个非真键），
+      产品**取值**（`kickoff`/`passC`/`restart_control`…）**仍在键集里** ⇒ 档①
+      `keys.contains(t)` 对「值当字段」原样放行。轮 3 报告 `:646-651` 明确指出这是 M-NOTE-VALUE 的根因，
+      本轮**没有把 `keys` 改成 JSON 解析**，只加了档③的形态闸（而档③经 ABL-1 证明不承重、被档①短路）。
+  - **最讽刺的一点**：`location`（全小写、无前缀）正是这条守卫的**动机字段**——`A8` 的 note 原先就写
+    「位置须读 `ControlFact.location`」，后面还专门用 `Event.x,y` 顶替的反而被拦。
+    **恰好因为旧写法带点号路径、作者把它写进了 `SOURCE_SIDE_OK`，才没有暴露**。
+    换言之：新守卫把「能抓到目标」缩到「只抓 CamelCase / snake_case」，而它唯一想抓的那个字段名
+    **不在这个形态里**。
+  - 这也解释了轮 3 的 `M-NOTE-VALUE` 为何「修了却还是绿」：`kickoff` 的形态闸是 `is_enum_token`+`json`，
+    但 `keys.contains("kickoff")` 先命中（裸扫描键集含值）⇒ `as_value` 的收紧**被档①短路，形同虚设**。
+  - 影响面：**测试层**（守卫的判别力），不进产物、不改变任何已发布结论。
+    但本 change 的立身之本就是「守卫不得空转/不得假覆盖」，故按 P1 记。
+
+- **[P2] `close_down` 归因的第四处拷贝仍在**（`.scratch/notes/17b-recon-2026-09-30.md:180-183`）
+  - 原文仍写：「实测 **188/513（8 seed）** 的 `close_down` 终点距球 > 5.25 m ⇒ 它们在**追人**」——
+    这正是轮 2 推翻的**数值 + 因果**两层错误，且**零注记**。
+  - 与 N-1 的第三处（入口测试 doc）**同族**：作者本轮修了轮 3 点名的 `design.md`/`tasks.md`，
+    **漏了同样被点名的 recon note**（轮 3 报告 `:635` 明列此文件）。
+  - 为何值得记为 P2 而非 MINOR：该 note 被 `proposal.md:45`/`spec.md:22`/`tasks.md:9`/`.scratch/map.md:176`
+    当**证据来源**引用；下一个读者照它引，就会把已推翻的归因再抄一遍——这正是本仓
+    `[[conclusion-right-mechanism-wrong]]` 的主角。影响面仍在文档层，不阻断产物。
+  - 修法（低成本）：在其后加与 `design.md:238-250` 同款的「实现期更正」引注即可（**不必**篡改正文）。
+
+- **[MINOR] 入口测试 doc 有一处**轻微误述**：`p17b_diagnosis_report.rs:621` 写「本 change 曾在**三处**那么写」，
+  但 `design.md:248` 与 `tasks.md` 的注记说「实现侧**三处**引用已收回」。实际「距球远⇒追人」的拷贝至少
+  **五处**（入口测试 / `evidence.rs` / `reasons.rs` / `design.md` / `tasks.md`），再加未收的 recon note 共六处。
+  数字不一致不影响结论（都在讲「曾在多处」），但下次读者数数对不上会再生疑。属 MINOR。
+
+#### 未覆盖/存疑
+
+- **`checked` 计数与注释一致**：实测 `checked = 19`，注释声称「当前十行 note 上有 19 个候选标识符」——**吻合**；
+  下限 `> 12` 未空转，且**十条真 note 全过**（无误伤）。这部分单独看是好的。
+- **两档放行（档③ `as_value` / 档④ `PROSE_OK`）在当前 notes 上不承重**（ABL-1/ABL-2）：
+  去掉它们默认套件仍绿。不是缺陷（未来 note 可能需要），但说明**当前四档里只有两档在实际起作用**。
+- **新守卫对「同族新字段名」的判别**：我只测了有限形态。**未穷举**的是——
+  若作者未来写 `ChainNode`（CamelCase、不在产物、不在源侧），新守卫**会**判红（属其设计面）；
+  但写 `location2` / `chain_nodes` 这类**形态不匹配**的名字仍会逃逸。同 P1 的根因。
+- **产物语义层的「好坏标签」**：同前几轮，只做字符串禁串表 + 人工抽查，未做系统性语义判定。
+- **`EXC_CLASS_CAP = 200` / 产物是否该渲染 `contest_window`**：同前几轮，未变。
+
+#### 不可越界核实
+
+1. **零 `engine/src/` 改动**：`git diff main --stat -- engine/src` → **空**。✅
+   （复核了 doc 引用的 `CLOSE_DOWN_STOP_DIST`、`compute_mover_candidates`、`attacking_forward` 是**既有**源码，
+   不是本 change 新增。）
+2. **不报相位**：自写**块注释 + 行注释双剥**扫描器（`re.sub(r'/\*.*?\*/', '')` 去块注释，再逐行截 `//`）
+   扫 `tests/p17b/{evidence,episode,reasons,report}.rs` 的**非注释**行 ——
+   `build_up`/`progression`/`final_third`/`attacking_transition`/`Phase` **零命中**。
+   **扫描器有判别力**：正控（注入 `pub const PHASE_PROBE = "build_up"` + `/* final_third */` + `// progression`）
+   只抓出代码里的 `build_up`、正确忽略两条注释；负控（只放注释）判 clean。✅
+3. **不产生 pass/fail 或好坏标签**：扫重跑产物（`/tmp/p17b-r4/*.json` + `*.md`）——
+   `PASS`/`FAIL`/`通过率`/`合格`/`passed`/`failed` 全 **0**；`通过` 仅 1 处（元陈述「它不给出通过/失败判定」）、
+   `失败` 仅 3 处（元陈述 + 赛事事实「失败传球不造成失球」）、`坏` 仅 1 处（技术词「不变量被破坏」）。✅
+4. **产物与源码同源**：磁盘件与 `/tmp/p17b-r4` 重跑件**只差 `source_commit` 一栏**（其余逐字节一致）；
+   `test_source_fingerprint` 磁盘件 = `fnv1a64:c23f8be58685ef07`，**与我从 HEAD 源码独立计算的指纹逐位吻合**。
+   （我第一轮重跑曾得到 `7fa23bbc…`，但那是我并发跑变异探针污染了 `tests/p17b/reasons.rs` 所致——
+   干净前台重跑即回到 `c23f8be5`；**这正是 `test_source_fingerprint` 该有的行为**，非缺陷。）
+5. **`source_commit` 栏**：磁盘件记的是生成时的 HEAD（`dc15f12`），比 HEAD 差一笔；
+   该栏已在产物层显式注明「跑门时记的 HEAD；判陈旧请看下面两条指纹」，指纹一致 ⇒ **非缺陷**。✅
+
+#### 判定
+
+**需修改**。N-1 / N-2 / N-4 三条**确实修好**（入口测试 doc 与 `design.md`/`tasks.md` 的更正真实、措辞与
+源码事实一致、冻结设计的原句未被改坏、表头两条测试名都真存在）。
+但 **N-3 的修复引入了本轮唯一的 P1**：新守卫为堵三处窄逃逸而「收窄候选 + 加 head/tail 段」，
+**净判别力比旧守卫更弱**——旧守卫判红的 `location`（守卫自己的动机字段）、`restartwindow`、
+`chain.fake_field`/`fakename.team` 三类**新守卫全部放行**，且轮 3 明确点名、提交信息声称已堵的
+`kickoff` 逃逸**原样存活**（`keys` 裸扫描仍把产品值当键）。按判定标准「N-1..N-4 全部确实修掉 **且**
+无新 P0/P1 ⇒ 通过」，此处**不满足**：既有 N-1 的第四处（recon note，P2）未收回，
+又有守卫判别力回退（P1）。
+
+**建议的最小修法**（不要求重做）：
+1. 把 `keys` 集从**裸引号扫描**改为**真键解析**（按 `"key":` 形态），并让档③只比对**值**——
+   这是轮 3 已给出的方案，能一次消掉 `kickoff`/`passC`/`restart_control` 一整类逃逸；
+2. 候选筛选**不要 `continue` 跳过**，而是「形态像标识符就纳入 `checked`」，
+   全小写无下划线的 token 只要**不是产物键也不是源侧清单**也判红（或至少对「点号路径」两端都核）；
+3. 给 `recon note:180-183` 补「实现期更正」引注（照 `design.md:238-250` 的形状）。

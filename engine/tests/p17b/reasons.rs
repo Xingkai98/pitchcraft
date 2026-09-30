@@ -196,8 +196,8 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
         topic: "丢球后归属由争抢原因决定（夺回率按原因分化）",
         per_episode_samples: true,
         note: "本层给每段的 `contest_start` 成因（产物键）与收束事实下标。\
-               ⚠️ **拾取方（队/人）须由消费方拿该下标回原对象读**（`ControlFact.team/player`，\
-               故意不进产物）；且同样**不含**追逐过程——理由同 A2",
+               ⚠️ **拾取方（队/人）须由消费方拿该下标回原对象读**（`ControlFact.team` 与\
+               `ControlFact.player`，故意不进产物）；且同样**不含**追逐过程——理由同 A2",
     },
     AnomalyCoverageRow {
         rule: "A4",

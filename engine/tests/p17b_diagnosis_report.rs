@@ -1682,89 +1682,150 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
     //       现改为：该档只放行**闭集 token 形态**（全小写 + 下划线 + 可带 `+`/`?`/`-`），
     //       即 `pass+` / `kickoff` 这类**取值枚举**；`RestartWindow` 这类 CamelCase
     //       **类型名**不再被当成值放行。
-    let is_enum_token = |w: &str| {
-        !w.is_empty()
-            && w.chars()
-                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '+' || c == '?' || c == '-')
-    };
-    // ⚠️ **第三处可绕路径**（审阅轮 3 之后自查又抓到）：初版只扫**反引号内**的文本，
-    // 故一条**不带反引号**的类型名（`**本层不给逐条 RestartWindow**`）**完全不被检查**。
-    // ⇒ 改为扫 note 全文里**全部**标识符形态的 token（带不带反引号都扫）。
-    // 这使守卫的覆盖面不再依赖「作者恰好用了反引号」。
+    // ⚠️ **本守卫迭代了三轮，每一轮都被下一轮证明「更弱」**（审阅轮 2 的空转、
+    //    轮 3 的三处逃逸、轮 4 抓到的**判别力回退**）——故这里把设计一次说清，
+    //    并把「放行」收敛成**只能显式加白名单**这一条路。
     //
-    // 放行档（四档，缺一不可）：
-    // ① 是产物的**键**；② 在源侧清单里（须回原对象读）；
-    // ③ 是产物里出现过的**闭集取值**（全小写形态，如 `pass+` / `kickoff`）；
-    // ④ 在**散文白名单**里（如 `P17A` / 规则号 `A7` / 章节号——它们是**引用**，不是落点）。
+    // ## 反面教材（都实测过，别再走回去）
+    //
+    // - 只扫**反引号内**：不带反引号地提到类型名就完全不被检查（轮 3 的第三处逃逸）；
+    // - 用 **CamelCase/snake_case 筛候选**：全小写字段名（`location`）直接跳过，
+    //   而它**正是本守卫要抓的东西**（轮 4 实测 OLD 判红、NEW 判绿——判别力**回退**）；
+    // - 点号路径只核 head/tail：`chain.fake_field` 因 `chain` 是真键而放行；
+    // - **「产物里出现过的取值」档**：键集是拿**裸引号**扫的，值也在其中，
+    //   于是 `kickoff` 这类**值**被当成键命中，该档形同虚设（轮 3 声称堵了，轮 4 实测没有）。
+    //
+    // ## 现在的设计（**两条硬规则**）
+    //
+    // 1. **候选 = note 全文里任何「英文标识符形态」的词**（≥3 个字母，允许 `.`/`_`），
+    //    **不做形态筛选**——筛选本身就会变成豁免。
+    // 2. **放行只有一条路：显式白名单**。白名单分三张，都由人**明确写下**：
+    //    `PRODUCT_KEYS`（本产物真有的键，**从 JSON 里自动抽，且只抽键不抽值**）、
+    //    `SOURCE_SIDE_OK`（须回原对象读的字段）、`PROSE_OK`（散文词 / 引用名 / 闭集取值）。
+    //    ⇒ 想让一个词过，只能**显式加**——那是一次有意识的动作，而不是碰巧逃逸。
+    let json_keys = json_object_keys(&json);
+    assert!(
+        json_keys.len() > 50,
+        "从产物里只抽到 {} 个键——键抽取逻辑失效，本守卫会假绿",
+        json_keys.len()
+    );
     const PROSE_OK: &[&str] = &[
-        "P17A", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
-        "P16", "P124", "P17B", "A", "B", "in", "s",
+        // 引用（其它 change / 规则号 / 章节）——它们不是落点。
+        "P17A", "P16", "P124", "P17B",
+        "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
+        // 产物里会出现的**闭集取值**（note 引用它们是指「产物里会出现这个取值」）。
+        "pass", "kickoff", "restart_control", "long_dwell", "empty_possession",
+        "instant_contest", "shot_rebound_end", "tail_p90", "stride", "all",
+        "all_canary", "chase_class", "presence_class", "duration_s",
+        // 散文里的英文技术词（不是字段名）。
+        "episode", "episodes", "chain", "card", "cards", "note", "notes",
+        "raw", "in", "the", "and", "of",
+        // `ControlFact` 的队/人字段（须回原对象读，与 `ControlFact.location` 同族）。
+        "ControlFact.team", "ControlFact.player", "player",
+        // 观测层的对象名（在 `SOURCE_SIDE_OK` 里已有其字段路径）。
+        "PossessionEpisode.start_t", "PossessionEpisode.end_t",
+        // 松散球判据里的两个概念词（不是产物字段）。
+        "loose", "beat", "beats",
     ];
     let mut checked = 0usize;
+    let mut violations: Vec<String> = Vec::new();
     for row in ANOMALY_COVERAGE {
-        // 扫全文：标识符形态（可带点号路径），两端用非标识符字符界定。
-        let bytes = row.note.as_bytes();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            let c = bytes[i] as char;
-            if !(c.is_ascii_alphabetic() || c == '_') {
-                i += 1;
-                continue;
-            }
-            let start = i;
-            while i < bytes.len() {
-                let c = bytes[i] as char;
-                if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
-                    i += 1;
-                } else {
-                    break;
-                }
-            }
-            let t = &row.note[start..i];
-            let t = t.trim_end_matches('.');
-            if t.is_empty() {
-                continue;
-            }
-            // 点号路径的尾段不得为空（`Event.x,y` 这类写法在点号处自然断开）。
-            let head = t.split('.').next().unwrap_or(t);
-            let tail = t.rsplit('.').next().unwrap_or(t);
-            // 只把**像代码标识符**的 token 当候选——这既避免中文散文里的普通英文词
-            // （`episode` / `card`）被误判，又保证**类型名**（CamelCase）与
-            // **字段名**（snake_case）**一个都跑不掉**：
-            //   - CamelCase：同时含大写与小写（`RestartWindow` / `ControlFact`）；
-            //   - snake_case：含下划线（`start_reason` / `restart_window`）；
-            //   - 其它（纯小写无下划线的普通英文词、`P17A` 这类大写缩写）不是候选。
-            // ⚠️ 这条**只是候选筛选**，不是放行——候选一律要过下面的四档。
-            let has_upper = t.chars().any(|c| c.is_ascii_uppercase());
-            let has_lower = t.chars().any(|c| c.is_ascii_lowercase());
-            let is_camel = has_upper && has_lower;
-            let is_snake = t.contains('_');
-            if !(is_camel || is_snake) {
-                continue;
-            }
+        for t in identifier_words(row.note) {
             checked += 1;
-            let as_value = is_enum_token(t) && json.contains(&format!("\"{t}\""));
+            let ok = json_keys.contains(&t)
+                || SOURCE_SIDE_OK.contains(&t.as_str())
+                || PROSE_OK.contains(&t.as_str());
+            if !ok {
+                violations.push(format!("{} → `{}`", row.rule, t));
+            }
+        }
+    }
+    assert!(
+        violations.is_empty(),
+        "`ANOMALY_COVERAGE` 的 note 里出现了**未白名单化**的标识符：{violations:?}\n\
+         它们既不是本产物真有的键、也不在源侧清单、也不在散文白名单里——\
+         即**声称了产物给不出的东西**（或只是没登记）。若是前者，改 note；\
+         若是后者，把它**显式加进** `PROSE_OK` / `SOURCE_SIDE_OK`（有意识的动作，\
+         而不是靠某个形态筛选碰巧逃逸）。"
+    );
+    // 防空转：候选数必须够多，否则「一个词都没扫到」也会让上面判绿。
+    assert!(
+        checked > 30,
+        "核对到的 identifier 太少（{checked}）——扫描面可能已塌成空（本仓的空转形态）"
+    );
+}
+
+/// **「距球远 ⇒ 追人」这个被推翻的归因不得在任何地方复活**（审阅轮 4 的 P2）。
+///
+/// ## 为什么值得一条**全仓**扫描守卫
+///
+/// 这处归因在实现期被写了**四份拷贝**（`evidence.rs` / `reasons.rs` / 入口测试 doc /
+/// `.scratch` 的侦察 note，外加 `design.md`/`tasks.md` 的引注）。
+/// 收三轮才收干净：轮 2 抓两处、轮 3 抓第三处、轮 4 抓第四处（侦察 note，零注记）。
+/// **每次都是「收了几处就以为收完了」**——所以判据不能靠人工 grep，要落成断言。
+///
+/// ## 判据
+///
+/// 在**报告逻辑 + 入口测试 + 侦察 note** 的正文里，若出现被推翻的**证据数字**
+/// （`188/513` / `168/513`）或断言句（`⇒ 它们在**追人**`），
+/// **必须同段出现更正标记**（`不成立` / `推翻` / `更正` / `单位` / `打不到靶点`）。
+/// 即：**旧数字可以留（历史记录），但必须带着它的更正**。
+#[test]
+fn retracted_close_down_attribution_is_always_annotated() {
+    // 仓库文件在**运行时**读（不用 `include_str!`）：否则改一句文档就会改变
+    // `test_source_fingerprint`，把全部落盘产物判成陈旧——指纹应当只跟**判据**走。
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../openspec/changes/p17b-explainable-diagnosis-report");
+    let design = std::fs::read_to_string(root.join("design.md")).expect("读 design.md");
+    let tasks_doc = std::fs::read_to_string(root.join("tasks.md")).expect("读 tasks.md");
+    let recon = std::fs::read_to_string(
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.scratch/notes/17b-recon-2026-09-30.md"),
+    )
+    .unwrap_or_default();
+    let mut sources: Vec<(&str, &str)> = vec![
+        ("p17b/evidence.rs", include_str!("p17b/evidence.rs")),
+        ("p17b/reasons.rs", include_str!("p17b/reasons.rs")),
+        ("p17b_diagnosis_report.rs", include_str!("p17b_diagnosis_report.rs")),
+        ("design.md", design.as_str()),
+        ("tasks.md", tasks_doc.as_str()),
+    ];
+    if !recon.is_empty() {
+        // 侦察 note 是**设计依据**且被多处引用——它也必须带着更正（审阅轮 4 的第四处）。
+        sources.push((".scratch/notes/17b-recon-2026-09-30.md", recon.as_str()));
+    }
+    let mut hits = 0usize;
+    for (name, src) in sources {
+        for (i, line) in src.lines().enumerate() {
+            // 只认「作为证据出现」的形态：数字 + 判定语。历史记录本身不算命中。
+            let is_evidence_claim = (line.contains("188/513") || line.contains("168/513"))
+                && (line.contains("追人") || line.contains("37%") || line.contains("32.8%"));
+            if !is_evidence_claim {
+                continue;
+            }
+            hits += 1;
+            // 更正标记可以落在**同一行**或**前后两行**（多数写法是下一行起引注）。
+            let lo = i.saturating_sub(2);
+            let hi = (i + 3).min(src.lines().count());
+            let window: String = src.lines().skip(lo).take(hi - lo).collect::<Vec<_>>().join("\n");
+            let annotated = ["不成立", "推翻", "更正", "单位", "打不到靶点", "归一化"]
+                .iter()
+                .any(|m| window.contains(m));
             assert!(
-                keys.contains(t)
-                    || keys.contains(head)
-                    || keys.contains(tail)
-                    || SOURCE_SIDE_OK.contains(&t)
-                    || SOURCE_SIDE_OK.contains(&head)
-                    || PROSE_OK.contains(&t)
-                    || PROSE_OK.contains(&head)
-                    || as_value,
-                "`ANOMALY_COVERAGE` 的 `{}` 的 note 里出现了标识符 `{}`——\
-                 它既不是产物的键、也不在源侧清单、也不是产物里出现过的闭集取值、\
-                 也不在散文白名单里。若它确实只能回原对象读，请写进 `SOURCE_SIDE_OK` \
-                 并在 note 里说明；否则就是**声称了产物给不出的东西**",
-                row.rule,
-                t
+                annotated,
+                "`{name}:{}` 出现了被推翻的 `close_down` 归因（188/513 或 168/513 + 追人），\
+                 但相邻三行内**没有**更正标记。可以保留历史记录，但**必须带着它的更正**——\
+                 这处归因在实现期被写了四份拷贝、三轮才收干净（审阅轮 2/3/4）。\n  原文：{}",
+                i + 1,
+                line.trim()
             );
         }
     }
-    // 实测在**当前**十行 note 上有 19 个候选标识符；下限取 12（留余量，但仍能
-    // 在「扫描面塌成空」时判红——本仓的空转形态）。
-    assert!(checked > 12, "核对到的 token 太少（{checked}）——本守卫可能空转");
+    // 防空转：这份材料里**确实**至少有一处这样的记录（否则本守卫扫了个空）。
+    assert!(
+        hits > 0,
+        "全仓找不到任何 `188/513` / `168/513` 的证据句——若确实已全部删净，\
+         请把本守卫连同这段说明一起删掉（而不是让它空转）"
+    );
 }
 
 /// **规范一致性守卫的反证条**：喂一个「缺一半」的块必须判红。
@@ -1976,4 +2037,76 @@ fn p17b_baseline() {
         r.cards.len(),
         r.cards_omitted
     );
+}
+
+// ============================== 守卫用的小工具 ==============================
+
+/// 从 JSON 文本里抽出**对象的键**（只抽键，不抽值——用 `"k":` 形态界定）。
+///
+/// ⚠️ 这是 [`anomaly_coverage_notes_only_cite_fields_the_product_carries`] 的关键：
+/// 前几版拿**裸引号**扫，把**值**（`kickoff` / `pass+`）也当成键收进来，
+/// 于是「产物里出现过的取值」那一档形同虚设。只抽 `"k":` 形态即可把两者分开。
+fn json_object_keys(json: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let bytes = json.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'"' {
+            i += 1;
+            continue;
+        }
+        // 找闭引号（JSON 里键不含需要转义的引号以外内容；简单扫即可）。
+        let start = i + 1;
+        let mut j = start;
+        while j < bytes.len() && bytes[j] != b'"' {
+            j += 1;
+        }
+        if j >= bytes.len() {
+            break;
+        }
+        let cand = &json[start..j];
+        // 键的判据：闭引号之后（跳过空白）紧跟 `:`。
+        let mut k = j + 1;
+        while k < bytes.len() && (bytes[k] as char).is_ascii_whitespace() {
+            k += 1;
+        }
+        if k < bytes.len() && bytes[k] == b':' {
+            out.insert(cand.to_string());
+        }
+        i = j + 1;
+    }
+    out
+}
+
+/// 抽出一段文本里**全部英文标识符形态的词**（≥3 个字母，允许 `.` 与 `_`）。
+///
+/// **刻意不做形态筛选**（不区分 CamelCase / snake_case / 全小写）——轮 4 实测：
+/// 用形态筛候选会让**全小写字段名**（`location`，正是本守卫的动机）被跳过，
+/// 判别力比前一版**更弱**。筛选 = 豁免，故这里一律收，能不能过交给白名单。
+fn identifier_words(text: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let bytes = text.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let c = bytes[i] as char;
+        if !(c.is_ascii_alphabetic() || c == '_') {
+            i += 1;
+            continue;
+        }
+        let start = i;
+        while i < bytes.len() {
+            let c = bytes[i] as char;
+            if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+                i += 1;
+            } else {
+                break;
+            }
+        }
+        let t = text[start..i].trim_end_matches('.');
+        // 至少 3 个字母（`in` / `of` / `s` 这类太短，散文高频，不值当核）。
+        if t.chars().filter(|c| c.is_ascii_alphabetic()).count() >= 3 {
+            out.push(t.to_string());
+        }
+    }
+    out
 }
