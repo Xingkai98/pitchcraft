@@ -1713,9 +1713,11 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
     //
     //    ⚠️ **`VALUE_OK` 的坑**（轮 3 的 `M-NOTE-VALUE` → 轮 5 的 P2-3）：初版把它塞进
     //    `PROSE_OK`（注释还写「闭集取值」），于是 `「本层给 kickoff 字段」` 这种
-    //    **把取值当字段**的写法被**成文允许**。拆成独立名单还不够——**断言必须真的区分键值**：
-    //    只写 `json.contains("\"v\"")` 的话，一个**键**（`duration_s`）也能混进来。
-    //    故下面逐词断言**两条**：真在产物里，**且不是键**。
+    //    **把取值当字段**的写法被**成文允许**。拆成独立名单能挡住「名单外的取值被当字段」，
+    //    而**「键 / 取值的身份区分」做不到纯自动判别**（见下 `VALUE_OK` 的两条断言）：
+    //    `empty_possession` 等**既是取值、又是键**（`by_exception` 的键名与取值同批串），
+    //    故「值 ⇒ 非键」这条**不成立**，`duration_s`（键）混进 `VALUE_OK` 也**不会红**。
+    //    ⇒ 逐词只断言**一条**：该串**真的出现在产物里**。身份那半由人读十行 note 兜。
     let json_keys = json_object_keys(&json);
     assert!(
         json_keys.len() > 50,
@@ -1740,7 +1742,9 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
     // ⚠️ **这一档实测得出**：把十行 note 里所有反引号 token 抽出来、与产物 JSON 的
     // **取值**集合求交，得到的正是下面这 **7** 个（其余的 `chain` / `closing_fact_index`
     // / `duration_s` / `event_indexes` / `start_reason` / `contest_start` / `contest_window`
-    // 是**键**，走 `json_keys` 那一档）。每个都断言「真在产物里 **且** 不是键」。
+    // 是**键**，走 `json_keys` 那一档）。逐词只断言**「真的出现在产物里」**——
+    // ⚠️ **不断言「且不是键」**：实测做不到（`empty_possession` 等既是取值又是键，
+    // 见上方说明），那样写就是**声明了断言体里没有的检查**（轮 7 的 P2）。
     const VALUE_OK: &[&str] = &[
         "empty_possession",   // 异常类取值
         "instant_contest",
@@ -1813,16 +1817,21 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
 /// 「断言」与「禁止」共用同一批词（`5.25` + `追人` 既可能是在讲错，也可能是在**禁止**讲错），
 /// 任何词表/窗口的取舍都会在「漏」与「误红」之间来回摆，**不收敛**。
 ///
-/// ## 现在守什么（**窄而真**：0 误报，覆盖「在结构化条目里复述旧结论」）
+/// ## 现在守什么（窄，覆盖「在结构化条目里复述旧结论」）
 ///
 /// 只扫**结构化条目**——`evidence.rs` 的 `EvidenceRow`、`reasons.rs` 的 `WordingRule`——
 /// 的**字段字面量**。这些是**会喂进产物**的地方，也是「又抄一份旧结论」真正危险的落点。
 /// 判据：条目里若出现**距离证据**（`5.25` / `188/513` / `168/513`）**且**出现 `追人`，
 /// 该条目必须带**收回标记**。
 ///
-/// - ✅ **零误报**：自由散文（纪律句、无关两句话）**不扫** ⇒ `E8`/`E13` 那类不再误红；
+/// - ✅ **自由散文不扫** ⇒ `E8`/`E13` 那类不再误红；
 /// - ✅ **抓得住 `E10`**：插进 `EVIDENCE_TABLE` 的**新条目**只要复述旧结论就红
 ///   （v2 的巨块问题在这里不存在——单位是**条目的字段**，不是空行切出来的块）。
+///
+/// ⚠️ **不可声称「零误报」**（轮 7 实测证伪）：**条目内**同样有「断言 vs 禁止」的歧义——
+/// `WordingRule` 的 `forbidden` 字段里写一条**合法禁令**
+/// （`「不得把 close_down 终点距球 > 5.25 m 读成它们在追人」`）会被判红。
+/// `E8` 之所以不红，只是因为它恰好落在**不扫的自由散文**里，**不是**判据有方向感。
 ///
 /// ## ❌ 已知残余风险（**如实记录，不假装已机制化**）
 ///
@@ -1831,6 +1840,7 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
 /// - 换距离写法（`5.3 m` / `逾五米` / `>5m` / `525 cm`，E3–E5）；
 /// - 把收回词用在**无关**处（E6）或**反向**否认收回（E15）；
 /// - 逐字还原旧句而旧句本身含某个标记词（E12）。
+/// - **条目内**换距离写法（在条目里只写 `5.3 m` ⇒ GREEN，比自由散文更难判红）；
 /// 这些**文本启发式天然抓不住**——6 轮实测证明，继续加判据只会换一个新的失败面。
 /// **本 change 不追求该族缺陷的全覆盖机制化**（本仓先例：P124 如实放弃
 /// `doc_referenced_symbols_exist` 并写明「只靠人工」）。
@@ -1869,11 +1879,15 @@ fn retracted_close_down_claim_sites_carry_their_retraction() {
     // （`pub struct EvidenceRow {` / `pub struct ContestCoverageRow {`），
     // 于是「条目」从类型定义一路吃到第一个 `\n    },`——把类型与常量之间的
     // **无关注释**也卷进来（实测：E8 纪律句因此被误红）。
-    let targets: [(&str, &str, &str); 4] = [
+    // ⚠️ **扫描面 = 所有「喂进产物」的结构化条目族**。轮 7 指出 `AnomalyCoverageRow`
+    // （P17A 异常覆盖表）此前**漏在四族之外**，而它的 `note` 也进产物 ⇒ 现补入。
+    // 这是**同一套精确锚定**的扩面（不是新的启发式），故不违反「停止加判据」的裁定。
+    let targets: [(&str, &str, &str); 5] = [
         ("p17b/evidence.rs", "\n    EvidenceRow {", "证据边界表条目"),
         ("p17b/evidence.rs", "\n    UnavailableItem {", "结构性不可得条目"),
         ("p17b/reasons.rs", "\n    ContestCoverageRow {", "争抢成因覆盖条目"),
         ("p17b/reasons.rs", "\n    WordingRule {", "措辞规则条目"),
+        ("p17b/reasons.rs", "\n    AnomalyCoverageRow {", "P17A 异常覆盖条目"),
     ];
     let mut units_checked = 0usize;
     let mut claim_units = 0usize;
