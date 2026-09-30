@@ -67,7 +67,7 @@ P16 的 `reference.rs` 已有先例（为守卫能扫全文而拆独立文件）
 | 「因为压力大所以传丢」类因果 | — | **假设**：**禁止**写成结论 |
 | 战术相位（build_up / progression / …） | — | **不可得**（#16/#124 双负） |
 | 传球当时的候选 / 选择集 | — | **不可得**（引擎私有打分） |
-| 射门当时的 **hazard 值本身** | — | **不可得**（引擎私有打分；**但其输入大部分可得**：距离/角度由位置派生，`entry_pressure_bucket` / `pressure_state_ticks` 直接可读；**`cooldown_ticks` 不可得**） |
+| 射门当时的 **hazard 值本身** | — | **不可得**（引擎私有打分）。**但其输入 4/5 可得**：`distance_quality` / `angle_quality` / `space_available` 由 `StateSnapshot.pos` 派生；`defensive_pressure` 的 `pressure_state` 分量读 `IntentState::pressure_state_ticks`。**唯一不可得的是 `cooldown_penalty` 的 `cooldown_ticks`** ⚠️ 见下 |
 | **观察可信度** | `DiagnosticMatch::{is_coherent, gap_count, gap_reason_counts}` | **观测** ⚠️ 见 §3.0：**报告的前置门** |
 
 > ⚠️ **`interception_loose` 的覆盖缺口（BLOCKER-1，grill 抓到、本人 30 seed 独立复现）**：
@@ -84,6 +84,14 @@ P16 的 `reference.rs` 已有先例（为守卫能扫全文而拆独立文件）
 > 现拆成两行：**门将位置可得、hazard 值不可得（其输入部分可得）**。
 > ⇒ **教训**：这张表是**结论的闸门**，它的每一条都必须**实测核对**，不能凭印象填——
 > 与侦察阶段那两处被探针推翻的读码推断是同一个病。
+
+> ⚠️ **同一张表的第二处错（grill 复核抓到）**：初版把 `entry_pressure_bucket` 列为
+> hazard 的**输入**——**错**。`compute_shot_score` 的五因子是
+> `distance_quality + angle_quality + space_available - defensive_pressure - cooldown_penalty`，
+> **不读** `entry_pressure_bucket`：`shot_pressure_bucket()` 的唯一调用点在
+> `lib.rs:3881`，赋给 `ShotSetup::entry_pressure_bucket`，供**提交率方向门**用，与 hazard 无关。
+> ⇒ 本表**两轮共错三处**（门将位置、`entry_pressure_bucket`，加上侦察里那两处），
+> **全部由独立 grill 抓出**。这坐实了 §8 的结论：实现阶段必须继续独立复核。
 
 **规则**：报告里每条结论**必须**标注它的性质（`观测`/`派生`），且**给出落点字段名**。
 `假设` 类文字**只能**出现在显式标为「机制假设（未验证）」的段落里，
@@ -236,8 +244,9 @@ phase 判据目前**没有**可用的观测依据。
 2. **`support_formation` 复用的形态**：`#[path]` include（本仓既成做法，见 §4.2）
    还是复制 + **源码文本**同源守卫？两种代价须显式权衡后**定死**。
 3. ~~「27% 无追球者」是否查清~~ → **已查清，不再待决策**：是重开准备期（§4.4.1），
-   且**不构成缺陷**。**新的待决策**：松散球判据定死为 `loose && !in_restart_window` 后，
-   `in_restart_window` 用 `[start_t, taken_t)` 是否够（`taken_t` 缺失时如何取）？
+   且**不构成缺陷**。**新的待决策**：`in_restart_window` 用 `[start_t, taken_t)` 时
+   **`taken_t` 缺失怎么办**——实测（30 seed）重开 **1613 个，缺失 2 个**（≈0.12%），
+   **非零**，故**必须**定义行为（不能按「不会发生」处理）。
 4. **L2 聚合的分组维度**取舍——全上会稀释重点。
 5. **产物是否需要与 P17A 对齐 seed 集与口径**（便于两报告交叉引用）？
 6. **「可回放」的强度**：只给 `(seed, t, event_index)` 坐标，
@@ -262,6 +271,8 @@ phase 判据目前**没有**可用的观测依据。
 | 接应口径与 `p16` **同源**（形态见待决策 2） | 门槛 |
 | 松散球追球者可见：**覆盖率下限**（30 seed 实测 946 段产 loose beat）——**不得**用「至少一段」这种空转下限 | 门槛 |
 | 观察可信度门生效（§3.0） | 门槛 |
+| **动作分类守卫**（反 MAJOR-2）：把 `chase` 与 `close_down` 合并成一类的变异须判红 | 门槛 |
+| **规范一致性守卫**：spec/tasks 中不得出现「每条异常都能找到样本」这类**已被设计判定做不到**的断言 | 门槛（本轮 MAJOR 的复发防线） |
 | 可回放定位有效：每条记录的 `event_index` 能回到事件流且时间自洽 | 门槛 |
 | 确定性：同输入两次输出**逐字节相同** | 门槛 |
 | 缺证据时显式 `unknown`，不猜 | 门槛 |

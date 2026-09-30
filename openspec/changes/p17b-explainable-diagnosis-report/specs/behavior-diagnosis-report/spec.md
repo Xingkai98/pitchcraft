@@ -61,9 +61,11 @@ phase 判据目前没有可用的观测依据。
 - **WHEN** 给定一条诊断记录的 `(seed, event_index)`
 - **THEN** 它能定位到该 seed 事件流中的确定事件，且时间自洽
 
-#### Scenario: 覆盖 P17A 点名的异常样本
+#### Scenario: 覆盖 P17A 点名的异常样本（**在证据边界内**）
 - **WHEN** 报告在 P17A 的固定 seed 集上运行
-- **THEN** P17A 触发的异常规则各自都能找到对应的逐 episode 样本
+- **THEN** 对 P17A 触发的每条异常规则，报告给出对应的逐 episode 样本，
+  **或**逐条说明它落在哪条证据边界之外（如 A2「同拍收束」落在「不产 loose beat」的盲区）。
+  ⚠️ **不得**断言「每条异常都能找到样本」——设计已判定该断言**做不到**。
 
 ### Requirement: 缺证据时显式 unknown，不猜
 
@@ -108,6 +110,10 @@ phase 判据目前没有可用的观测依据。
 #### Scenario: 分类而非并称
 - **WHEN** 报告列出「追球者」
 - **THEN** 它不把 `chase` 与 `close_down` 混为同一类，且 `close_down` 标注其靶点来源
+
+#### Scenario: 分类有守卫
+- **WHEN** 有人把 `chase` 与 `close_down` 合并为同一类（或删去 `close_down` 的来源标注）
+- **THEN** 至少一条测试变红（该变异须被判红，不得静默通过）
 
 ### Requirement: 不产生通过/失败判定
 
