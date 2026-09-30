@@ -102,6 +102,11 @@ pub fn build_provenance(mode: &str, first: u64, last: u64, duration: f64) -> Pro
     let (fingerprint, sizes) = sidecar_schema_fingerprint();
     Provenance {
         mode: mode.to_string(),
+        // ⚠️ 本栏是**跑产物门时的 `P17B_SOURCE_COMMIT`**（惯例 = 当时的 HEAD），
+        // 不是「内容指纹反推的提交」。故常见的「先跑门、后提交」会让它与 HEAD 差一笔
+        // （审阅轮 2 的 M-1：内容与 HEAD 逐字节一致，只是标签旧了一步）。
+        // **判「产物是否陈旧」请看 `test_source_fingerprint` / `engine_source_fingerprint`**
+        // ——那两条才是内容层的硬门；本栏只回答「当时记的 HEAD 是谁」。
         source_commit: std::env::var("P17B_SOURCE_COMMIT").unwrap_or_else(|_| "unknown".to_string()),
         engine_version: env!("CARGO_PKG_VERSION").to_string(),
         model_version: MODEL_VERSION,
@@ -725,6 +730,13 @@ fn j_card(c: &EpisodeCard) -> J {
         ),
         ("closing_fact_index", c.closing_fact_index.map(J::i).unwrap_or(J::Null)),
         ("contest_duration_s", J::opt_num(c.contest_duration_s)),
+        (
+            "contest_window",
+            match c.contest_window {
+                Some((a, b)) => J::Arr(vec![J::n(a), J::n(b)]),
+                None => J::Null,
+            },
+        ),
         ("bad_event_indexes", J::i(c.bad_event_indexes)),
         // 可回放定位（spec「定位可回到事件流」）。
         (
@@ -1030,7 +1042,10 @@ pub fn to_markdown(r: &Report) -> String {
     o.push_str("## provenance（可比性三件套 + 口径快照）\n\n");
     o.push_str("| 栏 | 值 |\n|---|---|\n");
     o.push_str(&format!("| `mode` | `{}` |\n", p.mode));
-    o.push_str(&format!("| `source_commit` | `{}` |\n", p.source_commit));
+    o.push_str(&format!(
+        "| `source_commit` | `{}`（跑门时记的 HEAD；**判陈旧请看下面两条指纹**） |\n",
+        p.source_commit
+    ));
     o.push_str(&format!("| `analyzer_version` | `{}` |\n", p.analyzer_version));
     o.push_str(&format!("| `caliber_version` | `{}` |\n", p.caliber_version));
     o.push_str(&format!("| `schema_tag` | `{}` |\n", p.schema_tag));

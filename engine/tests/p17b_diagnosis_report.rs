@@ -37,6 +37,7 @@
 //! | [`instant_contest_uses_the_contest_duration_not_the_possession_duration`] | 异常口径（**争抢时长 vs possession 时长**） | ✅ |
 //! | [`instant_contest_covers_only_the_episode_closing_share_of_a2`] | 异常口径（**只覆盖 A2 母体的 ~70%**） | ✅ |
 //! | [`pursuit_window_spans_the_whole_contest_not_just_the_closing_tick`] | 追球段口径（**争抢窗 vs 收束拍**） | ✅ |
+//! | [`match_gap_count_probe_actually_counts`] | 观察可信度（`gap_count()` 行为被钉住） | ✅ |
 //! | [`loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber`] | 普查口径（**与 design 同分母 / 两口径可分**） | ✅ |
 //! | [`a_contest_fact_closes_at_most_one_episode`] | 争抢归属（**同刻多段只归最靠前那段**） | ✅ |
 //! | [`observation_credibility_gate_annotates_but_keeps`] | 前置门（标注但保留、不进聚合） | ✅ |
@@ -269,11 +270,19 @@ fn locus_read_probes_actually_read_the_field() {
             Locus::RestartStartT | Locus::RestartTakenT | Locus::RestartOpenPlayResumedT => {
                 !l.read(&no_restarts)
             }
-            // 这两个读的是**整场**的一致性，不随任一容器清空而变——判别力由
-            // 「不自洽输入」证明（见下）。⚠️ 审阅 P2 指出：初版把这两个**一起**塞进
-            // `=> true`，而紧随的断言**只碰了 `MatchCoherence`**——`MatchGapCount` 的
-            // 「判别力」是空的（变异 `gap_count() == gap_count()` → `true` 存活）。
-            // 现拆开：给 `MatchGapCount` 也造一个判别输入（见下方 `bad` 的用法）。
+            // 这两个读的是**整场**的一致性，不随任一容器清空而变。
+            //
+            // ⚠️ **能力边界（审阅轮 2 的 P2-1 逼出来的如实记录）**：
+            // - `MatchCoherence`：`is_coherent()` 在**不自洽输入**上会转假 ⇒ 判别力由
+            //   下方的 `bad` 断言证明；
+            // - `MatchGapCount`：`gap_count()` 是一个**全函数**（任何输入都给一个 `usize`），
+            //   故**不存在**能让它「读不到」的输入 ⇒ 本变体在**运行时无法判别**，
+            //   只有**编译期**保证（`gap_count` 改名 / 变私有 ⇒ 本文件编译不过）。
+            //   它的**行为**另由 [`match_gap_count_probe_actually_counts`] 直接核。
+            //
+            // 前一轮在这里把两个变体一起塞进 `=> true` 并写「判别力由不自洽输入证明」，
+            // 而紧随的断言只碰了 `MatchCoherence`——`MatchGapCount` 那句是**空的**，
+            // 且它引用的测试名当时**并不存在**。能证的和证不到的分开写，才叫标注边界。
             Locus::MatchCoherence | Locus::MatchGapCount => true,
         };
         assert!(
@@ -290,19 +299,11 @@ fn locus_read_probes_actually_read_the_field() {
         !Locus::MatchCoherence.read(&bad),
         "`is_coherent()` 在带 invariant_violations 的输入上应转假"
     );
-    // `MatchGapCount` 的判别力（审阅 P2）：`gap_count()` 数的是 `observation_gap` 事实，
-    // 故**往事实流里塞一条 gap** 必须让它变大。这条使 `gap_count() == gap_count()`
-    // 之外的任何实现在本测试下可分辨（恒 `true` 的探针在这里仍会存活——故另有
-    // `match_gap_count_probe_actually_counts` 直接核 `gap_count` 的行为）。
-    let mut with_gap = dm.clone();
-    if let Some(f) = with_gap.control_facts.first_mut() {
-        f.kind = ControlFactKind::ObservationGap;
-        f.detail = Some(ControlFactDetail::Gap(ObservationGapReason::ALL[0]));
-    }
-    assert!(
-        with_gap.gap_count() >= dm.gap_count(),
-        "塞入一条 `observation_gap` 事实后 `gap_count()` 不得变小"
-    );
+    // ⚠️ 本测试**刻意只核 `MatchCoherence`**：`MatchGapCount` 在运行时不可判别
+    // （见上方分支注释），它的**行为**由 [`match_gap_count_probe_actually_counts`] 单独核。
+    // 前一轮把两件事写成一句「它们的判别力由不自洽输入证明」，而那条断言
+    // （`gap_count() >= dm.gap_count()`，`dm.gap_count()==0`）是**恒真**的——
+    // 且它引用的测试名当时**不存在**。审阅轮 2 的 P2-1 抓到的正是这一处。
 }
 
 // ============================== 覆盖缺口（本 change 的立身之本） ==============================
@@ -352,21 +353,67 @@ fn closed_set_coverage_is_declared_for_every_contest_reason() {
 /// 那才是真的危险：**盲区会被静默地报成可答**。
 #[test]
 fn contest_coverage_guard_has_discriminating_power() {
-    // ① 反证条：**表里没有的成因必须返回 `None`**（审阅 M6 指出初版 ① 名不副实——
-    //    注释说「用一个闭集里没有的成因」而代码只是数了出现次数）。
-    //    用一个本地副本表驱动 `coverage_of` 的逻辑，证明「找不到就是 None」，
-    //    而不是「找不到时给了兜底默认」（那会让盲区被静默报成可答）。
-    let probe_table: Vec<&ContestCoverageRow> = CONTEST_COVERAGE
-        .iter()
-        .filter(|r| r.reason != ContestStartReason::InterceptionLoose)
-        .collect();
-    let found = probe_table
-        .iter()
-        .find(|r| r.reason == ContestStartReason::InterceptionLoose);
+    // ① 反证条（**本轮修好**：审阅轮 2 的 P2-2 指出前两版都是同义反复）——
+    //    直接对**真实现** `coverage_in` 喂一张**缺项的表**，断言它返回 `None`。
+    //    若 `coverage_in` 被加上任何兜底（例如「查不到就返回第一行」），本断言会红，
+    //    而那正是最危险的变异：**未声明的成因会被静默当成已声明**（BLOCKER-1 的复发形态）。
+    let mut holed: Vec<ContestCoverageRow> = CONTEST_COVERAGE.to_vec();
+    holed.retain(|r| r.reason != ContestStartReason::InterceptionLoose);
     assert!(
-        found.is_none(),
-        "从表里移除 `interception_loose` 后必须查不到——若查到，说明查找有兜底，\
-         那会让「未声明的成因」被静默当成已声明（BLOCKER-1 的复发形态）"
+        coverage_in(&holed, ContestStartReason::InterceptionLoose).is_none(),
+        "`coverage_in` 在**缺项表**上必须返回 `None`——若返回 `Some`，说明它有兜底，\
+         会让未声明的成因被静默当成已声明"
+    );
+    // 对照：同一张表里**在**的成因仍查得到（否则「一律返回 None」也会让上面那条绿）。
+    assert!(
+        coverage_in(&holed, ContestStartReason::TackleLoose).is_some(),
+        "`coverage_in` 对表里**在**的成因必须返回 `Some`"
+    );
+    // ② **真入口 `coverage_of` 本身不得有兜底**。
+    //
+    // ⚠️ 单靠「喂缺项表给 `coverage_in`」**抓不到**在 `coverage_of` 里加的兜底
+    // （实测：给 `coverage_of` 加 `.or(Some(&CONTEST_COVERAGE[0]))` 时，上一条断言仍绿，
+    // 因为它测的是 `coverage_in`）。而 `coverage_of` 读的是**冻结的 const 表**——
+    // 闭集里没有「未声明」的成员可供传入，故它在**运行时无法被判别**。
+    // ⇒ 只剩两条能落地的核法，两条都写在这里：
+    //   (a) **同一性**：每个闭集成员查回来的行的 `reason` 必须**就是它自己**
+    //       （兜底返回第一行会让某成员查回别人的行）；
+    //   (b) **源码文本**：`coverage_of` 的函数体里不得出现兜底构造
+    //       （`or(` / `unwrap_or` / `unwrap()`）——它只能是**一次纯查找**。
+    for r in ContestStartReason::ALL {
+        let row = coverage_of(*r).unwrap_or_else(|| panic!("`{}` 未被声明", r.as_str()));
+        assert_eq!(
+            row.reason,
+            *r,
+            "`coverage_of` 对 `{}` 查回了 `{}` 的行——查找有兜底（会静默顶替）",
+            r.as_str(),
+            row.reason.as_str()
+        );
+    }
+    const REASONS_SRC: &str = include_str!("p17b/reasons.rs");
+    let body: String = {
+        let start = REASONS_SRC
+            .find("pub fn coverage_of(")
+            .expect("`coverage_of` 必须存在（否则本守卫的扫描对象没了）");
+        // 函数体到下一个 `}` 结束（该函数只有一个表达式体，无嵌套块）。
+        let rest = &REASONS_SRC[start..];
+        let open = rest.find('{').expect("函数应有函数体");
+        rest[open..]
+            .find('}')
+            .map(|e| rest[open..open + e].to_string())
+            .unwrap_or_default()
+    };
+    let body_code = strip_line_comments(&body);
+    for banned in ["or(", "unwrap_or", "unwrap()", "unwrap_or_else"] {
+        assert!(
+            !body_code.contains(banned),
+            "`coverage_of` 的函数体里出现 `{banned}`——**它就是一次纯查找，不得有兜底**。\
+             兜底会让「未声明的成因」被静默当成已声明（BLOCKER-1 的复发形态）。实际体：{body_code}"
+        );
+    }
+    assert!(
+        !body_code.trim().is_empty(),
+        "`coverage_of` 的函数体为空 ⇒ 本扫描是空转的（守卫自己先失效了）"
     );
     let undeclared = CONTEST_COVERAGE
         .iter()
@@ -1532,6 +1579,120 @@ fn a_contest_fact_closes_at_most_one_episode() {
         "认领数 {total_claims} 超过事实数 {total_facts}——有事实被重复认领"
     );
     let _ = boundary_with_contest;
+}
+
+/// **`gap_count()` 的行为被直接钉住**（`Locus::MatchGapCount` 在运行时不可判别，
+/// 故它的判别力只能落在「这个方法到底数什么」上）。
+///
+/// ⚠️ **本测试的名字曾被前一轮的注释引用而当时并不存在**（审阅轮 2 的 P2-1）——
+/// 那是本仓点名的 `[[false-coverage-handoff-claims]]`：**断言存在、覆盖声明存在、
+/// 覆盖面不存在**，而且它出现在「声称已修复该族缺陷」的那一笔提交里。
+/// 现在这个名字**真的有对应的函数**了（本文件里可 `grep` 到它的定义）。
+///
+/// 判据（都能被真实变异打红）：
+/// ① 把一条事实改成 `ObservationGap` ⇒ 计数**严格 +1**（不是 `>=`——那是恒真断言）；
+/// ② 去掉一条 gap ⇒ 计数**严格 −1**；
+/// ③ `gap_reason_counts()` 的合计恒等于 `gap_count()`（两个口径不得分叉）。
+#[test]
+fn match_gap_count_probe_actually_counts() {
+    let dm = observe(1);
+    let base = dm.gap_count();
+    assert_eq!(base, 0, "seed 1 的观察层应为自洽（无 gap）——否则下面的 +1 判据要换锚点");
+
+    let mut with_gap = dm.clone();
+    with_gap.control_facts[0].kind = ControlFactKind::ObservationGap;
+    with_gap.control_facts[0].detail = Some(ControlFactDetail::Gap(ObservationGapReason::ALL[0]));
+    assert_eq!(
+        with_gap.gap_count(),
+        base + 1,
+        "把一条事实改成 `observation_gap` 后 `gap_count()` 必须**严格 +1**——\
+         若不变，说明它数的不是 `ObservationGap`；写成 `>=` 则是恒真断言（前一轮的形态）"
+    );
+
+    let mut two = dm.clone();
+    two.control_facts[0].kind = ControlFactKind::ObservationGap;
+    two.control_facts[1].kind = ControlFactKind::ObservationGap;
+    assert_eq!(two.gap_count(), base + 2, "两条 gap 应为 base+2");
+    two.control_facts[1].kind = ControlFactKind::MatchStarted;
+    assert_eq!(
+        two.gap_count(),
+        base + 1,
+        "去掉一条 gap 后 `gap_count()` 必须**严格 −1**"
+    );
+
+    let total: usize = with_gap.gap_reason_counts().iter().map(|(_, n)| *n).sum();
+    assert_eq!(
+        total,
+        with_gap.gap_count(),
+        "`gap_reason_counts()` 的合计必须等于 `gap_count()`"
+    );
+}
+
+/// **`ANOMALY_COVERAGE` 的 note 只准引用产物里真有的字段**（审阅轮 2 的 MINOR M-2）。
+///
+/// ## 这处错长什么样
+///
+/// 四条 note 声称的落点在产物里**不存在**：A7 说「本层的重开窗逐条给出 `[start,end)` 与
+/// 右端来源」（产物没有 `RestartWindow` 结构）、A8 说「位置须读 `ControlFact.location`」
+/// （产物没有 `location` 字段，读者据此**拿不到位置**）、A10 说「下一段的 `start_reason`／队」
+/// （卡里**没有下一段字段**，且「单段内」与「下一段」自相矛盾）。A4 同类。
+/// 这与本 change 的立身之本是**同一把尺子**：**不得声称能给出它给不出的东西**。
+///
+/// 守卫只核「note 里的反引号标识符要么是产物的键、要么在**显式声明的源侧清单**里」——
+/// 后者是「须由消费方拿下标回原对象读」的那些字段（它们**故意**不进产物）。
+#[test]
+fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
+    // 源侧字段：**故意**不进产物，note 里可以提，但必须说明「须回原对象读」。
+    const SOURCE_SIDE_OK: &[&str] = &[
+        "ControlFact.location",
+        "ControlFact.team/player",
+        "PossessionEpisode.start_t,end_t",
+        "Event.x,y",
+    ];
+    let r = quick();
+    let json = to_json(&r);
+    let mut keys: std::collections::BTreeSet<String> = Default::default();
+    for (i, _) in json.match_indices('"') {
+        let rest = &json[i + 1..];
+        if let Some(e) = rest.find('"') {
+            let k = &rest[..e];
+            if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+                keys.insert(k.to_string());
+            }
+        }
+    }
+    assert!(keys.len() > 50, "产物键集合过小（{}）——抓取逻辑可能失效", keys.len());
+    let mut checked = 0usize;
+    for row in ANOMALY_COVERAGE {
+        for tok in row.note.split('`').skip(1).step_by(2) {
+            let t = tok.trim();
+            if t.is_empty() || t.contains(' ') || t.contains('（') {
+                continue;
+            }
+            let bare = t.rsplit('.').next().unwrap_or(t);
+            let bare = bare.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_');
+            if bare.is_empty() {
+                continue;
+            }
+            checked += 1;
+            // 三档放行：① 是产物的**键**；② 在源侧清单里（须回原对象读）；
+            // ③ 是产物里**出现过的串值**（例如 chain 的 `pass+` token —— note 引用它是
+            //    指「产物里会出现的那个取值」，不是声称多给了一个字段）。
+            let as_value = json.contains(&format!("\"{t}\""));
+            assert!(
+                keys.contains(bare)
+                    || SOURCE_SIDE_OK.contains(&t)
+                    || SOURCE_SIDE_OK.contains(&bare)
+                    || as_value,
+                "`ANOMALY_COVERAGE` 的 `{}` 的 note 引用了 `{}`——它既不是产物的键、\
+                 也不在源侧清单里。若它确实只能回原对象读，请写进 `SOURCE_SIDE_OK` \
+                 并在 note 里说明「须回原对象读」；否则就是**声称了产物给不出的东西**",
+                row.rule,
+                tok
+            );
+        }
+    }
+    assert!(checked > 5, "核对到的 token 太少（{checked}）——本守卫可能空转");
 }
 
 /// **规范一致性守卫的反证条**：喂一个「缺一半」的块必须判红。

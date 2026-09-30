@@ -103,9 +103,27 @@ pub const CONTEST_COVERAGE: &[ContestCoverageRow] = &[
     },
 ];
 
+/// 在**任意**声明表里查某成因的覆盖声明；`None` = **未声明**。
+///
+/// ⚠️ 拆出这个函数是为了让反证条能对**真实现**判红（审阅 P2-2）：初版的
+/// `contest_coverage_guard_has_discriminating_power` 用**本地副本表**做
+/// `filter` + `find`，是同义反复，**根本没调用 `coverage_of`**——
+/// 实测给 `coverage_of` 加一条「查不到就兜底返回第一行」的变异时，
+/// 覆盖缺口门**全绿**（而那条兜底会让**未声明**的成因被静默当成已声明，
+/// 正是 BLOCKER-1 的复发形态）。现在守卫可以直接对 `coverage_in` 喂一张
+/// **缺项的表**并断言 `None`。
+pub fn coverage_in(
+    table: &[ContestCoverageRow],
+    reason: ContestStartReason,
+) -> Option<&ContestCoverageRow> {
+    table.iter().find(|r| r.reason == reason)
+}
+
 /// 取某成因的覆盖声明；`None` = **未声明**（守卫会红）。
+///
+/// **实现必须只经过 [`coverage_in`]**——不得有任何兜底（见上）。
 pub fn coverage_of(reason: ContestStartReason) -> Option<&'static ContestCoverageRow> {
-    CONTEST_COVERAGE.iter().find(|r| r.reason == reason)
+    coverage_in(CONTEST_COVERAGE, reason)
 }
 
 /// 某成因**整体**是否可能看到追逐过程（用于报告的表头）。
@@ -159,7 +177,7 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
         rule: "A1",
         topic: "持球-出球节奏：possession 内相邻动作间隔过大",
         per_episode_samples: true,
-        note: "本层对应 `long_dwell` 筛子（逐 episode 的相邻决策动作最大间隔），diagnostic card 的 `chain` 逐节点给时刻",
+        note: "本层对应 `long_dwell` 筛子（逐 episode 的相邻决策动作最大间隔）；产物卡的 `chain` 逐节点给**事件下标与时刻**",
     },
     AnomalyCoverageRow {
         rule: "A2",
@@ -177,15 +195,17 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
         rule: "A3",
         topic: "丢球后归属由争抢原因决定（夺回率按原因分化）",
         per_episode_samples: true,
-        note: "本层给每段的 `contest_start` 成因与拾取方（`ControlFact` 的队/人字段）；\
-               同样**不含**追逐过程——理由同 A2",
+        note: "本层给每段的 `contest_start` 成因（产物键）与收束事实下标。\
+               ⚠️ **拾取方（队/人）须由消费方拿该下标回原对象读**（`ControlFact.team/player`，\
+               故意不进产物）；且同样**不含**追逐过程——理由同 A2",
     },
     AnomalyCoverageRow {
         rule: "A4",
         topic: "重开交付之后球权立刻丢失",
         per_episode_samples: true,
-        note: "本层给 `start_reason`（`restart_control`）+ 链首动作 token + 段时长；\
-               重开窗的右端来源亦在 provenance 的口径快照里",
+        note: "本层给 `start_reason`（`restart_control`）+ 链首动作 token + 段时长（`duration_s`）。\
+               ⚠️ **产物里没有逐条的重开窗右端来源**——重开窗只用于**内部判据**\
+               （排除准备期），不随产物导出",
     },
     AnomalyCoverageRow {
         rule: "A5",
@@ -197,21 +217,23 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
         rule: "A6",
         topic: "空转 possession：持续久但动作极少",
         per_episode_samples: true,
-        note: "本层对应 `empty_possession` 筛子；时长取自 `PossessionEpisode.{start_t,end_t}`",
+        note: "本层对应 `empty_possession` 筛子；产物卡的 `duration_s` 即 `PossessionEpisode.start_t,end_t` 之差",
     },
     AnomalyCoverageRow {
         rule: "A7",
         topic: "重开准备期常数化（同种重开时长零方差）",
         per_episode_samples: true,
-        note: "本层的重开窗（`RestartWindow`）逐条给出 `[start,end)` 与**右端来源**\
-               （`taken_t` / fallback），准备期时长可直接读出",
+        note: "**本层不给逐条重开窗**（重开窗只用于内部判据）——\
+               与 A7 的关系只有「本层用重开窗排除了准备期的松散球」这一条；\
+               ⚠️ 产物的卡里**没有**重开窗的起止或右端来源",
     },
     AnomalyCoverageRow {
         rule: "A8",
         topic: "丢球/争抢位置集中在中央 40% 区间",
         per_episode_samples: true,
-        note: "本层给收束侧事实下标；**位置须读 `ControlFact.location`**——\
-               不得用决策动作的 `Event.{x,y}` 顶替（P16 口径 1：那是动作主体的位置）",
+        note: "本层给收束侧事实下标（`closing_fact_index`）**与争抢窗**（`contest_window`），\
+               但**产物里没有位置字段**——`ControlFact.location` 须由消费方拿该下标回原对象读。\
+               ⚠️ 不得用决策动作的 `Event.x,y` 顶替（P16 口径 1：那是动作主体的位置）",
     },
     AnomalyCoverageRow {
         rule: "A9",
@@ -223,8 +245,9 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
         rule: "A10",
         topic: "`pass_lost` 之后球权仍在原队（失败传球不造成失球）",
         per_episode_samples: true,
-        note: "本层给 `contest_start` 成因 + 收束事实 + 下一段的 `start_reason`/队；\
-               单段内即可看到「同一队重新开始」",
+        note: "本层给 `contest_start` 成因 + 收束事实下标 + 争抢窗（`contest_window`）。\
+               ⚠️ **产物里没有「下一段」的字段**——要判「球权是否回到原队」须由消费方\
+               拿 `event_indexes` / 时间回原对象读下一段；单张卡**看不到**",
     },
 ];
 
@@ -255,9 +278,11 @@ pub const WORDING_RULES: &[WordingRule] = &[
         name: "动作：分类而非并称",
         allowed: "`chase`（靶点恒为球，可称追球）；`close_down` 单列并标注其靶点来源",
         forbidden: "把 `chase` 与 `close_down` 并称「追球者」",
-        why: "`close_down` 的靶点按 `TransitionSource` 分流——`SaveCaught` 时追的是**前插球员**\
-              （实测 8 seed、**世界坐标**：168/513（32.8%）的 `close_down` 终点距球 > 5.25 m，\
-              median 2.39 m）。并称会让读者以为它们都在追球",
+        why: "`close_down` 的靶点按 `TransitionSource` 分流——源码上 `Tackle → st.ball_pos`、\
+              `SaveCaught → attacking_forward(..)`（**前插球员**）。并称会让读者以为它们都在追球。\
+              ⚠️ **不要用「距球远」当追人的证据**（审阅轮 2 推翻）：`close_down_stop` 只推进约 2 m、\
+              打不到靶点，远端球员的终点天然离球远（实测 8 seed 全部朝球逼近）。\
+              实测 `SaveCaught` 分流只占 `close_down` 的约 **9.9%**（30 seed 215/2162）。",
     },
     WordingRule {
         name: "压力：报状态不报因果",

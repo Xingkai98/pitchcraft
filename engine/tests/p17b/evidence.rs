@@ -436,11 +436,16 @@ pub const EVIDENCE_TABLE: &[EvidenceRow] = &[
         quantity: "追球者的移动终点（用于区分「追球」与「追人」）",
         locus: Locus::MoverTarget,
         kind: EvidenceKind::Observed,
-        how_verified: "实测（8 seed、**世界坐标** `Δx·105 m, Δy·68 m`，球位取当拍 `BallState`）\
-                       **168/513（32.8%）**的 `close_down` 终点距球 > 5.25 m ⇒ 它们在追人；\
-                       median 2.39 m。这是「不得把 `chase` 与 `close_down` 并称」的**实测依据**。\
-                       ⚠️ 设计稿载的 `188/513` 是把**归一化**距离直接与 5.25 比得到的（单位混用）；\
-                       结论不变，量级差 12%。",
+        how_verified: "实测（8 seed、**世界坐标** `Δx·105 m, Δy·68 m`，球位取当拍 `BallState`）：\
+                       168/513（32.8%）的 `close_down` 终点距球 > 5.25 m，median 2.39 m。\
+                       ⚠️ **不得把「距球远」读成「在追人」**（审阅轮 2 推翻）：\
+                       `close_down_stop` 只推进 `d − CLOSE_DOWN_STOP_DIST`（≈2 m），**打不到靶点**，\
+                       故**远端球员的 mover 终点天然离球远**——实测 8 seed 的 513 个 `close_down` \
+                       **全部朝球逼近**（靠近 513 / 远离 0）。真正的「追人」只在 `SaveCaught` 分流上，\
+                       而该分流实测仅约 **9.9%**（30 seed 215/2162；8 seed 1.8%）。\
+                       本行的用途仅剩「两动作的终点分布不同」这一**值层面**的事实；\
+                       「不得把 `chase` 与 `close_down` 并称」的**依据是靶点分流本身**（见 `reasons.rs`），\
+                       不是这里的距离。⚠️ 设计稿载的 `188/513` 另有一层单位混用（归一化距离比 5.25）。",
     },
     EvidenceRow {
         quantity: "球是否松散（`loose`）",

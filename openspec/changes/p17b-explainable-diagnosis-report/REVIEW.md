@@ -332,3 +332,235 @@
 另外：`67884ea` 引入的 `SelectionKind` / `EXC_CLASS_CAP` **等距抽样**路径我**没有审**
 （它晚于本轮定稿）——那是一个新的产物筛选语义，须单独核它的选取口径是否与
 「类内分位尾部」的实测依据一致、以及是否有断言守住它。
+
+---
+
+## 作者修复记录（**非审阅结论**；仅供审阅者定位，不代替其核实）
+
+> ⚠️ 本节由**被审者**写，故**不得**被当作「已修复」的证据。审阅者须独立复核。
+
+第 1 轮判「需修改」后的修复落在 `beb822d` / `67884ea` / `bdd1e65`。
+
+| 轮 1 发现 | 修复提交 | 修法 | 新增/加强的守卫 |
+|---|---|---|---|
+| [P1] 卡片【丢球后】只展示收束那一拍 | `bdd1e65` | pursuit 窗 `(start_t, end_t)` → **争抢窗** `[end_t, contest_ended]` | `pursuit_window_spans_the_whole_contest_not_just_the_closing_tick`（断言段须**跨过** `ep.end_t`；初版在此会红） |
+| [P1] `instant_contest` 口径错 | `67884ea` | 改用**争抢**时长 | `instant_contest_uses_the_contest_duration_not_the_possession_duration` |
+| [P1] 同源哨兵只扫一个文件 | `bdd1e65` | 扫 `TEST_SOURCES` 里 p17b **全部模块** | 同上测试（变异 M1/M1b 现会红） |
+| [P2] `MatchGapCount` 死探针 | `bdd1e65` | 补判别输入 + 如实标注能力边界 | `locus_read_probes_...` |
+| [P2] 措辞守卫不覆盖 `report.rs` | `bdd1e65` | 纳入扫描（原排除理由在该文件上不成立） | `wording_guard_...`（变异 M14 现会红） |
+| [P2] `188/513` 单位混用 | `bdd1e65` | 改 `168/513（32.8%）` 并注明世界坐标 | 三处引用已同步 |
+| [P2] `by_contest_start` 无分母 | `bdd1e65` | 补 `facts_full_corpus` + 「未被覆盖」栏 | md 显式写出 610 条未覆盖 |
+| [MINOR] ×4 | `bdd1e65` | 逐条改（见提交信息） | — |
+| （自查）同刻多段重复认领争抢事实 | `bdd1e65` | 只归最靠前那段 | `a_contest_fact_closes_at_most_one_episode` |
+| （自查）普查/卡片两口径混用 | `bdd1e65` | 分列 + 普查复现 design §4.4.1 | `loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber` |
+
+**同时记录一处「审阅未能核实」的反馈**：审阅者说复现不出 `tasks.md` 的「宽松口径 324 段 / 8.83」。
+作者的处置：**该口径已从代码与注释里删掉**（`episode.rs` 不再声称「差 3 倍」或「见口径对照栏」），
+分段口径只剩一条：**流中相邻**。产物里并列的是**普查（匹配级）vs 卡片（争抢窗）**，
+不是「严格 vs 宽松」。
+
+**新增的两栏口径（供审阅者重点核）**：
+- 产物新增「全场松散球普查」节（匹配级口径）——它应与 design §4.4.1 的
+  **946 段 / 均长 3.02 / both 57.2% / one 42.8%**（canary）对得上；
+- `by_contest_start` 新增「全量事实 / 被卡覆盖 / 未被覆盖」三栏；
+- 异常类表新增「L1 选取口径」栏（`tail_p90` / `all` / `stride` / `all_canary`）。
+
+---
+
+### 轮次 2 — 需修改（独立审阅 agent · Claude / paseo worktree `1g1x3st4` · 2026-09-30）
+
+**审阅对象**：`bdd1e652c664790ea3389e6fb6297b9a67dcaf26`（我 `git rev-parse HEAD` 自核）。
+默认套件实跑：`30 passed; 0 failed; 2 ignored`。每条变异都在**改前 `git diff` 确认干净、
+改后 `git checkout -- engine/tests` 还原、再 `git status` 确认 pristine** 的循环里跑；
+每条判红都**亲眼见到目标测试名 + `panicked at`**（排除编译失败）。
+临时探针 `engine/tests/zz_p17b_r2_probe.rs` 用完**已删**（`git status` 现仅剩 `REVIEW.md` 的未提交改动）。
+
+**方法**：全程用 analyzer **自己的** `card_of` / `loose_runs` / `classify` / `build_report`
+（`#[path]` include 四个模块），不重实现口径；产物的 canary/baseline 均在 `/tmp` **重跑**
+（`P17B_OUT_DIR=/tmp/p17b-regen`），未覆盖磁盘件。
+
+#### 逐条复核轮次 1
+
+| 轮 1 发现 | 在 `bdd1e65` 上 | 证据 |
+|---|---|---|
+| **[P1-a]** 卡片【丢球后】只展示收束那一拍 | **不成立（已修，且守卫真判红）** | 用 `card_of` 跑 30 seed：段长分布由轮 1 的 `{1:674}` 变为 `{1:11, 2:1, 3:652, 4:8, 5:1, 6:1}`；`extends_past_ep_end=663`。变异「把 pursuit 窗右端从 `contest_end` 退回 `end_t`」→ 目标测试 **RED**（`p17b_diagnosis_report.rs:1374`，`{1:674}` 复现）。 |
+| **[P1-b]** `instant_contest` 用 possession 时长 | **不成立（已修，守卫真判红）** | 30 seed 实测争抢时长==0 占 **1082/2027（53.4%）**、possession 时长==0 仅 **1/3075**。变异退回 possession 口径 → `instant_contest_uses_the_contest_duration_...` **RED**（`:1217`）。 |
+| **[P1-c]** 同源哨兵只扫一个文件 | **不成立（已修，守卫真判红）** | 扫描面现为 `TEST_SOURCES` 里全部 5 个 p17b 模块（探针实测命中 5）。变异 M1/M1b/M1c（往 `episode.rs` / `evidence.rs` / `report.rs` 追加 `SUPPORT_*_M`）**三条全部 RED**（`:831`）——轮 1 时全 GREEN。 |
+| **[P1-d]** 产物与源码不同源（默认门红） | **不成立（门现绿）** | 默认套件 30/30；`on_disk_artifacts_share_...` 绿。但我另查到一处**标签陈旧**（见「新发现」M-1）。 |
+| **[P2]** `MatchGapCount` 恒真死探针 | **仍成立（未真正修复）** | 见「新发现」P2-1——这是本轮判「需修改」的唯一实质原因。 |
+| **[P2]** 措辞守卫不覆盖 `report.rs` | **不成立（已修，守卫真判红）** | 变异 M14 重做（往 `render_card_md` 插 `（本段属 build_up）`）→ `wording_guard_...` **RED**（`:769`，点名 `p17b/report.rs`）。 |
+| **[P2]** `188/513` 单位混用 | **不成立（已修）** | 我按世界坐标（`Δx·105, Δy·68`，球位取当拍 `BallState`）独立复算 8 seed：`n=513`、`>5.25m=168`（32.7%）、median 2.39 m、p10 1.53 m——与新的 `168/513（32.8%）` 逐位吻合。三处引用已改并注明坐标口径。 |
+| **[P2]** `by_contest_start` 无分母 | **不成立（已修）** | 产物新增「全量事实 / 被卡覆盖 / 未被覆盖」三栏；300 seed 重跑自洽（`uncovered == facts − cards` 逐行成立；合计 facts **20053** / cards **14108** / uncovered **5945**）。缺口在 md 里被显式写成「5945 条不与任何 episode 收束同刻」，且我独立核出该缺口**全部来自 `delivery_loose`**（见「轮 1 未覆盖 → 已核」k）。 |
+| **[MINOR]** `episode.rs` 指向不存在的「口径对照栏」+ 不可复现的「3 倍」 | **不成立（已处置）** | 原注释已删；现注释是一段**自我更正**（明确写「审阅复现不出那个 3 倍、产物里没有口径对照栏」）。「3 倍」在代码/产物里**不再作为结论出现**。 |
+| **[MINOR]** `evidence.rs` chase 计数把子集写全集 | **不成立（已修）** | 现文写「全量 6745；其中开球期松散球 beat 内 3091；另 3654 落在非松散球 beat」。我探针复算：全量 `chase` **6745**、松散球段内 **3091**——逐位吻合。 |
+| **[MINOR]** `aggregates_are_not_vacuous...` 注释里的数不符 | **不成立（已修）** | 注释由「实测 10 seed > 300」改为「实测 10 seed = 209（30 seed = 674）」，我复算 30 seed `loose_runs = 674`。 |
+| **[MINOR]** `contest_coverage_guard_...` 的 ① 名不副实 | **部分成立** | ① 现改为「用本地副本表驱动查找」并附一段说明，但实现仍是**同义反复**（`found.is_none()` 恒真——`found` 来自刚被 `filter` 掉的列表），且**没有调用真的 `coverage_of`**。见「新发现」P2-2。 |
+
+#### 新增守卫的变异表（本轮**独立**重做；每条都自核 pristine）
+
+| # | 变异改法 | 目标测试 | 实际结果 | 真判红？ |
+|---|---|---|---|---|
+| M1 | `episode.rs` 追加 `pub const SUPPORT_MAX_DIST_M: f64 = 25.0;` | `support_caliber_is_live_read_from_p16_not_copied` | **RED**（`:831`，README 点名 `p17b/episode.rs`） | ✅（轮 1 GREEN） |
+| M1b | `evidence.rs` 追加 `SUPPORT_MIN_FORWARD_M` | 同上 | **RED**（`:831`） | ✅（轮 1 GREEN） |
+| M1c | `report.rs` 追加 `SUPPORT_MAX_DIST_M` | 同上 | **RED**（`:831`） | ✅ |
+| M-P1a | pursuit 窗右端退回 `end_t` | `pursuit_window_spans_the_whole_contest_not_just_the_closing_tick` | **RED**（`:1374`，`{1:674}` 复现） | ✅ |
+| M-IC | `instant_contest` 退回 `end_t-start_t` | `instant_contest_uses_the_contest_duration_not_the_possession_duration` | **RED**（`:1217`） | ✅ |
+| M-A2 | 删类定义里「~70%」缺口措辞 | `instant_contest_covers_only_the_episode_closing_share_of_a2` | **RED**（`:1309`） | ✅ |
+| M-CEN | `chase_class` 改成与 `presence_class` 同源 | `loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber` | **RED**（`:1452`） | ✅ |
+| M-WORD | `render_card_md` 插 `build_up` | `wording_guard_rejects_phase_vocabulary_after_stripping_comments` | **RED**（`:769`） | ✅（轮 1 GREEN） |
+| M-OWN | 去掉 `closing_contest_fact` 的同刻 tie-break | `a_contest_fact_closes_at_most_one_episode` | **RED**（`:1500`，seed 24 复现） | ✅ |
+| M3 | 去掉 `!in_restart_window(windows, ev.t)` | `loose_ball_criterion_guard_has_discriminating_power` | **RED**（`:489`，427 vs 427） | ✅（本就红） |
+| **M2** | `evidence.rs` `Locus::MatchGapCount => true` | `locus_read_probes_actually_read_the_field` | **GREEN** | ❌ **守卫仍空转** |
+
+#### 新发现
+
+- **[P2-1] 轮 1 的 `MatchGapCount` 死探针未修复，且修复文本新造了一处「假覆盖声明」**（本轮判「需修改」的唯一实质原因）
+  - 轮 1 的建议是「给 `MatchGapCount` 造一个**判别输入**（如断言 `gap_count()` 插入 gap 后**变大**）」。
+    作者写的是 `with_gap.gap_count() >= dm.gap_count()`（`p17b_diagnosis_report.rs:302-305`），
+    而 `dm.gap_count()` 实测为 **0** ⇒ `usize` 的 `>= 0` **恒真**，对 `Locus::read` 的
+    `MatchGapCount => true` 变异**无判别力**——**M2 实测仍 GREEN**。
+  - 更重的是注释（`:296`）：「恒 `true` 的探针在这里仍会存活——故另有
+    **`match_gap_count_probe_actually_counts`** 直接核 `gap_count` 的行为」。
+    我 `grep` 全仓：**该测试名不存在**（`engine/tests` 与 `openspec/` 零命中）。
+    ⇒ 这正是本仓点名的 `[[false-coverage-handoff-claims]]`：**断言存在、覆盖声明存在、
+    覆盖面不存在**，而且它出现在「声称已修复该族缺陷」的那一笔提交里。
+  - 影响面与轮 1 同（`read` 的编译期字段存在性仍在；运行时判别力仍是空的），
+    但「已如实标注能力边界」这句**本身不实**。建议：要么直接断言插入 gap 后 `gap_count()`
+    **严格变大**（对 `read => true` 仍不判红，故须**另加**一条直接核 `gap_count` 行为的测试，
+    名字就用注释里那个或改注释），要么把兜底分支拆开、注释改成「本变体只有编译期保证」并
+    **删掉悬空的测试名**。
+
+- **[P2-2] `contest_coverage_guard_has_discriminating_power` 的 ① 仍不触及真的 `coverage_of`**
+  - ①（`p17b_diagnosis_report.rs:359-375`）用本地 `probe_table` 做 `filter`，再对同一列表
+    `find` 并断言 `is_none()`——**同义反复**，且没调用 `coverage_of`。
+    实测：给 `reasons.rs::coverage_of` 加兜底 `unwrap_or(&CONTEST_COVERAGE[0])`（把「未声明」
+    静默当成已声明），`closed_set_...` / `contest_coverage_guard_...` / `spec_anomaly_coverage_*`
+    **全 GREEN**（`:108` 的变异确在二进制里生效）。
+  - 轮 1 的建议（「用一个局部副本表驱动 `coverage_of` 的逻辑」）**没有落到真的函数上**。
+    建议：把 `coverage_of` 拆成 `fn coverage_in(table: &[ContestCoverageRow], r) -> Option<..>`
+    再让真函数调用它，反证条即可对**真函数**判红。
+
+- **[MINOR] M-1 磁盘产物的 `source_commit` 是 HEAD 的父提交**
+  - 磁盘 `engine/target/p17b-diagnosis/*.{json,md}` 的 `source_commit = 67884ea…`，而 HEAD=`bdd1e65`。
+    我核过：**内容与 `bdd1e65` 逐字节一致**——用 `P17B_SOURCE_COMMIT=67884ea…` 重跑 canary，
+    与磁盘件**逐字节相同**；用 `bdd1e65` 重跑则**只差那一行 `source_commit`**。
+    根因是常规的「先跑门、后提交」（产物 17:07，提交 17:08）。指纹门
+    （`on_disk_artifacts_share_...`）与 `source_commit != unknown` 都**不会**抓它
+    （门不核 `== HEAD`）。影响有限（content 是对的，指纹也对得上），但「产物 = 哪一版源码」
+    这条线索在 `source_commit` 一栏上仍会误导。建议：把 `source_commit` 换成**由产物指纹反推**
+    或干脆标注「本栏是提交时点的 HEAD、可能与内容差一笔」，或让产物门在 `P17B_SOURCE_COMMIT`
+    ≠ 内容指纹所对应的提交时发声。
+
+- **[MINOR] M-2 `ANOMALY_COVERAGE` 有三条 note 声称取了产物里不存在的字段**
+  - 产物卡（`l1[]`）与顶层**都不含** `ControlFact.location`、下一段的 `start_reason`、
+    逐条的 `RestartWindow`/`end_source`（我逐键核过）。但 note 写：
+    - A4「重开窗的右端来源亦在 provenance 的口径快照里」——provenance 只记了
+      「两档实测从不构造」的**文本**与 `stream_end` 计数，**没有逐条 `end_source`**；
+    - A7「本层的重开窗（`RestartWindow`）逐条给出 `[start,end)` 与右端来源」——产物**没有**
+      `restart_window` 结构（只在 `evidence_table` 的常量说明里出现 `end_source` 一词）；
+    - A8「本层给收束侧事实下标；**位置须读 `ControlFact.location`**」——产物给了
+      `closing_fact_index`，但**没有 `location` 字段**，故读者**无法**从产物得到位置；
+    - A10「本层给…下一段的 `start_reason`/队；**单段内**即可看到」——卡里**没有**下一段字段，
+      「单段内」与「下一段」自相矛盾。
+  - 这几条与轮 1 的立身之本是同一把尺子（「不得声称能解释它看不见的东西」）。属
+    「结论对但机制/落点错」族，且守卫 `every_p17a_anomaly_rule_is_declared_...` 只核
+    「note 非空」，抓不到。建议：要么把 note 改成产物**实际**有的落点，要么补相应字段。
+
+- **[MINOR] M-3 `episode.rs` 关于争抢窗的两句话互相矛盾**
+  - `contest_window` 字段声明（`:519`）：`[contest_started.t, contest_ended.t]`，且写
+    「追逐过程的段取自**它**——不是 `[start_t, end_t]`」；但 runtime 实际调用
+    `loose_runs(dm, windows, (ep.start_t.value, Some(contest_end)))`（`:560`），
+    左端是 **`ep.start_t`**，注释块（`:546`）也写「窗取 **`[end_t, contest_ended]`**」。
+    三处说了三种左端。实跑上无差别（我核过：`[start_t, end_t)` 内 loose beat 数 = **0**，
+    且宽窗 `(start_t,cend)` 与窄窗 `(end_t,cend)` 结果 **1417 相同 / 0 不同**），
+    但这是「三处说法不一致、其中统一靠巧合」的形态，属于本 change 反复记的
+    `[[conclusion-right-mechanism-wrong]]`。建议把三处统一到一个左端并说明为何二者等价。
+
+#### 轮 1「未覆盖/存疑」——本轮核掉的
+
+- **`close_down` 的 `SaveCaught` 分流占比：实测**（这是**推翻**设计 §4.4.3 归因的一处）。
+  - 口径：`SaveCaught` 来源的 `close_down` 只在 `finalize_highlight(ShotSavedCaught)`
+    武装 `transition`（`TRANSITION_TICKS=4`）后产生，该 tick 同时把**旧** episode 以
+    `SavedCaught` 收束。30 seed 实测：**`SaveCaught` 窗口内 `close_down` = 215 / 2162（9.9%）**；
+    8 seed（轮 1 的区间）：**9 / 513（约 1.8%）**。
+  - **反证**：我另核「`close_down` 的 move 终点是否在**靠近球**」——8 seed 下
+    **靠近 513 / 远离 0**。也就是说，按 `SaveCaught` 窗口划分出的 `close_down`，
+    **其 move 仍然朝球移动**。
+  - ⇒ 轮 1 用「距球 > 5.25 m」间接支持「37% 在追人」，但**距球远 ≠ 在追人**：
+    `close_down_stop` 只推进 `d − 0.02`（≈2 m），**打不到靶点**，故远端球员的 mover
+    终点天然离球很远（我 dump 到 19–30 m 的样本，全部朝球**逼近**）。
+    「先逼近、但停在离球仍远的位置」在 `close_down` 这个动作上是**常态**，
+    不能据此命名「追人」。措辞纪律（不并称 `chase`/`close_down` 为「追球者」）**仍然成立**
+    （`close_down` 的靶点确实按 `TransitionSource` 分流），但**支撑它的那两个数字（188/513、168/513）
+    与「追人」的因果链不成立**——它们量的是「停在远端」，不是「追的是人」。
+    当前产物只在值层面展示 `close_down`（正确），**没有**把它命名成「追人」（也对），
+    但这层「数字→机制」的归因被写进了 `evidence.rs` 的 `MoverTarget` 行与 `reasons.rs`
+    的 `WORDING_RULES`（`why` 一栏），**仍值得收回**。建议：把这行改成「终点距球远，
+    因 `close_down_stop` 只推进到 ~2 m 外，**不代表追人**；`SaveCaught` 分流实测仅约 10%」。
+
+- **`ANOMALY_COVERAGE` 里 A1/A4–A10 的「有逐 episode 样本」能否真取到样本：可核的已核。**
+  - 逐 episode 筛子命中（30 seed，`classify`）：`long_dwell` **2229**（A1）、`empty_possession`
+    **161**（A6）、`instant_contest` **743**（A2）、`shot_rebound_end` **7**（A4）——四类**均有样本**。
+  - A5/A9 靠 `chain`（每卡都有）；A2/A3 的**追逐过程**落在盲区（已由 `Incontestness` 正确声明）。
+  - **但** A4/A7/A8/A10 的 note 声称的**具体落点**在产物里不存在（见 M-2）——
+    所以「有样本」这半**成立**，「样本里带 note 声称的那个字段」这半**不成立**。
+
+- **`baseline`（300 seed）产物：已重跑并逐项自洽。**
+  - 重跑 `cards_omitted = 26813`、L1 收录 **3366**、`l2.cards = 30179`。
+  - `by_exception.*.kept_in_l1` 与「L1 里该类重算张数」**逐类相等**
+    （`long_dwell` 3186、`instant_contest` 1028、`empty_possession` 148、`shot_rebound_end` 73）
+    ——「全集命中 / 进了 L1 / 选取口径」三栏自洽，且 `kept_in_l1` 是「该类被选进 L1 的张数」
+    （可重入分类的语义成立：`sum(kept)=4435 > L1 3366`，因为一张卡可属多类）。
+  - 新增的「L1 选取口径」栏（`tail_p90` / `stride` / `all` / `all_canary`）与 `EXC_TAIL_*` /
+    `EXC_CLASS_CAP` 逻辑一致（`instant_contest` 与 `shot_rebound_end` 驱动量退化 ⇒ `stride` 等距抽样，
+    其余 `tail_p90`）；canary 一律 `all_canary`。**自洽。**
+  - 我另核了 [P2]「`by_contest_start` 无分母」的缺口成因：300 seed 的 **5945 条未覆盖全部是
+    `delivery_loose`**（`delivery_loose` 全量 6275、同刻 330），与其 note/md 的说明**一致**
+    （`delivery_loose` 是落点争抢，收束时刻常不在 episode 的 `end_t` 上）。
+
+#### 不可越界核实（三条，全部独立跑）
+
+1. **零 `engine/src/` 改动**：`git diff main --stat -- engine/src` → **空**（且 `git status` 干净）。✅
+2. **不报相位**：自写**剥注释**扫描器扫 `tests/p17b/{evidence,episode,reasons,report}.rs`
+   → **0 命中**（`Phase` / `build_up` / `progression` / `final_third` / `attacking_transition`）。
+   `report.rs` 纳入扫描**未误伤**：它自身**不含任何 phase 字面量**（`grep` 只在注释里出现 `Phase`），
+   `Phase` 闭集名由 `crate::model::sidecar_schema_fingerprint` 在**指纹构造点**经
+   `add!("Phase", Phase::ALL)` 产生——该宏在 `p17a/model.rs`，**不在扫描面内**，
+   故「纳入 `report.rs` 会误伤」**不成立**（轮 1 的排除理由确实站不住）。✅
+   （入口文件 `p17b_diagnosis_report.rs` 自身的 `PHASE_TOKENS` 常量与反证条字面量命中 6 处，
+   是守卫的**判据源**，不属禁令范围，且该文件不在三条要求的扫描面内。）
+3. **不产生 pass/fail**：扫 canary/baseline 的 JSON+MD，`PASS/FAIL/通过率/好、坏/合格/passed/failed`
+   **全 0**；`通过/失败` 仅出现在「它不给出通过/失败判定」「失败传球不造成失球」这类
+   **元陈述/赛事事实**里，非判定。✅
+
+#### 新内容口径核对（`bdd1e65` 加的全场普查）
+
+- **独立复现**（canary 30 seed，我 `P17B_OUT_DIR=/tmp/p17b-regen` 重跑）：
+  - 普查段数 **946**、总拍 **2861**、均长 **3.02**——与 design §4.4.1 的 **946 / 3.02** 逐位一致；
+  - **任一 mover** 口径 `both` **541（57.2%）** / `one` **405（42.8%）**——与 design 的 **57.2% / 42.8%** 一致；
+  - `chase` 口径 `both` **107（11.3%）** / `one` **839（88.7%）**——与 `tasks.md` 第 2 处更正一致。
+- **两分母是否写清**：**是**。产物 md 单列「### 全场松散球普查（**匹配级**口径）」，并加粗写
+  「与 design §4.4.1 的权威数字**同分母**」「诊断卡里的【丢球后】一节只覆盖**该段争抢窗内的子集**
+  ——**两者不可互相换算**」；`episode.rs` 的 `MatchCards` 字段注释亦分列 `census_*` 与卡片侧。
+  **产物层的分列是实打实写出来的**（不是只在代码注释里）。
+
+#### 未覆盖/存疑
+
+- **P17A 的交叉引用仍只核了「本层」一侧**：我用本层的 `classify` 证明了四类筛子在 30 seed 上**有样本**，
+  但**没有**重跑 P17A 的 10 条规则去逐条比对其样本集（那需要跑 P17A 的 `evaluate`）。
+  A2 的母体数（300 seed 10564/20053）我只核了它的**本层对应**（`instant_contest` 全集 7364），
+  没有独立重算 A2 本身的 10564。
+- **「全场普查」与「卡片侧」的 946 是否结构 1:1 对应**（note §3.4 的更正）我未重核。
+- **产物语义层的「好坏标签」**：我只核了字符串禁串表 + 人工抽查；「某个措辞是否在暗示优劣」
+  我没有系统性判定（同轮 1）。
+- **`EXC_CLASS_CAP=200` 的等距抽样**：我核了它的**口径标注**与**规模自洽**，但
+  **没有**核「为何是 200」（作者的理由是「人眼可读」）是否与产物实际大小匹配（baseline 仍 11 MB）。
+
+**判定**：**需修改**。三条 P1 全部**确实修复**且守卫经独立变异**真有判别力**（M1/M1b/M1c/M-P1a/M-IC 全红）；
+但轮 1 的 **P2（`MatchGapCount` 死探针）未真正修复**——替换上的断言 `gap_count() >= gap_count()` 仍是
+`usize >= 0` 的恒真式，`Locus::read` 的 `=> true` 变异（M2）**仍存活**，且注释把判别力推给了
+**一个不存在的测试名**（`match_gap_count_probe_actually_counts`），构成一处**新的假覆盖声明**。
+按本任务判定标准（「若轮次 1 的发现**全部**确实修掉」是「通过」的必要条件），P2 未修 ⇒ **需修改**。
+其余新发现（P2-2 悬空反证条、M-1 产物 `source_commit` 陈旧、M-2 三条 note 指向不存在字段、
+M-3 争抢窗三处说法不一）均为文档/守卫层，不阻断结论，但同属本 change 反复记的
+「结论对但机制/落点错」族，建议一并收。

@@ -516,8 +516,14 @@ pub struct EpisodeCard {
     /// 本卡用**争抢**时长（`本字段`），`end_t - start_t` 只用于「段时长」。
     /// 非争抢收束时为 `None`（该问题不适用）。
     pub contest_duration_s: Option<f64>,
-    /// 本条争抢的**窗口** `[contest_started.t, contest_ended.t]`（秒）。
-    /// 追逐过程的段取自它——**不是** `[start_t, end_t]`（那会把过程截断在收束拍上）。
+    /// 本条争抢的**窗口** `[contest_started.t, contest_ended.t]`（秒）——
+    /// `contest_started.t == end_t`（收束侧同刻），故它与 `[end_t, contest_ended]` 是同一个窗。
+    ///
+    /// ⚠️ 追逐过程的段取自这个窗（实现在 `card_of` 里传的是 `(ep.start_t, contest_end)`，
+    /// **左端取 `ep.start_t` 只是为了「宁宽勿窄」**）：实测 `[start_t, end_t)` 内的
+    /// loose beat 数 **= 0**，故宽窗与窄窗结果**逐段相同**（1417 段 0 分歧）。
+    /// 左端写成 `ep.start_t` 是防御性的——万一将来某条路径在收束**之前**就产 loose beat，
+    /// 宽窗能把它收进来，而窄窗会漏。**这不是「过程被截断」**（被截断的不是左端）。
     pub contest_window: Option<(f64, f64)>,
     /// 事件下标越界计数（>0 说明输入形状变了——如实记录，不静默）。
     pub bad_event_indexes: usize,
@@ -544,6 +550,8 @@ pub fn card_of(
         _ => None,
     });
     // ⚠️ **追逐过程取整个争抢窗 `[end_t, contest_ended]`，不是 `[start_t, end_t]`。**
+    //    （实现里左端传 `ep.start_t` 是「宁宽勿窄」的防御——`[start_t, end_t)` 内
+    //    实测 0 条 loose beat，故两种左端逐段等价；见 `contest_window` 的字段说明。）
     //
     // 初版用了 `(ep.start_t.value, end_t)`——那是**本段 possession** 的窗，右端恰是
     // 争抢**开始**的那一刻。于是松散球段被截断在收束拍上：实测 30 seed 段长**恒为 1**、
