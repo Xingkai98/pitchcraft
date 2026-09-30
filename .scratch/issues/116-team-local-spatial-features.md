@@ -1,7 +1,7 @@
 # Grill/Research: 团队与局部空间特征（含 phaseability gate）
 
 - Type: research
-- Status: draft（待开展；产出「特征定义 + 可判定性结论」，不是实现）
+- Status: resolved（2026-09-29；PR #123 已合入。裁决：**部分够**——见文末「结论」）
 - Created: 2026-09-28
 - GitHub issue: https://github.com/Xingkai98/pitchcraft/issues/116（`wayfinder:research`）
 - Blocked by: `12`（观察契约，已过 grilling）、`13`（可观测性盘点，已完成）
@@ -54,6 +54,26 @@
 - `.scratch/notes/match-behavior-observation-design.md` §11（phase 契约）
 - `.scratch/issues/113-15b-phase-mounting-model.md`（#113 完整论证）
 
-## 结论（待填）
+## 结论（2026-09-29；PR #123 / merge `5c1c3d7`）
 
-**Status: draft** —— 开展后在此记录：特征清单 + 覆盖率 + 可判定性裁决（够 / 不够）+ 证据。
+**裁决：部分够。**
+
+| 阶段 | 能否判定 | 证据（`forward_m/s` AUC） |
+|---|---|---|
+| `final_third` | ✅ 能 | **0.855**（30 seed）/ **0.862**（300 seed） |
+| `build_up` / `progression` | ❌ **判不了** | **0.461** / **0.431** |
+
+**强度**：审阅者**自己扫了 21 个空间量**想分开后两档，最强非循环量只 **0.634**
+⇒ 是「**空间量本身不足**」，不是「特征没选好」。混淆净化也做了（抽掉「是否重开」0.469 /
+抽掉「传球数」0.490 / 空对照 0.500）——**抽掉哪个都没变好**。
+
+**落地**：G1 导出真实位置（每 tick 全量 22 人 → `DiagnosticMatch.state_snapshots`，
+**事件流零增量**、不改 `ControlFact` 闭集）；四类时间关系特征；口径以 `ControlFact` 为权威。
+
+**给 15B**：`final_third` 是**几何证据不是战术意图**，须命名为证据
+（如 `GoalwardProgressEvidence`），**不得复用 `Phase`**；另两档保留 `unknown`。
+
+**后续**：#124 已接出意图信号并重跑 gate（2026-09-30，PR #127）——**仍不够**。
+⇒ 与 #124 合读：**空间与意图两条路都试过、都不够**。
+
+**审阅闭环**：7 轮独立审阅；记录见 `openspec/changes/p16-team-local-spatial-features/REVIEW.md`。
