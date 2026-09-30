@@ -41,7 +41,8 @@
 //! | [`loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber`] | 普查口径（**与 design 同分母 / 两口径可分**） | ✅ |
 //! | [`a_contest_fact_closes_at_most_one_episode`] | 争抢归属（**同刻多段只归最靠前那段**） | ✅ |
 //! | [`observation_credibility_gate_annotates_but_keeps`] | 前置门（标注但保留、不进聚合） | ✅ |
-//! | [`spec_anomaly_coverage_blocks_carry_both_halves_and_the_guard_is_not_vacuous`] | 规范一致性（**块判 + 反证条**） | ✅ |
+//! | [`spec_anomaly_coverage_blocks_carry_both_halves`] | 规范一致性（**块判**） | ✅ |
+//! | [`spec_anomaly_coverage_guard_is_not_vacuous`] | 规范一致性（**反证条**） | ✅ |
 //! | [`report_is_deterministic_and_self_describing`] | 产物（确定性 + 产物自带边界） | ✅ |
 //! | [`aggregates_are_not_vacuous_on_real_seeds`] | 防空转（真实路径下限） | ✅ |
 //! | [`on_disk_artifacts_share_the_current_source_fingerprints`] | 产物（与源码同源） | ✅ |
@@ -611,9 +612,18 @@ fn restart_window_falls_back_explicitly_when_taken_t_is_missing() {
 
 /// `chase` 与 `close_down` **分类而非并称**（spec 的 Requirement「动作归因不得把『追人』当作『追球』」）。
 ///
-/// 侦察实测（8 seed、**世界坐标**）168/513（32.8%）的 `close_down` 终点距球 > 5.25 m——
-/// 它们在**追人**。（设计稿载的 `188/513` 是**归一化距离**直接与 5.25 比得到的单位混用；
-/// 结论不变。数字口径随行注明，见 `evidence.rs` 的 `MoverTarget` 行。）
+/// ## ⚠️ 本条纪律的依据是**靶点分流**，不是「距球远」
+///
+/// 源码事实：`compute_mover_candidates` 里 `close_down` 的靶点按 `TransitionSource` 分流——
+/// `Tackle → st.ball_pos`（球）；`SaveCaught → attacking_forward(..)`（**前插球员**）。
+/// 这就是「不得并称」的全部依据。
+///
+/// **不要用「终点距球 > 5.25 m」当追人的证据**（本 change 曾在三处那么写，审阅轮 2 实测推翻）：
+/// `close_down_stop` 只推进 `d − CLOSE_DOWN_STOP_DIST`（≈2 m）、**打不到靶点**，
+/// 故**远端球员的 mover 终点天然离球远**——8 seed 的 513 个 `close_down` **全部朝球逼近**
+/// （靠近 513 / 远离 0）。且 `SaveCaught` 分流实测仅约 **9.9%**（30 seed 215/2162），不是 37%。
+///
+/// 详见 `evidence.rs` 的 `MoverTarget` 行与 `reasons.rs` 的 `WORDING_RULES`（两处已收回该因果链）。
 #[test]
 fn pursuit_roles_are_classified_never_merged() {
     assert_eq!(PursuitRole::of("chase"), PursuitRole::Chase);
@@ -1648,6 +1658,8 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
         "ControlFact.team/player",
         "PossessionEpisode.start_t,end_t",
         "Event.x,y",
+        "Event.x",
+        "Event.y",
     ];
     let r = quick();
     let json = to_json(&r);
@@ -1662,37 +1674,97 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
         }
     }
     assert!(keys.len() > 50, "产物键集合过小（{}）——抓取逻辑可能失效", keys.len());
+    // ⚠️ **两个可绕路径**（审阅轮 3 的 N-3 实测出逃逸，现已堵）：
+    //   (a) 反引号内**含空格**（如 `` `逐条 RestartWindow 的起止` ``）时初版**整段跳过**——
+    //       而那恰好是最自然的写法。现改为：**按空白切成词**逐个核（长于 1 字的、像标识符的词）。
+    //   (b) 「产物里出现过的**值**」档：值集是用**裸引号**扫出来的，故 `kickoff` 这类
+    //       「值」会被当成合法——只要它是产物的某个值，**任何**词都能蒙混过关。
+    //       现改为：该档只放行**闭集 token 形态**（全小写 + 下划线 + 可带 `+`/`?`/`-`），
+    //       即 `pass+` / `kickoff` 这类**取值枚举**；`RestartWindow` 这类 CamelCase
+    //       **类型名**不再被当成值放行。
+    let is_enum_token = |w: &str| {
+        !w.is_empty()
+            && w.chars()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_' || c == '+' || c == '?' || c == '-')
+    };
+    // ⚠️ **第三处可绕路径**（审阅轮 3 之后自查又抓到）：初版只扫**反引号内**的文本，
+    // 故一条**不带反引号**的类型名（`**本层不给逐条 RestartWindow**`）**完全不被检查**。
+    // ⇒ 改为扫 note 全文里**全部**标识符形态的 token（带不带反引号都扫）。
+    // 这使守卫的覆盖面不再依赖「作者恰好用了反引号」。
+    //
+    // 放行档（四档，缺一不可）：
+    // ① 是产物的**键**；② 在源侧清单里（须回原对象读）；
+    // ③ 是产物里出现过的**闭集取值**（全小写形态，如 `pass+` / `kickoff`）；
+    // ④ 在**散文白名单**里（如 `P17A` / 规则号 `A7` / 章节号——它们是**引用**，不是落点）。
+    const PROSE_OK: &[&str] = &[
+        "P17A", "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
+        "P16", "P124", "P17B", "A", "B", "in", "s",
+    ];
     let mut checked = 0usize;
     for row in ANOMALY_COVERAGE {
-        for tok in row.note.split('`').skip(1).step_by(2) {
-            let t = tok.trim();
-            if t.is_empty() || t.contains(' ') || t.contains('（') {
+        // 扫全文：标识符形态（可带点号路径），两端用非标识符字符界定。
+        let bytes = row.note.as_bytes();
+        let mut i = 0usize;
+        while i < bytes.len() {
+            let c = bytes[i] as char;
+            if !(c.is_ascii_alphabetic() || c == '_') {
+                i += 1;
                 continue;
             }
-            let bare = t.rsplit('.').next().unwrap_or(t);
-            let bare = bare.trim_matches(|c: char| !c.is_ascii_alphanumeric() && c != '_');
-            if bare.is_empty() {
+            let start = i;
+            while i < bytes.len() {
+                let c = bytes[i] as char;
+                if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+                    i += 1;
+                } else {
+                    break;
+                }
+            }
+            let t = &row.note[start..i];
+            let t = t.trim_end_matches('.');
+            if t.is_empty() {
+                continue;
+            }
+            // 点号路径的尾段不得为空（`Event.x,y` 这类写法在点号处自然断开）。
+            let head = t.split('.').next().unwrap_or(t);
+            let tail = t.rsplit('.').next().unwrap_or(t);
+            // 只把**像代码标识符**的 token 当候选——这既避免中文散文里的普通英文词
+            // （`episode` / `card`）被误判，又保证**类型名**（CamelCase）与
+            // **字段名**（snake_case）**一个都跑不掉**：
+            //   - CamelCase：同时含大写与小写（`RestartWindow` / `ControlFact`）；
+            //   - snake_case：含下划线（`start_reason` / `restart_window`）；
+            //   - 其它（纯小写无下划线的普通英文词、`P17A` 这类大写缩写）不是候选。
+            // ⚠️ 这条**只是候选筛选**，不是放行——候选一律要过下面的四档。
+            let has_upper = t.chars().any(|c| c.is_ascii_uppercase());
+            let has_lower = t.chars().any(|c| c.is_ascii_lowercase());
+            let is_camel = has_upper && has_lower;
+            let is_snake = t.contains('_');
+            if !(is_camel || is_snake) {
                 continue;
             }
             checked += 1;
-            // 三档放行：① 是产物的**键**；② 在源侧清单里（须回原对象读）；
-            // ③ 是产物里**出现过的串值**（例如 chain 的 `pass+` token —— note 引用它是
-            //    指「产物里会出现的那个取值」，不是声称多给了一个字段）。
-            let as_value = json.contains(&format!("\"{t}\""));
+            let as_value = is_enum_token(t) && json.contains(&format!("\"{t}\""));
             assert!(
-                keys.contains(bare)
+                keys.contains(t)
+                    || keys.contains(head)
+                    || keys.contains(tail)
                     || SOURCE_SIDE_OK.contains(&t)
-                    || SOURCE_SIDE_OK.contains(&bare)
+                    || SOURCE_SIDE_OK.contains(&head)
+                    || PROSE_OK.contains(&t)
+                    || PROSE_OK.contains(&head)
                     || as_value,
-                "`ANOMALY_COVERAGE` 的 `{}` 的 note 引用了 `{}`——它既不是产物的键、\
-                 也不在源侧清单里。若它确实只能回原对象读，请写进 `SOURCE_SIDE_OK` \
-                 并在 note 里说明「须回原对象读」；否则就是**声称了产物给不出的东西**",
+                "`ANOMALY_COVERAGE` 的 `{}` 的 note 里出现了标识符 `{}`——\
+                 它既不是产物的键、也不在源侧清单、也不是产物里出现过的闭集取值、\
+                 也不在散文白名单里。若它确实只能回原对象读，请写进 `SOURCE_SIDE_OK` \
+                 并在 note 里说明；否则就是**声称了产物给不出的东西**",
                 row.rule,
-                tok
+                t
             );
         }
     }
-    assert!(checked > 5, "核对到的 token 太少（{checked}）——本守卫可能空转");
+    // 实测在**当前**十行 note 上有 19 个候选标识符；下限取 12（留余量，但仍能
+    // 在「扫描面塌成空」时判红——本仓的空转形态）。
+    assert!(checked > 12, "核对到的 token 太少（{checked}）——本守卫可能空转");
 }
 
 /// **规范一致性守卫的反证条**：喂一个「缺一半」的块必须判红。

@@ -564,3 +564,153 @@
 其余新发现（P2-2 悬空反证条、M-1 产物 `source_commit` 陈旧、M-2 三条 note 指向不存在字段、
 M-3 争抢窗三处说法不一）均为文档/守卫层，不阻断结论，但同属本 change 反复记的
 「结论对但机制/落点错」族，建议一并收。
+
+---
+
+### 轮次 3 — 通过（独立审阅 agent · Claude / paseo worktree `1g1x3st4` · 2026-09-30）
+
+**审阅对象**：`dc15f12b74a6d077473f1f0630721a278246df80`（我 `git rev-parse HEAD` 自核）。
+默认套件实跑：`32 passed; 0 failed; 2 ignored`。
+每条变异都在**改前 `git status` 确认干净、改后 `git checkout -- engine/tests`（或还原 `src` 备份）
+还原、再 `git status` 确认 pristine** 的循环里跑；每条判红都亲眼见到**目标测试名 + `panicked at`**
+（排除编译失败）。产物在 `/tmp/p17b-r3-regen` **重跑**（未覆盖磁盘件），磁盘件只读比对。
+本轮**未新建**探针文件（`#[path] include` 式临时探针易与指纹门纠缠，改为直接读重跑产物 + 定向变异）。
+
+#### 逐条复核轮次 2
+
+| 轮 2 发现 | 在 `dc15f12` 上 | 独立证据 |
+|---|---|---|
+| **[P2-1]** `MatchGapCount` 死探针 + 悬空测试名 | **不成立（已真修）** | ① `grep -n "fn match_gap_count_probe_actually_counts"` → **存在**（`p17b_diagnosis_report.rs:1583` 定义，表头第 40 行亦登记）；② 断言体是**严格 +1 / −1 / +2**，不是 `>=`；③ 我把 `DiagnosticMatch::gap_count`（`observation.rs:1398`）改成常数 `0` ⇒ **RED**（`:1605`，`left: 0 / right: 1`），即它真在核 `gap_count` 的行为。④ 旧的 `gap_count() >= dm.gap_count()` 已**删除**。 |
+| **[P2-2]** `contest_coverage_guard` ① 不触及真 `coverage_of` | **不成立（已真修）** | ① `reasons.rs` 拆出 `coverage_in(table, reason)`，真入口 `coverage_of` 只经它；② 反证条改为对**真函数** `coverage_in(&holed, …)` 喂**缺项表**（`holed` 由 `CONTEST_COVERAGE.to_vec()` + `retain` 去掉 `interception_loose`）；③ 变异实测见下表 M-3a / M-P2-2b **均判红**（轮 2 时全绿）。 |
+| **[MINOR] M-1** 产物 `source_commit` 与 HEAD 差一笔 | **不成立（已处置）** | `report.rs:105` 的 `Provenance` 构造点与 `to_markdown` 的 md 栏均加注「本栏是跑门时记的 HEAD；判陈旧请看下面两条指纹」；我 `P17B_SOURCE_COMMIT=$(git rev-parse HEAD)` 重跑后 `canary.md` 与磁盘件**逐字节相同**（除该栏）。 |
+| **[MINOR] M-2** `ANOMALY_COVERAGE` note 引用不存在字段 | **不成立（已修，守卫有效但有两处窄缺口）** | 四条 note（A4/A7/A8/A10）已改到产物**真有**的落点；新守卫 `anomaly_coverage_notes_only_cite_fields_the_product_carries` 对**普通**的不存在字段**判红**（M-NOTE-A7 / M-NOTE-PLAIN 均 RED，`:1682`）。窄缺口见「新发现」N-3。 |
+| **[MINOR] M-3** 争抢窗左端三处说法不一 | **不成立（已统一）** | 字段注释（`episode.rs:521-527`）、注释块（`:551-555`）、runtime（`:560` 传 `(ep.start_t.value, Some(contest_end))`）现在**互相自洽**：语义窗 = `[contest_started.t, contest_ended.t]`（`contest_started.t == end_t`），实现左端取 `ep.start_t` 被**显式标注**为「宁宽勿窄的防御」。我另做**等价性反证**：把左端收窄回 `end_t` ⇒ 默认套件**除指纹门外零红**，与「两种左端逐段等价」的声明一致。 |
+
+#### 变异表（本轮**独立**重做；每条都自核 pristine）
+
+| # | 变异改法 | 目标测试 | 实际结果 | 真判红？ |
+|---|---|---|---|---|
+| M-GAP | `observation.rs` `DiagnosticMatch::gap_count` → `0` | `match_gap_count_probe_actually_counts` | **RED**（`:1605`，`left 0 / right 1`） | ✅ 新测试真有判别力 |
+| M-3a | `coverage_of` 加 `.or(Some(&CONTEST_COVERAGE[0]))` | `contest_coverage_guard_has_discriminating_power` | **RED**（`:408`，源码文本档） | ✅（轮 2 GREEN） |
+| M-3c | `coverage_of` 改成 `match coverage_in {None => Some(&first)}` | 覆盖类 5 测试 | **GREEN**（唯一红是与变异无关的产物指纹门） | ❌ **文本档可被 `match` 绕过** |
+| M-3d | M-3c **＋** 从 `CONTEST_COVERAGE` 删掉 `interception_loose` 行 | `closed_set_…`、`contest_coverage_guard_…` | **RED**（`:340` `5≠6`；`:385` `TackleLoose≠InterceptionLoose`） | ✅ **同一性档兜住**（这才是真危险组合） |
+| M-P2-2b | `coverage_in` 加 `.or(table.first())` | `contest_coverage_guard_has_discriminating_power` | **RED**（`:362`） | ✅ |
+| M1/M1b/M1c | 往 `episode.rs` / `evidence.rs` / `report.rs` 各追加一份 `SUPPORT_*_M` | `support_caliber_is_live_read_from_p16_not_copied` | **RED**（`:878`） | ✅ |
+| M-P1a | pursuit 窗右端退回 `end_t` | `pursuit_window_spans_the_whole_contest_not_just_the_closing_tick` | **RED**（`:1421`） | ✅ |
+| M-IC | `instant_contest` 退回 possession 时长 | `instant_contest_uses_the_contest_duration_not_the_possession_duration` | **RED**（`:1264`） | ✅ |
+| M-WORD | `report.rs` 的 `render_card_md` 插 `build_up` | `wording_guard_rejects_phase_vocabulary_after_stripping_comments` | **RED**（`:816`） | ✅ |
+| M-NOTE-A7 | A7 的 note 还原成引用 `RestartWindow` | `anomaly_coverage_notes_only_cite_fields_the_product_carries` | **RED**（`:1682`） | ✅ 抓住它的原始靶子 |
+| M-NOTE-PLAIN | note 引用普通的不存在字段 `RestartWindow` | 同上 | **RED**（`:1682`） | ✅ 非空转 |
+| M-NOTE-EVADE | note 引用 `` `逐条 RestartWindow 的起止` ``（**反引号内有空格**） | 同上 | **GREEN** | ❌ 逃逸（见 N-3） |
+| M-NOTE-VALUE | note 引用 `kickoff` 当字段名（它是产物的**值**） | 同上 | **GREEN** | ❌ 逃逸（见 N-3） |
+| M2 | `evidence.rs` `Locus::MatchGapCount => true` | `locus_read_probes_actually_read_the_field` | **GREEN** | ⚠️ 仍未判别，但**已如实标注**（见下） |
+| M-LEFT | pursuit 窗左端收窄回 `end_t` | 默认套件（等价性反证） | 仅指纹门红，**零行为红** | — 反证「两左端等价」 |
+
+> **关于 M2**：`evidence.rs:256` 仍是 `Locus::MatchGapCount => dm.gap_count() == dm.gap_count()`（恒真）。
+> 但 `p17b_diagnosis_report.rs:274-286` 的分支注释现在**如实写明**「本变体在运行时**无法判别**，
+> 只有**编译期**保证」，且它把「行为判别力」指向的测试名**真的存在**（已由 M-GAP 证明）。
+> ⇒ 这不再是「假覆盖声明」，而是一处**被显式标注的能力边界**；判定按此采信。
+
+#### 新发现
+
+- **[P2] 「收回 `close_down` 追人因果链」在 `p17b_diagnosis_report.rs` 留下一处**自相矛盾**的残留**
+  - `p17b_diagnosis_report.rs:613-616`（`pursuit_roles_are_classified_never_merged` 的 doc）**仍写**：
+    「侦察实测（8 seed、**世界坐标**）168/513（32.8%）的 `close_down` 终点距球 > 5.25 m——
+    **它们在「追人」**。（… **结论不变**…见 `evidence.rs` 的 `MoverTarget` 行）」
+  - 而它**指向的那一行**现在写的恰恰是反面：`evidence.rs:441-448` 明写「**不得把『距球远』读成『在追人』**
+    （审阅轮 2 推翻）… `close_down_stop` 只推进 ≈2 m、打不到靶点… 实测 8 seed 全部**朝球逼近**」。
+  - ⇒ 同一仓内**行 A 指向行 B，而行 B 否认行 A**。这正是本 change 反复记的
+    `[[conclusion-right-mechanism-wrong]]`：作者收回了 `evidence.rs`/`reasons.rs` 两处（提交信息属实），
+    但**第三处拷贝（本文件）漏了**。数字（168/513）本身没错，错的是它后面那句归因。
+  - 建议：把这行改成与 `evidence.rs` 同调——「终点距球远，因 `close_down_stop` 只推进约 2 m、打不到靶点，
+    **不代表追人**；`SaveCaught` 分流实测仅约 9.9%」。
+  - 影响面：**文档层**，不进产物、不挂断言，故不阻断结论。
+
+- **[P2] 同一处归因在 change 的**权威文档**里也未收**（`design.md` 仍以 37% 支撑「追人」）
+  - `design.md:236-237`：「**`SaveCaught` → `attacking_forward(..)`（追人）**。实测（8 seed）
+    **188/513（37%）** 的 `close_down` 终点距球 > 5.25 m。」——这**正是**轮 2 推翻的两个数
+    （`188` 是归一化混用；「距球远 ⇒ 追人」的因果链不成立）。`design.md` 是产物 provenance
+    与 spec 溯源的**权威稿**，读者会照它引。
+  - `tasks.md:29` 仍写「MAJOR-2 `close_down` **不恒追球**（**37% 在追人**）」；
+    `.scratch/notes/17b-recon-2026-09-30.md:181-182` 仍写「实测 **188/513** … ⇒ 它们在**追人**」。
+  - 三处都**早于**轮 2，且作者的修复记录只声明改了 `evidence.rs` + `reasons.rs`（属实），
+    故这不是「声称修复而没修」，而是**同一族残留**；但既然本轮任务要求 grep `188/168/追人`，
+    如实记录。建议在 `design.md:237` 与 `tasks.md:29` 加**收回注记**（保留原数以便追溯，
+    但标明「轮 2 推翻：此为距离口径，非追人证据；`SaveCaught` 分流实测 9.9%」）。
+  - 影响面：文档层，不阻断。
+
+- **[MINOR] N-3 新守卫 `anomaly_coverage_notes_only_cite_fields_the_product_carries` 有两处可绕路径**
+  - (a) **反引号内有空格即跳过**：守卫 `if t.is_empty() || t.contains(' ') || t.contains('（') { continue; }`
+    ——实测把 A7 的 note 写成 `` `逐条 RestartWindow 的起止` ``（一个**不存在**的字段/结构，
+    只是短语里带了空格）⇒ 守卫 **GREEN**（M-NOTE-EVADE）。
+  - (b) **「产物里出现过的串值」档**：`as_value = json.contains(&format!("\"{t}\""))` 对**键或值**都为真
+    ——实测把 note 写成「本层给 `kickoff` 字段」（`kickoff` 是产物的一个**取值**，不是字段）
+    ⇒ 守卫 **GREEN**（M-NOTE-VALUE）。
+  - 我另核了守卫的键集抓取：它对整份 JSON 做**裸引号扫描**，抓到的 202 个 token 里有 **34 个不是真键**
+    （`A1`、`both`、`home`、`canary`、`passI`、`kickoff` …）——即「档① `keys.contains(bare)`」
+    实际把**值**也当键放行。这是上面 (b) 的根因。
+  - 结论：守卫对它**设计的靶子**（note 里裸写一个不存在的字段名）**有效**（M-NOTE-A7 / M-NOTE-PLAIN 均 RED），
+    但「说了产物给不出的东西」这条纪律的**一般形式**它挡不住。
+    建议：把档③收紧为「**只比对值**（键集须来自 JSON 解析而非裸扫描）」，并去掉空格跳过
+    （或改为「空格分隔后**逐 token** 核」）。
+
+- **[MINOR] N-4 表头有一个**悬空测试名**（与轮 2 抓到的同族，但在**本文件**）
+  - `p17b_diagnosis_report.rs:44` 登记 `` [`spec_anomaly_coverage_blocks_carry_both_halves_and_the_guard_is_not_vacuous`] ``，
+    而全仓**无此函数**——真实的两条是 `spec_anomaly_coverage_blocks_carry_both_halves`
+    与 `spec_anomaly_coverage_guard_is_not_vacuous`（名字被拼成了一行）。
+    引入于 `da4d651`（`git log -S` 可证），**非** `dc15f12` 引入，且轮 2 亦未捕获。
+  - 影响：文档表，极小；建议拆成两行或改成一个真实名字。
+
+#### 产物核对（**重跑**，非磁盘件）
+
+重跑命令（两条都 `P17B_OUT_DIR=/tmp/p17b-r3-regen`）：
+`P17B_SOURCE_COMMIT=$(git rev-parse HEAD) cargo test --release --test p17b_diagnosis_report -- --ignored --nocapture p17b_canary|p17b_baseline`
+
+- **普查节与 design §4.4.1 对得上**（canary）：`census_runs = 946`、`census_beats = 2861`
+  ⇒ 均长 `2861/946 = 3.024 → 3.02`；任一 mover 口径 `both 541 (57.19%)` / `one 405 (42.81%)`；
+  `chase` 口径 `both 107 (11.3%)` / `one 839 (88.7%)`。**全部与 design / tasks 逐位一致**。
+- **`by_contest_start` 自洽**：逐行 `facts_uncovered_by_cards == facts_full_corpus − cards`
+  成立（canary 合计 facts 2027 / cards 1417 / uncovered 610；baseline 20053 / 14108 / **5945**）。
+  md 显式写出「**有 610 条争抢未被任何诊断卡覆盖**——它们**不与任何 episode 收束同刻**」，
+  并声明「这不等于『没发生』」——**缺口有显式说明，非留空**。
+- **「L1 选取口径」栏**：canary **4 类全为 `all_canary`**（`empty_possession`/`instant_contest`/
+  `long_dwell`/`shot_rebound_end`）；baseline 为 `tail_p90`×2 + `stride`×2，与其 `EXC_*` 逻辑一致。
+- **新增 `contest_window` 字段**：出现在 1417/3075 张卡（非争抢收束的 1658 张为 `null`）；
+  逐卡核 **`window[0] == end_t`**（1417/1417）且 **`window[1] − window[0] == contest_duration_s`**
+  （1417/1417，含 743 张 `contest_duration_s == 0.0` 的即时争抢）。
+- **确定性**：`P17B_SOURCE_COMMIT` 相同重跑，`canary.json`/`canary.md` 与磁盘件**逐字节相同**。
+
+#### 未覆盖/存疑
+
+- **产物 md 不渲染 `contest_window`**（grep `canary.md` 仅命中 A8/A10 的说明行，卡体内无该栏）。
+  A8/A10 的 note 写「**本层给**…争抢窗（`contest_window`）」——就 **JSON 产物**而言为真，
+  故不构成「声称了给不出的东西」；但**只读 md 的读者看不到它**。属观察项，非缺陷。
+- **P17A 侧交叉引用仍未独立重跑**：`ANOMALY_COVERAGE` 里 A1/A4–A10「有逐 episode 样本」的
+  母体数（如 A2 的 10564/20053）我仍只核了**本层对应**（`instant_contest` 全集），
+  未跑 P17A 的 `evaluate`。（同轮 1/轮 2，未变。）
+- **`EXC_CLASS_CAP = 200` 的取值理由**（「人眼可读」）未核；baseline 产物仍 11.7 MB。
+- **产物语义层的「好坏标签」**：同前两轮，只核字符串禁串表 + 人工抽查，未做系统性语义判定。
+- **`design.md` / `tasks.md` / recon note 的历史归因**我只核了 `188/168/追人` 三个串；
+  change 文档里是否还有**别的**已被推翻的归因，未做穷举。
+
+#### 不可越界核实
+
+1. **零 `engine/src/` 改动**：`git diff main --stat -- engine/src` → **空**。✅
+2. **不报相位**：自写**剥注释**扫描器（先 `re.sub(r'/\*.*?\*/')` 去块注释，再逐行截 `//`）
+   扫 `tests/p17b/{evidence,episode,reasons,report}.rs` → `build_up`/`progression`/`final_third`/
+   `attacking_transition`/`Phase` **零命中**。✅
+3. **不产生 pass/fail 或好坏标签**：扫重跑后的 canary/baseline 的 JSON+MD——
+   `PASS`/`FAIL`/`通过率`/`合格`/`passed`/`failed` 全 **0**；`通过`/`失败` 仅出现在
+   元陈述（「它不给出通过/失败判定」）与赛事事实（「失败传球不造成失球」）里；
+   `坏` 仅 1 处、为技术词「不变量被破坏」。✅
+
+#### 判定
+
+**通过**。轮 2 的五条（P2-1 / P2-2 / M-1 / M-2 / M-3，含轮 1 遗留的 `MatchGapCount` 族）
+**全部确实修掉**，且修复经独立定向变异**确有判别力**（M-GAP / M-3a / M-P2-2b / M-NOTE-A7 全红；
+M-3c 的逃逸被 M-3d 的同一性档兜住）。
+**未发现新的 P0/P1**：本轮四条新发现（N-1 `close_down` 归因在测试文件里的自相矛盾残留、
+N-2 同一归因在 `design.md`/`tasks.md`/recon note 的残留、N-3 新 note 守卫的两处可绕路径、
+N-4 表头悬空测试名）**全在文档/守卫层**，不进产物、不挂断言、不改变任何结论，属建议收尾项。
+其中 **N-1 值得优先收**（它是「行 A 指向行 B、B 否认 A」的自相矛盾，最易误导下一个读者）；
+N-2 因 `design.md` 是权威稿，建议一并加收回注记。

@@ -26,7 +26,7 @@
 | **BLOCKER-1** | `interception_loose` 729/729 **零 loose beat** ⇒ Q3 的「够」是**假能力边界** | §2/§4.4.2 降级为「按成因分别声明覆盖」+ 新增守卫 |
 | **BLOCKER-2** | `ball.loose` **把重开准备期算作松散球** ⇒ 初版 43%/27% **口径失真** | 判据定死 `loose && !in_restart_window`（§4.4.1） |
 | MAJOR-1 | 措辞守卫与 provenance 的 `add!("Phase", …)` **自相矛盾** | §4.1 定死扫描范围/剥注释/相容规则 |
-| MAJOR-2 | `close_down` **不恒追球**（37% 在追人） | §4.4.3 措辞纪律 + spec scenario |
+| MAJOR-2 | `close_down` **不恒追球**（依据 = **靶点按 `TransitionSource` 分流**） | §4.4.3 措辞纪律 + spec scenario。⚠️ **实现期更正**：原载的「37% 在追人」（188/513）两层都不成立——归一化/世界坐标混用 + `close_down_stop` 打不到靶点（实测 513 个**全部朝球逼近**）。依据已收回为靶点分流本身 |
 | MAJOR-3 | 与 `match-audit`/`diagnosis-runner` **无边界陈述** | §7 显式划界 |
 
 **两条 BLOCKER 均由本人 30 seed 独立复现确认**（不采信转述）。

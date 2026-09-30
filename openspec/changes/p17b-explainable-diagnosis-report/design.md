@@ -234,7 +234,20 @@ phase 判据目前**没有**可用的观测依据。
 
 `compute_mover_candidates` 里 `close_down` 的靶点按 `TransitionSource` 分流：
 `Tackle` → `st.ball_pos`（追球）；**`SaveCaught` → `attacking_forward(..)`（追人）**。
-实测（8 seed）**188/513（37%）** 的 `close_down` 终点距球 > 5.25 m。
+
+> ⚠️ **实现期更正（审阅轮 2 实测，2026-09-30）**：本节的**证据句**
+> 「实测（8 seed）188/513（37%）的 `close_down` 终点距球 > 5.25 m」**已被推翻**，分两层：
+> ① 数值：`188/513` 是**归一化**距离直接与 `5.25` 比得到的（单位混用），世界坐标真值 **168/513**；
+> ② **更重的是因果链**：`close_down_stop` 只推进 `d − CLOSE_DOWN_STOP_DIST`（≈2 m）、
+> **打不到靶点** ⇒ **远端球员的 mover 终点天然离球远**，与「追的是不是人」无关。
+> 实测 8 seed 的 513 个 `close_down` **全部朝球逼近**（靠近 513 / 远离 0）；
+> 且 `SaveCaught` 分流只占 **9.9%**（30 seed 215/2162），不是 37%。
+>
+> **结论与纪律不变**（`close_down` 不恒为追球 ⇒ 不得与 `chase` 并称），但**依据**只能是
+> **靶点分流本身**（上一段的源码事实），**不得**引「距球远」。
+> 实现侧三处引用已收回（`evidence.rs` 的 `MoverTarget` 行 / `reasons.rs` 的 `WORDING_RULES` /
+> 入口测试的 doc），由 `pursuit_roles_are_classified_never_merged` 的 doc 与
+> `reasons.rs` 的 `WORDING_RULES` 承载。
 
 ⇒ **措辞纪律**：**不得**把 `chase` 与 `close_down` 并称「追球者」。
 `chase` 的靶点恒为球（可称追球）；`close_down` 须**按来源分类**后再命名。
