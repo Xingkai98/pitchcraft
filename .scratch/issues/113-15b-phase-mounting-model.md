@@ -1,7 +1,7 @@
 # Grill Design: #15B phase 挂载模型
 
 - Type: design
-- Status: draft（**结论已成型，待用户 grill 确认**；确认前不写实现代码）
+- Status: resolved（**全部裁定完毕，无待决项**；见文末 §8.4。其下游 gate（#116）已给出**负**结论）
 - Created: 2026-09-27
 - GitHub issue: https://github.com/Xingkai98/pitchcraft/issues/113（`wayfinder:grilling`）
 - 关联：`#15B`（暂停）、`#16`、`openspec/changes/p15-match-behavior-observation/`、

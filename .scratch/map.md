@@ -63,7 +63,7 @@
 > 且抓到 `window_*` 三条对 `final_third` 的 0.966 是**同义反复**（leave-one-out 后 → 0.510）。
 > ⇒ **#16 + #124 合读：空间（#16）与意图（#124）两条路都试过、都不够**——
 > phase 判据目前**没有**可用的观测依据（见 roadmap §5.1/§5.2）。
-> **当前 frontier 待用户裁定**：#15B（须先拍板 §4.5 的 5 项）或 #17B。
+> **当前 frontier 待用户裁定**：**#17B**（可先用 #17A 动作链 + #16 空间 + #124 意图，暂不含 phase）或 #15B。
 > **#15B 暂停**（#113：`attacking_transition` 是 team-state）；**#113 已全部裁定**（无待决项）。
 > 权威路线：`.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3–§4.5、§5。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
@@ -102,8 +102,11 @@
     - 已能可靠输出 `ControlFact`、`PossessionEpisode`、`RestartSequence`、contest、结束原因和事件归属；正式事件流保持不变。
     - 300 seed × 90 分钟验证：331,966 facts、26,429 episodes、14,476 restarts、0 gaps；`verify.sh` 全绿。
   - **#15B PhaseAnnotator：⏸ 暂停（2026-09-27）**——前置有两块：
-    [★ #113](issues/113-15b-phase-mounting-model.md)（挂载模型，**结论已定**）
-    + [★ #116](issues/116-team-local-spatial-features.md)（空间特征与 phaseability gate，**下一步**）。
+    [★ #113](issues/113-15b-phase-mounting-model.md)（挂载模型，**已全部裁定**，无待决项）
+    + [★ #116](issues/116-team-local-spatial-features.md)（空间特征与 phaseability gate，✅ **已完成** 2026-09-29，PR #123）
+    + [★ #124](issues/124-intent-observations.md)（意图观测，✅ **已完成** 2026-09-30，PR #127）。
+    - **前置已闭合、结论为负**：空间（#16）与意图（#124）**两条路都不够** ⇒
+      #15B 的 phase 判据目前**没有**可用的观测依据；重开的前提是**先找到新的观测来源**。
     - 第一版只在已确认的 possession episode 内标注 `build_up / progression / final_third / attacking_transition / unknown`。
     - 定位球 delivery 留在 `RestartSequence`，首次明确开放控制前不得伪装成 possession phase。
     - 契约与约束见 `.scratch/notes/match-behavior-observation-design.md` §11；`Phase`/`PhaseProvenance`
@@ -189,10 +192,11 @@
   - 问题：诊断信息如何以 debug overlay、逐球权暂停和事件链方式进入 viewer，而不污染正式演绎协议？
   - 产物：可视化诊断模式；正式 viewer 行为保持兼容。
 
-> **执行顺序（2026-09-28 定）**：`#17A 立即分析` ✅ 已完成 → **`#16 空间特征`（含 phaseability gate）← 当前**
-> → `#15B`（暂停中，待 #16 的 gate 结论）→ `#17B 可解释报告` → `#18 行为验证` → `#19 最小生成改造`。
-> （原序列 `#15B → #16` 已因 #113 改为 `#16 → #15B`。）不要等 #15B/#16 全部完成才开始分析；
-> 也不要在 #17A 仅凭场均统计直接调参数。
+> **执行顺序（2026-09-30 更新）**：`#17A` ✅ → `#113` ✅ 已裁定 → `#16` ✅（PR #123）
+> → `#124` ✅（PR #127）→ **`#17B 可解释报告` ← frontier（待用户裁定）** → `#18 行为验证` → `#19 最小生成改造`。
+> `#15B` **暂停中**——其前置（#116 的 gate）已给出且为**负**：空间与意图两条路都不够，
+> 重开须先找到新观测来源。（原序列 `#15B → #16` 已因 #113 改为 `#16 → #15B`。）
+> 不要等 #15B/#16 全部完成才开始分析；也不要在 #17A 仅凭场均统计直接调参数。
 
 > 当前实施路线：P4（并行节拍核心）✅ 已完成；**P5（队形公式 + 攻防转换 + micro-motion）实施中**（`openspec/changes/p5-team-shape-and-transition/`）；P6（定位球 + 犯规规则层）已立项待规划；P7（战术决策系统）已立项，建议 P5→P6→P7 顺序。
 
