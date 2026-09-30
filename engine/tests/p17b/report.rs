@@ -322,9 +322,6 @@ pub struct Aggregates {
     pub by_end_reason: BTreeMap<String, EndReasonGroup>,
     pub by_contest_start: BTreeMap<String, ContestGroup>,
     pub by_exception: BTreeMap<String, ExceptionGroup>,
-    /// 与 `observe` 同序的「(命中的异常类, 是否可信)」——供第二趟按收录结果补 `kept`。
-    /// **不进产物**（内部簿记）。
-    pub exc_index: Vec<(Vec<&'static str>, bool)>,
 }
 
 impl Aggregates {
@@ -379,7 +376,6 @@ impl Aggregates {
                 g.incoherent += 1;
             }
         }
-        self.exc_index.push((exc.to_vec(), coherent));
     }
 }
 

@@ -475,21 +475,18 @@ pub fn card_of(
     windows: &[RestartWindow],
     seed: u64,
     ep: &PossessionEpisode,
-    bad_indexes: &mut usize,
 ) -> EpisodeCard {
     let end_t = ep.end_t.map(|t| t.value);
-    let mut chain = action_chain(dm, ep, bad_indexes);
+    // ⚠️ 越界计数**每张卡自己从 0 起**（本函数曾接收一个共享累加器：那样每张卡记的是
+    // 「到本段为止的累计值」，读起来却像「本段的越界数」——本仓「结论对但机制错」的又一形态）。
+    let mut bad_indexes = 0usize;
+    let chain = action_chain(dm, ep, &mut bad_indexes);
     let closing = closing_contest_fact(dm, ep);
     // 收束侧事实的成因：`contest_started` 的 detail（本 change 只报事件级转换）。
     let contest_start = closing.and_then(|(_, f)| match f.detail {
         Some(ControlFactDetail::ContestStart(r)) => Some(r),
         _ => None,
     });
-    // 「上一段怎么结束 → 这一段怎么开始」：链尾的动作 token 即上一段的收束动作。
-    if chain.len() > 64 {
-        // 诊断卡不截断链（可回放性要求完整），但这里保留一处显式的位置：
-        // 若将来为可读性截断，必须同时给出被截断的子段定位。
-    }
     let pursuit = if let Some(reason) = contest_start {
         let runs = loose_runs(dm, windows, (ep.start_t.value, end_t));
         if runs.is_empty() {
@@ -514,12 +511,12 @@ pub fn card_of(
         end_reason: ep.end_reason,
         coherent: dm.is_coherent() && dm.gap_count() == 0,
         gap_count: dm.gap_count(),
-        chain: std::mem::take(&mut chain),
+        chain,
         tail: tail_window(dm, ep.team, end_t),
         pursuit,
         contest_start,
         closing_fact_index: closing.map(|(i, _)| i),
-        bad_event_indexes: *bad_indexes,
+        bad_event_indexes: bad_indexes,
     }
 }
 
@@ -556,9 +553,9 @@ pub struct MatchCards {
 pub fn cards_of(dm: &DiagnosticMatch, seed: u64) -> MatchCards {
     let windows = restart_windows(dm);
     let mut out = MatchCards::default();
-    let mut bad = 0usize;
     for ep in &dm.possession_episodes {
-        let card = card_of(dm, &windows, seed, ep, &mut bad);
+        let card = card_of(dm, &windows, seed, ep);
+        out.bad_event_indexes += card.bad_event_indexes;
         if let PursuitView::Visible { runs, .. } = &card.pursuit {
             out.loose_runs += runs.len();
             for r in runs {
@@ -569,7 +566,6 @@ pub fn cards_of(dm: &DiagnosticMatch, seed: u64) -> MatchCards {
         }
         out.cards.push(card);
     }
-    out.bad_event_indexes = bad;
     out
 }
 

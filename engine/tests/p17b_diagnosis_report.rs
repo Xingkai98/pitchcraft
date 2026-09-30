@@ -365,10 +365,9 @@ fn contest_coverage_guard_has_discriminating_power() {
 fn invisible_causes_are_named_not_left_blank() {
     let dm = observe(1);
     let windows = restart_windows(&dm);
-    let mut bad = 0usize;
     let mut checked = 0usize;
     for ep in &dm.possession_episodes {
-        let card = card_of(&dm, &windows, 1, ep, &mut bad);
+        let card = card_of(&dm, &windows, 1, ep);
         if let PursuitView::Invisible { reason, contest_reason } = &card.pursuit {
             checked += 1;
             assert!(
@@ -391,7 +390,6 @@ fn invisible_causes_are_named_not_left_blank() {
         }
     }
     assert!(checked > 0, "seed 1 上应有「追逐不可见」的卡（防空转）");
-    assert_eq!(bad, 0, "事件下标越界数必须为 0");
 }
 
 // ============================== 松散球判据（反 BLOCKER-2） ==============================
@@ -607,9 +605,11 @@ fn replay_locators_resolve_to_real_events_with_consistent_time() {
         let dm = observe(seed);
         let windows = restart_windows(&dm);
         for (i, ep) in dm.possession_episodes.iter().enumerate() {
-            let mut bad = 0usize;
-            let card = card_of(&dm, &windows, seed, ep, &mut bad);
-            assert_eq!(bad, 0, "seed {seed} episode {i}：事件下标越界");
+            let card = card_of(&dm, &windows, seed, ep);
+            assert_eq!(
+                card.bad_event_indexes, 0,
+                "seed {seed} episode {i}：事件下标越界"
+            );
             for n in &card.chain {
                 let e = dm
                     .events
@@ -797,8 +797,7 @@ fn action_tokens_match_the_p17a_reference() {
     let windows = restart_windows(&dm);
     let mut checked = 0usize;
     for ep in &dm.possession_episodes {
-        let mut bad = 0usize;
-        let card = card_of(&dm, &windows, 1, ep, &mut bad);
+        let card = card_of(&dm, &windows, 1, ep);
         for node in &card.chain {
             let e = &dm.events[node.event_index];
             // P17A 的 `action_of` 语义：同一事件 → 同一动作类别（这里核的是**映射表**）。
@@ -1033,11 +1032,10 @@ fn every_p17a_anomaly_rule_is_declared_in_the_per_episode_map() {
 fn observation_credibility_gate_annotates_but_keeps() {
     let dm = observe(1);
     let windows = restart_windows(&dm);
-    let mut bad = 0usize;
     let mut cards: Vec<EpisodeCard> = dm
         .possession_episodes
         .iter()
-        .map(|ep| card_of(&dm, &windows, 1, ep, &mut bad))
+        .map(|ep| card_of(&dm, &windows, 1, ep))
         .collect();
     assert!(cards.iter().all(|c| c.coherent), "真实 seed 1 的卡应全为可信");
 
