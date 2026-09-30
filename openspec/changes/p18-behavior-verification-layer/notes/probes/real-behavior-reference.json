@@ -3,8 +3,10 @@
     "dataset": "SkillCorner opendata",
     "license": "MIT",
     "games": 20,
-    "competition": "AUS - A-League - 2024/2025",
-    "caliber": "real-behavior-probe.mjs C1–C6"
+    "competition": [
+      "AUS - A-League - 2024/2025"
+    ],
+    "caliber": "real-behavior-probe.mjs C1–C8"
   },
   "perGame": [
     {
@@ -356,7 +358,12 @@
         6.900000000000546
       ],
       "reactNoneShare": 0.19014084507042253,
-      "chainsPerGame": 252
+      "chainsPerGame": 252,
+      "shotEndChains": 21,
+      "shotEndChainShare": 0.08333333333333333,
+      "passFailRate": 0.16367980884109917,
+      "offside": 2,
+      "zeroDurShare": 0.21793534932221065
     },
     {
       "id": "1886347",
@@ -712,7 +719,12 @@
         1.199999999999818
       ],
       "reactNoneShare": 0.15714285714285714,
-      "chainsPerGame": 263
+      "chainsPerGame": 263,
+      "shotEndChains": 20,
+      "shotEndChainShare": 0.07604562737642585,
+      "passFailRate": 0.13732394366197184,
+      "offside": 2,
+      "zeroDurShare": 0.23232323232323232
     },
     {
       "id": "1899585",
@@ -1125,7 +1137,12 @@
         0.0999999999994543
       ],
       "reactNoneShare": 0.13793103448275862,
-      "chainsPerGame": 288
+      "chainsPerGame": 288,
+      "shotEndChains": 15,
+      "shotEndChainShare": 0.052083333333333336,
+      "passFailRate": 0.18218623481781376,
+      "offside": 4,
+      "zeroDurShare": 0.2505567928730512
     },
     {
       "id": "1925299",
@@ -1497,7 +1514,12 @@
         0.6999999999998181
       ],
       "reactNoneShare": 0.21951219512195122,
-      "chainsPerGame": 271
+      "chainsPerGame": 271,
+      "shotEndChains": 20,
+      "shotEndChainShare": 0.07380073800738007,
+      "passFailRate": 0.14473684210526316,
+      "offside": 5,
+      "zeroDurShare": 0.2314990512333966
     },
     {
       "id": "1927964",
@@ -1827,7 +1849,12 @@
         0.0999999999994543
       ],
       "reactNoneShare": 0.19708029197080293,
-      "chainsPerGame": 240
+      "chainsPerGame": 240,
+      "shotEndChains": 24,
+      "shotEndChainShare": 0.1,
+      "passFailRate": 0.09437751004016064,
+      "offside": 2,
+      "zeroDurShare": 0.2026315789473684
     },
     {
       "id": "1953632",
@@ -2128,7 +2155,12 @@
         0.1999999999998181
       ],
       "reactNoneShare": 0.2288135593220339,
-      "chainsPerGame": 233
+      "chainsPerGame": 233,
+      "shotEndChains": 9,
+      "shotEndChainShare": 0.03862660944206009,
+      "passFailRate": 0.12254335260115606,
+      "offside": 4,
+      "zeroDurShare": 0.21961184882533197
     },
     {
       "id": "1959846",
@@ -2477,7 +2509,12 @@
         0.1999999999989086
       ],
       "reactNoneShare": 0.2127659574468085,
-      "chainsPerGame": 261
+      "chainsPerGame": 261,
+      "shotEndChains": 22,
+      "shotEndChainShare": 0.0842911877394636,
+      "passFailRate": 0.1656441717791411,
+      "offside": 2,
+      "zeroDurShare": 0.25158562367864695
     },
     {
       "id": "1986691",
@@ -2801,7 +2838,12 @@
         0.1000000000003638
       ],
       "reactNoneShare": 0.25,
-      "chainsPerGame": 239
+      "chainsPerGame": 239,
+      "shotEndChains": 20,
+      "shotEndChainShare": 0.08368200836820083,
+      "passFailRate": 0.13577023498694518,
+      "offside": 4,
+      "zeroDurShare": 0.25792349726775954
     },
     {
       "id": "1996435",
@@ -3165,7 +3207,12 @@
         0.1999999999998181
       ],
       "reactNoneShare": 0.2088607594936709,
-      "chainsPerGame": 270
+      "chainsPerGame": 270,
+      "shotEndChains": 23,
+      "shotEndChainShare": 0.08518518518518518,
+      "passFailRate": 0.1560364464692483,
+      "offside": 4,
+      "zeroDurShare": 0.26666666666666666
     },
     {
       "id": "1996436",
@@ -3510,7 +3557,12 @@
         1.8999999999996362
       ],
       "reactNoneShare": 0.19047619047619047,
-      "chainsPerGame": 267
+      "chainsPerGame": 267,
+      "shotEndChains": 19,
+      "shotEndChainShare": 0.07116104868913857,
+      "passFailRate": 0.2,
+      "offside": 2,
+      "zeroDurShare": 0.2824427480916031
     },
     {
       "id": "2006229",
@@ -3873,7 +3925,12 @@
         0.2000000000007276
       ],
       "reactNoneShare": 0.15172413793103448,
-      "chainsPerGame": 263
+      "chainsPerGame": 263,
+      "shotEndChains": 11,
+      "shotEndChainShare": 0.04182509505703422,
+      "passFailRate": 0.1602787456445993,
+      "offside": 1,
+      "zeroDurShare": 0.24514811031664965
     },
     {
       "id": "2006363",
@@ -4218,7 +4275,12 @@
         3.4000000000005457
       ],
       "reactNoneShare": 0.19463087248322147,
-      "chainsPerGame": 251
+      "chainsPerGame": 251,
+      "shotEndChains": 15,
+      "shotEndChainShare": 0.05976095617529881,
+      "passFailRate": 0.14437869822485208,
+      "offside": 1,
+      "zeroDurShare": 0.2551229508196721
     },
     {
       "id": "2007448",
@@ -4524,7 +4586,12 @@
         0.0999999999994543
       ],
       "reactNoneShare": 0.20930232558139536,
-      "chainsPerGame": 226
+      "chainsPerGame": 226,
+      "shotEndChains": 17,
+      "shotEndChainShare": 0.0752212389380531,
+      "passFailRate": 0.1595744680851064,
+      "offside": 3,
+      "zeroDurShare": 0.2549246813441483
     },
     {
       "id": "2007721",
@@ -4863,7 +4930,12 @@
         2
       ],
       "reactNoneShare": 0.2097902097902098,
-      "chainsPerGame": 250
+      "chainsPerGame": 250,
+      "shotEndChains": 14,
+      "shotEndChainShare": 0.056,
+      "passFailRate": 0.16646989374262103,
+      "offside": 2,
+      "zeroDurShare": 0.22314911366006257
     },
     {
       "id": "2010085",
@@ -5166,7 +5238,12 @@
         1.8000000000010914
       ],
       "reactNoneShare": 0.21374045801526717,
-      "chainsPerGame": 224
+      "chainsPerGame": 224,
+      "shotEndChains": 8,
+      "shotEndChainShare": 0.03571428571428571,
+      "passFailRate": 0.1507177033492823,
+      "offside": 2,
+      "zeroDurShare": 0.23315508021390374
     },
     {
       "id": "2011166",
@@ -5520,7 +5597,12 @@
         0.2000000000007276
       ],
       "reactNoneShare": 0.12244897959183673,
-      "chainsPerGame": 258
+      "chainsPerGame": 258,
+      "shotEndChains": 16,
+      "shotEndChainShare": 0.06201550387596899,
+      "passFailRate": 0.20952380952380953,
+      "offside": 5,
+      "zeroDurShare": 0.27212681638044917
     },
     {
       "id": "2013725",
@@ -5957,7 +6039,12 @@
         2
       ],
       "reactNoneShare": 0.18274111675126903,
-      "chainsPerGame": 309
+      "chainsPerGame": 309,
+      "shotEndChains": 19,
+      "shotEndChainShare": 0.061488673139158574,
+      "passFailRate": 0.21148825065274152,
+      "offside": 8,
+      "zeroDurShare": 0.2678958785249458
     },
     {
       "id": "2015213",
@@ -6352,7 +6439,12 @@
         4.799999999999272
       ],
       "reactNoneShare": 0.17791411042944785,
-      "chainsPerGame": 293
+      "chainsPerGame": 293,
+      "shotEndChains": 18,
+      "shotEndChainShare": 0.06143344709897611,
+      "passFailRate": 0.18342391304347827,
+      "offside": 3,
+      "zeroDurShare": 0.2548131370328426
     },
     {
       "id": "2016236",
@@ -6818,7 +6910,12 @@
         2.399999999999636
       ],
       "reactNoneShare": 0.17757009345794392,
-      "chainsPerGame": 330
+      "chainsPerGame": 330,
+      "shotEndChains": 19,
+      "shotEndChainShare": 0.05757575757575758,
+      "passFailRate": 0.21992709599027946,
+      "offside": 3,
+      "zeroDurShare": 0.25443169968717416
     },
     {
       "id": "2017461",
@@ -7183,7 +7280,12 @@
         0.1999999999998181
       ],
       "reactNoneShare": 0.21511627906976744,
-      "chainsPerGame": 269
+      "chainsPerGame": 269,
+      "shotEndChains": 17,
+      "shotEndChainShare": 0.06319702602230483,
+      "passFailRate": 0.20948012232415902,
+      "offside": 3,
+      "zeroDurShare": 0.25838509316770186
     }
   ],
   "cross": {
