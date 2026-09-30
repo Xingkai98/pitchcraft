@@ -1699,10 +1699,19 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
     //
     // 1. **候选 = note 全文里任何「英文标识符形态」的词**（≥3 个字母，允许 `.`/`_`），
     //    **不做形态筛选**——筛选本身就会变成豁免。
-    // 2. **放行只有一条路：显式白名单**。白名单分三张，都由人**明确写下**：
-    //    `PRODUCT_KEYS`（本产物真有的键，**从 JSON 里自动抽，且只抽键不抽值**）、
-    //    `SOURCE_SIDE_OK`（须回原对象读的字段）、`PROSE_OK`（散文词 / 引用名 / 闭集取值）。
-    //    ⇒ 想让一个词过，只能**显式加**——那是一次有意识的动作，而不是碰巧逃逸。
+    // 2. **放行只有一条路：显式白名单**。白名单分**三张**，都由人**明确写下**：
+    //    - **产物键**：`json_keys`，由 [`json_object_keys`] **从 JSON 里自动抽**
+    //      （只认 `"k":` 形态 ⇒ **键值分离**，值不会混进来）——**不需人工维护**；
+    //    - `SOURCE_SIDE_OK`：须回原对象读的字段（**故意**不进产物）；
+    //    - `PROSE_OK`：散文词 / 引用名（**只放词，不放取值**）；
+    //    - `VALUE_OK`：产物里会出现的**取值**（note 引用它们是「产物里会出现这个取值」，
+    //      不是字段）。这一档**每个词都断言真的出现在产物里**——否则它就是个豁免后门。
+    //    ⇒ 想让一个词过，只能**显式加**到某一张名单——那是一次有意识的动作，
+    //    而不是碰巧逃逸（轮 4 的教训：形态筛选 = 豁免）。
+    //    ⚠️ 轮 5 的 P2：初版把**取值**（`kickoff` 等）直接塞进了 `PROSE_OK`，
+    //    于是「本层给 `kickoff` **字段**」这种**把取值当字段**的写法被**成文允许**了
+    //    （轮 3 的 `M-NOTE-VALUE` 从「碰巧绕」升格成「明示放行」）。现拆成 `VALUE_OK`
+    //    并逐词核「它真的在产物里」。
     let json_keys = json_object_keys(&json);
     assert!(
         json_keys.len() > 50,
@@ -1713,10 +1722,6 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
         // 引用（其它 change / 规则号 / 章节）——它们不是落点。
         "P17A", "P16", "P124", "P17B",
         "A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10",
-        // 产物里会出现的**闭集取值**（note 引用它们是指「产物里会出现这个取值」）。
-        "pass", "kickoff", "restart_control", "long_dwell", "empty_possession",
-        "instant_contest", "shot_rebound_end", "tail_p90", "stride", "all",
-        "all_canary", "chase_class", "presence_class", "duration_s",
         // 散文里的英文技术词（不是字段名）。
         "episode", "episodes", "chain", "card", "cards", "note", "notes",
         "raw", "in", "the", "and", "of",
@@ -1727,6 +1732,28 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
         // 松散球判据里的两个概念词（不是产物字段）。
         "loose", "beat", "beats",
     ];
+    // 产物里会出现的**取值**（note 可引用，但**必须真的在产物里**——否则是后门）。
+    // ⚠️ **这一档实测得出**：把十行 note 里所有反引号 token 抽出来、
+    // 与产物 JSON 的**取值**集合求交，得到的正是下面这 9 个（其余的
+    // `chain` / `closing_fact_index` / `duration_s` / `event_indexes` / `start_reason`
+    // / `contest_start` / `contest_window` 是**键**，走 `json_keys` 那一档）。
+    // 每个都断言真在产物里（见下），名不副实的条目会当场红。
+    const VALUE_OK: &[&str] = &[
+        "empty_possession",   // 异常类取值
+        "instant_contest",
+        "long_dwell",
+        "shot_rebound_end",
+        "interception_loose", // 争抢成因取值
+        "restart_control",    // EpisodeStartReason 取值
+        "pass+",              // 动作链 token
+    ];
+    for v in VALUE_OK {
+        assert!(
+            json.contains(&format!("\"{v}\"")),
+            "`VALUE_OK` 里的 `{v}` **不在产物中**——这一档的**全部意义**是「核过它真在产物里」，\
+             名不副实的条目就是豁免后门。要么从名单删掉，要么改 note"
+        );
+    }
     let mut checked = 0usize;
     let mut violations: Vec<String> = Vec::new();
     for row in ANOMALY_COVERAGE {
@@ -1734,7 +1761,8 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
             checked += 1;
             let ok = json_keys.contains(&t)
                 || SOURCE_SIDE_OK.contains(&t.as_str())
-                || PROSE_OK.contains(&t.as_str());
+                || PROSE_OK.contains(&t.as_str())
+                || VALUE_OK.contains(&t.as_str());
             if !ok {
                 violations.push(format!("{} → `{}`", row.rule, t));
             }
@@ -1749,39 +1777,53 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
          而不是靠某个形态筛选碰巧逃逸）。"
     );
     // 防空转：候选数必须够多，否则「一个词都没扫到」也会让上面判绿。
+    // 实测当前十行 note 上有 **32** 个候选（轮 5 核过；A7 的 note 一个候选都没有，
+    // 因为它只写中文说明与已登记的字段）。下限取 **25**（留 22% 余量）：
+    // 它要挡的是「扫描面塌成空」，不是「略少几个词就红」。
     assert!(
-        checked > 30,
+        checked > 25,
         "核对到的 identifier 太少（{checked}）——扫描面可能已塌成空（本仓的空转形态）"
     );
 }
 
-/// **「距球远 ⇒ 追人」这个被推翻的归因不得在任何地方复活**（审阅轮 4 的 P2）。
+/// **「距球远 ⇒ 追人」这个被推翻的归因不得在任何地方复活**（审阅轮 4 的 P2 / 轮 5 的证伪）。
 ///
-/// ## 为什么值得一条**全仓**扫描守卫
+/// ## 为什么值得一条**跨文件**扫描守卫
 ///
 /// 这处归因在实现期被写了**四份拷贝**（`evidence.rs` / `reasons.rs` / 入口测试 doc /
-/// `.scratch` 的侦察 note，外加 `design.md`/`tasks.md` 的引注）。
-/// 收三轮才收干净：轮 2 抓两处、轮 3 抓第三处、轮 4 抓第四处（侦察 note，零注记）。
-/// **每次都是「收了几处就以为收完了」**——所以判据不能靠人工 grep，要落成断言。
+/// 侦察 note，外加 `design.md`/`tasks.md` 的引注）。收这处花了**三轮**：
+/// 轮 2 抓两处、轮 3 抓第三处、轮 4 抓第四处（侦察 note，零注记）。每次都是
+/// 「收了几处就以为收完了」——所以判据不能靠人工 grep。
 ///
-/// ## 判据
+/// ## ⚠️ 本守卫的第一版**被证伪过**（轮 5），这里记下它的错法
 ///
-/// 在**报告逻辑 + 入口测试 + 侦察 note** 的正文里，若出现被推翻的**证据数字**
-/// （`188/513` / `168/513`）或断言句（`⇒ 它们在**追人**`），
-/// **必须同段出现更正标记**（`不成立` / `推翻` / `更正` / `单位` / `打不到靶点`）。
-/// 即：**旧数字可以留（历史记录），但必须带着它的更正**。
+/// 初版判据是**单行**合取：`line.contains("188/513") && line.contains("追人")`——
+/// 而**中文散文会折行**：侦察 note 的原文把 `188/513` 与 `⇒ 它们在**追人**` 放在**相邻两行**，
+/// `tasks.md` 的原文更是只有 `37% 在追人`（**根本没有分数**）。
+/// 实测：把三份文档用 `git checkout` 还原成修复前文本，**四处里只有 `design.md` 一处判红**。
+/// ⇒ 守卫被**校准到了「修复后的单行改写形」**，而不是**错误本身**——
+/// 正是本 change 反复记的 `[[conclusion-right-mechanism-wrong]]`。
+///
+/// ## 现在的判据（按**段落块**，不按行）
+///
+/// 1. 把每个源文件按**空行**切成段落块（Markdown 的 bullet / 表格行 / 引用块各自成块）；
+/// 2. 一个块里**同时**出现 **距离证据**（`5.25` / `188/513` / `168/513` / `37%`）
+///    与 **推论语**（`追人`）⇒ 该块记一次「复活命中」；
+/// 3. 命中块里**必须**出现**更正标记**（`不成立`/`推翻`/`更正`/`单位`/`打不到靶点`/`归一化`）。
+///
+/// 判据 2 的两半**都不可省**：只查「追人」会误伤（`reasons.rs` 讲纪律时也提「追人」）；
+/// 只查距离数字会误伤（`evidence.rs` 讲 `close_down_stop` 时也提距离）。
+/// **两者同现**才是那处被推翻的归因。
 #[test]
 fn retracted_close_down_attribution_is_always_annotated() {
     // 仓库文件在**运行时**读（不用 `include_str!`）：否则改一句文档就会改变
     // `test_source_fingerprint`，把全部落盘产物判成陈旧——指纹应当只跟**判据**走。
-    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../openspec/changes/p17b-explainable-diagnosis-report");
-    let design = std::fs::read_to_string(root.join("design.md")).expect("读 design.md");
-    let tasks_doc = std::fs::read_to_string(root.join("tasks.md")).expect("读 tasks.md");
-    let recon = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../.scratch/notes/17b-recon-2026-09-30.md"),
-    )
-    .unwrap_or_default();
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let change_dir = root.join("../openspec/changes/p17b-explainable-diagnosis-report");
+    let design = std::fs::read_to_string(change_dir.join("design.md")).expect("读 design.md");
+    let tasks_doc = std::fs::read_to_string(change_dir.join("tasks.md")).expect("读 tasks.md");
+    let recon = std::fs::read_to_string(root.join("../.scratch/notes/17b-recon-2026-09-30.md"))
+        .unwrap_or_default();
     let mut sources: Vec<(&str, &str)> = vec![
         ("p17b/evidence.rs", include_str!("p17b/evidence.rs")),
         ("p17b/reasons.rs", include_str!("p17b/reasons.rs")),
@@ -1790,40 +1832,56 @@ fn retracted_close_down_attribution_is_always_annotated() {
         ("tasks.md", tasks_doc.as_str()),
     ];
     if !recon.is_empty() {
-        // 侦察 note 是**设计依据**且被多处引用——它也必须带着更正（审阅轮 4 的第四处）。
         sources.push((".scratch/notes/17b-recon-2026-09-30.md", recon.as_str()));
     }
-    let mut hits = 0usize;
+
+    // 距离证据（被推翻那条推断的依据）。
+    const DISTANCE_EVIDENCE: &[&str] = &["5.25", "188/513", "168/513", "37%"];
+    // 推论语。
+    const INFERENCE: &str = "追人";
+    // 更正标记（同段内出现任一即可）。
+    const RETRACTED: &[&str] = &["不成立", "推翻", "更正", "单位", "打不到靶点", "归一化"];
+
+    let mut incidents = 0usize;
     for (name, src) in sources {
+        // 按空行切块（相邻非空行同属一块——正是「折行」的形态）。
+        let mut block: Vec<(usize, &str)> = Vec::new();
+        let mut blocks: Vec<Vec<(usize, &str)>> = Vec::new();
         for (i, line) in src.lines().enumerate() {
-            // 只认「作为证据出现」的形态：数字 + 判定语。历史记录本身不算命中。
-            let is_evidence_claim = (line.contains("188/513") || line.contains("168/513"))
-                && (line.contains("追人") || line.contains("37%") || line.contains("32.8%"));
-            if !is_evidence_claim {
+            if line.trim().is_empty() {
+                if !block.is_empty() {
+                    blocks.push(std::mem::take(&mut block));
+                }
+            } else {
+                block.push((i + 1, line));
+            }
+        }
+        if !block.is_empty() {
+            blocks.push(block);
+        }
+        for b in blocks {
+            let text: String = b.iter().map(|(_, l)| *l).collect::<Vec<_>>().join("\n");
+            let has_evidence = DISTANCE_EVIDENCE.iter().any(|m| text.contains(m));
+            if !(has_evidence && text.contains(INFERENCE)) {
                 continue;
             }
-            hits += 1;
-            // 更正标记可以落在**同一行**或**前后两行**（多数写法是下一行起引注）。
-            let lo = i.saturating_sub(2);
-            let hi = (i + 3).min(src.lines().count());
-            let window: String = src.lines().skip(lo).take(hi - lo).collect::<Vec<_>>().join("\n");
-            let annotated = ["不成立", "推翻", "更正", "单位", "打不到靶点", "归一化"]
-                .iter()
-                .any(|m| window.contains(m));
+            incidents += 1;
+            let annotated = RETRACTED.iter().any(|m| text.contains(m));
             assert!(
                 annotated,
-                "`{name}:{}` 出现了被推翻的 `close_down` 归因（188/513 或 168/513 + 追人），\
-                 但相邻三行内**没有**更正标记。可以保留历史记录，但**必须带着它的更正**——\
-                 这处归因在实现期被写了四份拷贝、三轮才收干净（审阅轮 2/3/4）。\n  原文：{}",
-                i + 1,
-                line.trim()
+                "`{name}` 的第 {} 行起这段同时出现了**距离证据**与**「追人」推论**，\
+                 却没有更正标记——这就是那处被推翻的归因（`close_down_stop` 只推进 ≈2 m、\
+                 打不到靶点 ⇒ 远端球员终点**天然离球远**，与「追的是不是人」无关）。\
+                 可以保留历史记录，但**必须带着它的更正**（不成立/推翻/更正/单位/打不到靶点/归一化）。\n\
+                 段落：\n{}",
+                b[0].0, text
             );
         }
     }
-    // 防空转：这份材料里**确实**至少有一处这样的记录（否则本守卫扫了个空）。
+    // 防空转：这份材料里**确实**有至少一处这样的（已带更正）记录。
     assert!(
-        hits > 0,
-        "全仓找不到任何 `188/513` / `168/513` 的证据句——若确实已全部删净，\
+        incidents > 0,
+        "全仓找不到任何「距离证据 + 追人」的段落——若确实已全部删净，\
          请把本守卫连同这段说明一起删掉（而不是让它空转）"
     );
 }
@@ -2078,7 +2136,11 @@ fn json_object_keys(json: &str) -> std::collections::BTreeSet<String> {
     out
 }
 
-/// 抽出一段文本里**全部英文标识符形态的词**（≥3 个字母，允许 `.` 与 `_`）。
+/// 抽出一段文本里**全部英文标识符形态的词**（≥3 个字母，允许 `.`、`_`、`+`、`?`）。
+///
+/// ⚠️ `+` / `?` 必须在字符集里：动作链 token 是 `pass+` / `passI` / `pass?` 这类形态，
+/// 若只收 `[A-Za-z0-9_.]`，`pass+` 会被截成 `pass`——而 `pass` **不是**产物里的取值，
+/// 于是**合法**的 note 会被误判（实测撞到过），而真正要抓的 `pass` 又形同虚设。
 ///
 /// **刻意不做形态筛选**（不区分 CamelCase / snake_case / 全小写）——轮 4 实测：
 /// 用形态筛候选会让**全小写字段名**（`location`，正是本守卫的动机）被跳过，
@@ -2096,12 +2158,14 @@ fn identifier_words(text: &str) -> Vec<String> {
         let start = i;
         while i < bytes.len() {
             let c = bytes[i] as char;
-            if c.is_ascii_alphanumeric() || c == '_' || c == '.' {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '+' || c == '?' {
                 i += 1;
             } else {
                 break;
             }
         }
+        // 只裁**句末的 `.`**：`.` 是句读、不属于标识符；而 `+` / `?` 是**动作 token 的一部分**
+        // （`pass+`），裁掉它会把 token 截成不存在的 `pass`（实测撞到过）。
         let t = text[start..i].trim_end_matches('.');
         // 至少 3 个字母（`in` / `of` / `s` 这类太短，散文高频，不值当核）。
         if t.chars().filter(|c| c.is_ascii_alphabetic()).count() >= 3 {
