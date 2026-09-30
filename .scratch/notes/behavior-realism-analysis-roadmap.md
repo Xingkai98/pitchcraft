@@ -3,7 +3,7 @@
 状态：Active roadmap
 最后更新：2026-09-30
 Canonical map：`.scratch/map.md` 的“行为真实性方向”
-当前 frontier：**#17B 可解释诊断报告**——设计已写（`p17b-explainable-diagnosis-report`），**待 grill**
+当前 frontier：**#17B 可解释诊断报告**——设计已写（`p17b-explainable-diagnosis-report`），**已过 grill、待实现**
 （#16 与 #124 均已完成，见 §5；**两者结论一致：空间＋意图两条路都不足以判 `build_up`/`progression`**）
 （#113 已全部裁定，无待决项）
 
@@ -53,7 +53,7 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
   → #124：接出「意图」类观测并重跑 gate ✅ 已完成（2026-09-30，PR #127）
        ⇒ 与 #16 合读：空间与意图两条路都不够（见 §5.1/§5.2）
   → #15B：Possession 内 PhaseAnnotator ⏸ 暂停（前置已闭合，结论为负 ⇒ 判据仍缺观测依据）
-  → #17B：可解释诊断报告（事件 + 空间 + 意图；**不含 phase**）  ← frontier（设计已写，待 grill）
+  → #17B：可解释诊断报告（事件 + 空间 + 意图；**不含 phase**）  ← frontier（设计已过 grill，待实现）
   → #18：行为真实性 L3 验证层
   → #19：最小生成机制改造
   → 前后行为基线与真实比赛对照
@@ -366,7 +366,7 @@ team `attack`/`defend` + `transition_active`，与 15B 的 possession phase 闭�
 
 ## 6. #17B → #18 → #19
 
-### #17B 可解释诊断报告（设计已写 2026-09-30，**待 grill**）
+### #17B 可解释诊断报告（设计已写 2026-09-30，**已过 grill、待实现**）
 
 change：`openspec/changes/p17b-explainable-diagnosis-report/`；
 侦察：`.scratch/notes/17b-recon-2026-09-30.md`。
@@ -433,7 +433,7 @@ change：`openspec/changes/p17b-explainable-diagnosis-report/`；
 **两者的裁决一致且是负面的**：空间量（#16）与意图信号（#124）**都不足以判** `build_up`/`progression`；
 `final_third` 可判但**靠几何证据、不是战术意图**。
 **当前 frontier = #17B**（2026-09-30 用户拍板）：设计已写（`p17b-explainable-diagnosis-report`），
-**待 grill**。范围**不含 phase**（`#16`/`#124` 双负），且 `#15B` **不再是它的阻塞**。
+**已过 grill、待实现**。范围**不含 phase**（`#16`/`#124` 双负），且 `#15B` **不再是它的阻塞**。
 **#15B** 仍暂停——重开的前提不是「再拍板」，而是**先找到新的观测来源**。
 **#15B 已暂停**（2026-09-27；结论 2026-09-28 定，GH #113 经三轮对抗审阅）——三点理由：
 
@@ -455,7 +455,7 @@ change：`openspec/changes/p17b-explainable-diagnosis-report/`；
 > **本节已被修过五次**（09-26、09-27、09-28、09-30 ×2）：最初让新会话启动 **P17A**（已完成，照做会重跑），
 > 随后改成 **#15B**（其后暂停），再改为 **#16**（#113 已裁定，无待决项），
 > 再改为「#16 与 #124 均已完成，frontier 待用户裁定」，
-> 现改为「**frontier = #17B，设计已写、待 grill**」（2026-09-30 用户拍板）。
+> 现改为「**frontier = #17B，设计已过 grill、待实现**」（2026-09-30 用户拍板）。
 > 每次路线变化都要回来改这里——**这是新会话的第一入口，写错方向代价最大**。
 > （09-30 的教训：修 frontier 时**连着漏了两轮**——第一次只改本文件顶部、漏了本节；
 > 第二次又漏了 **§2 的路线块与 §4.5 的「待拍板 5 项」**（后者与 §4.5 自己的
