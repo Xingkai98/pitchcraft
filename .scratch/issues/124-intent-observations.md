@@ -1,7 +1,7 @@
 # 接出「意图」类观测并重跑 phaseability gate
 
 - Type: research
-- Status: draft（待开展）
+- Status: resolved（2026-09-30；PR #127 已合入。裁决：**仍不够**——见文末「结论」）
 - Created: 2026-09-29
 - GitHub issue: https://github.com/Xingkai98/pitchcraft/issues/124（`wayfinder:research`）
 - Blocked by：P16（GH #121 / PR #123，已合入）
@@ -53,3 +53,24 @@ P16 已指出未净化变量（`build_up` 与 `progression` 在「传球数」�
 ## 边界
 
 不实现 15B；不改跑位/决策逻辑、RNG、正式事件流协议、viewer 正式播放。
+
+## 结论（2026-09-30；PR #127 / merge `6abc5ef`）
+
+**裁决：仍不够。** 意图观测已按本票接出（只读、零引擎行为改动），
+但 `build_up`/`progression` **依旧判不了**。
+
+- 全部**样本充足的非循环**意图特征落在 **0.449–0.546**（|Δ|≤0.06）⇒ 与随机无异；
+- `final_third` 可判，但**靠几何证据**（`forward_m/s`），不是战术意图。
+
+⚠️ **本轮最重要的发现（循环性）**：`window_*` 三条对 `final_third` 的 AUC **0.966** 是**同义反复**
+——非头球射门只由起脚窗口产出，窗口预算 ~1 拍、恰是**射门前一拍**（实测 493/541）。
+**leave-one-out 剔除该拍后 0.966 → 0.510**。⇒ 0.966 不是证据，是定义；实现期曾有守卫在**保护**它。
+
+**给 15B**：`final_third` 若用 `forward_m/s`，须命名为**证据**（如 `GoalwardProgressEvidence`），
+**不得复用 `Phase`**；`build_up`/`progression` 保留 `unknown`。
+
+⇒ **与 P16（GH #116）合读**：空间量（#16）与意图信号（#124）**两条路都试过、都不够**——
+phase 判据目前**没有**可用的观测依据。见 roadmap §5.1/§5.2。
+
+**审阅闭环**：7 轮独立只读审阅（6 轮不放行 → 第 7 轮放行）+ 合入时 3 轮增量复核；
+记录含 agent id 留痕，见 `openspec/changes/p124-intent-observations/REVIEW.md`。

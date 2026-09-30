@@ -58,8 +58,12 @@
 > main/`MODEL_VERSION=7` 上重算）。**#16 已完成（2026-09-29，PR #123）**，裁决 **部分够**：
 > `final_third` 可判（AUC 0.855/0.862），**`build_up`/`progression` 判不了**（0.461/0.431）——
 > 审阅者扫了 21 个空间量，最强非循环量只 0.634 ⇒ **空间量本身不足**。
-> 当前 frontier 是 **#124**：接出「意图」类观测（`shot_setup`/起脚窗口、防守方位置·线路——
-> 引擎内已有、sidecar 没有，与 G1 同模式）→ 重跑 gate。
+> **#124 已完成（2026-09-30，PR #127）**，裁决 **仍不够**：接出「意图」类观测后，
+> `build_up`/`progression` 依旧判不了（非循环意图特征全落在 0.449–0.546）；
+> 且抓到 `window_*` 三条对 `final_third` 的 0.966 是**同义反复**（leave-one-out 后 → 0.510）。
+> ⇒ **#16 + #124 合读：空间（#16）与意图（#124）两条路都试过、都不够**——
+> phase 判据目前**没有**可用的观测依据（见 roadmap §5.1/§5.2）。
+> **当前 frontier 待用户裁定**：#15B（须先拍板 §4.5 的 5 项）或 #17B。
 > **#15B 暂停**（#113：`attacking_transition` 是 team-state）；**#113 已全部裁定**（无待决项）。
 > 权威路线：`.scratch/notes/behavior-realism-analysis-roadmap.md` §4.3–§4.5、§5。
 > 详细执行路线：`.scratch/notes/behavior-realism-analysis-roadmap.md`。
@@ -122,7 +126,7 @@
       见 `.scratch/notes/behavior-realism-analysis-roadmap.md` §4.1–§4.4。
 - `16` **团队与局部空间特征（含 phaseability gate）** ✅ 已完成（2026-09-29；PR #123）
   [★ #116](issues/116-team-local-spatial-features.md)（GH #116 侦察）
-  [★ #124](issues/124-intent-observations.md)（GH #124：接出「意图」观测并重跑 gate ← **下一步**）
+  [★ #124](issues/124-intent-observations.md)（GH #124：接出「意图」观测并重跑 gate ✅ 已完成 2026-09-30，PR #127）
   - Blocked by: `12`, `13`（均已完成）
   - Type: Research
   - 问题：从当前坐标和 beat/off-ball 信息中，第一版可靠计算哪些宽度、纵深、线间距、支援和压力特征？
@@ -138,7 +142,7 @@
     口径以 `ControlFact` 为权威（两种口径使后场起点差 **3 倍**：7.5% vs 23.5%）。
   - **给 15B 的处置**：`final_third` 是**几何证据不是战术意图**，须命名为证据
     （如 `GoalwardProgressEvidence`），**不得复用 `Phase`**；另两档保留 `unknown`。
-  - **下一步**：#124（接出射门窗口/防守线路等「意图」观测 → 重跑 gate）。
+  - **当时的下一步**：#124（接出射门窗口/防守线路等「意图」观测 → 重跑 gate）——**已完成（2026-09-30，PR #127），裁决仍不够**。
   - 产物：OpenSpec change `p16-team-local-spatial-features`（含 `REVIEW.md`：7 轮独立审阅）；**不实现 15B**。
 - `17A` **#15A 行为链基线分析** ✅ 已完成（2026-09-24；2026-09-25 在 main/v7 上重算）
   - Blocked by: `15A`
