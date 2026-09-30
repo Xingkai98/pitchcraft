@@ -78,6 +78,37 @@ phase 判据目前没有可用的观测依据。
 - **WHEN** 报告文档描述其能力
 - **THEN** 它列出结构性不可得项（战术相位 / 传球选择集 / 射门 hazard）
 
+#### Scenario: 覆盖缺口必须按成因分别声明
+- **WHEN** 报告描述「丢球后追逐过程」的可答性
+- **THEN** 它**按 `ContestStartReason` 逐项**声明该成因是否可答，**SHALL NOT** 给出笼统的
+  「可答」；对不可见的成因（如 `interception_loose`）显式记「**追逐不可见**」而非留空
+
+#### Scenario: 覆盖缺口有守卫
+- **WHEN** 有成因未被显式声明覆盖
+- **THEN** 至少一条测试变红（不得只靠文档描述）
+
+### Requirement: 松散球判据必须排除重开准备期
+
+诊断器识别「松散球」时 SHALL **排除重开准备期**（`RestartSequence` 的 `[start_t, taken_t)`），
+因为该期间球钉在发球点、并非比赛中的松散球。
+
+#### Scenario: 判据排除准备期
+- **WHEN** 统计松散球时段或追球者
+- **THEN** 处于重开准备期窗口内的 beat **不被计入**
+
+#### Scenario: 判据有守卫
+- **WHEN** 有人去掉排除条件（用裸 `beat.ball.loose`）
+- **THEN** 至少一条测试变红（该变异须被判红，不得静默通过）
+
+### Requirement: 动作归因不得把「追人」当作「追球」
+
+报告使用 `Mover.action` 做「谁在追球」的归因时，SHALL 区分 `chase`（靶点恒为球）
+与 `close_down`（靶点按 `TransitionSource` 分流，`SaveCaught` 时是**前插球员**）。
+
+#### Scenario: 分类而非并称
+- **WHEN** 报告列出「追球者」
+- **THEN** 它不把 `chase` 与 `close_down` 混为同一类，且 `close_down` 标注其靶点来源
+
 ### Requirement: 不产生通过/失败判定
 
 报告 SHALL 只输出诊断与聚合数字，**SHALL NOT** 产生 pass/fail 或「好/坏」标签。
