@@ -1,0 +1,26 @@
+running 1 test
+
+【① 只 chase/close_down】
+  段数/场      = 20.3        （真实侧 engagement 872/场）
+  段起始距离(m)= 4.62        （真实 start 6.01）
+  段内逼近(m)  = 4.52 (sd 0.44)  （真实 start−end 2.81）
+  段时长(s)    = 2.89        （真实 duration mean 1.98 / p50 1.60）
+  池化逼近 p10=2.85 p50=4.23 p90=5.82（真实 start p50 5.96 / end p50 2.97）
+
+【② 防守方任意动作且逼近>0.5m/拍】
+  段数/场      = 205.0        （真实侧 engagement 872/场）
+  段起始距离(m)= 32.56        （真实 start 6.01）
+  段内逼近(m)  = 6.47 (sd 1.73)  （真实 start−end 2.81）
+  段时长(s)    = 2.62        （真实 duration mean 1.98 / p50 1.60）
+  池化逼近 p10=1.13 p50=3.13 p90=18.17（真实 start p50 5.96 / end p50 2.97）
+
+【③ 防守方任意动作】
+  段数/场      = 347.7        （真实侧 engagement 872/场）
+  段起始距离(m)= 30.36        （真实 start 6.01）
+  段内逼近(m)  = 2.35 (sd 0.85)  （真实 start−end 2.81）
+  段时长(s)    = 2.39        （真实 duration mean 1.98 / p50 1.60）
+  池化逼近 p10=-4.57 p50=1.38 p90=9.08（真实 start p50 5.96 / end p50 2.97）
+test p18_defender_all_runs ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.90s
+

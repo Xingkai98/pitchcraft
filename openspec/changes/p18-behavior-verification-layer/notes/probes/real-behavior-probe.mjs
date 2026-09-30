@@ -44,6 +44,14 @@
 //      ⚠️ 引擎侧 `pass.result` 有 5 个取值（success/contested/intercepted/out/lost），
 //      合并到真实的二分**是一次实质判断**（`contested` 占传球 5.4%，不是稀有值）。
 //
+// [C9] **防守方逼近量**（§7.2a 的实证）：`on_ball_engagement` 行上的
+//      `interplayer_distance_{start,end,min}` —— 这是**「防守方到持球者的距离」的位移轨迹**，
+//      是真实侧唯一一个**覆盖"跑向球"**的量（区别于 engagement 本身的"接触"语义）。
+//      实测：17445 行 **100% 填充**、engaging player **100% 是防守方**（join player_possession 验证）、
+//      `min ≤ end` 成立 17445/17445（内部一致）、**86.2% 的段在逼近**（mean 2.81 m）。
+//      ⚠️ 「测的是到**持球者**的距离」读自列名与语义，**未读 SkillCorner 的 spec PDF**
+//      （hubspot 链接，本仓未取）——如需定案应补读。
+//
 // [C8] **链数本身两侧差 2.56×**（真实 262.9/场 vs 引擎 102.5/场）。
 //      ⇒ 任何「**每条链**的占比 / 每链均值」在两侧**不可直接相减**
 //      （分母本身差 2.56×）。比较前必须换算成「每场总量」或先声明这一点。
@@ -248,6 +256,68 @@ console.log('  直方图(秒:计数，前 12)：'
 console.log(`  P(延迟 == 0) = 0（最小正值 ${Math.min(...allReact).toFixed(2)} s = 1 帧）`);
 console.log(`  P(延迟 <= 0.2s) = ${(allReact.filter((x) => x <= 0.2 + 1e-9).length / allReact.length).toFixed(4)}  ← **池化**`);
 console.log(`  P(延迟 <= 0.2s) 逐场再跨场 = ${mean(per((g) => { const r = g.reactArr; return r.length ? r.filter((x) => x <= 0.2 + 1e-9).length / r.length : NaN; })).toFixed(4)}  ← **主口径（C6）**`);
+
+// ── [C10] 持球时间的压迫覆盖（**自归一化比率——不受分母污染**）──
+{
+  const merge = (rows) => {
+    const s = [...rows].sort((a, b) => a[0] - b[0]); const out = [];
+    for (const r of s) {
+      if (out.length && r[0] <= out[out.length - 1][1]) out[out.length - 1][1] = Math.max(out[out.length - 1][1], r[1]);
+      else out.push([r[0], r[1]]);
+    }
+    return out;
+  };
+  const inter = (a, b) => {
+    let i = 0; let j = 0; let sum = 0;
+    while (i < a.length && j < b.length) {
+      const lo = Math.max(a[i][0], b[j][0]); const hi = Math.min(a[i][1], b[j][1]);
+      if (hi > lo) sum += hi - lo;
+      if (a[i][1] < b[j][1]) i++; else j++;
+    }
+    return sum;
+  };
+  const perGame = loaded.map((g) => {
+    const P = merge(g.pp.map((r) => [+r.frame_start, +r.frame_end]));
+    const E = merge(g.eng.map((r) => [+r.frame_start, +r.frame_end]));
+    const pl = P.reduce((s, x) => s + (x[1] - x[0]), 0);
+    return pl ? inter(P, E) / pl : NaN;
+  });
+  console.log('\n===== [C10] 持球时间被防守方 engagement 覆盖的占比（自归一化）=====');
+  line('覆盖占比              ', perGame);
+  console.log('⚠️ **这个口径不受链数（2.97×）或 possession 数污染**——分子分母都在同一场同一时间轴上。');
+  console.log('   引擎侧对照（`engine-press-probe.rs.txt`，持球拍中有防守方朝持球者逼近>0.3m）= **5.81%**');
+  console.log(`   ⇒ 倍数 ≈ **${(mean(perGame.filter(Number.isFinite)) / 0.0581).toFixed(1)}×**`);
+}
+
+// ── [C9] 防守方逼近量（§7.2a）──
+{
+  const perGame = loaded.map((g) => {
+    const rows = g.eng;
+    const close = []; const dstart = []; const dend = []; let near = 0; let far = 0;
+    for (const r of rows) {
+      const a = Number(r.interplayer_distance_start); const b = Number(r.interplayer_distance_end);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      close.push(a - b); dstart.push(a); dend.push(b);
+      if (a < 2) near++; if (a > 8) far++;
+    }
+    const dur = rows.map((r) => Number(r.duration)).filter(Number.isFinite);
+    return { close: mean(close), dstart: mean(dstart), dend: mean(dend),
+      dur: mean(dur), near: near / dstart.length, far: far / dstart.length, n: dstart.length };
+  });
+  console.log('\n===== [C9] 真实侧「防守方逼近持球者」段（§7.2a）=====');
+  line('段数/场（engagement）  ', perGame.map((x) => x.n));
+  line('段起始距离(m)          ', perGame.map((x) => x.dstart));
+  line('段结束距离(m)          ', perGame.map((x) => x.dend));
+  line('段内逼近(m) start−end  ', perGame.map((x) => x.close));
+  line('段时长(s)              ', perGame.map((x) => x.dur));
+  line('起始 <2 m 的占比       ', perGame.map((x) => x.near));
+  line('起始 >8 m 的占比       ', perGame.map((x) => x.far));
+  console.log('⚠️ 引擎侧对照（`engine-approach-probe.rs.txt`，只 chase/close_down）：');
+  console.log('   段数/场 20.3（**差 43×**）  起始 4.62 m  逼近 4.52 m  时长 2.89 s');
+  console.log('   ⇒ **单次逼近的量级可比（1.1–1.8×），但频次差 43×**（§7.2a 的裁决依据）');
+  const fill = loaded.reduce((a, g) => a + g.eng.length, 0);
+  console.log(`   engagement 总行数 ${fill}（20 场；100% 有 interplayer_distance_start/end/min）`);
+}
 
 // ── 两种链切分规则的对照（口径单点防护）──
 const perStrict = (f) => gamesStrict.map(f);
