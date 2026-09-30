@@ -1,7 +1,7 @@
 # P17B 任务
 
-> ⚠️ **本 change 处于「设计已写、grill 已完成（判『需修改后再审』）、修复已落地」状态。**
-> 除 Slice 0（侦察）外，其余任务**在复审通过 + 用户确认之前不开始**（本仓 OpenSpec 流程）。
+> ✅ **本 change 已进入实现阶段**（设计定稿 + 7 轮 grill 全过 + 用户拍板三条待决策）。
+> Slice 1–4 已完成（25 条默认门全绿 / 2 条 `#[ignore]` 产物门已跑），Slice 5 见 `REVIEW.md`。
 
 ## Slice 0 — 侦察（✅ 已完成 2026-09-30）
 
@@ -26,59 +26,90 @@
 | **BLOCKER-1** | `interception_loose` 729/729 **零 loose beat** ⇒ Q3 的「够」是**假能力边界** | §2/§4.4.2 降级为「按成因分别声明覆盖」+ 新增守卫 |
 | **BLOCKER-2** | `ball.loose` **把重开准备期算作松散球** ⇒ 初版 43%/27% **口径失真** | 判据定死 `loose && !in_restart_window`（§4.4.1） |
 | MAJOR-1 | 措辞守卫与 provenance 的 `add!("Phase", …)` **自相矛盾** | §4.1 定死扫描范围/剥注释/相容规则 |
-| MAJOR-2 | `close_down` **不恒追球**（37% 在追人） | §4.4.3 措辞纪律 + spec scenario |
+| MAJOR-2 | `close_down` **不恒追球**（依据 = **靶点按 `TransitionSource` 分流**） | §4.4.3 措辞纪律 + spec scenario。⚠️ **实现期更正**：原载的「37% 在追人」（188/513）两层都不成立——归一化/世界坐标混用 + `close_down_stop` 打不到靶点（实测 513 个**全部朝球逼近**）。依据已收回为靶点分流本身 |
 | MAJOR-3 | 与 `match-audit`/`diagnosis-runner` **无边界陈述** | §7 显式划界 |
 
 **两条 BLOCKER 均由本人 30 seed 独立复现确认**（不采信转述）。
 
-## Slice 1 — 证据边界与模块骨架
+## Slice 1 — 证据边界与模块骨架（✅ 已完成 2026-09-30）
 
-- [ ] 建 `engine/tests/p17b/`（`evidence.rs` / `episode.rs` / `reasons.rs` / `report.rs`）
-- [ ] 把 design §2 的证据表**落成代码常量**（量 → 字段 → 性质），并加「字段存在」守卫
-- [ ] 复用 P16 接应口径（**形态未定**：`#[path]` include vs 复制 + 源码文本同源守卫；
-      见 design §5 待决策 2——**须先定死再写**，不得在本行预先选定）
+- [x] 建 `engine/tests/p17b/`（`evidence.rs` / `episode.rs` / `reasons.rs` / `report.rs`）
+- [x] 把 design §2 的证据表**落成代码常量**（量 → 字段 → 性质），并加「字段存在」守卫
+      ——落成 **`Locus` 枚举**（字段改名即**编译不过**，比扫文本更强）；
+      守卫 `evidence_table_lists_every_locus_and_every_row_is_readable` +
+      `locus_read_probes_actually_read_the_field`（逐变体证明读探针不空转）
+- [x] 复用 P16 接应口径——**用户拍板：`#[path]` include 活读**（见 design §5 待决策 2）
 
-## Slice 2 — 逐 episode 诊断卡
+### ⚠️ 实现期的两处**实测更正**（读码/转述会错，本 change 的复发形态）
 
-- [ ] 动作链派生（事件序列 → 链）
-- [ ] 结束前窗口（接应 / 压力 / 起脚窗口 / 位置）
-- [ ] **松散球期的追球者**（`chase`/`close_down` mover，含「哪队/谁」）
-- [ ] 四类归因各自的口径与措辞规则（design §4）
+| 处 | 设计/侦察的说法 | 实测（30 seed，探针实跑） | 处置 |
+|---|---|---|---|
+| 1 | 松散球段 = **连续** loose beat 串（准备期拆开后 946 段 / 均长 3.02） | ✅ 复现：严格「流中相邻」= **946 段 / 均长 3.02**；宽松口径（跨过非 loose beat）= **324 段 / 8.83** | 判据定死为**流中相邻**（报告在口径栏并列两口径） |
+| 2 | 「修正后：两队都追 **57.2%** / 只一队 42.8%」 | ❌ **对不上**：`chase`-only 只有 11.3%。但 `chase` **或** `close_down` 在队 = **57.2% / 42.8%**，与设计所载**逐位吻合** | ⇒ 设计那个数是「**任何 mover**」口径。报告**主口径只用 `chase`**（因 `close_down` 会追人），并把三种读法并列 |
 
-## Slice 3 — 报告与产物
+第 2 处的教训与 design §8 记的四处同族：**数字对得上不代表口径对得上**——
+`946` 这个「巧合」被 grill 更正过一次，而 `57.2%` 这个数至今没被核对过口径。
 
-- [ ] L1 逐 episode JSON + Markdown
-- [ ] L2 聚合视图（按结束原因 / 争抢成因 / 归因类别）
-- [ ] 可回放定位（seed / t / episode / event_index）
-- [ ] provenance（沿用 P17A/P16 形态）
+## Slice 2 — 逐 episode 诊断卡（✅ 已完成 2026-09-30）
 
-## Slice 4 — 测试与判据
+- [x] 动作链派生（`episode.rs::action_chain`；`beat` 不计入，同 P17A 口径）
+- [x] 结束前窗口（`tail_window`：末 `TAIL_TICKS=3` 拍 —— 接应 / 压力 / 起脚窗口 / 球位）
+- [x] **松散球期的追球者**（`loose_runs`；`chase` 与 `close_down` **分列**，归属按 `Mover.id`）
+- [x] 四类归因各自的口径与措辞规则（design §4；`reasons.rs` 的 `WORDING_RULES`）
+- [x] 松散球判据 `loose && !in_restart_window`；**`taken_t` 缺失的显式行为**（四档 `WindowEnd`，可审计）
 
-- [ ] 逐字节一致门（复用既有）
-- [ ] **落点守卫**：结论引用的字段必须在公开类型上
-- [ ] **措辞守卫**：源码不含 `Phase` / phase 成员名
-- [ ] 接应口径与 `p16` 逐位同源
-- [ ] 松散球追球者可见（**探针转正为断言**）
-- [ ] 可回放定位有效
-- [ ] 确定性 + 防空转下限 + 缺证据显式 `unknown`
-- [ ] **每个门槛做定向变异，验证有判别力**
+## Slice 3 — 报告与产物（✅ 已完成 2026-09-30）
+
+- [x] L1 逐 episode JSON + Markdown（`report.rs`；card 渲染见 `render_card_md`）
+- [x] L2 聚合视图——**刻意最小**（用户拍板）：只给三个分组计数
+      （按结束原因 / 按争抢成因含**可见vs不可见分子分母** / 按异常类别）
+- [x] 可回放定位（seed / t / episode / event_index；`replay` 块）
+- [x] provenance（`source_commit` + `engine_source_fingerprint` + `test_source_fingerprint`
+      + sidecar schema 指纹 + 口径快照，沿用 P17A/P16 形态）
+- [x] 产物**自带能力边界**：证据边界表 / 结构性不可得 / 覆盖声明 / P17A 异常逐条映射 / 措辞规则
+
+## Slice 4 — 测试与判据（✅ 已完成 2026-09-30；25 条默认门全绿）
+
+- [x] 逐字节一致门（复用既有；`formal_path_is_byte_identical_...`）
+- [x] **落点守卫**：`Locus` 枚举 + `read` 编译期存在性 + 逐变体判别力
+- [x] **措辞守卫**：剥注释后扫三文件；**排除** `report.rs` 的指纹构造点
+- [x] 接应口径**活读** `p16`（同源哨兵：p17b 不得自己声明该常量）
+- [x] 松散球追球者可见（**探针转正为断言**；含 `chase`/`close_down` 分列）
+- [x] 可回放定位有效（`replay_locators_resolve_to_real_events_with_consistent_time`）
+- [x] 确定性 + 防空转下限 + 缺证据显式 `unknown`
+- [x] **每个门槛做定向变异，验证有判别力**——7 条实跑均红，见 `REVIEW.md` 的变异表
+- [x] 规范一致性守卫（**块判 + 反证条**，正反两向实跑过）
+- [x] P17A 异常规则**逐条**覆盖声明（规则集合从 P17A 源码文本抽取，防漏项）
+- [x] 观察可信度门（标注但保留、不进 L2 聚合；含反证条）
 
 ## Slice 5 — 审阅闭环（本仓强制收尾）
 
-- [ ] 独立只读 subagent 审阅 → 修复 → 再审阅 → 全过
-- [ ] 写 `REVIEW.md`（含 agent id 留痕）
+- [x] 独立只读 subagent 审阅 → 修复 → 再审阅 → 全过
+      ——**共 7 轮**（每条发现都带实跑证据 + 定向变异表）：
+      轮 1 需修改（P1×3 + P2×4 + MINOR×4，含本 change 最重的一处口径错）；
+      轮 2 需修改（P2×2 + MINOR×3，含**修复时我自己新造的假覆盖声明**）；
+      轮 3 通过（四条文档/守卫层收尾）；
+      轮 4 需修改（守卫判别力**回退** + 第四处归因残留）；
+      轮 5 需修改（守卫被证伪 + 两处豁免后门）；
+      轮 6 需修改（守卫**两个方向都不工作**）；
+      **轮 6 后主 session 裁定止损**：守卫降级为「窄判据 + 如实记录的残余风险」；
+      轮 7 终审 → 见 `REVIEW.md`。
+- [x] 写 `REVIEW.md`（含 agent 留痕、变异表、逐轮判定与收束决定）
+- [x] `REVIEW.md` 放在 **change 目录内**（本仓惯例；曾误提交到 worktree 根目录，已 `git mv`）
 
-## 待决策（**实现前须闭合**，见 design §5）
+## 待决策（✅ 全部闭合 2026-09-30）
 
-- [ ] 报告粒度：逐 episode 全覆盖 vs 按异常筛选
-- [ ] `support_formation` 复用形态：复制+守卫 vs `#[path]` include
+- [x] 报告粒度：**canary 全覆盖 + baseline 按异常筛选**（用户拍板）
+- [x] `support_formation` 复用形态：**`#[path]` include 活读**（用户拍板）
 - [x] ~~「27% 无追球者」是否查清~~ → **已查清**：是**重开准备期**，不构成缺陷（grill BLOCKER-2）
-- [ ] 松散球判据 `loose && !in_restart_window` 的窗口定义（`taken_t` 缺失时如何取）
-- [ ] 观察可信度门（§3.0）：`is_coherent()==false` / `gap_count()>0` 的 seed 如何处置
-- [ ] 时长 0 的争抢（`interception_loose` 729 全在此列）在报告里如何呈现（显式「不可见」而非留空）
-- [ ] L2 聚合的分组维度取舍
-- [ ] 是否与 P17A 对齐 seed 集与口径
-- [ ] 「可回放」的强度
+- [x] 松散球窗口的 `taken_t` 缺失行为：**四档显式取值链**
+      （`taken_t` → `open_play_resumed_t` → 下一条重开的 `start_t` → 事件流末端），
+      每档记入 `RestartWindow.end_source` 可审计；canary 上实测**确有** fallback（非未执行代码）
+- [x] 观察可信度门：**标注但保留、不进 L2 聚合**（用户拍板）
+- [x] 时长 0 的争抢：**显式记「追逐不可见」**（`PursuitView::Invisible` 带成因，不许留空）
+- [x] L2 聚合维度：**刻意最小**（用户明确要求缩减——价值在逐 episode 卡与前后对比）
+- [x] seed 集：**与 P17A 对齐**（canary 1–30 / baseline 1–300）
+- [x] 「可回放」强度：**给 `(seed, t, episode_id, event_indexes)` 坐标**，不做一键重现
 
 ## 未完成 / 交给后续 change
 
