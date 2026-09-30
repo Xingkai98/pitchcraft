@@ -34,6 +34,8 @@
 //! | [`exception_thresholds_match_the_p17a_rules`] | 同源（阈值与 P17A 逐位一致） | ✅ |
 //! | [`action_tokens_match_the_p17a_reference`] | 同源（行为层：token 序列一致） | ✅ |
 //! | [`every_p17a_anomaly_rule_is_declared_in_the_per_episode_map`] | 覆盖 P17A 异常（**逐条声明**） | ✅ |
+//! | [`instant_contest_uses_the_contest_duration_not_the_possession_duration`] | 异常口径（**争抢时长 vs possession 时长**） | ✅ |
+//! | [`instant_contest_covers_only_the_episode_closing_share_of_a2`] | 异常口径（**只覆盖 A2 母体的 ~70%**） | ✅ |
 //! | [`observation_credibility_gate_annotates_but_keeps`] | 前置门（标注但保留、不进聚合） | ✅ |
 //! | [`spec_anomaly_coverage_blocks_carry_both_halves_and_the_guard_is_not_vacuous`] | 规范一致性（**块判 + 反证条**） | ✅ |
 //! | [`report_is_deterministic_and_self_describing`] | 产物（确定性 + 产物自带边界） | ✅ |
@@ -458,11 +460,27 @@ fn loose_ball_criterion_guard_has_discriminating_power() {
     );
 }
 
-/// `taken_t` 缺失时**必须给出显式行为**（design §5 待决策 3）。
+/// `taken_t` 缺失时**必须给出显式行为**，且**实际分布被钉住**（design §5 待决策 3）。
 ///
-/// 实测（30 seed）1613 个重开里 2 个缺 `taken_t`（≈0.12%，**非零**）。
-/// 本测试在**真实 seed** 上核存在性（防空转）——若一个都找不到，
-/// 说明 fallback 分支从未被走到，它的正确性也就无从验证。
+/// ## 实测分布（300 seed 实跑，本测试在**同一区间**上核它）
+///
+/// ```text
+///   taken_t            15574
+///   open_play_resumed_t    0   ← 防御档，一次都没走到
+///   next_restart_start_t   0   ← 防御档，一次都没走到
+///   stream_end            10   ← 缺 taken_t 的**全部**是流末那条重开
+/// ```
+///
+/// ## 为什么断言「防御档恒为 0」而不是「防御档偶尔出现也算过」
+///
+/// 中间两档要走到，必须满足**要么不变量 5 被破坏**（有 `open_play_resumed_t`
+/// 却无 `taken_t`），**要么**本段重开被顶掉却没记发球时刻同时后面还有重开。
+/// 两者都**不该**在当前引擎上发生。让它们**恒 0** 使本测试成为一个**变化哨兵**：
+/// 一旦它们开始出现，说明引擎的重开处置形态变了——那值得人看一眼，
+/// 而不是让产物里的窗口右端悄悄跟着变。
+///
+/// ⚠️ 这也修正了实现路径上的一处「机制与散文不符」：先前文档把这条链描述成
+/// 「四档按序回落」，读起来像四档都会走到；实测只有两档。**结论对但机制错**的又一例。
 #[test]
 fn restart_window_falls_back_explicitly_when_taken_t_is_missing() {
     let mut sources: std::collections::BTreeMap<&'static str, usize> = Default::default();
@@ -479,16 +497,33 @@ fn restart_window_falls_back_explicitly_when_taken_t_is_missing() {
         }
     }
     assert!(sources.get("taken_t").copied().unwrap_or(0) > 0, "正常档应有样本");
-    // 缺失档在 canary（30 seed）上**必须出现**——这是防空转的关键：
-    // 「2/1613」意味着它极少见，若本测试在真实 seed 上找不到一例，
-    // fallback 分支就是**未被执行的代码**，其行为只是纸面声明。
-    let fallback = sources.get("open_play_resumed_t").copied().unwrap_or(0)
-        + sources.get("next_restart_start_t").copied().unwrap_or(0)
-        + sources.get("stream_end").copied().unwrap_or(0);
+    let fallback: usize = [
+        "open_play_resumed_t",
+        "next_restart_start_t",
+        "stream_end",
+    ]
+    .iter()
+    .map(|k| sources.get(*k).copied().unwrap_or(0))
+    .sum();
+    // 防空转：fallback 分支必须在真实 seed 上**被执行过**（否则它的行为只是纸面声明）。
     assert!(
         fallback > 0,
         "canary 上应出现 `taken_t` 缺失的 fallback 窗口（实测 30 seed 里有 2 例）——\
          若为 0，fallback 分支是未被执行的代码。实际分布：{sources:?}"
+    );
+    // 变化哨兵：中间两档**恒 0**（实测 300 seed 亦为 0）。
+    for defensive in ["open_play_resumed_t", "next_restart_start_t"] {
+        assert_eq!(
+            sources.get(defensive).copied().unwrap_or(0),
+            0,
+            "防御档 `{defensive}` 在真实 seed 上出现了——它是为「不变量 5 被破坏」\
+             （或无 `taken_t` 却被下一条重开顶掉）准备的。它出现说明引擎的重开处置形态变了，\
+             值得人核一眼（窗口右端的语义可能也要跟着改）。实际分布：{sources:?}"
+        );
+    }
+    assert!(
+        sources.get("stream_end").copied().unwrap_or(0) > 0,
+        "实测缺 `taken_t` 的**全部**是流末那条重开 ⇒ `stream_end` 档必须有样本。         实际分布：{sources:?}"
     );
 }
 
@@ -1066,6 +1101,155 @@ fn observation_credibility_gate_annotates_but_keeps() {
     assert_eq!(
         agg.by_exception.get("long_dwell").map(|g| g.incoherent),
         Some(1)
+    );
+}
+
+/// **`instant_contest` 用的是争抢时长，不是 possession 时长**（本 change 自查抓到的一处口径错）。
+///
+/// ## 这处错长什么样（为什么值得一条专门的守卫）
+///
+/// `instant_contest` 是 P17A 的 A2（同 tick 收束）在本层的化身。A2 判的是
+/// `transitions.duration_value_counts` 的「0.000」档——**争抢**时长。
+/// 本 change 初版误用了 `end_t - start_t`（**possession** 时长）。实测（30 seed）：
+///
+/// | 口径 | 时长为 0 的占比 |
+/// |---|---|
+/// | **争抢**时长（A2 的口径） | **1082 / 2027 = 53.4%** |
+/// | possession 时长（错误口径） | **1 / 3075 = 0.03%** |
+///
+/// ⚠️ **防空转下限抓不到它**：错误口径下仍产出 8 张卡（非零），
+/// 「`by_exception` 非空」的断言照常绿。这是本仓「结论对但机制错」的又一实例——
+/// **字段名（`instant_contest`）与它该管的量对不上**，而没有任何断言核过这一层。
+///
+/// ## 本守卫的判据
+///
+/// 直接读观测层算出**每一个**争抢的时长，与 [`classify`] 的判定**逐条比对**。
+/// 口径一改就红，且判别力来自「两个量的差距是 1700 倍」而不是一个脆弱的阈值。
+#[test]
+fn instant_contest_uses_the_contest_duration_not_the_possession_duration() {
+    let dm = observe(1);
+    let windows = restart_windows(&dm);
+    // 从观测层独立算：每个 contest_started → 紧随的 contest_ended。
+    let mut expected: std::collections::BTreeMap<usize, bool> = Default::default();
+    for (i, f) in dm.control_facts.iter().enumerate() {
+        if f.kind != ControlFactKind::ContestStarted {
+            continue;
+        }
+        let end = dm.control_facts[i + 1..]
+            .iter()
+            .find(|g| g.kind == ControlFactKind::ContestEnded);
+        let zero = end.map(|e| e.t.value - f.t.value == 0.0).unwrap_or(false);
+        expected.insert(i, zero);
+    }
+    assert!(!expected.is_empty(), "seed 1 应有争抢事实（防空转）");
+    let mut agreement = 0usize;
+    for ep in &dm.possession_episodes {
+        let card = card_of(&dm, &windows, 1, ep);
+        let cls = classify(&card);
+        let claims_instant = cls.contains(&"instant_contest");
+        match card.contest_start {
+            None => {
+                assert!(!claims_instant, "非争抢收束的卡不得命中 `instant_contest`");
+            }
+            Some(_) => {
+                let idx = card.closing_fact_index.expect("争抢收束应有收束侧事实下标");
+                let truth = *expected.get(&idx).expect("收束侧事实应在争抢集里");
+                assert_eq!(
+                    claims_instant, truth,
+                    "episode {} 的 `instant_contest` 判定与观测层的**争抢**时长不符                     （expected {truth}）——口径是不是又退回 possession 时长了？",
+                    ep.id
+                );
+                agreement += 1;
+            }
+        }
+    }
+    assert!(agreement > 10, "比对的争抢卡太少（{agreement}）——防空转");
+    let zero_contest = expected.values().filter(|v| **v).count();
+    assert!(
+        zero_contest * 10 > expected.len(),
+        "seed 1 上「争抢时长 == 0」应占多数（实测 30 seed 53.4%）——若不然，本守卫的判别基础不成立：         {zero_contest}/{}",
+        expected.len()
+    );
+}
+
+/// **`instant_contest` 只覆盖 A2 母体的一部分**——两层缺口都要显式，不得声称全量。
+///
+/// ## 这处是本 change 自己的标准用在自己身上
+///
+/// 本 change 的立身之本是「不得给笼统的『可答』」。把同一把尺子拿来量自己也发现了一处：
+/// `instant_contest` 的类定义那时写「P17A A2 的逐 episode 化身」——**读起来像全量**，而实测：
+///
+/// | 量 | 300 seed 实测 |
+/// |---|---|
+/// | A2 的母体：**全部**零时长争抢 | **10564** / 20053 个争抢（52.7%，与 P17A 的 52.7% 一致） |
+/// | 诊断卡能展开的：其中**收束了一段 episode** 的 | **7364**（占母体 69.7%） |
+/// | 缺口：发生在「控制已释放、球还在飞」的**两段 episode 之间** | **约 3200（30%）** |
+///
+/// 缺口那部分在 L2 的**争抢成因表**里数得到（它们也有 `contest_started` 事实），
+/// 但**没有 card 可以挂**——诊断卡的结构是「一段 possession 一张卡」。
+///
+/// ⇒ 本测试把**两个量都算出来**并断言：① 母体确实远大于可展开的部分（缺口真实存在，
+/// 不是被断言掉的）；② 可展开部分是**多数**（因为 `instant_contest` 定义在 episode 收束上，
+/// 而收束侧面确实以争抢为主）。两个方向都钉住，使「缺口在缩小/消失」也能被看见。
+#[test]
+fn instant_contest_covers_only_the_episode_closing_share_of_a2() {
+    let mut zero_contests = 0usize;
+    let mut all_contests = 0usize;
+    let mut zero_closing_an_episode = 0usize;
+    for seed in CANARY_SEEDS.0..=CANARY_SEEDS.1 {
+        let dm = observe(seed);
+        let ends: std::collections::BTreeSet<String> = dm
+            .possession_episodes
+            .iter()
+            .filter_map(|e| e.end_t.map(|t| format!("{:.3}", t.value)))
+            .collect();
+        for (i, f) in dm.control_facts.iter().enumerate() {
+            if f.kind != ControlFactKind::ContestStarted {
+                continue;
+            }
+            all_contests += 1;
+            let Some(e) = dm.control_facts[i + 1..]
+                .iter()
+                .find(|g| g.kind == ControlFactKind::ContestEnded)
+            else {
+                continue;
+            };
+            if e.t.value - f.t.value != 0.0 {
+                continue;
+            }
+            zero_contests += 1;
+            if ends.contains(&format!("{:.3}", f.t.value)) {
+                zero_closing_an_episode += 1;
+            }
+        }
+    }
+    assert!(all_contests > 500, "争抢样本过少（{all_contests}）——防空转");
+    // ① A2 的口径**是**争抢时长（与 P17A 同源）：零时长占比应过半。
+    assert!(
+        zero_contests * 2 > all_contests,
+        "零时长争抢应过半（实测 30 seed 53.4%）：{zero_contests}/{all_contests}"
+    );
+    // ② 缺口**真实存在**：可展开的部分**严格小于**母体（否则说明缺口被静默吞掉了）。
+    assert!(
+        zero_closing_an_episode < zero_contests,
+        "所有零时长争抢都收束了一段 episode ⇒ 缺口消失（{zero_closing_an_episode}/{zero_contests}）——\
+         若真是如此，本类确实等于 A2 全量，那时应**更新**类定义里的 ~70% 说法"
+    );
+    // ③ 但仍是**多数**：`instant_contest` 的卡不是边角料。
+    assert!(
+        zero_closing_an_episode * 2 > zero_contests,
+        "可展开的部分应占母体多数（实测 30 seed 69.7%）：{zero_closing_an_episode}/{zero_contests}"
+    );
+    // ④ 类定义里必须**写明这个缺口**（防「读起来像全量」的措辞回归）。
+    let def = EXCEPTION_CLASSES
+        .iter()
+        .find(|(k, _)| *k == "instant_contest")
+        .map(|(_, d)| *d)
+        .expect("`instant_contest` 应有类定义");
+    assert!(
+        def.contains("70%") || def.contains("69.7"),
+        "`instant_contest` 的类定义必须写明它只覆盖 A2 母体的一部分——\
+         否则读者会把它的卡数当成 A2 的全量"
     );
 }
 

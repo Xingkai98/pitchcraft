@@ -117,6 +117,11 @@ pub struct RestartWindow {
 ///
 /// ⚠️ 三档 fallback 都**不改判据**（窗口语义仍是「重开准备期」），只影响窗口右端的估计；
 /// `end_source` 把它记下来，使报告能说清「这个窗口的右端是猜的还是观测的」。
+///
+/// ⚠️ **实测只有两档会走到**（300 seed 实跑）：`taken_t` 15574 / `stream_end` 10 /
+/// 中间两档 **0**。它们是**防御档**（`restart_windows` 须为全函数），不是
+/// 「正常路径的一部分」——别按四档均匀的想象去读产物。
+/// 详见 [`crate::evidence::WindowEnd`] 的实测表。
 pub fn restart_windows(dm: &DiagnosticMatch) -> Vec<RestartWindow> {
     let stream_end = dm.events.last().map(|e| e.t).unwrap_or(f64::INFINITY);
     let mut out = Vec::with_capacity(dm.restart_sequences.len());
@@ -463,6 +468,14 @@ pub struct EpisodeCard {
     pub contest_start: Option<ContestStartReason>,
     /// 收束侧事实下标（回放定位用）。
     pub closing_fact_index: Option<usize>,
+    /// **争抢时长**（秒）：收束侧 `contest_started` → 紧随其后的 `contest_ended`。
+    ///
+    /// ⚠️ 这与 `end_t - start_t`（**possession** 时长）是**两个量**，别混。
+    /// P17A 的 A2（同 tick 收束）说的是**争抢**时长——实测 30 seed：
+    /// 争抢时长 == 0 占 **1082/2027（53.4%）**，而 possession 时长 == 0 只占 **1/3075**。
+    /// 本卡用**争抢**时长（`本字段`），`end_t - start_t` 只用于「段时长」。
+    /// 非争抢收束时为 `None`（该问题不适用）。
+    pub contest_duration_s: Option<f64>,
     /// 事件下标越界计数（>0 说明输入形状变了——如实记录，不静默）。
     pub bad_event_indexes: usize,
 }
@@ -516,6 +529,14 @@ pub fn card_of(
         pursuit,
         contest_start,
         closing_fact_index: closing.map(|(i, _)| i),
+        contest_duration_s: closing.and_then(|(i, f)| {
+            // 同一条争抢的结束事实：紧随其后的 `contest_ended`。
+            dm.control_facts
+                .iter()
+                .skip(i + 1)
+                .find(|g| g.kind == ControlFactKind::ContestEnded)
+                .map(|g| g.t.value - f.t.value)
+        }),
         bad_event_indexes: bad_indexes,
     }
 }
@@ -598,7 +619,7 @@ pub const EXC_EMPTY_POSSESSION_SECONDS: f64 = 20.0;
 /// 故 [`classify`] 返回**切片**而不是 `Option`——把多类压成一类会丢信息，
 /// 而 L2 的按类计数会因此**少算**（本仓「假覆盖」的又一种形态）。
 pub const EXCEPTION_CLASSES: &[(&str, &str)] = &[
-    ("instant_contest", "同拍收束：争抢收束且 possession 时长为 0（P17A A2 的逐 episode 化身）"),
+    ("instant_contest", "同拍收束：**争抢**时长为 0（口径是 `contest_started`→`contest_ended`，**不是** possession 时长）。\n     ⚠️ **本类只覆盖 P17A A2 母体的 ~70%**：A2 数的是**全部**零时长争抢\n     （300 seed 实测 10564/20053），而诊断卡逐 episode 展开，只能看见其中\n     **收束了一段 episode 的那部分**（实测 7364 = 69.7%）。剩下的约 30% 发生在\n     「控制已释放、球还在飞」的**两段 episode 之间**——它们在 L2 的争抢成因表里\n     数得到，但没有 card 可以挂。**不得**把本类的卡数读成 A2 的全量"),
     ("empty_possession", "空 possession：时长超过阈值却几乎没有决策动作（P17A A6）"),
     ("long_dwell", "长持球：链内相邻决策动作最大间隔超阈值（P17A A1）"),
     ("shot_rebound_end", "射门被扑/中框后弹回场内收束（P17A A4 关注的过程）"),
@@ -608,7 +629,12 @@ pub const EXCEPTION_CLASSES: &[(&str, &str)] = &[
 pub fn classify(c: &EpisodeCard) -> Vec<&'static str> {
     let mut out: Vec<&'static str> = Vec::new();
     let duration = c.end_t.map(|e| e - c.start_t);
-    if duration == Some(0.0) && c.contest_start.is_some() {
+    // ⚠️ **争抢**时长，不是 possession 时长。P17A 的 A2 判的是
+    // `transitions.duration_value_counts` 的「0.000」档（争抢时长）——本行曾误用
+    // `end_t - start_t`（possession 时长），实测命中率 0.03% 而不是 53.4%，
+    // 且**仍有非零产出**（8 张）⇒ 防空转下限抓不到它。现由
+    // `instant_contest_uses_the_contest_duration_not_the_possession_duration` 守住。
+    if c.contest_duration_s == Some(0.0) {
         out.push("instant_contest");
     }
     if duration.map(|d| d > EXC_EMPTY_POSSESSION_SECONDS).unwrap_or(false) && c.chain.len() <= 1 {
@@ -653,21 +679,51 @@ pub fn max_chain_gap(chain: &[ChainNode]) -> f64 {
 pub const EXC_TAIL_QUANTILE: f64 = 0.90;
 
 /// 小于该规模的异常类**整类保留**——对小类抽样既无意义，又会把稀有形态藏起来。
-///
-/// 反例：`instant_contest` 在 300 seed 上只命中 8 张（`interception_loose` 使然），
-/// 按分位尾部会只剩不到 1 张，等于把这个**最重要的发现**从产物里删掉。
 pub const EXC_TAIL_MIN_CLASS: usize = 50;
+
+/// 每个异常类在 L1 的**展开上限**（baseline 模式）。
+///
+/// ## 为什么还需要它（p90 尾部解决不了的那一类）
+///
+/// `instant_contest`（P17A 的 A2）的驱动量是**二值**的（争抢时长 = 0 或不为 0），
+/// 实测占全部争抢的 **53.4%**——**分位尾部对它无意义**：p90 处全是同一个值，
+/// 「取尾部」要么全取（1 万张，淹没产物）要么全不取（A2 的样本一张都不给）。
+///
+/// ⇒ 对**驱动量退化**的类改用**等距抽样**：按 `(seed, episode_id)` 排序后每隔
+/// `ceil(n / 本上限)` 张取一张。它**确定**、**无偏**（在该顺序上均匀），
+/// 且**显式标注为抽样**——读者不会把它误读成「这一类只有这些」。
+pub const EXC_CLASS_CAP: usize = 200;
 
 /// 某异常类的**驱动量**（分位排序的键）。越大越极端。
 ///
-/// `None` = 该类没有连续驱动量（整类保留，见 [`EXC_TAIL_MIN_CLASS`]）。
+/// `None` = 该类**没有连续驱动量**（`instant_contest` 是二值的；`shot_rebound_end`
+/// 没有自然的「更极端」维度）⇒ 分位不可用，改由 [`EXC_CLASS_CAP`] 的等距抽样处置。
 pub fn exception_driver(class: &str, c: &EpisodeCard) -> Option<f64> {
     match class {
         "long_dwell" => Some(max_chain_gap(&c.chain)),
         "empty_possession" => c.end_t.map(|e| e - c.start_t),
-        // 同拍收束：驱动量恒 0（时长都是 0），分位选不出东西 ⇒ 整类保留。
-        // 射门弹回收束同理（样本极小）。
         _ => None,
+    }
+}
+
+/// 某异常类在 baseline 里的**选取口径**（写进产物，使「这些卡是怎么来的」可审计）。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionKind {
+    /// 类内 p90 尾部（驱动量连续且类规模足够）。
+    TailP90,
+    /// 整类保留（类规模小于 [`EXC_TAIL_MIN_CLASS`]）。
+    All,
+    /// 等距抽样（驱动量退化且类规模超过 [`EXC_CLASS_CAP`]）。
+    Stride,
+}
+
+impl SelectionKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            SelectionKind::TailP90 => "tail_p90",
+            SelectionKind::All => "all",
+            SelectionKind::Stride => "stride",
+        }
     }
 }
 

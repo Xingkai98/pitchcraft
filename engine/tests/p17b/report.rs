@@ -391,6 +391,8 @@ pub struct Report {
     pub aggregates: Aggregates,
     /// 逐场的松散球段 / 追球者计数（跨场合并）。
     pub mover_counts: BTreeMap<&'static str, usize>,
+    /// 每个异常类在 L1 的选取口径 + 该类的**全量**规模（审计「这些卡是怎么来的」）。
+    pub selection: BTreeMap<&'static str, (crate::episode::SelectionKind, usize)>,
 }
 
 // ============================== 构造 ==============================
@@ -406,13 +408,14 @@ pub fn build_report(
     per_match: &[(u64, MatchCards)],
 ) -> Report {
     let mut prov = build_provenance(mode, first, last, duration);
+    let selection_by_class: BTreeMap<&'static str, (crate::episode::SelectionKind, usize)>;
     // `cards_omitted` 是筛选的结果，先算再定 provenance 之外的字段顺序无关。
     let mut cards: Vec<EpisodeCard> = Vec::new();
     let mut omitted = 0usize;
     let mut aggregates = Aggregates::default();
     let mut mover_counts: BTreeMap<&'static str, usize> = BTreeMap::new();
     // ── 第一趟：分类 + 聚合 + 收集每一类的驱动量（筛选是**类内分位**，须先看全量）──
-    let mut exc_of: Vec<(usize, Vec<&'static str>)> = Vec::new();
+    let mut exc_of: Vec<Vec<&'static str>> = Vec::new();
     let mut drivers: BTreeMap<&'static str, Vec<f64>> = BTreeMap::new();
     let mut flat: Vec<&EpisodeCard> = Vec::new();
     for (_seed, mc) in per_match {
@@ -420,38 +423,75 @@ pub fn build_report(
         for card in &mc.cards {
             let exc = crate::episode::classify(card);
             aggregates.observe(card, &exc);
-            let i = flat.len();
             for cls in &exc {
                 if let Some(d) = crate::episode::exception_driver(cls, card) {
                     drivers.entry(cls).or_default().push(d);
                 }
             }
-            exc_of.push((i, exc));
+            exc_of.push(exc);
             flat.push(card);
         }
     }
-    // 每类的保留门槛：样本 < `EXC_TAIL_MIN_CLASS` 的类**整类保留**（免把稀有形态藏起来）；
-    // 其余取 p90（类内尾部）。
+    // 每类的选取口径（写进产物）：
+    // - 驱动量连续且类规模 ≥ `EXC_TAIL_MIN_CLASS` ⇒ **p90 尾部**；
+    // - 类规模 < `EXC_TAIL_MIN_CLASS` ⇒ **整类**（免把小类抽没）；
+    // - 驱动量退化（二值）且类规模超上限 ⇒ **等距抽样**（见 `EXC_CLASS_CAP` 的理由）。
     let mut thresholds: BTreeMap<&'static str, f64> = BTreeMap::new();
-    for (cls, mut vals) in drivers {
-        if vals.len() < crate::episode::EXC_TAIL_MIN_CLASS {
-            continue; // 小类：不放门槛 ⇒ 整类保留（`should_keep` 只看是否命中）
-        }
-        vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
-        if let Some(t) = crate::shape::quantile_sorted(&vals, crate::episode::EXC_TAIL_QUANTILE) {
-            thresholds.insert(cls, t);
+    let mut selection: BTreeMap<&'static str, (crate::episode::SelectionKind, usize)> =
+        BTreeMap::new();
+    let mut class_sizes: BTreeMap<&'static str, usize> = BTreeMap::new();
+    for exc in &exc_of {
+        for cls in exc {
+            *class_sizes.entry(cls).or_insert(0) += 1;
         }
     }
-    // ── 第二趟：按「命中 + 过门槛」决定收录 ──
-    for (i, exc) in &exc_of {
-        let card = flat[*i];
-        let passes = exc.iter().any(|cls| match thresholds.get(cls) {
-            None => true, // 该类的驱动量不在分位表里（无驱动量或样本小）⇒ 命中即保留
-            Some(t) => crate::episode::exception_driver(cls, card)
-                .map(|d| d >= *t)
+    // 等距抽样的保留集（类 → 保留的下标集）。
+    let mut stride_keep: BTreeMap<&'static str, std::collections::BTreeSet<usize>> = BTreeMap::new();
+    for (cls, &size) in &class_sizes {
+        if size < crate::episode::EXC_TAIL_MIN_CLASS {
+            selection.insert(cls, (crate::episode::SelectionKind::All, size));
+            continue;
+        }
+        match drivers.get(cls) {
+            Some(vals) if vals.len() >= crate::episode::EXC_TAIL_MIN_CLASS => {
+                let mut v = vals.clone();
+                v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+                if let Some(t) =
+                    crate::shape::quantile_sorted(&v, crate::episode::EXC_TAIL_QUANTILE)
+                {
+                    thresholds.insert(cls, t);
+                    selection.insert(cls, (crate::episode::SelectionKind::TailP90, size));
+                    continue;
+                }
+                selection.insert(cls, (crate::episode::SelectionKind::Stride, size));
+            }
+            _ => {
+                selection.insert(cls, (crate::episode::SelectionKind::Stride, size));
+            }
+        }
+        // 等距：按 (seed, episode_id) 顺序（`flat` 已是该顺序）每隔 k 取一。
+        let k = size.div_ceil(crate::episode::EXC_CLASS_CAP).max(1);
+        let keep: std::collections::BTreeSet<usize> = (0..flat.len())
+            .filter(|i| exc_of[*i].contains(cls) && i % k == 0)
+            .take(crate::episode::EXC_CLASS_CAP)
+            .collect();
+        stride_keep.insert(cls, keep);
+    }
+    // ── 第二趟：按「命中 + 该类口径」决定收录 ──
+    for (i, exc) in exc_of.iter().enumerate() {
+        let card = flat[i];
+        let passes = exc.iter().any(|cls| match selection.get(cls) {
+            None => true,
+            Some((crate::episode::SelectionKind::All, _)) => true,
+            Some((crate::episode::SelectionKind::TailP90, _)) => thresholds
+                .get(cls)
+                .and_then(|t| crate::episode::exception_driver(cls, card).map(|d| d >= *t))
                 .unwrap_or(true),
+            Some((crate::episode::SelectionKind::Stride, _)) => {
+                stride_keep.get(cls).map(|s| s.contains(&i)).unwrap_or(true)
+            }
         });
-        // ⚠️ 类内分位**只作用于 baseline**：canary 是**全覆盖**（人眼核对口径用），
+        // ⚠️ 上述口径**只作用于 baseline**：canary 是**全覆盖**（人眼核对口径用），
         // 对它抽样会让「逐条都有卡」这条承诺失效。
         let keep = if mode == "canary" { true } else { passes };
         if crate::episode::should_keep(mode, exc) && keep {
@@ -471,9 +511,11 @@ pub fn build_report(
         "exc_tail_quantile",
         crate::episode::EXC_TAIL_QUANTILE,
     ));
+    prov.caliber.push(("exc_class_cap", crate::episode::EXC_CLASS_CAP as f64));
     for (cls, t) in &thresholds {
         prov.caliber.push((cls, *t));
     }
+    selection_by_class = selection;
     prov.caliber.push(("l1_cards", cards.len() as f64));
     prov.caliber.push(("l1_omitted", omitted as f64));
     Report {
@@ -482,6 +524,7 @@ pub fn build_report(
         cards_omitted: omitted,
         aggregates,
         mover_counts,
+        selection: selection_by_class,
     }
 }
 
@@ -635,6 +678,7 @@ fn j_card(c: &EpisodeCard) -> J {
             j_locus(Locus::FactDetail),
         ),
         ("closing_fact_index", c.closing_fact_index.map(J::i).unwrap_or(J::Null)),
+        ("contest_duration_s", J::opt_num(c.contest_duration_s)),
         ("bad_event_indexes", J::i(c.bad_event_indexes)),
         // 可回放定位（spec「定位可回到事件流」）。
         (
@@ -870,6 +914,23 @@ pub fn to_json(r: &Report) -> String {
             ),
         ),
         (
+            "exception_selection",
+            J::Obj(
+                r.selection
+                    .iter()
+                    .map(|(k, (kind, size))| {
+                        (
+                            k.to_string(),
+                            J::obj(vec![
+                                ("kind", J::s(kind.as_str())),
+                                ("class_size_full_corpus", J::i(*size)),
+                            ]),
+                        )
+                    })
+                    .collect(),
+            ),
+        ),
+        (
             "by_exception",
             J::Obj(
                 a.by_exception
@@ -1046,13 +1107,21 @@ pub fn to_markdown(r: &Report) -> String {
         ));
     }
 
-    o.push_str("\n### 按异常类别（供挑靶点）\n\n| 异常类别 | 命中卡数 | 其中观察不可信 | **进了 L1** |\n|---|---:|---:|---:|\n");
+    o.push_str("\n### 按异常类别（供挑靶点）\n\n| 异常类别 | 全集命中 | 其中观察不可信 | **进了 L1** | L1 选取口径 |\n|---|---:|---:|---:|---|\n");
     for (k, g) in &r.aggregates.by_exception {
+        let sel = r
+            .selection
+            .get(k.as_str())
+            .map(|(kind, _)| kind.as_str())
+            .unwrap_or("—");
         o.push_str(&format!(
-            "| `{k}` | {} | {} | {} |\n",
+            "| `{k}` | {} | {} | {} | `{sel}` |\n",
             g.cards, g.incoherent, g.kept
         ));
     }
+    o.push_str("\n> `tail_p90` = 类内分位尾部；`all` = 整类（类规模小）；\n");
+    o.push_str("> `stride` = **等距抽样**（该类驱动量退化，分位无意义——见 `EXC_CLASS_CAP`）。\n");
+    o.push_str("> **抽样类**在 L1 只是**样本**，不是该类的全部；全量见「全集命中」栏。\n");
     o.push_str("\n⚠️ **异常类别只是「值得逐条看的筛子」**，不是缺陷判定，也不是门槛——\n");
     o.push_str("阈值取自 P17A 的同名内部诊断阈值（见 provenance 的 `exc_*`），不是与真实足球的偏差量。\n");
     o.push_str("⚠️ **「命中卡数」是**全量**口径（含未收录），「进了 L1」才是本产物实际展开的**——\n");
