@@ -2052,6 +2052,22 @@ fn execute_action_resolution(
         }
     };
     plan.assert_resolution_consistent();
+    // P124（#124）防守意图：**稀疏**——每个被评估并执行的机会一条（这就是分母）。
+    // 归因靠 `t`（落进某个 episode 的 `[start_t, end_t]`），不靠下标。
+    //
+    // `defender` 只在引擎绑定了接触动作的主体时给出（`Tackle` / `Foul`）——
+    // `Contain` / `Jockey` / `None` 在决策层的 `DefensiveExecution` 里本就不带防守者 id
+    // （封堵/跟防是「无事件防守」，不产生接触）。此处**如实记 `None`**，不猜是哪名防守者。
+    obs.observe_defensive_intent(
+        observation::ObservedTime::state_commit(t),
+        defensive_kind_of(plan.defensive),
+        match plan.defensive_exec {
+            DefensiveExecution::Tackle { defender } | DefensiveExecution::Foul { defender } => {
+                Some(defender)
+            }
+            _ => None,
+        },
+    );
     st.opportunity_tally.plans_executed += 1;
     // P31 D3：本 tick 的结算是否构成 meaningful action（射门 / 传球 / 抢断 / 犯规）。持球侧的
     // 「继续带球」与无事件防守（contain/jockey）**不**构成——它们是「比赛在跑但没发生什么」，
@@ -2828,6 +2844,10 @@ fn match_events(
                 st.ball_pos,
                 &frozen,
             );
+            // P124（#124）意图快照：**同一采样点、同一拍**——`intent_snapshots[i]` 与
+            // `state_snapshots[i]` 的 `t` 逐位相同（由测试守）。两条通道分两次提交，
+            // 但必须相邻且共用同一个 `t`，否则下游按拍对齐会静默错位。
+            obs.observe_intent(observation::ObservedTime::state_commit(t), intent_state_of(&st));
         }
         t += TICK_SECONDS;
     }
@@ -2901,6 +2921,45 @@ fn whistle_event(t: f64, home: u32, away: u32, detail: &str) -> Event {
         t, type_: EventType::Whistle, subject: 0, x: 0.5, y: 0.5,
         score: Some(format!("{}-{}", home, away)), detail: Some(detail.to_string()),
         ..Event::default()
+    }
+}
+
+/// P124（#124）：把引擎的**意图状态**映射成 sidecar 的值对象（`IntentState`）。
+///
+/// 两个来源都是 `MatchState` 的**显式状态**，不是从位置反推：
+/// - `shot_setup`（起脚序列，单场单例）：推进相 / 起脚窗口两相状态机；
+/// - `pressure_state_ticks`（持球者压迫，**剩余**保持 tick 数倒计时）。
+///
+/// ⚠️ **本函数只读 `MatchState`，不读 recorder**——lib.rs 里任何函数都不得据观察层状态
+/// 做判断（见 `p15_recorder_stays_out_of_the_decision_path` 的守卫）。
+/// 无起脚序列时走 [`observation::IntentState::no_shot_setup`]——「无序列」的编码只有那一处定义。
+fn intent_state_of(st: &MatchState) -> observation::IntentState {
+    let pressure = st.pressure_state_ticks;
+    match st.shot_setup.as_ref() {
+        None => observation::IntentState::no_shot_setup(pressure),
+        Some(s) => observation::IntentState {
+            has_shot_setup: true,
+            in_window: s.in_window,
+            window_ticks: s.window_ticks,
+            drive_ticks_left: s.drive_ticks_left,
+            committed: s.committed,
+            entry_pressure_bucket: s.entry_pressure_bucket as u8,
+            pressure_state_ticks: pressure,
+        },
+    }
+}
+
+/// P124（#124）：决策层的 `DefensiveAction` → sidecar 的公开闭集。
+///
+/// **穷尽 `match`**（不用 `_ =>`）：决策层将来新增成员时，此处**编译失败**——
+/// 新防守动作不会静默退化成某个旧档（本仓「结论对但机制错」的防线之一）。
+fn defensive_kind_of(a: DefensiveAction) -> observation::DefensiveIntentKind {
+    match a {
+        DefensiveAction::Tackle => observation::DefensiveIntentKind::Tackle,
+        DefensiveAction::Foul => observation::DefensiveIntentKind::Foul,
+        DefensiveAction::Contain => observation::DefensiveIntentKind::Contain,
+        DefensiveAction::Jockey => observation::DefensiveIntentKind::Jockey,
+        DefensiveAction::None => observation::DefensiveIntentKind::None,
     }
 }
 
@@ -6779,7 +6838,7 @@ mod tests {
         // `if obs.is_enabled() { rng.next_u64() }` 反而可以靠换行绕过。
         // 覆盖 recorder 的**全部**读方法（含 `DiagnosticMatch` 侧的同族 API——
         // `terminal_state` / `invalid_violations` / `gap_reason_counts` 同样是「读观察状态」）。
-        const RECORDER_READS: [&str; 12] = [
+        const RECORDER_READS: [&str; 14] = [
             ".is_enabled()",
             ".state()",
             ".facts()",
@@ -6792,6 +6851,9 @@ mod tests {
             ".is_coherent()",
             ".event_index_binding_suspended()",
             ".state_snapshots()",
+            // P124（#124）的意图观测读取口——与 `state_snapshots()` 同族。
+            ".intent_snapshots()",
+            ".defensive_intents()",
         ];
         // 按顶层 `fn ` 切块，函数名取紧随其后的标识符。
         let mut chunks: Vec<(String, String)> = Vec::new();
