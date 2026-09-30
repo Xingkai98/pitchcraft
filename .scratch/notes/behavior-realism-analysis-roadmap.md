@@ -419,6 +419,11 @@ change：`openspec/changes/p17b-explainable-diagnosis-report/`；
 
 ## 8. 新会话接手入口
 
+> 📌 **当前一步的具体交接**（做 #17B 实现时**先读这份**）：
+> [`.scratch/notes/17b-handoff-2026-09-30.md`](17b-handoff-2026-09-30.md)——
+> 含 3 个真阻塞决策、3 条不可越界、4 条最易踩的坑。
+> ⚠️ **交接文档一律放仓库**（`/tmp` 里的会丢——此前几份 P17A 时代的都写在 `/tmp`，已过时）。
+
 新会话只需先读取：
 
 1. `.scratch/map.md` 的“行为真实性方向”；
