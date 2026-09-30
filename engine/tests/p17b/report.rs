@@ -294,6 +294,20 @@ pub struct ContestGroup {
     pub cards: usize,
     pub pursuit_visible: usize,
     pub pursuit_invisible: usize,
+    /// **全量**争抢事实数（该成因的 `contest_started` 事实条数）。
+    ///
+    /// ⚠️ 与 `cards` **不是一回事**：实测约 30% 的争抢**不与任何 episode 收束同刻**
+    /// （发生在「控制已释放、球还在飞」的两段 episode 之间）⇒ 它们数得到成因，
+    /// 但**挂不到卡上**。只给 `cards` 会让读者把它当成「该成因的争抢数」——
+    /// 那正是「留空 = 没发生」的形态，本 change 明令禁止。
+    pub facts_full_corpus: usize,
+}
+
+impl ContestGroup {
+    /// 未被任何卡覆盖的争抢数（**显式的分母差额**）。
+    pub fn uncovered(&self) -> usize {
+        self.facts_full_corpus.saturating_sub(self.cards)
+    }
 }
 
 /// 按异常类别的计数（供 #19 挑靶点）。
@@ -330,6 +344,16 @@ impl Aggregates {
     /// **观察不可信门**（design §3.0）：`coherent == false` 的卡的诊断**不进**
     /// `by_end_reason` / `by_contest_start` 的分子分母（观察不可信时诊断无意义），
     /// 但仍计入 `by_exception` 的 `incoherent` 栏——**标注但保留**（不排除、不硬拒）。
+    /// 先记**全量**争抢事实（该场 `contest_started` 的成因分布），再逐卡 `observe`。
+    pub fn observe_contest_facts(&mut self, facts: &BTreeMap<&'static str, usize>) {
+        for (k, n) in facts {
+            self.by_contest_start
+                .entry(k.to_string())
+                .or_default()
+                .facts_full_corpus += n;
+        }
+    }
+
     pub fn observe(&mut self, card: &EpisodeCard, exc: &[&'static str]) {
         self.cards += 1;
         let coherent = card.coherent;
@@ -390,7 +414,7 @@ pub struct Report {
     pub cards_omitted: usize,
     pub aggregates: Aggregates,
     /// 逐场的松散球段 / 追球者计数（跨场合并）。
-    pub mover_counts: BTreeMap<&'static str, usize>,
+    pub mover_counts: BTreeMap<String, usize>,
     /// 每个异常类在 L1 的选取口径 + 该类的**全量**规模（审计「这些卡是怎么来的」）。
     pub selection: BTreeMap<&'static str, (crate::episode::SelectionKind, usize)>,
 }
@@ -413,12 +437,14 @@ pub fn build_report(
     let mut cards: Vec<EpisodeCard> = Vec::new();
     let mut omitted = 0usize;
     let mut aggregates = Aggregates::default();
-    let mut mover_counts: BTreeMap<&'static str, usize> = BTreeMap::new();
+    let mut mover_counts: BTreeMap<String, usize> = BTreeMap::new();
     // ── 第一趟：分类 + 聚合 + 收集每一类的驱动量（筛选是**类内分位**，须先看全量）──
     let mut exc_of: Vec<Vec<&'static str>> = Vec::new();
     let mut drivers: BTreeMap<&'static str, Vec<f64>> = BTreeMap::new();
     let mut flat: Vec<&EpisodeCard> = Vec::new();
     for (_seed, mc) in per_match {
+        // 全量争抢事实（在逐卡聚合**之前**记，使 `facts_full_corpus` 是分母）。
+        aggregates.observe_contest_facts(&mc.contest_facts);
         crate::episode::merge_counts(&mut mover_counts, mc);
         for card in &mc.cards {
             let exc = crate::episode::classify(card);
@@ -490,6 +516,8 @@ pub fn build_report(
             Some((crate::episode::SelectionKind::Stride, _)) => {
                 stride_keep.get(cls).map(|s| s.contains(&i)).unwrap_or(true)
             }
+            // canary 全覆盖：不该走到这里（`keep` 恒 true），但穷举要完整。
+            Some((crate::episode::SelectionKind::AllCanary, _)) => true,
         });
         // ⚠️ 上述口径**只作用于 baseline**：canary 是**全覆盖**（人眼核对口径用），
         // 对它抽样会让「逐条都有卡」这条承诺失效。
@@ -515,7 +543,17 @@ pub fn build_report(
     for (cls, t) in &thresholds {
         prov.caliber.push((cls, *t));
     }
-    selection_by_class = selection;
+    // ⚠️ **canary 是全覆盖**：L1 不筛任何卡，故「选取口径」一栏若照抄 baseline 的
+    // `tail_p90` / `stride` 就是**错的**（读者会以为产物被抽过样）。canary 一律标
+    // `all_canary`，使「本产物是全集」这件事在产物层可读。
+    if mode == "canary" {
+        selection_by_class = selection
+            .into_keys()
+            .map(|k| (k, (crate::episode::SelectionKind::AllCanary, class_sizes[&k])))
+            .collect();
+    } else {
+        selection_by_class = selection;
+    }
     prov.caliber.push(("l1_cards", cards.len() as f64));
     prov.caliber.push(("l1_omitted", omitted as f64));
     Report {
@@ -582,7 +620,11 @@ fn j_tail(c: &EpisodeCard) -> J {
 
 fn j_pursuit(c: &EpisodeCard) -> J {
     match &c.pursuit {
-        PursuitView::Visible { runs, classes } => J::obj(vec![
+        PursuitView::Visible {
+            runs,
+            chase_classes,
+            presence_classes,
+        } => J::obj(vec![
             ("state", J::s("visible")),
             (
                 "locus",
@@ -591,7 +633,11 @@ fn j_pursuit(c: &EpisodeCard) -> J {
             ("runs", J::i(runs.len())),
             (
                 "chase_class",
-                J::Arr(classes.iter().map(|s| J::s(*s)).collect()),
+                J::Arr(chase_classes.iter().map(|s| J::s(*s)).collect()),
+            ),
+            (
+                "presence_class_any_mover",
+                J::Arr(presence_classes.iter().map(|s| J::s(*s)).collect()),
             ),
             (
                 "runs_detail",
@@ -898,6 +944,8 @@ pub fn to_json(r: &Report) -> String {
                                 ("cards", J::i(g.cards)),
                                 ("pursuit_visible", J::i(g.pursuit_visible)),
                                 ("pursuit_invisible", J::i(g.pursuit_invisible)),
+                                ("facts_full_corpus", J::i(g.facts_full_corpus)),
+                                ("facts_uncovered_by_cards", J::i(g.uncovered())),
                                 (
                                     "declared_visibility",
                                     J::opt_str(
@@ -956,7 +1004,7 @@ pub fn to_json(r: &Report) -> String {
     let jm = J::Obj(
         r.mover_counts
             .iter()
-            .map(|(k, v)| (k.to_string(), J::i(*v)))
+            .map(|(k, v)| (k.clone(), J::i(*v)))
             .collect(),
     );
     out.push_str(&jm.render());
@@ -1094,7 +1142,8 @@ pub fn to_markdown(r: &Report) -> String {
     }
 
     o.push_str("\n### 按争抢成因（**含可见/不可见的分子分母**）\n\n");
-    o.push_str("| 争抢成因 | 卡数 | 追逐可见 | 追逐不可见 | 声明 |\n|---|---:|---:|---:|---|\n");
+    o.push_str("| 争抢成因 | **全量事实** | 被卡覆盖 | 未被覆盖 | 追逐可见 | 追逐不可见 | 声明 |\n");
+    o.push_str("|---|---:|---:|---:|---:|---:|---|\n");
     for (k, g) in &r.aggregates.by_contest_start {
         let declared = CONTEST_COVERAGE
             .iter()
@@ -1102,9 +1151,29 @@ pub fn to_markdown(r: &Report) -> String {
             .map(|c| c.visibility.as_str())
             .unwrap_or("**未声明**");
         o.push_str(&format!(
-            "| `{k}` | {} | {} | {} | {} |\n",
-            g.cards, g.pursuit_visible, g.pursuit_invisible, declared
+            "| `{k}` | {} | {} | {} | {} | {} | {} |\n",
+            g.facts_full_corpus,
+            g.cards,
+            g.uncovered(),
+            g.pursuit_visible,
+            g.pursuit_invisible,
+            declared
         ));
+    }
+    let uncov: usize = r
+        .aggregates
+        .by_contest_start
+        .values()
+        .map(|g| g.uncovered())
+        .sum();
+    if uncov > 0 {
+        o.push_str(&format!(
+            "\n⚠️ **有 {} 条争抢未被任何诊断卡覆盖**——它们**不与任何 episode 收束同刻**\n",
+            uncov
+        ));
+        o.push_str("（发生在「控制已释放、球还在飞」的**两段 episode 之间**）。本表给得出它们的成因，\n");
+        o.push_str("但诊断卡的结构是「一段 possession 一张卡」，故没有卡可挂。\n");
+        o.push_str("**这不等于「没发生」**——它是本产物的一处结构边界，如实并列在这里。\n");
     }
 
     o.push_str("\n### 按异常类别（供挑靶点）\n\n| 异常类别 | 全集命中 | 其中观察不可信 | **进了 L1** | L1 选取口径 |\n|---|---:|---:|---:|---|\n");
@@ -1124,11 +1193,43 @@ pub fn to_markdown(r: &Report) -> String {
     o.push_str("> **抽样类**在 L1 只是**样本**，不是该类的全部；全量见「全集命中」栏。\n");
     o.push_str("\n⚠️ **异常类别只是「值得逐条看的筛子」**，不是缺陷判定，也不是门槛——\n");
     o.push_str("阈值取自 P17A 的同名内部诊断阈值（见 provenance 的 `exc_*`），不是与真实足球的偏差量。\n");
-    o.push_str("⚠️ **「命中卡数」是**全量**口径（含未收录），「进了 L1」才是本产物实际展开的**——\n");
+    o.push_str("⚠️ **「全集命中」是**全量**口径（含未收录），「进了 L1」才是本产物实际展开的**——\n");
     o.push_str("两栏并列是因为只给前者会让读者去 L1 里找并不在那里出现的卡。\n");
 
-    o.push_str("\n### 松散球段与追球者计数（跨场合并）\n\n");
+    // ── 全场普查（匹配级口径：与 design §4.4.1 的 946 / 57.2% 同分母）──
+    o.push_str("\n### 全场松散球普查（**匹配级**口径）\n\n");
+    o.push_str("> ⚠️ 本节的段取自**整条事件流**（与 design §4.4.1 的权威数字**同分母**）；\n");
+    o.push_str("> 诊断卡里的【丢球后】一节只覆盖**该段争抢窗内的子集**——**两者不可互相换算**。\n\n");
+    let cr = r.mover_counts.get("census_runs").copied().unwrap_or(0);
+    let cb = r.mover_counts.get("census_beats").copied().unwrap_or(0);
+    o.push_str(&format!(
+        "- 段数 **{}**，总拍数 {}，均长 {}（design §4.4.1 载 946 段 / 均长 3.02）\n",
+        cr,
+        cb,
+        if cr > 0 { format!("{:.2}", cb as f64 / cr as f64) } else { "—".into() }
+    ));
+    for (label, key) in [
+        ("`chase` 口径（靶点恒为球）", "census_chase_class"),
+        ("任一 mover 口径（**与 design §4.4.1 的 57.2% 同口径；不是「追球者」**）", "census_presence_class"),
+    ] {
+        let mut parts: Vec<String> = Vec::new();
+        for (k, v) in &r.mover_counts {
+            if let Some(cls) = k.strip_prefix(&format!("{key}.")) {
+                let pct = if cr > 0 { 100.0 * *v as f64 / cr as f64 } else { 0.0 };
+                parts.push(format!("`{cls}` {v}（{pct:.1}%）"));
+            }
+        }
+        parts.sort();
+        o.push_str(&format!("- 归属分布 —— {}：{}\n", label, parts.join(" / ")));
+    }
+    o.push_str("\n⚠️ 两个口径**都不是**「追球者总数」：`chase` 靶点恒为球；\n");
+    o.push_str("`close_down` 的靶点按 `TransitionSource` 分流（`SaveCaught` 时追**人**）。\n");
+
+    o.push_str("\n### 松散球段与追球者计数（跨场合并，**卡片侧**）\n\n");
     for (k, v) in &r.mover_counts {
+        if k.starts_with("census_") {
+            continue;
+        }
         o.push_str(&format!("- `{k}`：{v}\n"));
     }
     o.push_str("\n⚠️ `chasers`（`chase`，靶点恒为球）与 `close_downers`（`close_down`，靶点按来源分流）\n");
@@ -1237,12 +1338,13 @@ pub fn render_card_md(c: &EpisodeCard) -> String {
             ));
             for r in runs {
                 o.push_str(&format!(
-                    "- 松散球段 t=[{:.1}, {:.1}]，{} 拍，归属 = `{}`\n  - 追球者（`chase`，靶点恒为球）：{:?}\n  - `close_down`（靶点按来源分流，**不是**追球者）：{:?}\n",
+                    "- 松散球段 t=[{:.1}, {:.1}]，{} 拍\n  - 追球者（`chase`，靶点恒为球）：{:?}，归属（**chase 口径**）= `{}`\n  - 任一 mover 归属（**与 design §4.4.1 的 57.2% 同口径；不是「追球者」**）= `{}`\n  - `close_down`（靶点按来源分流，**不是**追球者）：{:?}\n",
                     r.start_t,
                     r.end_t,
                     r.beats,
-                    r.chase_class(),
                     r.chasers,
+                    r.chase_class(),
+                    r.presence_class(),
                     r.close_downers
                 ));
                 if !r.other_actions.is_empty() {

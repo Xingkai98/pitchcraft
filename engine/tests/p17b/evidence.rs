@@ -327,8 +327,10 @@ pub const EVIDENCE_TABLE: &[EvidenceRow] = &[
         quantity: "松散球期的追球者（`chase`，靶点恒为球）",
         locus: Locus::MoverAction,
         kind: EvidenceKind::Observed,
-        how_verified: "30 seed 实测 `chase` 共 3091 个、**全部落在开球期**（重开准备期 0 个）；\
-                       覆盖缺口见 `ContestStartReason` 逐项声明（`reasons.rs`）",
+        how_verified: "30 seed 实测 `chase` **全量 6745 个**；其中落在「开球期松散球 beat」内的是\
+                       **3091** 个，另 3654 个落在**非松散球**的 beat 上（即带球/争抢之外的跑位），\
+                       重开准备期 **0** 个。⚠️ 本行前版写「`chase` 共 3091 个」——把子集写成了全集\
+                       （审阅 MINOR 抓到）。覆盖缺口见 `ContestStartReason` 逐项声明（`reasons.rs`）",
     },
     EvidenceRow {
         quantity: "触球结果（pass result / shot result / tackle）",
@@ -434,8 +436,11 @@ pub const EVIDENCE_TABLE: &[EvidenceRow] = &[
         quantity: "追球者的移动终点（用于区分「追球」与「追人」）",
         locus: Locus::MoverTarget,
         kind: EvidenceKind::Observed,
-        how_verified: "实测（8 seed）188/513 的 `close_down` 终点距球 > 5.25 m ⇒ 它们在追人；\
-                       这是「不得把 `chase` 与 `close_down` 并称」的**实测依据**",
+        how_verified: "实测（8 seed、**世界坐标** `Δx·105 m, Δy·68 m`，球位取当拍 `BallState`）\
+                       **168/513（32.8%）**的 `close_down` 终点距球 > 5.25 m ⇒ 它们在追人；\
+                       median 2.39 m。这是「不得把 `chase` 与 `close_down` 并称」的**实测依据**。\
+                       ⚠️ 设计稿载的 `188/513` 是把**归一化**距离直接与 5.25 比得到的（单位混用）；\
+                       结论不变，量级差 12%。",
     },
     EvidenceRow {
         quantity: "球是否松散（`loose`）",
@@ -587,8 +592,14 @@ pub const TAIL_TICKS: usize = 3;
 pub enum WindowEnd {
     /// 正常档：`taken_t`（重开发出的时刻）。
     Taken,
+    // ⚠️ 中间两档**实测从不构造**（300 seed 全量为 0）。它们保留是因为
+    // `restart_windows` 必须是一个**全函数**——任何输入都要给出确定的窗口右端。
+    // `allow(dead_code)` 是**如实记录**「这两档当前不产生」，而不是假装它们在用：
+    // 一旦它们开始被构造，`restart_window_falls_back_explicitly_when_taken_t_is_missing`
+    // 的「防御档恒 0」哨兵会红，逼人核一眼。
     /// `taken_t` 缺失但已恢复开放比赛 ⇒ **不变量 5 被破坏**（有 `open_play_resumed_t`
     /// 就必须先有 `taken_t`）。当前引擎实测不产生；保留为全函数的防御档。
+    #[allow(dead_code)]
     OpenPlayResumed,
     /// 两者都缺但**还有下一条重开**（本段被顶掉却未记发球时刻）。
     /// 当前引擎实测不产生；保留为全函数的防御档。

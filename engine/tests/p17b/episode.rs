@@ -231,10 +231,39 @@ impl LooseRun {
         (home, away)
     }
 
-    /// 归属的**分类**（`两队都追` / `只一队` / `none`）。**由 `chase` 判**，
+    /// 归属的**分类**（`both` / `one` / `none`）。**由 `chase` 判**，
     /// `close_down` **不参与**（否则就是把追人算成追球——MAJOR-2 的变异形态）。
+    ///
+    /// ⚠️ **本口径在争抢窗内几乎恒定**：实测 30 seed 的 674 段里 `both` **0**、
+    /// `one` 674。即「两队都在用 `chase` 追球」这件事**基本不存在**——
+    /// 追球方恒为一方（`winning_team` 决定谁被允许追，见 P17A 的 A2 机制）。
+    /// 这与 design §4.4.1 的「两队都追 57.2%」**不是同一个量**，见 [`Self::presence_class`]。
     pub fn chase_class(&self) -> &'static str {
         match self.chasing_teams() {
+            (true, true) => "both",
+            (false, false) => "none",
+            _ => "one",
+        }
+    }
+
+    /// 归属的另一种口径：**只要该队有球员在做任何动作**（`chase` **或** `close_down`）
+    /// 就算「在场」。
+    ///
+    /// ⚠️ **它不是「追球者」的归属**——`close_down` 可能是在**追人**（design §4.4.3）。
+    /// 出这个量是因为 **design §4.4.1 的权威数字（两队都追 57.2% / 只一队 42.8%）
+    /// 用的正是这个口径**：侦察的探针按「任一 mover 在队」统计。报告必须**两个口径都列**
+    /// 并各自标名，否则要么写出与设计对不上的数，要么把 `close_down` 混进「追球者」。
+    pub fn presence_class(&self) -> &'static str {
+        let mut home = false;
+        let mut away = false;
+        for id in self.chasers.iter().chain(self.close_downers.iter()) {
+            match TeamId::from_player(*id) {
+                Some(TeamId::Home) => home = true,
+                Some(TeamId::Away) => away = true,
+                None => {}
+            }
+        }
+        match (home, away) {
             (true, true) => "both",
             (false, false) => "none",
             _ => "one",
@@ -245,8 +274,16 @@ impl LooseRun {
 /// 取一个 episode 的松散球段。
 ///
 /// 段 = **事件流里相邻**的 loose beat 串（任何非 beat / 非 loose beat / 准备期 beat 都断开）。
-/// 「流中相邻」是刻意的：松散球过程的**时间连续性**由事件流的相邻性表达，
-/// 跳过中间的 dry beat 会把两段无关的球拼成一段（实测差 3 倍，见报告的口径对照栏）。
+/// 「流中相邻」是刻意的：松散球过程的**时间连续性**由事件流的相邻性表达。
+///
+/// ⚠️ **别把一个争抢的多个段拼成一段**：`loose_runs` 按「流中相邻」分段，
+/// 而现实中同一段 possession 的松散球可能有**多段**（球被碰一下又松开）。
+/// 本函数**不**把它们合并——合并会把「追—被断—再追」的过程压成一个数。
+///
+/// ⚠️ 处置上的自我更正：本注释曾写「跳过中间的 dry beat 会把两段无关的球拼成一段
+/// （实测差 **3 倍**，见**报告的口径对照栏**）」。审阅复现不出那个「3 倍」，
+/// 产物里也**没有**「口径对照栏」——那是一句**断言了不存在之物**的注释。
+/// 已删。分段口径就是上面这一句：**流中相邻**。
 ///
 /// 只收 `[start_t, end_t]` 窗内的 beat（episode 收束后的事件属于下一段 possession）。
 pub fn loose_runs(
@@ -439,8 +476,11 @@ pub enum PursuitView {
     /// 产了 loose beat（有可看的追逐过程）。
     Visible {
         runs: Vec<LooseRun>,
-        /// 逐段归属（`both` / `one` / `none`）。
-        classes: Vec<&'static str>,
+        /// 逐段的 **`chase` 口径**归属（`both` / `one` / `none`）。
+        chase_classes: Vec<&'static str>,
+        /// 逐段的 **任一 mover 口径**归属——与 design §4.4.1 的 57.2% 同口径，
+        /// **不是**「追球者」的归属（`close_down` 可能追人）。
+        presence_classes: Vec<&'static str>,
     },
     /// **不产 loose beat** ⇒ 看不到追逐过程。带**为什么**（成因），不留给读者猜。
     Invisible { reason: &'static str, contest_reason: &'static str },
@@ -476,6 +516,9 @@ pub struct EpisodeCard {
     /// 本卡用**争抢**时长（`本字段`），`end_t - start_t` 只用于「段时长」。
     /// 非争抢收束时为 `None`（该问题不适用）。
     pub contest_duration_s: Option<f64>,
+    /// 本条争抢的**窗口** `[contest_started.t, contest_ended.t]`（秒）。
+    /// 追逐过程的段取自它——**不是** `[start_t, end_t]`（那会把过程截断在收束拍上）。
+    pub contest_window: Option<(f64, f64)>,
     /// 事件下标越界计数（>0 说明输入形状变了——如实记录，不静默）。
     pub bad_event_indexes: usize,
 }
@@ -496,20 +539,38 @@ pub fn card_of(
     let chain = action_chain(dm, ep, &mut bad_indexes);
     let closing = closing_contest_fact(dm, ep);
     // 收束侧事实的成因：`contest_started` 的 detail（本 change 只报事件级转换）。
-    let contest_start = closing.and_then(|(_, f)| match f.detail {
+    let contest_start = closing.and_then(|(_, f, _)| match f.detail {
         Some(ControlFactDetail::ContestStart(r)) => Some(r),
         _ => None,
     });
+    // ⚠️ **追逐过程取整个争抢窗 `[end_t, contest_ended]`，不是 `[start_t, end_t]`。**
+    //
+    // 初版用了 `(ep.start_t.value, end_t)`——那是**本段 possession** 的窗，右端恰是
+    // 争抢**开始**的那一刻。于是松散球段被截断在收束拍上：实测 30 seed 段长**恒为 1**、
+    // 段末端 100% 等于 `end_t`、`chase_class` **恒为 `one`**。而侦察的权威口径
+    // （design §4.4.1）是在**争抢窗**上量的「两队都追 57.2% / 只一队 42.8%」——
+    // 那个数在初版产物里**一次都不出现**。这是本 change 最重的一处「口径错」：
+    // 结论（"丢球后能看到追球者"）对，但看到的**只是收束那一拍**，
+    // 而 `chase_class` 作为交给 #19 的「追球结构」是个退化量。
+    //
+    // ⇒ 窗取**争抢窗**：它与侦察、与 P17A 的 A2/A3（都按 `contest_started`→
+    // `contest_ended` 量）**同口径**，因而可比。
+    let contest_end = closing.map(|(_, _, e)| e).unwrap_or(end_t.unwrap_or(0.0));
     let pursuit = if let Some(reason) = contest_start {
-        let runs = loose_runs(dm, windows, (ep.start_t.value, end_t));
+        let runs = loose_runs(dm, windows, (ep.start_t.value, Some(contest_end)));
         if runs.is_empty() {
             PursuitView::Invisible {
                 reason: "该成因不产 loose beat ⇒ **追逐不可见**（不是「没发生」）",
                 contest_reason: reason.as_str(),
             }
         } else {
-            let classes = runs.iter().map(|r| r.chase_class()).collect();
-            PursuitView::Visible { runs, classes }
+            let chase_classes = runs.iter().map(|r| r.chase_class()).collect();
+            let presence_classes = runs.iter().map(|r| r.presence_class()).collect();
+            PursuitView::Visible {
+                runs,
+                chase_classes,
+                presence_classes,
+            }
         }
     } else {
         PursuitView::NotApplicable
@@ -528,33 +589,57 @@ pub fn card_of(
         tail: tail_window(dm, ep.team, end_t),
         pursuit,
         contest_start,
-        closing_fact_index: closing.map(|(i, _)| i),
-        contest_duration_s: closing.and_then(|(i, f)| {
-            // 同一条争抢的结束事实：紧随其后的 `contest_ended`。
-            dm.control_facts
-                .iter()
-                .skip(i + 1)
-                .find(|g| g.kind == ControlFactKind::ContestEnded)
-                .map(|g| g.t.value - f.t.value)
-        }),
+        closing_fact_index: closing.map(|(i, _, _)| i),
+        contest_duration_s: closing.map(|(_, f, e)| e - f.t.value),
+        contest_window: closing.map(|(_, f, e)| (f.t.value, e)),
         bad_event_indexes: bad_indexes,
     }
 }
 
-/// 找 episode 的**收束侧争抢事实**：`t == end_t` 的 `contest_started`。
+/// 找 episode 的**收束侧争抢事实**：`t == end_t` 的 `contest_started`，
+/// 连同这条争抢的**结束时刻**（紧随其后的 `contest_ended`）。
 ///
 /// 只在**同刻**找（`t == end_t`）——窗内更早的 `contest_started` 属于**别**的过程。
 /// 同刻多条时取**最早**一条（与 P16 `caliber.rs` 的 `closing_fact` 同款理由：
 /// `t == end_t` 上「最后一条」会选到下一个 episode 的开启事实）。
+///
+/// ⚠️ **不是每条争抢都收束了一段 episode**：实测 300 seed，`contest_started` 事实
+/// 20053 条，其中**同刻是某个 episode 的 `end_t`** 的只有约 70%（见
+/// `by_contest_start` 的分母栏）。余下 30% 发生在「控制已释放、球还在飞」的
+/// **两段 episode 之间**——它们数得到成因，但挂不到任何一张卡上。
 pub fn closing_contest_fact<'a>(
     dm: &'a DiagnosticMatch,
     ep: &PossessionEpisode,
-) -> Option<(usize, &'a ControlFact)> {
+) -> Option<(usize, &'a ControlFact, f64)> {
     let end = ep.end_t?.value;
-    dm.control_facts
+    // ⚠️ **同一 `end_t` 可能收束多个 episode**（实测 30 seed 恰好 1 例：
+    // seed 24 的 t=5400，episode 102 `control_lost` 与 episode 103 `full_time` 同刻）。
+    // 那条争抢事实只属于**真正被它收束**的那一段。用「列表里最靠前的那段」做确定性
+    // tie-break：ep 102 认领它，ep 103（`full_time`，被流边界收束）**不认领**——
+    // 否则 103 会继承 102 的成因，报告会说「这段以 `interception_loose` 收束」，
+    // 而它其实以 `full_time` 收束。这是本仓 `[[conclusion-right-mechanism-wrong]]`
+    // 的形态：字段有值、值看起来合理、但它指的是**另一段**的过程。
+    let sharing: Vec<&PossessionEpisode> = dm
+        .possession_episodes
+        .iter()
+        .filter(|e| e.end_t.map(|t| (t.value - end).abs() < 1e-9).unwrap_or(false))
+        .collect();
+    if sharing.len() > 1 && sharing.first().map(|e| e.id) != Some(ep.id) {
+        return None;
+    }
+    let (i, f) = dm
+        .control_facts
         .iter()
         .enumerate()
-        .find(|(_, f)| f.kind == ControlFactKind::ContestStarted && (f.t.value - end).abs() < 1e-9)
+        .find(|(_, f)| f.kind == ControlFactKind::ContestStarted && (f.t.value - end).abs() < 1e-9)?;
+    let contest_end = dm
+        .control_facts
+        .iter()
+        .skip(i + 1)
+        .find(|g| g.kind == ControlFactKind::ContestEnded)
+        .map(|g| g.t.value)
+        .unwrap_or(f.t.value);
+    Some((i, f, contest_end))
 }
 
 /// 一场比赛的全部诊断卡 + 逐场统计。
@@ -568,6 +653,15 @@ pub struct MatchCards {
     pub close_downers: usize,
     pub other_movers: usize,
     pub bad_event_indexes: usize,
+    /// 本场的**争抢成因全量分布**（`contest_started` 事实逐条，含未收束 episode 的）。
+    pub contest_facts: BTreeMap<&'static str, usize>,
+    /// 全场普查（**匹配级**口径，与 design §4.4.1 的 946/57.2% 同分母）：
+    /// 段数 / `chase` 口径归属分布 / 任一 mover 口径分布 / 总拍数。
+    /// ⚠️ 与卡片里的逐段口径**不是同一个分母**——两者不得互相换算。
+    pub census_runs: usize,
+    pub census_chase_class: BTreeMap<&'static str, usize>,
+    pub census_presence_class: BTreeMap<&'static str, usize>,
+    pub census_beats: usize,
 }
 
 /// 逐场派生（纯函数）。
@@ -587,15 +681,58 @@ pub fn cards_of(dm: &DiagnosticMatch, seed: u64) -> MatchCards {
         }
         out.cards.push(card);
     }
+    for f in &dm.control_facts {
+        if f.kind != ControlFactKind::ContestStarted {
+            continue;
+        }
+        let k = match f.detail {
+            Some(ControlFactDetail::ContestStart(r)) => r.as_str(),
+            _ => "unknown",
+        };
+        *out.contest_facts.entry(k).or_insert(0) += 1;
+    }
+    for r in loose_census(dm, &windows) {
+        out.census_runs += 1;
+        out.census_beats += r.beats;
+        *out.census_chase_class.entry(r.chase_class()).or_insert(0) += 1;
+        *out.census_presence_class.entry(r.presence_class()).or_insert(0) += 1;
+    }
     out
 }
 
+/// **全场松散球普查**（不在任何 episode 的争抢窗内也收）。
+///
+/// ## 为什么需要它，以及它与逐 episode 诊断卡的关系
+///
+/// design §4.4.1 的权威数字（946 段 / 两队都追 **57.2%** / 只一队 42.8% / 均长 3.02）
+/// 量的是**整条事件流**上的松散球段。诊断卡的【丢球后】一节量的是**某一段争抢窗**
+/// 内的子集——两者**不是同一个分母**，数出来的比例也不同。
+///
+/// 实现路径上这里出过一次错：初版既没分开这两个分母，还把窗截在了收束拍上
+/// （审阅 P1-a）。现在两者**分列**：普查给匹配级口径（与设计可比），
+/// 卡片给逐段口径（与 P17A 的 A2/A3 可比，因为都按 `contest_started`→`contest_ended`）。
+pub fn loose_census(dm: &DiagnosticMatch, windows: &[RestartWindow]) -> Vec<LooseRun> {
+    loose_runs(dm, windows, (0.0, None))
+}
+
 /// 松散球段计数的**跨场**合并（逐场先算，再相加——同 P17A 口径纪律）。
-pub fn merge_counts(total: &mut BTreeMap<&'static str, usize>, per_match: &MatchCards) {
-    *total.entry("loose_runs").or_insert(0) += per_match.loose_runs;
-    *total.entry("chasers").or_insert(0) += per_match.chasers;
-    *total.entry("close_downers").or_insert(0) += per_match.close_downers;
-    *total.entry("other_movers").or_insert(0) += per_match.other_movers;
+///
+/// ⚠️ 键是 `String` 而不是 `&'static str`：普查的归属分布有「`census_chase_class.both`」
+/// 这类**动态**键，静态串拼不出来。（初版试过 `Box::leak` —— 那是在**报告里泄漏内存**，
+/// 一个 300 seed 的运行会漏掉上万次。键类型改 `String` 是正确解。）
+pub fn merge_counts(total: &mut BTreeMap<String, usize>, per_match: &MatchCards) {
+    *total.entry("loose_runs".to_string()).or_insert(0) += per_match.loose_runs;
+    *total.entry("chasers".to_string()).or_insert(0) += per_match.chasers;
+    *total.entry("close_downers".to_string()).or_insert(0) += per_match.close_downers;
+    *total.entry("other_movers".to_string()).or_insert(0) += per_match.other_movers;
+    *total.entry("census_runs".to_string()).or_insert(0) += per_match.census_runs;
+    *total.entry("census_beats".to_string()).or_insert(0) += per_match.census_beats;
+    for (k, v) in &per_match.census_chase_class {
+        *total.entry(format!("census_chase_class.{k}")).or_insert(0) += v;
+    }
+    for (k, v) in &per_match.census_presence_class {
+        *total.entry(format!("census_presence_class.{k}")).or_insert(0) += v;
+    }
 }
 
 // ============================== 异常筛选（L1 粒度的第二半） ==============================
@@ -715,6 +852,9 @@ pub enum SelectionKind {
     All,
     /// 等距抽样（驱动量退化且类规模超过 [`EXC_CLASS_CAP`]）。
     Stride,
+    /// **canary 全覆盖**：L1 收录该类的全部卡（人眼核对口径用）。
+    /// 它与 `All` 不同：`All` 是「类规模小所以不抽」，本档是「本次运行根本不筛」。
+    AllCanary,
 }
 
 impl SelectionKind {
@@ -723,6 +863,7 @@ impl SelectionKind {
             SelectionKind::TailP90 => "tail_p90",
             SelectionKind::All => "all",
             SelectionKind::Stride => "stride",
+            SelectionKind::AllCanary => "all_canary",
         }
     }
 }

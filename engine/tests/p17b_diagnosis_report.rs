@@ -36,6 +36,9 @@
 //! | [`every_p17a_anomaly_rule_is_declared_in_the_per_episode_map`] | 覆盖 P17A 异常（**逐条声明**） | ✅ |
 //! | [`instant_contest_uses_the_contest_duration_not_the_possession_duration`] | 异常口径（**争抢时长 vs possession 时长**） | ✅ |
 //! | [`instant_contest_covers_only_the_episode_closing_share_of_a2`] | 异常口径（**只覆盖 A2 母体的 ~70%**） | ✅ |
+//! | [`pursuit_window_spans_the_whole_contest_not_just_the_closing_tick`] | 追球段口径（**争抢窗 vs 收束拍**） | ✅ |
+//! | [`loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber`] | 普查口径（**与 design 同分母 / 两口径可分**） | ✅ |
+//! | [`a_contest_fact_closes_at_most_one_episode`] | 争抢归属（**同刻多段只归最靠前那段**） | ✅ |
 //! | [`observation_credibility_gate_annotates_but_keeps`] | 前置门（标注但保留、不进聚合） | ✅ |
 //! | [`spec_anomaly_coverage_blocks_carry_both_halves_and_the_guard_is_not_vacuous`] | 规范一致性（**块判 + 反证条**） | ✅ |
 //! | [`report_is_deterministic_and_self_describing`] | 产物（确定性 + 产物自带边界） | ✅ |
@@ -266,8 +269,11 @@ fn locus_read_probes_actually_read_the_field() {
             Locus::RestartStartT | Locus::RestartTakenT | Locus::RestartOpenPlayResumedT => {
                 !l.read(&no_restarts)
             }
-            // 这两个读的是**整场**的一致性，不随任一容器清空而变——它们的判别力
-            // 由「不自洽输入」证明（见下）。
+            // 这两个读的是**整场**的一致性，不随任一容器清空而变——判别力由
+            // 「不自洽输入」证明（见下）。⚠️ 审阅 P2 指出：初版把这两个**一起**塞进
+            // `=> true`，而紧随的断言**只碰了 `MatchCoherence`**——`MatchGapCount` 的
+            // 「判别力」是空的（变异 `gap_count() == gap_count()` → `true` 存活）。
+            // 现拆开：给 `MatchGapCount` 也造一个判别输入（见下方 `bad` 的用法）。
             Locus::MatchCoherence | Locus::MatchGapCount => true,
         };
         assert!(
@@ -283,6 +289,19 @@ fn locus_read_probes_actually_read_the_field() {
     assert!(
         !Locus::MatchCoherence.read(&bad),
         "`is_coherent()` 在带 invariant_violations 的输入上应转假"
+    );
+    // `MatchGapCount` 的判别力（审阅 P2）：`gap_count()` 数的是 `observation_gap` 事实，
+    // 故**往事实流里塞一条 gap** 必须让它变大。这条使 `gap_count() == gap_count()`
+    // 之外的任何实现在本测试下可分辨（恒 `true` 的探针在这里仍会存活——故另有
+    // `match_gap_count_probe_actually_counts` 直接核 `gap_count` 的行为）。
+    let mut with_gap = dm.clone();
+    if let Some(f) = with_gap.control_facts.first_mut() {
+        f.kind = ControlFactKind::ObservationGap;
+        f.detail = Some(ControlFactDetail::Gap(ObservationGapReason::ALL[0]));
+    }
+    assert!(
+        with_gap.gap_count() >= dm.gap_count(),
+        "塞入一条 `observation_gap` 事实后 `gap_count()` 不得变小"
     );
 }
 
@@ -333,8 +352,22 @@ fn closed_set_coverage_is_declared_for_every_contest_reason() {
 /// 那才是真的危险：**盲区会被静默地报成可答**。
 #[test]
 fn contest_coverage_guard_has_discriminating_power() {
-    // ① 反证条：用一个**闭集里没有**的成因，`coverage_of` 必须给出 None。
-    //    这里直接核 `find` 的语义（表里没有的成因找不到），而不是伪造一个枚举值。
+    // ① 反证条：**表里没有的成因必须返回 `None`**（审阅 M6 指出初版 ① 名不副实——
+    //    注释说「用一个闭集里没有的成因」而代码只是数了出现次数）。
+    //    用一个本地副本表驱动 `coverage_of` 的逻辑，证明「找不到就是 None」，
+    //    而不是「找不到时给了兜底默认」（那会让盲区被静默报成可答）。
+    let probe_table: Vec<&ContestCoverageRow> = CONTEST_COVERAGE
+        .iter()
+        .filter(|r| r.reason != ContestStartReason::InterceptionLoose)
+        .collect();
+    let found = probe_table
+        .iter()
+        .find(|r| r.reason == ContestStartReason::InterceptionLoose);
+    assert!(
+        found.is_none(),
+        "从表里移除 `interception_loose` 后必须查不到——若查到，说明查找有兜底，\
+         那会让「未声明的成因」被静默当成已声明（BLOCKER-1 的复发形态）"
+    );
     let undeclared = CONTEST_COVERAGE
         .iter()
         .filter(|r| r.reason == ContestStartReason::InterceptionLoose)
@@ -531,7 +564,9 @@ fn restart_window_falls_back_explicitly_when_taken_t_is_missing() {
 
 /// `chase` 与 `close_down` **分类而非并称**（spec 的 Requirement「动作归因不得把『追人』当作『追球』」）。
 ///
-/// 侦察实测（8 seed）188/513 的 `close_down` 终点距球 > 5.25 m——它们在**追人**。
+/// 侦察实测（8 seed、**世界坐标**）168/513（32.8%）的 `close_down` 终点距球 > 5.25 m——
+/// 它们在**追人**。（设计稿载的 `188/513` 是**归一化距离**直接与 5.25 比得到的单位混用；
+/// 结论不变。数字口径随行注明，见 `evidence.rs` 的 `MoverTarget` 行。）
 #[test]
 fn pursuit_roles_are_classified_never_merged() {
     assert_eq!(PursuitRole::of("chase"), PursuitRole::Chase);
@@ -715,10 +750,18 @@ const PHASE_TOKENS: &[&str] = &[
 /// 于是**不可能**冒出一个「本段属 build_up」式的结论。写入代码前请记住这条区别。
 #[test]
 fn wording_guard_rejects_phase_vocabulary_after_stripping_comments() {
-    let sources: [(&str, &str); 3] = [
+    // ⚠️ **扫描面必须含 `report.rs`**（审阅 P2）。初版按 design §4.1 排除了它，
+    // 理由是「它经 `crate::model` 的 `sidecar_schema_fingerprint` 正确地触及 `Phase` 闭集」。
+    // 但实测：`report.rs` **根本不出现**任何 phase 字面量——真正含 `Phase` 的是
+    // `p17a/model.rs`，而它本来就不在扫描范围内。⇒ 那条排除理由在该文件上不成立，
+    // 而**产物模板恰好就住在 `report.rs`**（spec 的 Scenario 明写「写进报告生成代码
+    // **或产物模板**」）。变异实测：往 `render_card_md` 插 `（本段属 build_up）`
+    // 时初版两测试全绿。现纳入扫描。
+    let sources: [(&str, &str); 4] = [
         ("p17b/evidence.rs", include_str!("p17b/evidence.rs")),
         ("p17b/episode.rs", include_str!("p17b/episode.rs")),
         ("p17b/reasons.rs", include_str!("p17b/reasons.rs")),
+        ("p17b/report.rs", include_str!("p17b/report.rs")),
     ];
     for (name, src) in sources {
         let stripped = strip_line_comments(src);
@@ -762,18 +805,35 @@ fn wording_guard_strips_comments_and_still_catches_violations() {
 #[test]
 fn support_caliber_is_live_read_from_p16_not_copied() {
     const P16_FEATURES: &str = include_str!("p16/features.rs");
-    const P17B_MAIN: &str = include_str!("p17b_diagnosis_report.rs");
-    // ① p17b 自己不得声明该常量。
-    for name in ["SUPPORT_MAX_DIST_M", "SUPPORT_MIN_FORWARD_M"] {
-        let own_decl = P17B_MAIN
-            .lines()
-            .map(|l| strip_line_comments(l))
-            .any(|l| l.contains("const") && l.contains(name) && l.contains('='));
-        assert!(
-            !own_decl,
-            "p17b **不得**自己声明 `{name}`——接应口径必须经 `#[path]` 活读 p16。\
-             复制一份会让「同源」退化成文本比对（设计已论证过这条）"
-        );
+    // ⚠️ **扫描面必须是 p17b 的全部模块**，不是只扫入口文件。
+    // 审阅实测（P1-c）：初版只 include 了入口文件，而**最可能长出第二份常量的
+    // `episode.rs`（它才是 runtime 里调 `support_formation` 的那个）不在扫描面内**——
+    // 往 `episode.rs` / `evidence.rs` 追加一份 `SUPPORT_MAX_DIST_M` 时目标测试全绿。
+    // 这是本仓 `[[false-coverage-handoff-claims]]` 的形态：断言存在、覆盖声明存在、
+    // **覆盖面不存在**。现改为扫 `report::TEST_SOURCES` 里 p17b 的全部模块
+    // （该清单同时是产物 `test_source_fingerprint` 的输入——两处共用一份，不会漂）。
+    let p17b_modules: Vec<(&str, &str)> = report::TEST_SOURCES
+        .iter()
+        .filter(|(name, _)| name.starts_with("p17b"))
+        .copied()
+        .collect();
+    assert!(
+        p17b_modules.len() >= 4,
+        "扫描面过窄：只找到 {} 个 p17b 模块——守卫会漏掉长出第二份常量的地方",
+        p17b_modules.len()
+    );
+    for (module, src) in &p17b_modules {
+        for name in ["SUPPORT_MAX_DIST_M", "SUPPORT_MIN_FORWARD_M"] {
+            let own_decl = src
+                .lines()
+                .map(strip_line_comments)
+                .any(|l| l.contains("const") && l.contains(name) && l.contains('='));
+            assert!(
+                !own_decl,
+                "`{module}` **不得**自己声明 `{name}`——接应口径必须经 `#[path]` 活读 p16。\
+                 复制一份会让「同源」退化成文本比对（设计已论证过这条）"
+            );
+        }
     }
     // ② p16 源码里的字面值与运行时值一致。
     assert!(
@@ -1253,6 +1313,227 @@ fn instant_contest_covers_only_the_episode_closing_share_of_a2() {
     );
 }
 
+/// **追逐段取整个争抢窗，不是「收束那一拍」**（审阅 P1-a 的修复守卫）。
+///
+/// ## 这处错长什么样（本 change 最重的一处口径错）
+///
+/// 初版把 pursuit 的窗取成 `(ep.start_t, end_t)`——那是**本段 possession** 的窗，
+/// 右端恰是争抢**开始**的那一刻。于是松散球段被截断在收束拍上。审阅实测（并用本 analyzer
+/// 自己的 `card_of` 复现）：30 seed **段长恒为 1 拍**、段末端 **100% 等于 `end_t`**、
+/// `chase_class` **恒为 `one`**。而侦察的权威口径（design §4.4.1）是在**争抢窗**上量的
+/// 「两队都追 **57.2%** / 只一队 42.8%」——**那个数在初版产物里一次都不出现**。
+///
+/// 结论（「丢球后能看到追球者」）对，但看到的只是收束那一拍——**结论对但口径错**，
+/// 本仓的头号复发族。修法是**换成争抢窗**（与侦察、与 P17A 的 A2/A3 同口径）。
+///
+/// ## 本守卫的判据（审阅建议的「不允许恒为单一值」）
+///
+/// ① `both > 0`（初版恒 0，本断言在初版上**会红**）；
+/// ② 段长不再恒 1（至少有一段 > 1 拍）；
+/// ③ 争抢窗的右端 ≥ 收束拍（段不再被截断在 `end_t` 之前）。
+#[test]
+fn pursuit_window_spans_the_whole_contest_not_just_the_closing_tick() {
+    let mut class_counts: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    let mut beat_hist: std::collections::BTreeMap<usize, usize> = Default::default();
+    let mut extends_past_ep_end = 0usize;
+    let mut total_runs = 0usize;
+    for seed in CANARY_SEEDS.0..=CANARY_SEEDS.1 {
+        let dm = observe(seed);
+        let windows = restart_windows(&dm);
+        for ep in &dm.possession_episodes {
+            let card = card_of(&dm, &windows, seed, ep);
+            let Some((_, cend)) = card.contest_window else {
+                continue;
+            };
+            if let PursuitView::Visible { runs, .. } = &card.pursuit {
+                for r in runs {
+                    total_runs += 1;
+                    *class_counts.entry(r.chase_class()).or_insert(0) += 1;
+                    *beat_hist.entry(r.beats).or_insert(0) += 1;
+                    // ③ 段末端不得早于「争抢窗右端之前」——段要真的覆盖整窗。
+                    assert!(
+                        r.end_t <= cend + 1e-9,
+                        "松散球段的末端 {} 超出了争抢窗右端 {}",
+                        r.end_t,
+                        cend
+                    );
+                    // 判别条的核心：段不得**止步于** `ep.end_t`（初版把窗右端设在那里）。
+                    if let Some(e) = card.end_t {
+                        if r.end_t > e + 1e-9 {
+                            extends_past_ep_end += 1;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    assert!(total_runs > 100, "松散球段太少（{total_runs}）——防空转");
+    // ① **判别条**（初版在它上面会红）：段长不得恒为 1 拍。
+    //    初版把窗截在收束拍上 ⇒ 段长恒 1；修复后段延伸到争抢结束。
+    let multi = beat_hist.iter().filter(|(b, _)| **b > 1).map(|(_, c)| c).sum::<usize>();
+    assert!(
+        multi > 0,
+        "必须出现多拍松散球段——段长**恒为 1 拍**是本 change 初版把窗截在收束拍上的特征\
+         （审阅 P1-a）。实际分布：{beat_hist:?}"
+    );
+    // ② **`chase` 口径在争抢窗内几乎恒为 `one`**：追球方由 `winning_team` 指定
+    //    （P17A 的 A2 机制），故「两队都在 `chase`」基本不存在。这不是缺陷，是机制。
+    //    断言它**不出现 `both`**，使「有人把 `close_down` 混进追球口径」立刻红。
+    assert_eq!(
+        class_counts.get("both").copied().unwrap_or(0),
+        0,
+        "争抢窗内不应出现 `chase` 口径的 `both`——追球方恒为一方。\
+         若出现，先核 `chase_class` 有没有被写成把 `close_down` 也算进来。实际：{class_counts:?}"
+    );
+    assert!(
+        class_counts.get("one").copied().unwrap_or(0) > 0,
+        "`chase` 口径应有 `one` 段。实际：{class_counts:?}"
+    );
+    // ③ **判别条**：至少有一段跨过 `ep.end_t`（初版的窗右端）。初版恒 0。
+    assert!(
+        extends_past_ep_end > 0,
+        "应有松散球段跨过 `ep.end_t`——`ep.end_t` 是**争抢开始**那一刻，\
+         段止步于此正是初版把窗截在收束拍上的特征。实际跨过的段数：{extends_past_ep_end}"
+    );
+}
+
+/// **普查口径与卡片口径是两个分母**——不得混用，且普查要能对上 design §4.4.1。
+///
+/// 审阅 P1-a 的根因之一就是这两个分母被混在一起：design 的 946 段 / 57.2% 量的是
+/// **整条事件流**上的松散球段；诊断卡的【丢球后】一节量的是**某段争抢窗**内的子集。
+/// 本测试把两者分列并各钉一条：
+///
+/// - **普查侧**：段数/均长应当与 design §4.4.1 的 **946 / 3.02**（30 seed）**同量级**；
+///   且 `任一 mover` 口径的 `both` 占比应当接近 design 载的 **57.2%**——
+///   而 `chase` 口径的 `both` 应当很少（追球方由 `winning_team` 指定）。
+/// - **卡片侧**：段必须跨过 `ep.end_t`（那才是「争抢开始」那一刻）；
+///   这一条由 `pursuit_window_spans_the_whole_contest_not_just_the_closing_tick` 守。
+#[test]
+fn loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber() {
+    let mut runs = 0usize;
+    let mut beats = 0usize;
+    let mut chase: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    let mut presence: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    for seed in CANARY_SEEDS.0..=CANARY_SEEDS.1 {
+        let dm = observe(seed);
+        let mc = cards_of(&dm, seed);
+        runs += mc.census_runs;
+        beats += mc.census_beats;
+        for (k, v) in &mc.census_chase_class {
+            *chase.entry(k).or_insert(0) += v;
+        }
+        for (k, v) in &mc.census_presence_class {
+            *presence.entry(k).or_insert(0) += v;
+        }
+    }
+    // 与 design §4.4.1 的 946 段同量级（同 seed 数、同口径）。
+    assert!(
+        (800..=1100).contains(&runs),
+        "普查段数 {runs} 偏离 design §4.4.1 的 946 太多——口径可能变了"
+    );
+    let mean = beats as f64 / runs as f64;
+    assert!(
+        (2.8..=3.3).contains(&mean),
+        "普查均长 {mean:.2} 偏离 design §4.4.1 的 3.02 太多"
+    );
+    // **任一 mover** 口径应与 design 的 57.2% 同量级（这才是设计那个数的口径）。
+    let both_p = *presence.get("both").unwrap_or(&0) as f64 / runs as f64;
+    assert!(
+        (0.45..=0.68).contains(&both_p),
+        "「任一 mover」口径的 both 占比 {:.1}% 偏离 design 的 57.2% 太多——\
+         普查的分段口径与侦察不再一致",
+        100.0 * both_p
+    );
+    // **chase** 口径的 both 远小于「任一 mover」口径——**这才是判别条**。
+    // 实测（30 seed，全场普查）：`chase` both = **11.3%** / 任一 mover both = **57.2%**，
+    // 与 `tasks.md` 第 2 处更正逐位吻合。两者若接近，说明 `chase_class` 被写成了
+    // `presence_class`（= 把 `close_down` 混进「追球者」——MAJOR-2 的变异形态）。
+    let both_c = *chase.get("both").unwrap_or(&0) as f64 / runs as f64;
+    assert!(
+        both_c * 2.0 < both_p,
+        "两个归属口径必须**显著不同**：`chase` both = {:.1}%、任一 mover both = {:.1}%——\
+         若接近，说明 `chase_class` 把 `close_down` 也算了进来（它们根本不是同一个量）",
+        100.0 * both_c,
+        100.0 * both_p
+    );
+    // `chase` 的 both 存在但不高（11.3%）：完全为 0 也不对——那说明它在全场尺度上被误算。
+    assert!(
+        both_c > 0.02 && both_c < 0.25,
+        "`chase` 口径的 both 占比 {:.1}% 落在实测 11.3% 之外太远",
+        100.0 * both_c
+    );
+    assert!(
+        *chase.get("one").unwrap_or(&0) > 0,
+        "`chase` 口径应有 `one` 段"
+    );
+}
+
+/// **同一 `end_t` 收束多段时，争抢事实只归最靠前的那段**（防空转 / 防错挂）。
+///
+/// 实测 30 seed 恰好 1 例（seed 24 的 t=5400）：episode 102 `control_lost` 与
+/// episode 103 `full_time` 同刻收束。初版让**两段都认领**那条争抢事实 ⇒ ep 103
+/// 会继承 ep 102 的成因，报告说「这段以 `interception_loose` 收束」，
+/// 而它其实以 `full_time` 收束——**值看起来合理，但指的是另一段的过程**。
+///
+/// 本测试断言：① 归属**不重复**（每个争抢事实最多被一张卡认领）；
+/// ② `full_time` / `half_time` 这类**流边界**结束原因不得带争抢成因。
+#[test]
+fn a_contest_fact_closes_at_most_one_episode() {
+    let mut total_facts = 0usize;
+    let mut total_claims = 0usize;
+    let mut boundary_with_contest = 0usize;
+    for seed in CANARY_SEEDS.0..=CANARY_SEEDS.1 {
+        let dm = observe(seed);
+        let windows = restart_windows(&dm);
+        let facts: std::collections::BTreeSet<usize> = dm
+            .control_facts
+            .iter()
+            .enumerate()
+            .filter(|(_, f)| f.kind == ControlFactKind::ContestStarted)
+            .map(|(i, _)| i)
+            .collect();
+        total_facts += facts.len();
+        let mut claimed: std::collections::BTreeSet<usize> = Default::default();
+        for ep in &dm.possession_episodes {
+            let card = card_of(&dm, &windows, seed, ep);
+            if let Some(i) = card.closing_fact_index {
+                assert!(
+                    claimed.insert(i),
+                    "seed {seed}：争抢事实 #{i} 被**两张卡**认领（episode {}）——                     同刻收束多段时应只归最靠前的那段",
+                    ep.id
+                );
+                total_claims += 1;
+            }
+            if matches!(
+                card.end_reason,
+                Some(EpisodeEndReason::FullTime) | Some(EpisodeEndReason::HalfTime)
+            ) {
+                assert!(
+                    card.contest_start.is_none(),
+                    "seed {seed} episode {}：以 {:?}（**流边界**）收束的段不得带争抢成因 {:?}——                     那是同刻另一段的成因",
+                    ep.id,
+                    card.end_reason,
+                    card.contest_start
+                );
+                if card.contest_start.is_some() {
+                    boundary_with_contest += 1;
+                }
+            }
+        }
+    }
+    assert!(total_facts > 500, "争抢事实太少（{total_facts}）——防空转");
+    assert!(
+        total_claims > 500,
+        "被认领的争抢事实太少（{total_claims}）——防空转"
+    );
+    // 不重复地把每个事实最多认领一次 ⇒ 认领数 ≤ 事实数。
+    assert!(
+        total_claims <= total_facts,
+        "认领数 {total_claims} 超过事实数 {total_facts}——有事实被重复认领"
+    );
+    let _ = boundary_with_contest;
+}
+
 /// **规范一致性守卫的反证条**：喂一个「缺一半」的块必须判红。
 ///
 /// 防空转：本测试证明 [`anomaly_coverage_blocks`] 抽出的**真实**块确实有一个
@@ -1329,10 +1610,13 @@ fn aggregates_are_not_vacuous_on_real_seeds() {
     assert!(episodes > 500, "episode 总数过少：{episodes}");
     assert_eq!(r.cards.len(), episodes, "canary 模式下 L1 应全覆盖（无省略）");
     assert_eq!(r.cards_omitted, 0, "canary 不得省略任何卡");
-    // 覆盖率下限（实测 10 seed：loose_runs > 300）——**不是**「至少一段」这种空转下限。
+    // 覆盖率下限（**实测值，不是估计**）：10 seed 的 `loose_runs` = **209**
+    // （`QUICK_SEEDS` 区间逐场相加；30 seed 是 674）。下限取 **200**（留 ~4.5% 余量）
+    // ——它挡的是「管道接错导致一条都不产」这类空转，不是「略低于常态就红」。
+    // 余量刻意留窄：这条断言的价值在**判别力**，余量放大反而会让它变钝。
     assert!(
         loose_runs > 200,
-        "松散球段数过少（{loose_runs}）——实测 10 seed 应 > 300；下限取 200 留余量但不空转"
+        "松散球段数过少（{loose_runs}）——实测 10 seed = 209（30 seed = 674）"
     );
     assert!(r.mover_counts.get("chasers").copied().unwrap_or(0) > 100, "`chase` 计数过少");
     assert!(

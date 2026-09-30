@@ -256,7 +256,8 @@ pub const WORDING_RULES: &[WordingRule] = &[
         allowed: "`chase`（靶点恒为球，可称追球）；`close_down` 单列并标注其靶点来源",
         forbidden: "把 `chase` 与 `close_down` 并称「追球者」",
         why: "`close_down` 的靶点按 `TransitionSource` 分流——`SaveCaught` 时追的是**前插球员**\
-              （实测 8 seed 188/513 的 `close_down` 终点距球 > 5.25 m）。并称会让读者以为它们都在追球",
+              （实测 8 seed、**世界坐标**：168/513（32.8%）的 `close_down` 终点距球 > 5.25 m，\
+              median 2.39 m）。并称会让读者以为它们都在追球",
     },
     WordingRule {
         name: "压力：报状态不报因果",
