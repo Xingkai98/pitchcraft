@@ -1,0 +1,152 @@
+// #18 引擎侧参照探针（**归档，可复现**）。
+//
+// 用法：
+//   复制成 engine/tests/zz_p18_engine_probe.rs，然后
+//   P17A_SOURCE_COMMIT=$(git rev-parse HEAD) \
+//     cargo test --release --test zz_p18_engine_probe -- --ignored --nocapture
+//   （跑完删除；本文件是归档副本，不入 tests/）
+//
+// 口径：
+//   [E1] 链 = `PossessionEpisode`（#15A sidecar；开放比赛、同队连续控制，天然不含死球）。
+//   [E2] 动作 = 归属该 episode 的事件里 type ∈ {pass, shot, tackle, foul, kickoff}。
+//   [E3] 间隔 = 相邻动作事件 `t` 之差（引擎决策事件是**瞬时点**）。
+//   [E4] 转换反应 = `ControlFact{ContestStarted}` 的 t0 → **失球方**
+//        （`fact.team` 是 releasing_team，见 observation.rs）首个
+//        `Mover.action ∈ {chase, close_down}` 的 beat 时间差。窗口 [t0-1.0, t0+10.0]。
+//        ⚠️ 分三类（d<0 / d==0 / d>0 / 无），**不合并**——合成一个均值会掩盖双峰。
+//   [E5] 逐场算再跨场平均。
+
+use fm_engine::observation::{ControlFactDetail, ControlFactKind, TeamId};
+use fm_engine::{simulate_with_behavior_observations, MatchConfig};
+
+const DUR: f64 = 5400.0;
+const SEEDS: std::ops::RangeInclusive<u64> = 1..=30;
+
+fn ti(id: i32) -> usize { if id <= 10 { 0 } else { 1 } }
+fn mean(a: &[f64]) -> f64 { if a.is_empty() { f64::NAN } else { a.iter().sum::<f64>() / a.len() as f64 } }
+fn sd(a: &[f64]) -> f64 {
+    if a.len() < 2 { return f64::NAN; }
+    let m = mean(a);
+    (a.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (a.len() - 1) as f64).sqrt()
+}
+fn pctl(a: &[f64], p: f64) -> f64 {
+    if a.is_empty() { return f64::NAN; }
+    let mut s = a.to_vec(); s.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let h = (s.len() - 1) as f64 * p; let i = h.floor() as usize;
+    if i + 1 >= s.len() { s[s.len() - 1] } else { s[i] + (h - i as f64) * (s[i + 1] - s[i]) }
+}
+
+#[test]
+#[ignore = "探针"]
+fn p18_engine_probe() {
+    let (mut pass_res, mut contested_detail) = (std::collections::BTreeMap::new(), std::collections::BTreeMap::new());
+    // 转换反应：分 reason 的 (n, d<0, d==0, d>0, 无)
+    let mut by_reason: std::collections::BTreeMap<String, (usize, usize, usize, usize, usize)> = Default::default();
+    let mut per_match_gap: Vec<f64> = Vec::new();
+    let mut per_match_dur: Vec<f64> = Vec::new();
+    let mut per_match_acts: Vec<f64> = Vec::new();
+    let mut per_match_shot: Vec<f64> = Vec::new();
+    let mut all_gap: Vec<f64> = Vec::new();
+    let mut all_react_pos: Vec<f64> = Vec::new();
+    let mut all_react_neg_before: Vec<f64> = Vec::new();
+
+    for seed in SEEDS {
+        let cfg = MatchConfig { match_duration_seconds: DUR, ..MatchConfig::default_() };
+        let dm = simulate_with_behavior_observations(seed, cfg);
+
+        for e in dm.events.iter() {
+            if e.type_.as_str() != "pass" { continue; }
+            let k = e.result.as_deref().unwrap_or("<none>").to_string();
+            *pass_res.entry(k.clone()).or_insert(0usize) += 1;
+            if k == "contested" { *contested_detail.entry(format!("{:?}", e.detail)).or_insert(0usize) += 1; }
+        }
+
+        // beat 预收集（团队 + 动作）
+        let beats: Vec<(f64, Vec<(usize, String)>)> = dm.events.iter()
+            .filter_map(|e| e.movers.as_ref().map(|ms| (e.t, ms.iter().map(|m| (ti(m.id), m.action.clone())).collect())))
+            .collect();
+
+        for f in dm.control_facts.iter() {
+            if !matches!(f.kind, ControlFactKind::ContestStarted) { continue; }
+            let Some(tid) = f.team else { continue };
+            let t = if matches!(tid, TeamId::Home) { 0 } else { 1 };
+            let rk = match &f.detail {
+                Some(ControlFactDetail::ContestStart(r)) => format!("{:?}", r),
+                _ => "<none>".into(),
+            };
+            let t0 = f.t.value;
+            let mut best: Option<f64> = None;
+            for (bt, ms) in beats.iter() {
+                if *bt < t0 - 1.0 || *bt > t0 + 10.0 { continue; }
+                if ms.iter().any(|(tm, a)| *tm == t && (a == "chase" || a == "close_down")) {
+                    if best.map(|b| *bt < b).unwrap_or(true) { best = Some(*bt); }
+                }
+            }
+            let e = by_reason.entry(rk).or_default();
+            e.0 += 1;
+            match best {
+                None => e.4 += 1,
+                Some(bt) => {
+                    let d = bt - t0;
+                    if d < -1e-9 { e.1 += 1; all_react_neg_before.push(d); }
+                    else if d.abs() < 1e-9 { e.2 += 1; }
+                    else { e.3 += 1; all_react_pos.push(d); }
+                }
+            }
+        }
+
+        // 链（episode）
+        let mut gaps = Vec::new(); let mut durs = Vec::new(); let mut acts = Vec::new(); let mut shots = Vec::new();
+        for ep in dm.possession_episodes.iter() {
+            let mut ts: Vec<f64> = Vec::new();
+            for &ix in ep.event_indexes.iter() {
+                if let Some(ev) = dm.events.get(ix) {
+                    if matches!(ev.type_.as_str(), "pass" | "shot" | "tackle" | "foul" | "kickoff") { ts.push(ev.t); }
+                }
+            }
+            ts.sort_by(|a, b| a.partial_cmp(b).unwrap());
+            acts.push(ts.len() as f64);
+            if ts.len() >= 2 { for w in ts.windows(2) { gaps.push(w[1] - w[0]); } }
+            shots.push(
+                ep.event_indexes.iter().filter(|&&ix| dm.events.get(ix).map(|e| e.type_.as_str() == "shot").unwrap_or(false)).count() as f64,
+            );
+            if let Some(en) = ep.end_t { if en.value > ep.start_t.value { durs.push(en.value - ep.start_t.value); } }
+        }
+        per_match_gap.push(mean(&gaps));
+        per_match_dur.push(mean(&durs));
+        per_match_acts.push(mean(&acts));
+        let last_is_shot = dm.possession_episodes.iter().filter(|ep| {
+            ep.event_indexes.iter().rev().find_map(|&ix| dm.events.get(ix))
+                .map(|e| e.type_.as_str() == "shot").unwrap_or(false)
+        }).count() as f64 / dm.possession_episodes.len() as f64;
+        let _ = shots;
+        per_match_shot.push(last_is_shot);
+        all_gap.extend(gaps.iter().copied());
+    }
+
+    println!("\n===== 引擎侧参照（{} seed × {:.0}s，逐场算再跨场平均）=====", SEEDS.count(), DUR);
+    println!("[E3] 链内动作间隔(s): 跨场均值 {:.4} (sd {:.4})  p50={:.2} p90={:.2}  唯一取值 {}",
+        mean(&per_match_gap), sd(&per_match_gap), pctl(&all_gap, 0.5), pctl(&all_gap, 0.9),
+        { let mut v: Vec<i64> = all_gap.iter().map(|x| (x * 10.0).round() as i64).collect(); v.sort(); v.dedup(); v.len() });
+    println!("[E?] 链时长(s)        : 跨场均值 {:.4} (sd {:.4})", mean(&per_match_dur), sd(&per_match_dur));
+    println!("[E?] 链动作数         : 跨场均值 {:.4} (sd {:.4})", mean(&per_match_acts), sd(&per_match_acts));
+    println!("[C1] 以射门【收尾】的链占比: {:.4}", mean(&per_match_shot));
+
+    println!("\n[E4] 转换反应：分 reason（n / d<0 / d==0 / d>0 / 10s内无）");
+    let (mut tn, mut tn2, mut tn3, mut tn4, mut tn5) = (0, 0, 0, 0, 0);
+    for (k, (n, a, b, c, d)) in by_reason.iter() {
+        println!("    {:<18} n={:>4}  <0:{:>4}({:.3})  ==0:{:>4}({:.3})  >0:{:>3}  无:{:>4}({:.3})",
+            k, n, a, *a as f64 / *n as f64, b, *b as f64 / *n as f64, c, d, *d as f64 / *n as f64);
+        tn += n; tn2 += a; tn3 += b; tn4 += c; tn5 += d;
+    }
+    println!("    {:<18} n={:>4}  <0:{:>4}({:.3})  ==0:{:>4}({:.3})  >0:{:>3}  无:{:>4}({:.3})",
+        "TOTAL", tn, tn2, tn2 as f64 / tn as f64, tn3, tn3 as f64 / tn as f64, tn4, tn5, tn5 as f64 / tn as f64);
+    println!("    d>0 的取值: n={}  ∈ [{:.1}, {:.1}]", all_react_pos.len(),
+        all_react_pos.iter().cloned().fold(f64::MAX, f64::min),
+        all_react_pos.iter().cloned().fold(f64::MIN, f64::max));
+    println!("    d<0 的取值: n={} 均值 {:.2}（= 丢球**前一拍**就已在跑）",
+        all_react_neg_before.len(), mean(&all_react_neg_before));
+
+    println!("\n[E1] pass result 分布: {:?}", pass_res);
+    println!("     contested 的 detail: {:?}", contested_detail);
+}
