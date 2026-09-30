@@ -1819,8 +1819,14 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
 ///
 /// ## 现在守什么（窄，覆盖「在结构化条目里复述旧结论」）
 ///
-/// 只扫**结构化条目**——`evidence.rs` 的 `EvidenceRow`、`reasons.rs` 的 `WordingRule`——
-/// 的**字段字面量**。这些是**会喂进产物**的地方，也是「又抄一份旧结论」真正危险的落点。
+/// 扫**下方显式列出的七个条目族**的**字段字面量**：
+/// `evidence.rs` 的 `EvidenceRow` / `UnavailableItem`，
+/// `reasons.rs` 的 `ContestCoverageRow` / `WordingRule` / `AnomalyCoverageRow`，
+/// `episode.rs` 的 `CoverageClaim` / `EXCEPTION_CLASSES`。
+/// 这些是**会喂进产物**的地方，也是「又抄一份旧结论」真正危险的落点。
+///
+/// ⚠️ **不要把它写成「所有喂进产物的条目族」**（轮 8 证伪过这种写法）：
+/// 该清单是**显式登记**的，不保证穷尽——新增一个条目族而忘了登记，本守卫不会说话。
 /// 判据：条目里若出现**距离证据**（`5.25` / `188/513` / `168/513`）**且**出现 `追人`，
 /// 该条目必须带**收回标记**。
 ///
@@ -1841,6 +1847,9 @@ fn anomaly_coverage_notes_only_cite_fields_the_product_carries() {
 /// - 把收回词用在**无关**处（E6）或**反向**否认收回（E15）；
 /// - 逐字还原旧句而旧句本身含某个标记词（E12）。
 /// - **条目内**换距离写法（在条目里只写 `5.3 m` ⇒ GREEN，比自由散文更难判红）；
+/// - **清单本身不保证穷尽**：扫描面是**显式登记**的七个条目族；
+///   将来新增一个「喂进产物且有说明字段」的条目族而忘了登记，本守卫**不会说话**
+///   （轮 8 抓到的正是这一族：`CoverageClaim` 与 `EXCEPTION_CLASSES` 曾漏登记）。
 /// 这些**文本启发式天然抓不住**——6 轮实测证明，继续加判据只会换一个新的失败面。
 /// **本 change 不追求该族缺陷的全覆盖机制化**（本仓先例：P124 如实放弃
 /// `doc_referenced_symbols_exist` 并写明「只靠人工」）。
@@ -1857,16 +1866,20 @@ fn retracted_close_down_claim_sites_carry_their_retraction() {
     /// 被推翻推断的**推论语**。
     const INFERENCE: &str = "追人";
 
-    /// 从源文本里切出**结构化条目**：以 `opener` 起、到 `\n    },` 止。
+    /// 从源文本里切出**结构化条目**：以 `opener` 起、到 `closer` 止
+    /// （结构体条目 `\n    },`；元组条目 `\n    ),`）。
     ///
     /// ⚠️ 单位是**条目**（结构），不是行、不是空行切出的段落——这是 6 轮实测的结论。
-    fn units<'a>(src: &'a str, opener: &str) -> Vec<(usize, &'a str)> {
+    fn units<'a>(src: &'a str, opener: &str, closer: &str) -> Vec<(usize, &'a str)> {
         let mut out = Vec::new();
         let mut from = 0usize;
         while let Some(i) = src[from..].find(opener) {
             let at = from + i;
             let rest = &src[at..];
-            let len = rest.find("\n    },").map(|e| e + 7).unwrap_or(rest.len());
+            let len = rest
+                .find(closer)
+                .map(|e| e + closer.len())
+                .unwrap_or(rest.len());
             let line = src[..at].lines().count() + 1;
             out.push((line, &rest[..len]));
             from = at + len;
@@ -1879,25 +1892,31 @@ fn retracted_close_down_claim_sites_carry_their_retraction() {
     // （`pub struct EvidenceRow {` / `pub struct ContestCoverageRow {`），
     // 于是「条目」从类型定义一路吃到第一个 `\n    },`——把类型与常量之间的
     // **无关注释**也卷进来（实测：E8 纪律句因此被误红）。
-    // ⚠️ **扫描面 = 所有「喂进产物」的结构化条目族**。轮 7 指出 `AnomalyCoverageRow`
-    // （P17A 异常覆盖表）此前**漏在四族之外**，而它的 `note` 也进产物 ⇒ 现补入。
+    // ⚠️ **扫描面 = 下面**显式列出的**七个**条目族**——**不是**「所有喂进产物的条目族」
+    // （轮 8 证伪了后一种说法：至少 `CoverageClaim` 与 `EXCEPTION_CLASSES` 也喂进产物；
+    // 它们现已补入，但**仍不得声称穷尽**——见 doc 的残余风险）。
+    // 每一族的 `closer` 不同：结构体条目以 `    },` 收，元组条目以 `    ),` 收。
     // 这是**同一套精确锚定**的扩面（不是新的启发式），故不违反「停止加判据」的裁定。
-    let targets: [(&str, &str, &str); 5] = [
-        ("p17b/evidence.rs", "\n    EvidenceRow {", "证据边界表条目"),
-        ("p17b/evidence.rs", "\n    UnavailableItem {", "结构性不可得条目"),
-        ("p17b/reasons.rs", "\n    ContestCoverageRow {", "争抢成因覆盖条目"),
-        ("p17b/reasons.rs", "\n    WordingRule {", "措辞规则条目"),
-        ("p17b/reasons.rs", "\n    AnomalyCoverageRow {", "P17A 异常覆盖条目"),
+    let targets: [(&str, &str, &str, &str); 7] = [
+        ("p17b/evidence.rs", "\n    EvidenceRow {", "\n    },", "证据边界表条目"),
+        ("p17b/evidence.rs", "\n    UnavailableItem {", "\n    },", "结构性不可得条目"),
+        ("p17b/reasons.rs", "\n    ContestCoverageRow {", "\n    },", "争抢成因覆盖条目"),
+        ("p17b/reasons.rs", "\n    WordingRule {", "\n    },", "措辞规则条目"),
+        ("p17b/reasons.rs", "\n    AnomalyCoverageRow {", "\n    },", "P17A 异常覆盖条目"),
+        // 轮 8 补：也在产物里的两族。
+        ("p17b/episode.rs", "\n    CoverageClaim {", "\n    },", "四类归因覆盖声明条目"),
+        ("p17b/episode.rs", "\n    (\"", "\n    ),", "异常筛选类定义条目"),
     ];
     let mut units_checked = 0usize;
     let mut claim_units = 0usize;
-    for (file, opener, what) in targets {
+    for (file, opener, closer, what) in targets {
         let src = match file {
             "p17b/evidence.rs" => include_str!("p17b/evidence.rs"),
             "p17b/reasons.rs" => include_str!("p17b/reasons.rs"),
+            "p17b/episode.rs" => include_str!("p17b/episode.rs"),
             _ => unreachable!(),
         };
-        for (line, unit) in units(src, opener) {
+        for (line, unit) in units(src, opener, closer) {
             units_checked += 1;
             let has_evidence = DISTANCE_EVIDENCE.iter().any(|m| unit.contains(m));
             if !(has_evidence && unit.contains(INFERENCE)) {
