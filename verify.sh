@@ -95,6 +95,18 @@ echo ""
 node --test openspec/changes/p38-formation-realism/notes/criteria/shot-criterion.test.mjs
 echo ""
 echo ""
+echo "=== P18 引擎侧产物（#18：门槛步**依赖它**，故必须先落盘）==="
+# ⚠️ 为什么必须在这里生成（第二轮审阅抓到的**结构性缺口**）：
+#   `target/p18-gates/*.json` 是 **gitignored 的 build artifact**，CI 上不存在；
+#   而门槛步（`gates.test.mjs`）里有 5 条测试**需要它**才能跑真实断言
+#   （引擎 key 命中 / C1 对照栏 / 缺 provenance / 陈旧哨兵）。
+#   **不生成 ⇒ 那 5 条在 CI 上永远走跳过分支**——第一轮抓的两个 P1 修复本体恰好都在里面。
+#   本步用 30 seed（≈2s，release 已在第 7 步编译过）把它补上。
+P18_SOURCE_COMMIT=$(git rev-parse HEAD) \
+  cargo test --release --manifest-path engine/Cargo.toml --test p18_behavior_gates \
+  -- --ignored --nocapture p18_canary 2>&1 | tail -3
+
+echo ""
 echo "=== P18 行为判据（#18 map：报告期——只打印，不阻塞）==="
 # ⚠️ **本步不产生 pass/fail、不阻塞**（design §3.4，用户 2026-09-30 裁定）：
 # 引擎现状（链时长 4.88×、间隔 3.95×、压迫覆盖 9.7×）**本来就达标不了**——是"确实还没修"，

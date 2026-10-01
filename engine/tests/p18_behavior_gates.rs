@@ -228,7 +228,9 @@ fn wording_guard_rejects_phase_vocabulary() {
     }
     assert!(stripped.len() > 500, "剥注释后扫描面过小（{} B）——守卫会空转", stripped.len());
     assert!(!stripped.contains("//"), "剥注释不彻底");
-    for banned in ["build_up", "progression", "final_third", "attacking_transition"] {
+    // ⚠️ `Phase` 也在列——文件头自述称两个文件"都不出现"，ban 列表必须与之逐字一致
+    // （第二轮审阅：此前 `Phase` 没被禁，自述与实现不符）。
+    for banned in ["Phase", "build_up", "progression", "final_third", "attacking_transition"] {
         assert!(!stripped.contains(banned),
             "判据层出现 phase 词 `{}`（#16/#124 双负，phase 不可得；design §1 不可越界 #2）", banned);
     }

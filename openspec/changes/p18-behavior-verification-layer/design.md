@@ -29,7 +29,8 @@ SkillCorner opendata（已在下载产物里，MIT，20 场）
                                 （口径 C1–C10 写在探针头部）
 
 引擎侧
-  engine/tests/p18/ ──► engine.json（逐场值 + 跨场分布 + seed 区间 + 引擎源码指纹）
+  engine/tests/p18_behavior_gates.rs ──► target/p18-gates/{canary,baseline}.json
+                            （逐场值 + 跨场分布 + provenance）
     （复用 p17a/metrics.rs 的量 + 新增「转换反应」指标）
 
         ┌──────────────────────────────┴───────────────────────────────┐

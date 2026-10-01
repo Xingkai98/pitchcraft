@@ -151,7 +151,7 @@
       "key": "C2",
       "name": "传球失败率",
       "reason": "**两侧都落 L1 带内**（真实 0.166 / 引擎 0.129；L1 失败率带 [0.10, 0.18]）⇒ 本就不区分。⚠️ 引擎值用 **episode 口径**（与真实侧 player_possession 对齐）；事件流口径 0.173 把 610 条**不归属 episode 的定位球交付**算了进去。",
-      "evidence": "engine.json 的 C_passFailC7 / C_passFailEventstream / C_passUnattributed",
+      "evidence": "引擎侧产物的 C_passFailC7 / C_passFailEventstream / C_passUnattributed",
       "status": "不立"
     }
   ],

@@ -295,7 +295,55 @@ test('判据器不得读 gitignored 的原始数据（spec requirement）', () =
     '判据器不得在代码里依赖 .scratch/tracking-data（只读入库的小 JSON）');
 });
 
-// ── 9. provenance / 陈旧哨兵（第一轮审阅抓到的缺口）──
+// ── 9. provenance / 陈旧哨兵（两轮审阅抓到的缺口）──
+
+test('**发货的**真实侧产物必须带全部 required provenance（不只在临时坏副本上测）', () => {
+  // 第二轮审阅：此前只把临时副本改坏来测判据器的代码路径，
+  // **从不检查发货数据本身** ⇒ 删掉 real-behavior-reference.json 的 caliberVersion 仍全绿。
+  for (const path of SPEC.realArtifact.requiredProvenance) {
+    assert.ok(pick(REAL, path) != null, `发货的真实侧产物缺 ${path}（gates-spec 里明确要求）`);
+  }
+  for (const path of SPEC.engineArtifact.requiredProvenance) {
+    // 引擎侧产物是 gitignored ⇒ 只在存在时检查（CI 走跳过，见 design 的覆盖声明）
+    const enginePath = join(ROOT, 'engine/target/p18-gates/canary.json');
+    if (!existsSync(enginePath)) continue;
+    const eng = loadJson(enginePath);
+    assert.ok(eng.provenance?.[path] != null, `发货的引擎侧产物缺 provenance.${path}`);
+  }
+});
+
+test('真实侧提炼器的口径版本必须与产物的 caliberVersion 一致（防"改了没重生成"）', () => {
+  // 第二轮审阅：真实侧没有对应的陈旧哨兵（引擎侧有）。
+  const src = readFileSync(join(HERE, 'real-behavior.mjs'), 'utf8');
+  const m = src.match(/CALIBER_VERSION\s*=\s*'([^']+)'/);
+  assert.ok(m, 'real-behavior.mjs 里找不到 CALIBER_VERSION');
+  assert.equal(m[1], REAL.caliberVersion,
+    `real-behavior.mjs 的 CALIBER_VERSION=${m[1]} 与产物的 ${REAL.caliberVersion} 不符（改了没重生成）`);
+});
+
+test('护栏的 floorFactor 与 bound 算式必须被钉住（用户裁定的「现状 × 0.8」）', () => {
+  // 第二轮审阅：floorFactor 0.8→0.1 或 bound 算式改成 e（恒等）都不被任何测试抓到。
+  for (const key of ['A3', 'C1']) {
+    assert.equal(specOf(key).floorFactor, 0.8,
+      `[${key}] floorFactor 应是用户裁定的 0.8`);
+  }
+  const c = specOf('C1');
+  const e = 0.1767;
+  const v = evaluate(c, fakeEngine({ C_shotLastShare: { center: e } }), REAL);
+  assert.ok(Math.abs(v.bound - e * 0.8) < 1e-9,
+    `[${key => key}bound 算式必须是「现状 × floorFactor」，实际 ${v.bound} vs ${e * 0.8}`);
+});
+
+test('扫文本守卫的 ban 列表必须与自述一致（含 Phase）', () => {
+  // 第二轮审阅：文件面扩了，token 面与 p18_behavior_gates.rs 的自述不符（Phase 没被禁）。
+  const src = readFileSync(join(ROOT, 'engine/tests/p18_behavior_gates.rs'), 'utf8');
+  const m = src.match(/for banned in \[([^\]]+)\]/);
+  assert.ok(m, '找不到 ban 列表');
+  const banned = m[1].split(',').map((x) => x.trim().replace(/"/g, ''));
+  for (const t of ['Phase', 'build_up', 'progression', 'final_third', 'attacking_transition']) {
+    assert.ok(banned.includes(t), `ban 列表缺 ${t}（而文件头自述称"都不出现"）`);
+  }
+});
 
 test('缺 provenance 的判据被拒：判据器必须**报出**问题（不只是打印算过）', async () => {
   const { execFileSync } = await import('node:child_process');
