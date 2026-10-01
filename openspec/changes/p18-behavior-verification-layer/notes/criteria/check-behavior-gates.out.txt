@@ -1,0 +1,38 @@
+===== P18 行为判据（报告期；**不阻塞**）=====
+引擎侧: /home/happy/.paseo/worktrees/1g1x3st4/p18-behavior-verification-layer-2026-09-30/engine/target/p18-gates/canary.json
+   mode=canary seeds=1..30
+   caliber=p18-engine-v1 engine_fp=fnv1a64:494472525c56e8a6
+   generated_by=engine/tests/p18_behavior_gates.rs
+真实侧: /home/happy/.paseo/worktrees/1g1x3st4/p18-behavior-verification-layer-2026-09-30/openspec/changes/p18-behavior-verification-layer/notes/criteria/real-behavior-reference.json
+   caliber=p18-real-v1 games=20 competition=AUS - A-League - 2024/2025
+
+── 判据（成组否决：任一不达标 ⇒ 整体不通过）──
+[A1] 链墙钟时长 (s)
+   引擎 49.6507  真实 10.1814  倍数 4.88×   → 不通过
+   倍数 4.88× > 1.5×
+[A2] 链内动作间隔 (s)，start→start
+   引擎 12.6355  真实 3.2010  倍数 3.95×   → 不通过
+   倍数 3.95× > 1.5×
+[B4] 持球时间被防守方逼近覆盖的占比
+   引擎 0.0581  真实 0.5609  倍数 0.10×   → 不通过
+   倍数 0.10× < 0.5×
+[A3] 链内动作数（**守恒护栏**）
+   引擎 3.9016  真实 3.1081  倍数 1.26×   → 护栏
+   护栏：下界 floor = 现状 × 0.8 = 3.1213（真实参照 3.1081，倍数 1.26×）
+[C1] 以射门【收尾】的链占比（**护栏**）
+   引擎 0.1767  真实 0.0749  倍数 2.36×   → 护栏
+   护栏：下界 floor = 现状 × 0.8 = 0.1414（真实参照 0.0749，倍数 2.36×）
+   对照栏 C_shotLastChains: 引擎 18.0333  真实 22.7500（0.79×）—— 占比栏分母不可比，**这一栏才可比**
+
+── 整体：**不通过**（预期——引擎现状与真实差 2–10×） ──
+⚠️ 本判据**报告期**：退出码恒 0，不阻塞 verify.sh（design §3.4）。
+   升门前置：#19 交付合格机制 → 标定工程带宽 → 把 exit 码接进 verify.sh。
+
+── 已排除的候选（不静默消失）──
+[B1-B3] 单次逼近的 起始距离/逼近量/时长 —— 撤销（第三轮 grill）：**种群不同义**。引擎侧的源数据来自 `beat.ball`（**只在松散球拍出现**），而真实侧 `on_ball_…
+[B5] 逼近段次数/场 —— 撤销：两侧**种群不同**（真实 872 = 标注者的接触/压迫事件且持球中；引擎 20.3 = **松散球阶段**的 cha…
+[delay-table] 转换反应延迟表（P(延迟≤0) 等） —— 降为报告项：三条障碍：① 两侧不同义（引擎「追球者被指派」vs 真实「标注者认为有接触」）；② 分层后组内自相矛盾（Intercep…
+[C2] 传球失败率 —— 不立：**两侧都落 L1 带内**（真实 0.166 / 引擎 0.129；L1 失败率带 [0.10, 0.18]）⇒ 本就…
+
+── 已声明的不可得 ──
+[D-restart] restart 恢复（死球 → 发出 → 恢复开放 的三段切分） —— 可得的是**整个死球期时长**（真实侧逐场再跨场）：throw_in 19.3 s / free_kick 36.1 s / goal_kick 35.4 s / corner 41.7 s。引擎的三段各自可得（P17A M3）。

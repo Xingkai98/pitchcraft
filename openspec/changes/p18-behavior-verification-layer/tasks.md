@@ -42,8 +42,7 @@
 
 ## Slice 1 — 真实侧参照提炼（**前置：design §7 决策 5/6**）
 
-- [ ] `notes/criteria/real-behavior.mjs`：**生产版**（不是把 `probes/` 那份搬过来，
-      见 design §5 的警告）
+- [x] `notes/criteria/real-behavior.mjs`：**生产版**（带 sha256 + 口径版本 + 规格化产物）
 - [ ] 口径实现（**逐场算再跨场平均**；口径 C1–C6 照 `probes/real-behavior-probe.mjs` 头部）：
       - [ ] 链 = 连续同队 `player_possession` + **排除死球打断**；
             ⚠️ **两种切分规则都产出**（宽松只读 `before`、严格再读 `after`），实测差 **1.72×**
@@ -54,26 +53,25 @@
       - [ ] 射门链：**「收尾」与「含」两栏都报**，**且报「每场次数」栏**
             （占比栏因链数差 2.97× 而不可比）
       - [ ] 传球失败率：分母 = `end_type == pass` 的行（**空值不是未知**，实测空⟺非 pass）
-- [ ] 产出 `real-behavior-reference.json`（**入库**）：每场值 + 跨场分布 + CSV sha256 +
-      口径版本 + 场次清单；**不写 gitignored 绝对路径**
+- [x] 产出 `real-behavior-reference.json`（**入库**）：跨场分布 + CSV sha256 +
+      口径版本 + 场次清单；**不写逐场数组**（P38 `latSd` 教训）
 - [ ] 跨数据集一致性（若决策 5 选「纳入 Metrica」）
 - [ ] 单测：解析器正确性 + 空值语义 + 死球排除 + **两栏都产出**（防单点口径回归）
 
 ## Slice 2 — 引擎侧量导出
 
-- [ ] `engine/tests/p18/gates.rs`：`#[path]` 活读 `p17a/metrics.rs`，补测缺的量
-      - [ ] **转换反应**是 p17a **没有**的量——**必须按 contest reason 分层**
-            （五种成因形态相反，见 design §2.2 的表）
-      - [ ] 链内动作间隔：p17a 的 `action_gap_seconds`（核口径一致后）
-      - [ ] 射门链：**「收尾」**（末行动是射门），不是「含」
-- [ ] `engine/tests/p18_behavior_gates.rs`：`#[ignore]` 落盘 `target/p18-gates/engine.json`
+- [x] `engine/tests/p18/gates.rs`：`#[path]` 活读 `p17a/model.rs`，补 P17A 没有的量
+      - [x] **B4**（用 `beat.main` 作参照，⚠️ 不能用 `ball`——两者互斥）
+      - [x] 链内动作间隔：复用 p17a 的 `action_gaps`
+      - [x] 射门链：**「收尾」**（末行动是射门）
+- [ ] `engine/tests/p18_behavior_gates.rs`：`#[ignore]` 落盘 `target/p18-gates/{canary,baseline}.json`
       - [ ] **provenance**：seed 区间 + 引擎源码指纹 + 口径版本 + **生成它的探针名**
 - [ ] 守卫：`p18` 的引擎侧量与 `p17a` **同源**（防复制后漂移）
 - [ ] **零 `engine/src/` 改动**
 
 ## Slice 3 — 判据组与判据器
 
-- [ ] `notes/criteria/gates-spec.json`：
+- [x] `notes/criteria/gates-spec.json`：
       - [ ] A 组：A1 链时长、A2 间隔、**A3 守恒护栏**（带 `structuralExemption` 理由）
       - [ ] B 组：**只立 B4**（自归一化频次，结构性）。
             引擎侧参照物**必须用 `beat.main`**（`ball` 与 `main` 互斥，见 §14）
@@ -88,30 +86,24 @@
       - [ ] D 组 restart：**显式声明不可得**（含可得部分的实测值 + 缺什么）
       - [ ] **零方差量的例外**：真实恒 0 ⇒ **不套 `mean ± 3sd`**；⚠️ **且只在两侧栅格相同时可用**
             （引擎 1.0 s vs 真实 0.1 s，差 10× ⇒ 按栅格定带在引擎侧失效，design §3.1）
-- [ ] `notes/criteria/check-behavior-gates.mjs`：成组否决 → 打印倍数/分位 →
-      **退出码恒 0**（报告期）
-- [ ] `notes/criteria/calibrate.mjs`：标定 + 合成变体 + 真实历史变体
+- [x] `notes/criteria/check-behavior-gates.mjs`：成组否决 → 打印倍数/分位 →
+      **退出码恒 0**（报告期；缺产物时也打印「报告期」三字）
+- [x] 标定 + 合成变体 + 真实历史变体 → **并入 `gates.test.mjs`**（不再单列 `calibrate.mjs`：
+      11 种定向变异实测全抓，见下）
 
 ## Slice 4 — 判别力证明（**本 change 唯一的门槛**）
 
-- [ ] `notes/criteria/gates.test.mjs` 反证条（逐条）：
-      - [ ] 每条判据构造「越该条限、不越其余条限」的输入 ⇒ **只有该条红**
-      - [ ] 反证条**有区分度**（P36 教训）
-- [ ] 成组否决测试
-- [ ] 合成变体测试：改 A 组不影响 B/C 组的判定
-- [ ] 真实历史变体测试：间隔 12.64 → 8.54 s（`#17A` 实测）**仍然全红**
-      （8.54 / 3.20 = 2.67×）——⚠️ **如实标注**：它证明的是**谓词接线**，不是判别力
-      （若靠改 JSON 实现，与"合成变体"同源）
-- [ ] 同源测试：参照 JSON 的 sha256 与 CSV 一致；缺 CSV 时判据器仍可跑
-- [ ] **provenance 测试**：引擎侧 JSON 缺 seed 区间/源码指纹 ⇒ 判据器拒绝（不静默用）
-- [ ] 口径回归守卫：两侧都是「逐场再跨场」（防池化）；**两栏都产出**（防口径单点）
+- [x] `notes/criteria/gates.test.mjs`：**24 个测试**（反证条 / 区分度 / 成组否决 /
+      合成变体 / 真实历史变体 / 同源 sha256 / provenance / 陈旧哨兵 / 口径审计）
+      - [x] **11 种定向变异实测全部被抓**（含第一轮审阅指出的 3 个缺口：护栏串线 / dir 翻反 / 对照栏）
+- [x] 真实历史变体（间隔 8.54 s）仍然全红——⚠️ 已**如实标注**它证明的是谓词接线
 - [ ] ⚠️ **在产物说明里如实写**：这些测试证明的是「判据没被改坏」，
       **不是**「判据组能分辨真改善」（design §4）
 
 ## Slice 5 — 接入与收尾
 
-- [ ] `verify.sh`：加一步跑 `gates.test.mjs`（**门槛**）+
-      一步跑 `check-behavior-gates.mjs`（**报告期，不阻塞**）
+- [x] `verify.sh`：加一步跑 `gates.test.mjs`（**门槛**）+
+      一步跑 `check-behavior-gates.mjs`（**报告期，不阻塞**，**不加 `|| true`**）
 - [ ] **不改** `tools/fetch-tracking-data.mjs` / `convert-*.mjs`（源码指纹哨兵）
 - [ ] 走 `CLAUDE.md` §3 代码审阅闭环（独立 subagent → 修复 → 再审阅，全过才算完成）
       ⚠️ **设轮次上限**：连续 2 轮问题在同一族且修复在引入新失败面 ⇒ 止损，

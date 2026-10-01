@@ -1,0 +1,176 @@
+{
+  "schema": "p18-behavior-gates-spec/1",
+  "caliberVersion": "p18-gates-v1",
+  "note": "P18 行为判据组（成组否决）。**每一条都必须带 sameThing 与 denominatorComparable**——这两栏是本 change 的头号教训（结论对但机制错 / 分母污染）。",
+  "engineArtifact": {
+    "path": "engine/target/p18-gates/canary.json",
+    "referenceKeys": [
+      "reference.A_chainDurPos",
+      "reference.A_gapSS",
+      "reference.B_coverShare",
+      "reference.C_shotLastShare",
+      "reference.A_actsAll",
+      "reference.C_shotLastChains"
+    ],
+    "requiredProvenance": [
+      "seed_first",
+      "seed_last",
+      "engine_source_fingerprint",
+      "caliber_version",
+      "generated_by"
+    ]
+  },
+  "realArtifact": {
+    "path": "openspec/changes/p18-behavior-verification-layer/notes/criteria/real-behavior-reference.json",
+    "referenceKeys": [
+      "reference.A_chainDurPos",
+      "reference.A_gapSS",
+      "reference.B_coverShare",
+      "reference.C_shotLast",
+      "reference.A_actsAll",
+      "reference.C_shotEndChains"
+    ],
+    "requiredProvenance": [
+      "caliberVersion",
+      "source.csvSha256",
+      "source.games"
+    ]
+  },
+  "criteria": [
+    {
+      "key": "A1",
+      "group": "A-球权过程",
+      "name": "链墙钟时长 (s)",
+      "engineKey": "A_chainDurPos",
+      "realKey": "A_chainDurPos",
+      "kind": "criterion",
+      "realCenter": 10.1814,
+      "sameThing": "两侧都是「同队连续控制的一段」的墙钟时长。真实侧 = 连续同队 player_possession 且相邻无死球打断（**严格**口径，读 game_interruption_before + after）；引擎侧 = PossessionEpisode（天然不含死球）。两侧同构。⚠️ 宽松口径（只读 before）下真实是 17.50 s ⇒ 比值 2.84×——**本判据用严格口径，两栏都报**。",
+      "denominatorComparable": "**不适用**（这是时长均值，不是占比）。但**链数**两侧差 2.97×（102.5 vs 304.4）——故本判据**只比单链时长，不涉及链数**。",
+      "band": {
+        "note": "报告期：输出倍数与分位归属；升门时的带由 #19 的合法配置簇标定（design §3.4）",
+        "upperRatio": 1.5
+      },
+      "dir": "upper",
+      "engineCenter": 49.6507
+    },
+    {
+      "key": "A2",
+      "group": "A-球权过程",
+      "name": "链内动作间隔 (s)，start→start",
+      "engineKey": "A_gapSS",
+      "realKey": "A_gapSS",
+      "kind": "criterion",
+      "realCenter": 3.201,
+      "sameThing": "两侧都是「同一段控制内相邻决策动作的时间戳之差」。真实侧 pp 是**区间**，故用 start→start（含上一段持球停留，与引擎的瞬时决策点同构）；引擎侧 = 相邻决策事件 t 之差。⚠️ 对照栏 end→start（真实 1.56 s）**只含空档不含停留**，是另一件事 ⇒ 只用 start→start 作判据，两栏都报。",
+      "denominatorComparable": "**不适用**（间隔均值）。",
+      "band": {
+        "upperRatio": 1.5
+      },
+      "dir": "upper",
+      "engineCenter": 12.6355
+    },
+    {
+      "key": "B4",
+      "group": "B-转换反应",
+      "name": "持球时间被防守方逼近覆盖的占比",
+      "engineKey": "B_coverShare",
+      "realKey": "B_coverShare",
+      "kind": "criterion",
+      "kindClass": "structural",
+      "realCenter": 0.5609,
+      "sameThing": "两侧都是「防守方在持球者附近并朝他逼近」的时间占比。真实侧 = engagement 时间并集 ∩ player_possession 时间并集 / possession 并集；引擎侧 = 「该拍有 mover 属防守方且其**到持球者**（beat.main）的距离减少 > 0.3 m」的拍数 / 持球拍数。⚠️ **必须用 beat.main 作参照**——beat.ball 与 main **互斥**（同有 0.0/场，第三轮 grill），用 ball 会静默测成松散球追球。",
+      "denominatorComparable": "**部分**：分子分母在同一时间轴上 ⇒ **不受计数（链数 2.97×）污染**；但两侧「持球时间占比赛」差约 3×（真实 24.2% vs 引擎 83.0%）⇒ **9.7× 是量级证据，不是精确比值**（换绝对量基准是 3.0×）。⚠️ **且 9.7× 是下界**：引擎分子不要求近距离，加「起始 ≤5 m」门后引擎掉到 0.50% ⇒ 差距可达 40–100×。",
+      "band": {
+        "minRatio": 0.5,
+        "note": "引擎/真实 的倍数必须 ≥ 0.5（引擎现为 0.10×）。**只设下界**——引擎远低于真实，真实侧是目标方向。⚠️ 9.7× 是下界（design §9.9）。"
+      },
+      "dir": "band",
+      "engineCenter": 0.0581
+    },
+    {
+      "key": "A3",
+      "group": "A-球权过程",
+      "name": "链内动作数（**守恒护栏**）",
+      "engineKey": "A_actsAll",
+      "realKey": "A_actsAll",
+      "kind": "guardrail",
+      "dir": "min",
+      "realCenter": 3.1081,
+      "floorFactor": 0.8,
+      "anchorNote": "锚 = **引擎现状 × 0.8**（用户 2026-09-30 裁定）——守住「不再变差」。真实参照（3.11 / 3.61）**并列作报告项**，不作锚。先例：P38 的 8 条队形判据同样达标不了 ⇒ 降报告期。",
+      "sameThing": "两侧都是「一段控制内的决策动作数」。⚠️ 两侧都落带内（1.25× / 1.08×）⇒ **不是达标判据，是护栏**——防 #19 用「把链切成两半」冒充改善。",
+      "denominatorComparable": "不适用。",
+      "band": {
+        "note": "floor = 引擎现状 × 0.8 = 3.12"
+      },
+      "engineCenter": 3.9016
+    },
+    {
+      "key": "C1",
+      "group": "C-动作链",
+      "name": "以射门【收尾】的链占比（**护栏**）",
+      "engineKey": "C_shotLastShare",
+      "realKey": "C_shotLast",
+      "kind": "guardrail",
+      "dir": "min",
+      "realCenter": 0.0749,
+      "floorFactor": 0.8,
+      "anchorNote": "锚 = 引擎现状 × 0.8（同 A3，用户裁定）。**语义取「收尾」**（用户 2026-09-30 裁定）——更贴「这段球怎么结束的」，与 P17A 的 EpisodeEndReason 口径对上。**必须并列报「每场次数」栏**（引擎 18.03 vs 真实 22.75，1.26×）。",
+      "sameThing": "「链的**末行动**是射门」。⚠️ 与「链内**含**射门」（真实 0.0813）差 8%——**标签与实现必须一致**。",
+      "denominatorComparable": "**不可比**：链数差 2.97×（引擎 102.5 vs 真实 304.4）⇒ 「占比」栏**只作护栏/报告**；**真正的可比栏是「射门收尾链数/场」**（18.03 vs 22.75，1.26×）。",
+      "band": {
+        "companionKey": "C_shotLastChains",
+        "companionReal": 22.75
+      },
+      "engineCenter": 0.1767
+    }
+  ],
+  "excluded": [
+    {
+      "key": "B1-B3",
+      "name": "单次逼近的 起始距离/逼近量/时长",
+      "reason": "**种群不同义**。引擎侧的源数据来自 `beat.ball`（**只在松散球拍出现**），而真实侧 `on_ball_engagement` 100% 绑定持球球员。用正确参照物 `beat.main` 重测后，引擎的 chase/close_down 段只有 4.1/场、起始 61.5 m、**净远离 −1.09**。",
+      "evidence": "main+ball 同有 = 0.0/场（engine-carrier-ref-probe）；design §14",
+      "status": "撤销（第三轮 grill）"
+    },
+    {
+      "key": "B5",
+      "name": "逼近段次数/场",
+      "reason": "两侧**种群不同**（真实 872 = 标注者的接触/压迫事件且持球中；引擎 20.3 = **松散球阶段**的 chase/close_down 段）。43× 是**无效比较**。",
+      "status": "撤销"
+    },
+    {
+      "key": "delay-table",
+      "name": "转换反应延迟表（P(延迟≤0) 等）",
+      "reason": "三条障碍：① 两侧不同义（引擎「追球者被指派」vs 真实「标注者认为有接触」）；② 分层后组内自相矛盾（InterceptionLoose 层 P(d≤0)=0 与真实同值，但它恰是最坏的一层）；③ 栅格差 10×（引擎 1.0 s vs 真实 0.1 s ⇒ 「≤0.2 s」在引擎侧恒等于「≤0」）。",
+      "evidence": "design §2.2 / §12 / §14",
+      "status": "降为报告项"
+    },
+    {
+      "key": "C2",
+      "name": "传球失败率",
+      "reason": "**两侧都落 L1 带内**（真实 0.166 / 引擎 0.129；L1 失败率带 [0.10, 0.18]）⇒ 本就不区分。⚠️ 引擎值用 **episode 口径**（与真实侧 player_possession 对齐）；事件流口径 0.173 把 610 条**不归属 episode 的定位球交付**算了进去。",
+      "evidence": "engine.json 的 C_passFailC7 / C_passFailEventstream / C_passUnattributed",
+      "status": "不立"
+    }
+  ],
+  "unavailable": [
+    {
+      "key": "D-restart",
+      "name": "restart 恢复（死球 → 发出 → 恢复开放 的三段切分）",
+      "reason": "**真实数据里没有「发出」这个时刻**——`game_interruption_after` 只标「这里发生了一次死球」，之后下一次 player_possession 开始时死球期已整体过去。",
+      "availableInstead": "可得的是**整个死球期时长**（真实侧逐场再跨场）：throw_in 19.3 s / free_kick 36.1 s / goal_kick 35.4 s / corner 41.7 s。引擎的三段各自可得（P17A M3）。",
+      "toMakeItAvailable": "在三段里**选一段**给出能与「整个死球期」对齐的定义，或引入帧级的「球被踢动」检测。**不得**拿引擎的三段去对真实的一段。",
+      "status": "已声明的不可得（用户 2026-09-30 确认接受）"
+    }
+  ],
+  "notRedone": [
+    {
+      "key": "space",
+      "name": "空间关系",
+      "reason": "已由 p38-formation-realism 的 8 条判据覆盖（成组否决 + 16 变体变异自证）。本 change **不新增**。",
+      "status": "由 P38 覆盖"
+    }
+  ]
+}

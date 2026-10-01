@@ -94,4 +94,23 @@ echo ""
 # 而是"证明判据被改成空转/改回双边带时会失败"。判据退化时本步会红。
 node --test openspec/changes/p38-formation-realism/notes/criteria/shot-criterion.test.mjs
 echo ""
+echo ""
+echo "=== P18 行为判据（#18 map：报告期——只打印，不阻塞）==="
+# ⚠️ **本步不产生 pass/fail、不阻塞**（design §3.4，用户 2026-09-30 裁定）：
+# 引擎现状（链时长 4.88×、间隔 3.95×、压迫覆盖 9.7×）**本来就达标不了**——是"确实还没修"，
+# 不是判据错。立成硬门会立即变红并一直红到 #19（行为生成改造）做完为止，
+# 与 P37 把 half-split 降级为报告项、P38 把 8 条队形判据降为报告期同理。
+# 升格为门的前提：#19 交付通过判据的机制方案后，改 check-behavior-gates.mjs 的 exit 码即可
+# ——它的价值在**守住已修好的状态**，不在逼现在变绿。
+# 判据组定义与"哪些候选被排除/哪些不可得"见 change 的 notes/criteria/gates-spec.json。
+# ⚠️ **不加 `|| true`**（同本文件 P38 那步的纪律）：工具自身在所有**已知**缺失路径返回 0，
+# `|| true` 只会额外吞掉**未预期崩溃**——那会让「全部验证通过」在判据器炸掉时照样打印。
+node openspec/changes/p18-behavior-verification-layer/notes/criteria/check-behavior-gates.mjs
+
+echo ""
+echo "=== P18 反证条（#18：**门槛**——判据退化时会红）==="
+# ⚠️ 本步**是门**（与上一步相反）：它守的是"判据没被改坏"，不是"引擎达标"。
+# 判据被改成空转 / 串线 / 丢掉 sameThing 时本步会红（已做 4 种定向变异验证）。
+node --test openspec/changes/p18-behavior-verification-layer/notes/criteria/gates.test.mjs
+
 echo "=== 全部验证通过 ==="
