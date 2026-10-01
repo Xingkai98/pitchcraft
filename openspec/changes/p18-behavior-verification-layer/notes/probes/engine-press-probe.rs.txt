@@ -1,0 +1,61 @@
+// #18 §7.2(a) 追问：引擎在**持球**状态下，防守方有没有「朝持球者逼近」的行为？
+// 用 `beat.main` 直接取持球者位置。
+// ✅ **本探针的参照物是对的**（`main` = carrier），第三轮审阅复核了它的 5.81%。
+// ⚠️ 但它的**分母**（持球拍 4480/5400 = 83%）与真实侧（possession 覆盖 24–26%）
+//    **不是同一件事** —— 见 design §9.9 / §12。
+use fm_engine::{simulate_with_behavior_observations, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
+use std::collections::BTreeMap;
+
+const DUR: f64 = 5400.0;
+fn dmm(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (((a.0 - b.0) * PITCH_LENGTH_M).powi(2) + ((a.1 - b.1) * PITCH_WIDTH_M).powi(2)).sqrt()
+}
+
+#[test]
+#[ignore = "probe"]
+fn press() {
+    // 持球拍总数（分母）
+    let mut carrier_ticks = 0u64;
+    // 「该拍至少有一个防守方在逼近持球者（>0.3m）」的拍数，按动作拆
+    let mut any_approach = 0u64;
+    let mut by_action_ticks: BTreeMap<String, u64> = Default::default();
+    // 防守方逼近动作的**距离带**分布（start 距离）
+    let mut band: BTreeMap<i32, u64> = Default::default();
+    // 防守方逼近的实例数/场（不限动作）
+    let mut def_inst_any = 0f64;
+
+    for seed in 1..=30u64 {
+        let cfg = MatchConfig { match_duration_seconds: DUR, ..MatchConfig::default_() };
+        let dm = simulate_with_behavior_observations(seed, cfg);
+        for e in dm.events.iter() {
+            let Some(ms) = &e.movers else { continue };
+            let Some(main) = &e.main else { continue };
+            carrier_ticks += 1;
+            let cp = (main.x, main.y);
+            let cteam = if main.subject <= 10 { 0 } else { 1 };
+            let mut hit = false;
+            for m in ms.iter() {
+                let mt = if m.id <= 10 { 0 } else { 1 };
+                if mt == cteam { continue; }
+                let d0 = dmm((m.from_x, m.from_y), cp);
+                let d1 = dmm((m.to_x, m.to_y), cp);
+                if d0 - d1 > 0.3 {
+                    hit = true;
+                    def_inst_any += 1.0;
+                    *by_action_ticks.entry(m.action.clone()).or_insert(0) += 1;
+                    *band.entry((d0 / 5.0).floor() as i32).or_insert(0) += 1;
+                }
+            }
+            if hit { any_approach += 1; }
+        }
+    }
+    println!("\n===== 引擎：持球状态下防守方逼近持球者（30 seed）=====");
+    println!("持球拍总数/场                 = {:.0}", carrier_ticks as f64 / 30.0);
+    println!("其中有防守方在逼近(>0.3m)的拍/场 = {:.0}  = **{:.2}%**",
+        any_approach as f64 / 30.0, 100.0 * any_approach as f64 / carrier_ticks as f64);
+    println!("防守方逼近实例/场             = {:.1}", def_inst_any / 30.0);
+    println!("\n按动作拆分（实例数，池化）：");
+    for (k, v) in by_action_ticks.iter() { println!("  {:<16} {}", k, v); }
+    println!("\n逼近动作的**起始距离带**（每 5 m 一带，实例数）：");
+    for (k, v) in band.iter() { println!("  {}–{} m : {}", k * 5, (k + 1) * 5, v); }
+}

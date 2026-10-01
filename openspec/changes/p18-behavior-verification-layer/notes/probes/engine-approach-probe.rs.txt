@@ -1,0 +1,113 @@
+// #18 (§7.2a) 决定性实验 —— ⚠️⚠️ **本探针的口径已被第三轮 grill 推翻，不要用它的数字作判据**。
+//
+// 它用 `beat.ball` 作参照物，而 **`ball` 只出现在松散球拍**（实测 174.7/场，全 loose=true），
+// 且 `ball` 与 `main` **完全互斥**（同有 = 0.0/场）⇒ 它测的是**松散球阶段的追球**，
+// **不是「防守方压迫持球者」**，与真实侧 `on_ball_engagement`（100% 绑定持球球员）**不同义**。
+// **正确参照物是 `beat.main`** —— 见同目录 `engine-carrier-ref-probe.rs.txt`。
+//
+// 保留本文件仅作**历史记录**（它记录了一次被推翻的口径）。
+//
+// 原说明：把引擎侧「防守方朝球逼近」的全部动作都算进来（不限 action），
+// 与真实侧 on_ball_engagement 对比。三种口径并列，看哪一种与真实侧同义。
+use fm_engine::{simulate_with_behavior_observations, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
+use std::collections::BTreeMap;
+
+const DUR: f64 = 5400.0;
+fn dmm(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (((a.0 - b.0) * PITCH_LENGTH_M).powi(2) + ((a.1 - b.1) * PITCH_WIDTH_M).powi(2)).sqrt()
+}
+fn mean(a: &[f64]) -> f64 { if a.is_empty() { f64::NAN } else { a.iter().sum::<f64>() / a.len() as f64 } }
+fn sd(a: &[f64]) -> f64 { if a.len() < 2 { return f64::NAN; } let m = mean(a); (a.iter().map(|x| (x - m).powi(2)).sum::<f64>() / (a.len() - 1) as f64).sqrt() }
+fn pctl(a: &[f64], p: f64) -> f64 {
+    if a.is_empty() { return f64::NAN; }
+    let mut s = a.to_vec(); s.sort_by(|x, y| x.partial_cmp(y).unwrap());
+    let h = (s.len() - 1) as f64 * p; let i = h.floor() as usize;
+    if i + 1 >= s.len() { s[s.len() - 1] } else { s[i] + (h - i as f64) * (s[i + 1] - s[i]) }
+}
+
+#[derive(Clone)]
+struct Seg { start_t: f64, last_t: f64, start_dist: f64, end_dist: f64 }
+
+#[test]
+#[ignore = "probe"]
+fn p18_defender_all_runs() {
+    // 三种口径：0 = 只 chase/close_down；1 = 防守方任意 action 且逼近 >0.5m/拍；2 = 防守方任意 action（不过滤逼近）
+    for mode in 0..3 {
+        let mut seg_cnt: Vec<f64> = Vec::new();
+        let mut seg_close: Vec<f64> = Vec::new();
+        let mut seg_dur: Vec<f64> = Vec::new();
+        let mut seg_start: Vec<f64> = Vec::new();
+        let mut all_close: Vec<f64> = Vec::new();
+
+        for seed in 1..=30u64 {
+            let cfg = MatchConfig { match_duration_seconds: DUR, ..MatchConfig::default_() };
+            let dm = simulate_with_behavior_observations(seed, cfg);
+            // 预收集 beat：球位 + 持球者（main）或上一拍持球者
+            struct Beat { t: f64, ball: Option<(f64, f64)>, carrier_team: Option<i32>, movers: Vec<(i32, f64, f64, f64, f64, String)> }
+            let mut beats: Vec<Beat> = Vec::new();
+            let mut last_carrier_team: Option<i32> = None;
+            for e in dm.events.iter() {
+                if let Some(m) = &e.main { last_carrier_team = Some(if m.subject <= 10 { 0 } else { 1 }); }
+                if let Some(ms) = &e.movers {
+                    beats.push(Beat {
+                        t: e.t,
+                        ball: e.ball.as_ref().map(|b| (b.x, b.y)),
+                        carrier_team: last_carrier_team,
+                        movers: ms.iter().map(|m| (m.id, m.from_x, m.from_y, m.to_x, m.to_y, m.action.clone())).collect(),
+                    });
+                }
+            }
+
+            let mut open: BTreeMap<i32, Seg> = Default::default();
+            let mut segs: Vec<Seg> = Vec::new();
+            let mut active: std::collections::BTreeSet<i32> = Default::default();
+            for b in beats.iter() {
+                let Some(ball) = b.ball else { continue };
+                let Some(ct) = b.carrier_team else { continue };
+                let mut this_tick: std::collections::BTreeSet<i32> = Default::default();
+                for (id, fx, fy, tx, ty, act) in b.movers.iter() {
+                    let mteam = if *id <= 10 { 0 } else { 1 };
+                    if mteam == ct { continue; }        // 只看防守方
+                    let d0 = dmm((*fx, *fy), ball);
+                    let d1 = dmm((*tx, *ty), ball);
+                    let step = d0 - d1;
+                    let ok = match mode {
+                        0 => act == "chase" || act == "close_down",
+                        1 => step > 0.5,
+                        _ => true,
+                    };
+                    if !ok { continue; }
+                    this_tick.insert(*id);
+                    match open.get_mut(id) {
+                        Some(s) if b.t - s.last_t <= 1.5 => { s.last_t = b.t; s.end_dist = d1; }
+                        Some(_) => { segs.push(open.remove(id).unwrap()); open.insert(*id, Seg { start_t: b.t, last_t: b.t, start_dist: d0, end_dist: d1 }); }
+                        None => { open.insert(*id, Seg { start_t: b.t, last_t: b.t, start_dist: d0, end_dist: d1 }); }
+                    }
+                }
+                // 本拍没再出现的 id：段结束
+                for id in active.iter() {
+                    if !this_tick.contains(id) { if let Some(s) = open.remove(id) { segs.push(s); } }
+                }
+                active = this_tick;
+            }
+            for (_, s) in open.into_iter() { segs.push(s); }
+
+            let closes: Vec<f64> = segs.iter().map(|s| s.start_dist - s.end_dist).collect();
+            let durs: Vec<f64> = segs.iter().map(|s| s.last_t - s.start_t + 1.0).collect();
+            let starts: Vec<f64> = segs.iter().map(|s| s.start_dist).collect();
+            seg_cnt.push(segs.len() as f64);
+            if !closes.is_empty() { seg_close.push(mean(&closes)); }
+            if !durs.is_empty() { seg_dur.push(mean(&durs)); }
+            if !starts.is_empty() { seg_start.push(mean(&starts)); }
+            all_close.extend(closes.iter().copied());
+        }
+        let label = match mode { 0 => "① 只 chase/close_down", 1 => "② 防守方任意动作且逼近>0.5m/拍", _ => "③ 防守方任意动作" };
+        println!("\n【{label}】");
+        println!("  段数/场      = {:.1}        （真实侧 engagement 872/场）", mean(&seg_cnt));
+        println!("  段起始距离(m)= {:.2}        （真实 start 6.01）", mean(&seg_start));
+        println!("  段内逼近(m)  = {:.2} (sd {:.2})  （真实 start−end 2.81）", mean(&seg_close), sd(&seg_close));
+        println!("  段时长(s)    = {:.2}        （真实 duration mean 1.98 / p50 1.60）", mean(&seg_dur));
+        println!("  池化逼近 p10={:.2} p50={:.2} p90={:.2}（真实 start p50 5.96 / end p50 2.97）",
+            pctl(&all_close, 0.1), pctl(&all_close, 0.5), pctl(&all_close, 0.9));
+    }
+}
