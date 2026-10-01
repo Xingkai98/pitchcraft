@@ -57,7 +57,8 @@ pp 行/场        : 935.5
 pass 行/场      : 803.6
 零时长 pp 行占比: 0.2466
 offside 总次数  : 62
-⚠️ 引擎侧对照：链数 102.5/场、episode 3075/30 —— **链数差 2.56×**，
+⚠️ 引擎侧对照：episode 102.5/场（3075/30）——**链数差 2.97×**（严格口径）
+   或 2.56×（宽松口径，链数/场见上一节两栏）。
    故任何「每条链的占比」在两侧不可直接相减（见 design §2.3）。
 
 → /home/happy/.paseo/worktrees/1g1x3st4/p18-behavior-verification-layer-2026-09-30/openspec/changes/p18-behavior-verification-layer/notes/probes/real-behavior-reference.json

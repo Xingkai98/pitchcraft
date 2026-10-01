@@ -52,9 +52,12 @@
 //      ⚠️ 「测的是到**持球者**的距离」读自列名与语义，**未读 SkillCorner 的 spec PDF**
 //      （hubspot 链接，本仓未取）——如需定案应补读。
 //
-// [C8] **链数本身两侧差 2.56×**（真实 262.9/场 vs 引擎 102.5/场）。
-//      ⇒ 任何「**每条链**的占比 / 每链均值」在两侧**不可直接相减**
-//      （分母本身差 2.56×）。比较前必须换算成「每场总量」或先声明这一点。
+// [C8] **链数本身两侧差约 3×**（引擎 102.5 episode/场）：
+//        宽松链切分口径 真实 262.9/场 ⇒ **2.56×**
+//        严格链切分口径 真实 304.4/场 ⇒ **2.97×**  ← **主口径**
+//      ⇒ 任何「**每条链**的占比 / 每链均值」在两侧**不可直接相减**。
+//      比较前必须换算成「每场总量」或先声明这一点。
+//      ⚠️ **引用比值时必须写明是哪个口径**——本探针初版把 2.56 与 304.4 混引过。
 
 import { readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -349,7 +352,8 @@ console.log(`pp 行/场        : ${mean(totals.map((t) => t.pp)).toFixed(1)}`);
 console.log(`pass 行/场      : ${mean(totals.map((t) => t.nPass)).toFixed(1)}`);
 console.log(`零时长 pp 行占比: ${mean(totals.map((t) => t.zeroDurShare)).toFixed(4)}`);
 console.log(`offside 总次数  : ${totals.reduce((a, t) => a + t.offside, 0)}`);
-console.log(`⚠️ 引擎侧对照：链数 102.5/场、episode 3075/30 —— **链数差 2.56×**，`);
+console.log(`⚠️ 引擎侧对照：episode 102.5/场（3075/30）——**链数差 2.97×**（严格口径）
+   或 2.56×（宽松口径，链数/场见上一节两栏）。`);
 console.log(`   故任何「每条链的占比」在两侧不可直接相减（见 design §2.3）。`);
 
 // 机器可读
