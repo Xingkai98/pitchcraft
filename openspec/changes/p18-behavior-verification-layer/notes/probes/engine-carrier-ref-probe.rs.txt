@@ -1,0 +1,86 @@
+// 第三轮复核：用 `main`（持球者）而非 `ball`（松散球）作参照。
+use fm_engine::{simulate_with_behavior_observations, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
+use std::collections::{BTreeMap, BTreeSet};
+const DUR: f64 = 5400.0;
+fn dmm(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (((a.0 - b.0) * PITCH_LENGTH_M).powi(2) + ((a.1 - b.1) * PITCH_WIDTH_M).powi(2)).sqrt()
+}
+fn mean(a: &[f64]) -> f64 { if a.is_empty() { f64::NAN } else { a.iter().sum::<f64>() / a.len() as f64 } }
+fn sd(a: &[f64]) -> f64 { if a.len() < 2 { return f64::NAN; } let m = mean(a); (a.iter().map(|x| (x-m).powi(2)).sum::<f64>()/(a.len()-1) as f64).sqrt() }
+
+#[derive(Clone)]
+struct Seg { start_t: f64, last_t: f64, start_d: f64, end_d: f64 }
+#[derive(Default, Clone, Copy)]
+struct S { n: f64, sd: f64, sc: f64, du: f64, ap: f64 }
+
+#[test]
+#[ignore = "probe"]
+fn main_ref() {
+    // 两套口径：
+    //  (a) 防守方 chase/close_down（**用 main 参照**）
+    //  (b) 防守方任意动作且到持球者距离减少 > 0.3 m/拍（**用 main 参照**）
+    // 每套再分：不限 / 只保留「起始距离 ≤ 5 m」的段
+    let mut res: BTreeMap<String, Vec<f64>> = Default::default();  // key -> per-match values
+    let mut all_seg_close: Vec<f64> = Vec::new();
+    for seed in 1..=30u64 {
+        let cfg = MatchConfig { match_duration_seconds: DUR, ..MatchConfig::default_() };
+        let dm = simulate_with_behavior_observations(seed, cfg);
+        for mode in ["chase", "approach"] {
+            for near in [false, true] {
+                let key = format!("{mode}{}", if near { "+near5" } else { "" });
+                let mut open: BTreeMap<i32, Seg> = Default::default();
+                let mut segs: Vec<Seg> = Vec::new();
+                let mut active: BTreeSet<i32> = Default::default();
+                let mut prev_t = -99.0;
+                for e in dm.events.iter() {
+                    let Some(ms) = &e.movers else { continue };
+                    let Some(main) = &e.main else { active.clear(); open.clear(); prev_t = -99.0; continue };
+                    let cp = (main.x, main.y);
+                    let ct = if main.subject <= 10 { 0 } else { 1 };
+                    if e.t - prev_t > 1.5 { for (_, s) in open.iter() { segs.push(s.clone()); } open.clear(); active.clear(); }
+                    let mut cur: BTreeSet<i32> = Default::default();
+                    for m in ms.iter() {
+                        let mt = if m.id <= 10 { 0 } else { 1 };
+                        if mt == ct { continue; }
+                        let d0 = dmm((m.from_x, m.from_y), cp);
+                        let d1 = dmm((m.to_x, m.to_y), cp);
+                        let ok = if mode == "chase" { m.action == "chase" || m.action == "close_down" } else { d0 - d1 > 0.3 };
+                        if !ok { continue; }
+                        cur.insert(m.id);
+                        match open.get_mut(&m.id) {
+                            Some(s) if e.t - s.last_t <= 1.5 => { s.last_t = e.t; s.end_d = d1; }
+                            Some(_) => { segs.push(open.remove(&m.id).unwrap()); open.insert(m.id, Seg { start_t: e.t, last_t: e.t, start_d: d0, end_d: d1 }); }
+                            None => { open.insert(m.id, Seg { start_t: e.t, last_t: e.t, start_d: d0, end_d: d1 }); }
+                        }
+                    }
+                    for id in active.iter() { if !cur.contains(id) { if let Some(s) = open.remove(id) { segs.push(s); } } }
+                    active = cur; prev_t = e.t;
+                }
+                for (_, s) in open { segs.push(s); }
+                let segs: Vec<Seg> = if near { segs.into_iter().filter(|s| s.start_d <= 5.0).collect() } else { segs };
+                let c: Vec<f64> = segs.iter().map(|s| s.start_d - s.end_d).collect();
+                let du: Vec<f64> = segs.iter().map(|s| s.last_t - s.start_t + 1.0).collect();
+                let st: Vec<f64> = segs.iter().map(|s| s.start_d).collect();
+                res.entry(format!("{key}|n")).or_default().push(segs.len() as f64);
+                if !c.is_empty() { res.entry(format!("{key}|close")).or_default().push(mean(&c)); }
+                if !du.is_empty() { res.entry(format!("{key}|dur")).or_default().push(mean(&du)); }
+                if !st.is_empty() { res.entry(format!("{key}|start")).or_default().push(mean(&st)); }
+                if !c.is_empty() { all_seg_close.extend(c.iter().copied()); }
+            }
+        }
+    }
+    let n = 30.0;
+    println!("\n===== 引擎：防守方 vs **持球者**(main) —— 30 seed =====");
+    println!("（对照 真实侧：段起始 6.01 / 逼近 2.81 / 时长 1.98 / 段数 872）\n");
+    for key in ["chase", "chase+near5", "approach", "approach+near5"] {
+        let g = |suf: &str| res.get(&format!("{key}|{suf}")).map(|v| mean(v)).unwrap_or(f64::NAN);
+        let gs = |suf: &str| res.get(&format!("{key}|{suf}")).map(|v| sd(v)).unwrap_or(f64::NAN);
+        println!("【{key}】段数/场 {:.1}  起始 {:.2} (sd {:.2})  逼近 {:.2} (sd {:.2})  时长 {:.2}",
+            g("n") / 1.0, g("start"), gs("start"), g("close"), gs("close"), g("dur"));
+    }
+    // 距离带
+    let mut band: BTreeMap<i32, u64> = Default::default();
+    for x in all_seg_close.iter() { *band.entry(x.floor() as i32).or_insert(0) += 1; }
+    println!("\n全部段的逼近量分布（m，前 10 带）：{:?}", band.iter().take(10).collect::<Vec<_>>());
+    let _ = n;
+}

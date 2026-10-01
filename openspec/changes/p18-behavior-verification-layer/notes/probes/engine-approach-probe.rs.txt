@@ -1,4 +1,13 @@
-// #18 (§7.2a) 决定性实验：把引擎侧「防守方朝球逼近」的全部动作都算进来（不限 action），
+// #18 (§7.2a) 决定性实验 —— ⚠️⚠️ **本探针的口径已被第三轮 grill 推翻，不要用它的数字作判据**。
+//
+// 它用 `beat.ball` 作参照物，而 **`ball` 只出现在松散球拍**（实测 174.7/场，全 loose=true），
+// 且 `ball` 与 `main` **完全互斥**（同有 = 0.0/场）⇒ 它测的是**松散球阶段的追球**，
+// **不是「防守方压迫持球者」**，与真实侧 `on_ball_engagement`（100% 绑定持球球员）**不同义**。
+// **正确参照物是 `beat.main`** —— 见同目录 `engine-carrier-ref-probe.rs.txt`。
+//
+// 保留本文件仅作**历史记录**（它记录了一次被推翻的口径）。
+//
+// 原说明：把引擎侧「防守方朝球逼近」的全部动作都算进来（不限 action），
 // 与真实侧 on_ball_engagement 对比。三种口径并列，看哪一种与真实侧同义。
 use fm_engine::{simulate_with_behavior_observations, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
 use std::collections::BTreeMap;

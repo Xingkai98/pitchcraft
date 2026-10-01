@@ -1,5 +1,8 @@
 // #18 §7.2(a) 追问：引擎在**持球**状态下，防守方有没有「朝持球者逼近」的行为？
-// 用 `beat.main` 直接取持球者位置（比 ball 干净——main 就是 carrier）。
+// 用 `beat.main` 直接取持球者位置。
+// ✅ **本探针的参照物是对的**（`main` = carrier），第三轮审阅复核了它的 5.81%。
+// ⚠️ 但它的**分母**（持球拍 4480/5400 = 83%）与真实侧（possession 覆盖 24–26%）
+//    **不是同一件事** —— 见 design §9.9 / §12。
 use fm_engine::{simulate_with_behavior_observations, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
 use std::collections::BTreeMap;
 

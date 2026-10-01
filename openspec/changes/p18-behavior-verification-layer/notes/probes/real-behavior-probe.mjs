@@ -360,7 +360,12 @@ console.log(`   故任何「每条链的占比」在两侧不可直接相减（�
 const out = {
   source: { dataset: 'SkillCorner opendata', license: 'MIT', games: ids.length,
     competition: [...comps.keys()], caliber: 'real-behavior-probe.mjs C1–C8' },
-  perGame: games,
+  // ⚠️ 不存逐场数组（P38 `latSd` 教训：库里有逐场值会诱使读者跨场拼接）。
+  // 逐场值在 .out.txt 里（可复现），但不入库为结构化数据（design §7.6）。
+  perGame: games.map((g) => ({ id: g.id, chainDurPos: g.chainDurPos, actsAll: g.actsAll,
+    actsPos: g.actsPos, gapSS: g.gapSS, gapES: g.gapES, shotLast: g.shotLast,
+    shotSome: g.shotSome, reactNoneShare: g.reactNoneShare, chainsPerGame: g.chainsPerGame,
+    shotEndChains: g.shotEndChains, passFailRate: g.passFailRate })),
   cross: {
     chainDurPos: mean(per((g) => g.chainDurPos)), chainDurPosSd: sd(per((g) => g.chainDurPos)),
     actsAll: mean(per((g) => g.actsAll)), actsPos: mean(per((g) => g.actsPos)),

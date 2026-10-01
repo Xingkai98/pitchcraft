@@ -1,0 +1,15 @@
+running 1 test
+
+===== 引擎：防守方 vs **持球者**(main) —— 30 seed =====
+（对照 真实侧：段起始 6.01 / 逼近 2.81 / 时长 1.98 / 段数 872）
+
+【chase】段数/场 4.1  起始 61.53 (sd 7.19)  逼近 -1.09 (sd 2.79)  时长 1.81
+【chase+near5】段数/场 0.0  起始 NaN (sd NaN)  逼近 NaN (sd NaN)  时长 NaN
+【approach】段数/场 355.4  起始 25.85 (sd 0.77)  逼近 2.19 (sd 0.11)  时长 1.22
+【approach+near5】段数/场 19.6  起始 3.71 (sd 0.18)  逼近 1.48 (sd 0.15)  时长 1.06
+
+全部段的逼近量分布（m，前 10 带）：[(-15, 2), (-14, 1), (-12, 1), (-11, 1), (-10, 1), (-9, 4), (-8, 7), (-7, 16), (-6, 9), (-5, 1)]
+test main_ref ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.49s
+
