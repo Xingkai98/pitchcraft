@@ -1,0 +1,11 @@
+=== 4-window L1 at 5.5 (my probe: shots/tackles/fouls/pass) ===
+W401  401-600: 射门 17.73 [14,29] | 抢断 34.23 [24,50] | 犯规 27.86 [16,30] | 传球 0.8461 [0.82,0.90]
+W601  601-800: 射门 17.48 [14,29] | 抢断 34.41 [24,50] | 犯规 27.16 [16,30] | 传球 0.8458 [0.82,0.90]
+W801  801-1000: 射门 17.63 [14,29] | 抢断 34.28 [24,50] | 犯规 28.00 [16,30] | 传球 0.8436 [0.82,0.90]
+W1001 1001-1200: 射门 17.86 [14,29] | 抢断 33.83 [24,50] | 犯规 28.70 [16,30] | 传球 0.8454 [0.82,0.90]
+=== official realism 5.75 / 6.0 (find upper edge) ===
+s5.75: test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 76.82s 
+s6.0: 射正率 0.391 ∉ [0.28,0.39] test result: FAILED. 8 passed; 1 failed; 0 ignored; 0 measured; 4 filtered out; finished in 76.78s 
+=== #18 gates at 5.5 ===
+[p18:canary] provenance: caliber=p18-engine-v1 engine_fp=fnv1a64:db4f85569acdf89a seeds=1..=30
+DONE_FINAL

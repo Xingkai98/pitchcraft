@@ -1,0 +1,65 @@
+diff --git a/engine/src/lib.rs b/engine/src/lib.rs
+index ed97a5b..5f7734f 100644
+--- a/engine/src/lib.rs
++++ b/engine/src/lib.rs
+@@ -1833,7 +1833,10 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
+     //    让停滞段自行通过**既有传球生产者**恢复流动。guard 本身不 emit——它只改
+     //    `ticks_since_meaningful_action` 这一状态，本函数因该状态变化而选出球候选。
+     let stalled_unpressed = st.ticks_since_meaningful_action >= LIVENESS_STAGE_2_TICKS;
+-    if gk_holding || nearest_defender_m <= OPEN_PLAY_PASS_PRESSURE_M || stalled_unpressed {
++    let shape_reorder = std::env::var("P19_SHAPE").map(|v| v == "reorder").unwrap_or(false);
++    let pressured = nearest_defender_m <= OPEN_PLAY_PASS_PRESSURE_M;
++    let pass_first = if shape_reorder { gk_holding || stalled_unpressed } else { gk_holding || pressured || stalled_unpressed };
++    if pass_first {
+         return CarrierPlan {
+             action: Some(CarrierAction::Pass { target: carrier_pass_target(st) }),
+             exec: CarrierExecution::Pass { allow_out: true },
+@@ -1858,6 +1861,12 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
+         };
+         return CarrierPlan { action: Some(action), exec };
+     }
++    if shape_reorder && pressured {
++        return CarrierPlan {
++            action: Some(CarrierAction::Pass { target: carrier_pass_target(st) }),
++            exec: CarrierExecution::Pass { allow_out: true },
++        };
++    }
+     // ③ 带球档：继续带球——**不承诺任何行动**（D1「带球档无事件」）。刻意返回 `None` 而非
+     // `Some(Dribble)`：承诺持球动作会按 D3 优先级压过「无事件防守」，使 contain/jockey 的
+     // **结算**永久不可达 → P30（D5）「contain/jockey 只调压力状态」这条路径死掉（压力状态是
+@@ -3300,6 +3309,15 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
+     } else {
+         (Vec::new(), st.ball_pos)
+     };
++    // P19 PROTOTYPE: open-play press — nearest outfield defender closes down the carrier.
++    let press_ids: Vec<i32> = if st.transition.is_none()
++        && st.carrier >= 1 && st.carrier <= 20
++        && std::env::var("P19_PRESS").is_ok()
++    {
++        pick_close_down_players(st, 1 - st.possession, st.pos[st.carrier as usize], 1)
++    } else {
++        Vec::new()
++    };
+     // 门球飞行期预判：GoalKick 高亮期间，双方各 1 名离落点最近的外场预判跑向落点（球落地前就开始争抢）
+     let goal_kick_anticipate: Option<(f64, f64)> = match &st.highlight {
+         Some(h) => match h.outcome {
+@@ -3334,6 +3352,19 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
+         if close_down_ids.contains(&id) {
+             targets[id as usize] = Some(close_down_stop(st.pos[id as usize], close_down_target));
+             actions[id as usize] = "close_down".to_string();
++        } else if press_ids.contains(&id) {
++            // P19: metric-correct standoff target (exactly S meters from carrier along the ray).
++            let c = st.pos[st.carrier as usize];
++            let dp = st.pos[id as usize];
++            let dx = (dp.0 - c.0) * PITCH_LENGTH_M;
++            let dy = (dp.1 - c.1) * PITCH_WIDTH_M;
++            let dm = (dx * dx + dy * dy).sqrt();
++            let sm = std::env::var("P19_STANDOFF_M").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(4.0);
++            let tgt = if dm < 1e-9 { c } else {
++                (c.0 + (dx / dm) * sm / PITCH_LENGTH_M, c.1 + (dy / dm) * sm / PITCH_WIDTH_M)
++            };
++            targets[id as usize] = Some(tgt);
++            actions[id as usize] = "close_down".to_string();
+         } else if anticipate_ids.contains(&id) {
+             // 门球预判：跑向落点（球落地前争抢位），action='chase'
+             targets[id as usize] = Some(st.ball_pos); // ball_pos 高亮期 = 落点（highlight_ball_end）

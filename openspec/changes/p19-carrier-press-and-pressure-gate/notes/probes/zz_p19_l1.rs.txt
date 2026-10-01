@@ -1,0 +1,32 @@
+//! P19 临时探针（用完即删）。
+use fm_engine::{simulate, MatchConfig, MODEL_VERSION};
+fn jstr(e: &str, n: &str) -> Option<String> {
+    let k = format!("\"{}\":\"", n); let i = e.find(&k)? + k.len(); let rest = &e[i..];
+    Some(rest[..rest.find('"')?].to_string())
+}
+fn window(lo: u64) -> String {
+    let cfg = MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION };
+    let (mut shots, mut tackles, mut fouls, mut passes, mut psucc) = (0usize, 0usize, 0usize, 0usize, 0usize);
+    for seed in lo..lo + 200 {
+        let json = simulate(seed, cfg);
+        for e in json.split("{\"t\":").skip(1) {
+            match jstr(e, "type").unwrap_or_default().as_str() {
+                "shot" => { if jstr(e, "detail").as_deref() != Some("header") { shots += 1; } }
+                "tackle" => tackles += 1,
+                "foul" => fouls += 1,
+                "pass" => { passes += 1; if jstr(e, "result").as_deref() == Some("success") { psucc += 1; } }
+                _ => {}
+            }
+        }
+    }
+    format!("{}-{}: 射门 {:.2} [14,29] | 抢断 {:.2} [24,50] | 犯规 {:.2} [16,30] | 传球 {:.4} [0.82,0.90]",
+        lo, lo + 199, shots as f64 / 200.0, tackles as f64 / 200.0, fouls as f64 / 200.0, psucc as f64 / passes as f64)
+}
+#[test]
+#[ignore = "临时"]
+fn three_windows() {
+    println!("W401  {}", window(401));
+    println!("W601  {}", window(601));
+    println!("W801  {}", window(801));
+    println!("W1001 {}", window(1001));
+}
