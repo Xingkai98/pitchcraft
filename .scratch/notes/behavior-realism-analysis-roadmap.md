@@ -1,12 +1,14 @@
 # 行为真实性：数据分析到生成改造路线
 
 状态：Active roadmap
-最后更新：2026-10-01
+最后更新：2026-10-02
 Canonical map：`.scratch/map.md` 的“行为真实性方向”
 当前 frontier：**待用户裁定**——**#19 最小生成改造 = 负结果结项（2026-10-01，D）**：
 硬门形状确是真瓶颈（grill + 独立审阅双核），但「press 移均值 × L1 带余量薄 × 窗抖动」⇒
 **无连续可行区间**（最长 0.04 m ≪ 0.10 m），**引擎未改动**（`lib.rs` = 基线）。
-下一步候选：协调动「射门 + 防守几何」的更大 change，或先修 `#19` 遗留债 #139/#140。
+遗留债 **#139**（`far==0` 脆弱断言）**✅ 已修（2026-10-02，PR #142；加 ε=0.05m，有硬上界依据）**；
+**#140**（P9 比率带上界）仍 open。
+下一步候选：协调动「射门 + 防守几何」的更大 change，或修 #140。
 （**#18 行为验证层**已完成，2026-10-01，PR #136）
 （#16 与 #124 均已完成，见 §5；**两者结论一致：空间＋意图两条路都不足以判 `build_up`/`progression`**）
 （#113 已全部裁定，无待决项）
@@ -60,7 +62,8 @@ Canonical map：`.scratch/map.md` 的“行为真实性方向”
   → #17B：可解释诊断报告（事件 + 空间 + 意图；**不含 phase**）✅ 已完成（2026-09-30，PR #133）
   → #18：行为真实性 L3 验证层 ✅ 已完成（2026-10-01，PR #136）
   → #19：最小生成机制改造 ⬛ 负结果结项（2026-10-01，D；无连续可行区间，引擎未动）
-  → frontier 待用户裁定（更大 change / 先修 #139/#140）
+  → #139：`far==0` 脆弱断言 ✅ 已修（2026-10-02，PR #142；加 ε=0.05m）
+  → frontier 待用户裁定（更大 change / 修 #140）
   → 前后行为基线与真实比赛对照
 ```
 
@@ -446,7 +449,7 @@ change：`openspec/changes/p17b-explainable-diagnosis-report/`；
 - **真价值**：证明前六个 change 推不动引擎**不是分析不够，是这个结构结**。
 - change：`openspec/changes/p19-carrier-press-and-pressure-gate/`；
   note：`.scratch/notes/19-{recon,shape-probe,band-provenance}-2026-10-01.md`。
-- 遗留债：#139（`far==0`）、#140（P9 比率带上界）。
+- 遗留债：#139（`far==0`，**✅ 已修 2026-10-02，PR #142**）、#140（P9 比率带上界，open）。
 
 ## 7. 禁止事项
 
@@ -461,7 +464,7 @@ change：`openspec/changes/p17b-explainable-diagnosis-report/`；
 
 > 📌 **当前一步：`#19` 已负结果结项（2026-10-01，D）——frontier 待用户裁定。**
 > 下一步候选：① 协调动「射门 + 防守几何」的更大 change；
-> ② 先修 `#19` 析出的两条遗留债 **#139**（`far==0` 脆弱断言）/ **#140**（P9 比率带上界）。
+> ② 先修 `#19` 析出的两条遗留债 **#139**（`far==0` 脆弱断言，**✅ 已修 2026-10-02，PR #142**）/ **#140**（P9 比率带上界，open）。
 > `#19` 的证据：`openspec/changes/p19-carrier-press-and-pressure-gate/`（design/tasks/**GRILL.md**/
 > `notes/probes/`）+ `.scratch/notes/19-{recon,shape-probe,band-provenance}-2026-10-01.md`。
 > **引擎未改动**（`engine/src/lib.rs` = 基线 `2adfe62b…`）。
