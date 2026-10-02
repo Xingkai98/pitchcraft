@@ -1,0 +1,10 @@
+# press55（standoff 5.5 修复版）跨窗：官方 realism 全套，窗口 401..2001
+w=1001 result: ok FAIL: 
+w=1201 result:  FAIL: 比值 0.490 ∉;比值 0.490 ∉;
+w=1401 result: ok FAIL: 
+w=1601 result: ok FAIL: 
+w=1801 result: ok FAIL: 
+w=2001 result: ok FAIL: 
+w=401 result: ok FAIL: 
+w=601 result: ok FAIL: 
+w=801 result: ok FAIL: 

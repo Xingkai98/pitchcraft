@@ -1,0 +1,10 @@
+# PRISTINE 跨窗（不逼抢）：官方 realism 全套，窗口 401..2001 步长 200
+w=1001 result:  FAIL: dist>12m 抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：2;
+w=1201 result:  FAIL: dist>12m 抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：2;
+w=1401 result:  FAIL: dist>12m 抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：2;
+w=1601 result:  FAIL: dist>12m 抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：2;
+w=1801 result:  FAIL: dist>12m 抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：1;
+w=2001 result: ok FAIL: 
+w=401 result: ok FAIL: 
+w=601 result: ok FAIL: 
+w=801 result: ok FAIL: 
