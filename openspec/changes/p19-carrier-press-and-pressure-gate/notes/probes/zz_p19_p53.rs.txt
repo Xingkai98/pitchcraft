@@ -1,0 +1,45 @@
+//! P19：p53 同队扫掠间距违规计数（复刻 p53 test 口径）。用完即删。
+use fm_engine::{simulate, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
+fn jstr(e: &str, n: &str) -> Option<String> {
+    let k = format!("\"{}\":\"", n); let i = e.find(&k)? + k.len(); let rest = &e[i..];
+    Some(rest[..rest.find('"')?].to_string())
+}
+fn jnum(e: &str, n: &str) -> Option<f64> {
+    let k = format!("\"{}\":", n); let i = e.find(&k)? + k.len(); let rest = &e[i..];
+    let end = rest.find(|c| c == ',' || c == '}').unwrap_or(rest.len());
+    rest[..end].trim().parse().ok()
+}
+#[test]
+#[ignore = "临时"]
+fn count() {
+    const MINM: f64 = 2.0; const EPS: f64 = 0.02;
+    let mut viol = 0usize; let mut worst = f64::MAX; let mut worst_at = String::new();
+    for seed in 1..=30u64 {
+        let json = simulate(seed, MatchConfig::default_());
+        for e in json.split("{\"t\":").skip(1) {
+            if jstr(e, "type").as_deref() != Some("beat") { continue; }
+            let t: f64 = e.split(',').next().unwrap_or("-1").trim().parse().unwrap_or(-1.0);
+            let Some(mv) = e.split("\"movers\":[").nth(1) else { continue };
+            let mv = mv.split("]").next().unwrap_or("");
+            let mut ps: Vec<(i32, f64, f64, f64, f64)> = Vec::new();
+            for it in mv.split("{\"id\":").skip(1) {
+                let id = it.split(|c: char| !c.is_ascii_digit()).next().unwrap_or("0").parse().unwrap_or(0);
+                ps.push((id, jnum(it, "from_x").unwrap_or(0.0), jnum(it, "from_y").unwrap_or(0.0),
+                    jnum(it, "to_x").unwrap_or(0.0), jnum(it, "to_y").unwrap_or(0.0)));
+            }
+            for i in 0..ps.len() { for j in i + 1..ps.len() {
+                let (ia, afx, afy, atx, aty) = ps[i]; let (ib, bfx, bfy, btx, bty) = ps[j];
+                if (ia <= 10) != (ib <= 10) { continue; }
+                let r0 = ((afx - bfx) * PITCH_LENGTH_M, (afy - bfy) * PITCH_WIDTH_M);
+                let r1 = ((atx - btx) * PITCH_LENGTH_M, (aty - bty) * PITCH_WIDTH_M);
+                let dd = (r1.0 - r0.0, r1.1 - r0.1); let vv = dd.0 * dd.0 + dd.1 * dd.1;
+                let sk = if vv < 1e-12 { 0.0 } else { (-(r0.0 * dd.0 + r0.1 * dd.1) / vv).clamp(0.0, 1.0) };
+                let (rx, ry) = (r0.0 + sk * dd.0, r0.1 + sk * dd.1);
+                let d = (rx * rx + ry * ry).sqrt();
+                if d < worst { worst = d; worst_at = format!("seed{} t{:.0} id{}/{}", seed, t, ia, ib); }
+                if d < MINM - EPS { viol += 1; }
+            }}
+        }
+    }
+    println!("p53 违规 pair（seeds 1..=30, 阈值 {:.2}）: {} | worst {:.4} @ {}", MINM - EPS, viol, worst, worst_at);
+}

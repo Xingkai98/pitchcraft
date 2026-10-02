@@ -1,0 +1,4 @@
+=== p53 under FIXED prototype (standoff 5.5), seeds 1..=30 ===
+FIXED s5.5: p53 违规 pair: 1 | worst 1.6079 @ seed7 t1461 id7/10
+pristine  : p53 违规 pair: 0 | worst 2.1302 @ seed30 t4298 id5/4
+(press-only 单独即触发 seed5 1.7692m；shape-only 不触发；combined seed7 1.6079m)

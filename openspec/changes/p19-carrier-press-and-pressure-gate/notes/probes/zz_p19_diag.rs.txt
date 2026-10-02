@@ -1,0 +1,84 @@
+//! P19 有界调查（终版）：用 `beat.main.subject` 定**球队**，用 `di.defender` 取被选防守者的
+//! 真实身份；量机会点处「最近防守者」（真防守队）距离分布 + 被选防守者身份占比。用完即删。
+use fm_engine::observation::DefensiveIntentKind;
+use fm_engine::{simulate_with_behavior_observations, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
+
+fn dist_m(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (((a.0 - b.0) * PITCH_LENGTH_M).powi(2) + ((a.1 - b.1) * PITCH_WIDTH_M).powi(2)).sqrt()
+}
+fn pctl(v: &mut [f64], q: f64) -> f64 {
+    if v.is_empty() { return f64::NAN; }
+    v.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    v[((v.len() as f64 - 1.0) * q) as usize]
+}
+
+fn run(label: &str, seeds: u64) {
+    let bins = [0.0, 2.0, 2.5, 4.0, 6.0, 8.0, 10.0, 12.0, 1e9];
+    let mut hist = [0usize; 8];
+    let mut n_opp = 0usize;
+    // 被选中的最近防守者，其 dist_m 分布 + 该 dist 是否 < 2.5（tackle_closeness>0）
+    let mut sel_dist: Vec<f64> = Vec::new();
+    let mut sel_in25 = 0usize;
+    let mut sel_in12 = 0usize;
+    let mut kind_cnt: std::collections::BTreeMap<&'static str, usize> = Default::default();
+    for seed in 1..=seeds {
+        let cfg = MatchConfig { match_duration_seconds: 5400.0, ..MatchConfig::default_() };
+        let dm = simulate_with_behavior_observations(seed, cfg);
+        let mut snap: std::collections::BTreeMap<u64, &fm_engine::observation::StateSnapshot> = Default::default();
+        for s in dm.state_snapshots.iter() { snap.insert((s.t.value * 1000.0).round() as u64, s); }
+        // 每个 tick 的 carrier id（beat.main.subject）——精确球队来源。
+        // ⚠️ 机会点当拍可能产 tackle/foul（无 beat.main），故取「≤ key 的最后一拍」。
+        let mut carrier_seq: Vec<(u64, i32)> = Vec::new();
+        for e in dm.events.iter() { if let Some(m) = &e.main { carrier_seq.push(((e.t * 1000.0).round() as u64, m.subject)); } }
+        carrier_seq.sort_by_key(|x| x.0);
+        for di in dm.defensive_intents.iter() {
+            let key = (di.t.value * 1000.0).round() as u64;
+            let Some(s) = snap.get(&key) else { continue };
+            let i = carrier_seq.partition_point(|x| x.0 <= key);
+            if i == 0 { continue; }
+            let c = carrier_seq[i - 1].1;
+            let cp = s.pos[c as usize];
+            let def_team_is_home = c > 10; // carrier 是 away → 防守方是 home
+            let mut best = f64::MAX;
+            for id in 0..22i32 {
+                if id == 0 || id == 21 { continue; }
+                let is_home = id <= 10;
+                if is_home != def_team_is_home { continue; }
+                let d = dist_m(s.pos[id as usize], cp);
+                if d < best { best = d; }
+            }
+            if best == f64::MAX { continue; }
+            n_opp += 1;
+            for b in 0..8 { if best >= bins[b] && best < bins[b + 1] { hist[b] += 1; break; } }
+            if let Some(did) = di.defender {
+                let d = dist_m(s.pos[did as usize], cp);
+                sel_dist.push(d);
+                if d < 2.5 { sel_in25 += 1; }
+                if d < 12.0 { sel_in12 += 1; }
+            }
+            let k: &'static str = match di.kind {
+                DefensiveIntentKind::Tackle => "Tackle", DefensiveIntentKind::Foul => "Foul",
+                DefensiveIntentKind::Contain => "Contain", DefensiveIntentKind::Jockey => "Jockey",
+                DefensiveIntentKind::None => "None",
+            };
+            *kind_cnt.entry(k).or_insert(0) += 1;
+        }
+    }
+    let t = n_opp.max(1) as f64;
+    println!("=== {} ({} seeds) ===  机会点 {}/场", label, seeds, n_opp / seeds as usize);
+    println!("  最近防守者距离（真防守队）: 0-2:{:.1}% 2-2.5:{:.1}% 2.5-4:{:.1}% 4-6:{:.1}% 6-8:{:.1}% 8-10:{:.1}% 10-12:{:.1}% 12+:{:.1}%",
+        100.0 * hist[0] as f64 / t, 100.0 * hist[1] as f64 / t, 100.0 * hist[2] as f64 / t, 100.0 * hist[3] as f64 / t,
+        100.0 * hist[4] as f64 / t, 100.0 * hist[5] as f64 / t, 100.0 * hist[6] as f64 / t, 100.0 * hist[7] as f64 / t);
+    println!("  ≤2.2m {:.1}% | 被选防守者(仅 Tackle/Foul 有 id): n={} dist p50={:.2} 其中<2.5m {:.1}% <12m {:.1}%",
+        100.0 * (hist[0] + hist[1]) as f64 / t, sel_dist.len(), pctl(&mut sel_dist.clone(), 0.5),
+        100.0 * sel_in25 as f64 / sel_dist.len().max(1) as f64, 100.0 * sel_in12 as f64 / sel_dist.len().max(1) as f64);
+    println!("  tally: {:?}", kind_cnt);
+}
+
+#[test]
+#[ignore = "临时"]
+fn diag() {
+    let s = std::env::var("P19_LABEL").unwrap_or_else(|_| "?".into());
+    let n: u64 = std::env::var("P19_SEEDS").ok().and_then(|x| x.parse().ok()).unwrap_or(30);
+    run(&s, n);
+}

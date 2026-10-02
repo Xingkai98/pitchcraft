@@ -1,0 +1,46 @@
+//! P19 临时探针：B4 + 距离分布（用完即删）。
+use fm_engine::{simulate_with_behavior_observations, MatchConfig, PITCH_LENGTH_M, PITCH_WIDTH_M};
+fn dist_m(a: (f64, f64), b: (f64, f64)) -> f64 {
+    (((a.0 - b.0) * PITCH_LENGTH_M).powi(2) + ((a.1 - b.1) * PITCH_WIDTH_M).powi(2)).sqrt()
+}
+#[test]
+#[ignore = "临时"]
+fn b4() {
+    let mut all_near: Vec<f64> = Vec::new();
+    let mut carrier_ticks = 0usize;
+    let mut approach_ticks = 0usize;
+    let mut within5 = 0usize;
+    let mut within8 = 0usize;
+    for seed in 1..=30u64 {
+        let cfg = MatchConfig { match_duration_seconds: 5400.0, ..MatchConfig::default_() };
+        let dm = simulate_with_behavior_observations(seed, cfg);
+        let mut snap: std::collections::BTreeMap<u64, &fm_engine::observation::StateSnapshot> = Default::default();
+        for s in dm.state_snapshots.iter() { snap.insert((s.t.value * 1000.0).round() as u64, s); }
+        for e in dm.events.iter() {
+            let Some(main) = &e.main else { continue };
+            if e.ball.is_some() { continue; }
+            let Some(s) = snap.get(&((e.t * 1000.0).round() as u64)) else { continue };
+            carrier_ticks += 1;
+            let cp = s.pos[main.subject as usize];
+            let ct = main.subject <= 10;
+            let mut best = f64::MAX;
+            for id in 1..21i32 { if (id <= 10) == ct { continue; } let d = dist_m(s.pos[id as usize], cp); if d < best { best = d; } }
+            all_near.push(best);
+            if best <= 5.0 { within5 += 1; }
+            if best <= 8.0 { within8 += 1; }
+            let mut ap = false;
+            for m in e.movers.iter().flatten() {
+                if (m.id <= 10) != ct {
+                    if dist_m((m.from_x, m.from_y), cp) > dist_m((m.to_x, m.to_y), cp) { ap = true; }
+                }
+            }
+            if ap { approach_ticks += 1; }
+        }
+    }
+    all_near.sort_by(|a, b| a.partial_cmp(b).unwrap());
+    let q = |p: f64| all_near[((all_near.len() as f64 - 1.0) * p) as usize];
+    println!("B4 = {:.4} | nearest(m) mean {:.2} p10 {:.2} p50 {:.2} p90 {:.2} | ≤5m {:.1}% ≤8m {:.1}% | carrier 拍 {}",
+        approach_ticks as f64 / carrier_ticks as f64,
+        all_near.iter().sum::<f64>() / all_near.len() as f64, q(0.1), q(0.5), q(0.9),
+        100.0 * within5 as f64 / carrier_ticks as f64, 100.0 * within8 as f64 / carrier_ticks as f64, carrier_ticks);
+}
