@@ -65,6 +65,24 @@ const GOLDEN_SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
 const SEEDS_HA_START: u64 = 401;
 const SEEDS_HA: u32 = 600;
 
+/// 事件层 `far` 断言的容差（米）——吸收「事件字段 4 位小数」引入的坐标量化误差。
+///
+/// **依据（非拍脑袋）**：`far`（`aggregate` 里算）是从**序列化后 4 位小数**的事件字段
+/// （`x/y`=防守者、`x2/y2`=被铲者）重新求距离，与真守卫判定的**未序列化内部几何**不是同一个量。
+/// 每个坐标四舍五入到 4 位小数 ⇒ 单端点最多引入 5e-5 归一化误差 ⇒ 该端点米制距离最多偏
+/// `√((5e-5·105)² + (5e-5·68)²) ≈ 0.00626m`；两个端点各偏一次 ⇒ 重算距离最多比内部真值高
+/// **≈ 0.0125m**（硬上界，非统计估计）。实测越界落在此界内（#104 原始 3000 场记录 0.0076m；
+/// #139 审阅独立复测 600 场 0.0061m）。
+///
+/// **取值**：`0.05` = 硬上界的 **4.0×**——**选择而非必要下界**（0.02 = 1.6× 也够），多留浮点余量。
+/// **检测力代价（诚实记账）**：重算距离落在 `(阈值, 阈值+ε]` 的事件**两桶都不计**
+/// （见 `aggregate` 的 `else if`）⇒ 因 `重算 ≤ 内部 + 0.0125`，**内部资格门被抬 ≤ ε−0.0125 =
+/// 0.0375m 的「小幅破法」会被本条掩盖**——这是 ε 的**有界**代价（= ε − 硬界）。
+/// **真正的机制破裂不受影响**：拆门 / 大幅抬门（资格门抬到 13m ⇒ 事件重算 ~13m）产出 `far ≫ 0`，
+/// 距阈值尚余 **0.95m**，仍会被抓（反证见 #139 票据）。
+/// **不得**用「浮点不可避免」把这条冗余断言长期合理化（注释原话）——此处 ε 有可证上界。
+const TACKLE_FAR_EPS_M: f64 = 0.05;
+
 fn ha_stats() -> &'static Vec<MatchStats> {
     static STATS: std::sync::OnceLock<Vec<MatchStats>> = std::sync::OnceLock::new();
     STATS.get_or_init(|| {
@@ -260,8 +278,9 @@ struct MatchStats {
     n_tackle_success: usize,
     n_tackle_close: usize,
     n_tackle_close_success: usize,
+    // 事件内重算距离 > 阈值 + `TACKLE_FAR_EPS_M`（真越界；见 `l1_tackle_dilution_and_slot_mix`）。
+    // 旧的 `n_tackle_far_success` 为写后从不读的死字段（#139 核实后删除）。
     n_tackle_far: usize,
-    n_tackle_far_success: usize,
     // pass
     n_pass: usize,
     n_pass_success: usize,    // P13 fix：普通有向传球 result=success（开放比赛，含过渡传球）
@@ -539,7 +558,9 @@ fn aggregate(seed: u64) -> MatchStats {
                 if success {
                     st.n_tackle_success += 1;
                 }
-                // 防守者(def, x/y) → 被铲者(victim, x2/y2) 距离（米）：区分 close/far
+                // 防守者(def, x/y) → 被铲者(victim, x2/y2) 距离（米）：区分 close/far。
+                // ⚠️ 这是从**序列化后 4 位小数**的事件字段重算的距离，与真守卫判定的内部几何
+                // 不同义（两端点各含 ≤ 5e-5 坐标量化 ⇒ 最多高估 ~0.0125m）；见 `TACKLE_FAR_EPS_M`。
                 let dx = (x - x2) * PITCH_LENGTH_M;
                 let dy = (y - y2) * PITCH_WIDTH_M;
                 let dist = (dx * dx + dy * dy).sqrt();
@@ -548,11 +569,9 @@ fn aggregate(seed: u64) -> MatchStats {
                     if success {
                         st.n_tackle_close_success += 1;
                     }
-                } else {
+                } else if dist > TACKLE_DISTANCE_THRESHOLD_METERS + TACKLE_FAR_EPS_M {
+                    // 只有超出量化容差才算 `far`（真越界）；(阈值, 阈值+ε] 是舍入噪声，两桶都不计。
                     st.n_tackle_far += 1;
-                    if success {
-                        st.n_tackle_far_success += 1;
-                    }
                 }
             }
             "kickoff" => {
@@ -770,24 +789,27 @@ fn l1_tackle_dilution_and_slot_mix() {
     // 频率方向性（tackle ≠ 槽数量）由 `p7_frequency_5min_vs_90min_consistent` 的 P30 分支
     // （90min > 5min 且落在体量带）与 v2_tackle_frequency_in_target_range 守护。
     let far: usize = stats.iter().map(|s| s.n_tackle_far).sum();
-    // 事件内 dist>12m 的抢断在 P30 后恒为 0（打分资格要求 ≤ 阈值，超阈值直接 NEG_INFINITY）——
-    // 这是 D3「资格在打分阶段判定」在事件层的可见证据（旧的 `far` 降成功率已被删除）。
+    // 事件内重算距离 > 阈值 + ε 的抢断恒为 0（打分资格要求 dist ≤ 阈值，超阈值直接
+    // NEG_INFINITY）——这是 D3「资格在打分阶段判定」在事件层的可见证据（旧的 `far`
+    // 降成功率已被删除）。**#139 已加 ε 修掉原 `assert_eq!(far, 0)` 的脆弱性**：
     //
-    // ⚠️ **#104 已知技术债（本 change 记录、未修）——本断言「量错了东西」，不是「精度不够」。**
-    // 它要测的不变量（D3 资格在打分阶段判定）在**未序列化的内部几何**上严格成立：
-    // `score_tackle` 在 `dist_m > 12.0` 时返回 `f64::NEG_INFINITY`（`lib.rs`），
-    // 且**该不变量已被正确守护在引擎内**——见 `p30_tackle_score_directions` 断言
-    // `score_tackle(13.0) == NEG_INFINITY`。
-    // 而本行的 `far`（`aggregate` 里算的）是**从序列化后的事件字段（4 位小数）重新求距离**，
-    // 测的是**舍入后的另一个量**。故它是一条**冗余且脆弱的重复断言**，不是唯一守护。
-    // 实测三个配置在 3000 场上的越界（干净 main 0 / 当前配置 15 / 被否决的备选 25）
-    // 最大距离都只有 12.0076m——**是舍入 + 临界几何抽样，不是机制破裂**。
-    // 本 change **保持断言不变**（它现在不红；在已重标多条门的 change 里再动一条会加重
-    // 「把门调松」的风险），**但换任何抬高事件量的方案都会踩到**（当前配置只是**碰巧**
-    // 没落在冻结窗口 401..600 内——是运气，不是它更干净）。
-    // 后续处置方向：**删掉它或加 ε 容差**（真守卫已在，ε 低风险）——
-    // 不要用「浮点不可避免」把这条冗余断言长期合理化。
-    assert_eq!(far, 0, "事件内 dist>12m 抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：{}", far);
+    // - **真守卫**（未序列化内部几何，严格）：`score_tackle(dist_m > 12.0) → NEG_INFINITY`，
+    //   已断言于 `lib.rs` 的 `p30_tackle_score_directions`（`dist_m: 13.0 ⇒ NEG_INFINITY`）。
+    // - **本行测的是另一个量**：`far`（`aggregate` 里算的）从**序列化后 4 位小数**的事件字段
+    //   重新求距离 ⇒ 两端点各含 ≤ 5e-5 坐标量化 ⇒ 重算距离最多比内部真值高 **≈ 0.0125m**
+    //   （硬上界）。旧断言用裸 `12.0` 阈值把这一量化噪声误判为违约 ⇒ **pristine 自己就在
+    //   seed 窗 1001/1201/1401/1601/1801 上破**（#19 实测；与任何 change 无关的既存债）。
+    // - **修法**：阈值抬到 `12 + TACKLE_FAR_EPS_M`（ε=0.05 = 硬上界的 4×）。见该常量处
+    //   的完整推导、「0.95m 余量」论证与**检测力代价**（重算落在 `(12, 12.05]` 的事件两桶
+    //   都不计 ⇒ 内部门被抬 ≤0.0375m 的小幅破法会被掩盖——有界代价，非「几乎无损」）。
+    //   它仍是**真守卫**：任何真正「资格不在打分阶段判定」的回归（13m 处仍能抢）距阈值
+    //   尚余 0.95m ⇒ **仍会被抓**（反证见 #139 票据记录）。
+    // - 这不是「浮点不可避免」的借口（原注释的告诫）——ε 有一条**可证的量化上界**支撑。
+    assert_eq!(
+        far, 0,
+        "事件内 dist>{}m（阈值+ε）的抢断应恒为 0（D3 资格在打分阶段，非事后降成功率）：{}",
+        TACKLE_DISTANCE_THRESHOLD_METERS + TACKLE_FAR_EPS_M, far
+    );
 
     // 射门 vs 抢断的经验体量比。**P29 起不再是槽位配额比**（旧：「声明 35/22≈1.59」——2B 后
     // 射门由 hazard 涌现，与槽位 roll 的比例脱钩）；**P30 起防守侧也涌现**（抢断由接触竞争
