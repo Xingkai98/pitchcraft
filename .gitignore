@@ -2,6 +2,8 @@
 engine/target/
 # WASM 产物（由 cargo build 生成）
 viewer/engine.wasm
+# 对比用实验 wasm（?wasm=engine-xxx.wasm 切换；viewer/engine-v1.wasm 等构建产物不入库）
+viewer/engine-*.wasm
 # 编辑器
 .DS_Store
 *.swp

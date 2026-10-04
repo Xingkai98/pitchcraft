@@ -40,6 +40,13 @@ TOOLS_LOG=$(mktemp)
 grep -E "^(# (tests|pass|fail))" "$TOOLS_LOG"
 rm -f "$TOOLS_LOG"
 
+# visual-review 工具的守护测试（球必须画出来 + 跨全窗运动指标）。glob `tools/*.test.mjs`
+# 只扫顶层，子目录要显式跑——否则这套测试永远不执行（同 P20 的教训）。
+if [ -d tools/visual-review ]; then
+  echo "--- tools/visual-review 单测 ---"
+  (cd tools/visual-review && node --test *.test.mjs 2>&1 | grep -E "^(# (tests|pass|fail|skipped))")
+fi
+
 echo ""
 echo "=== 4/9 WASM 端到端（v2 并行节拍：engine.wasm → viewer 播放无 snap）==="
 if [ ! -f viewer/engine.wasm ]; then
