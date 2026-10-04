@@ -252,8 +252,10 @@ function renderTrackingMeta(label) {
 
 // 加载 WASM 引擎（S2：fetch + instantiate）。返回 simulate 函数。
 async function loadEngine() {
+  // [P143r 实验] ?wasm=<文件名> 切换引擎（对比用），默认 engine.wasm。
+  const wasmFile = new URLSearchParams(location.search).get('wasm') || 'engine.wasm';
   // cache-busting：加时间戳查询参数，避免浏览器缓存旧 wasm（改引擎后看不到新效果）
-  const response = await fetch(`./engine.wasm?v=${Date.now()}`);
+  const response = await fetch(`./${wasmFile}?v=${Date.now()}`);
   if (!response.ok) {
     throw new Error(`failed to fetch engine.wasm: ${response.status}`);
   }
