@@ -44,7 +44,7 @@ rm -f "$TOOLS_LOG"
 # 只扫顶层，子目录要显式跑——否则这套测试永远不执行（同 P20 的教训）。
 if [ -d tools/visual-review ]; then
   echo "--- tools/visual-review 单测 ---"
-  (cd tools/visual-review && node --test *.test.mjs 2>&1 | grep -E "^(# (tests|pass|fail))")
+  (cd tools/visual-review && node --test *.test.mjs 2>&1 | grep -E "^(# (tests|pass|fail|skipped))")
 fi
 
 echo ""

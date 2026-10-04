@@ -27,7 +27,9 @@ P143r 实测「射门/抢断调到真实值、过全部统计门」的版本，*
 | `ask-vision.mjs` | 把 PNG 交视觉模型判读（修了 vision.py 的 max_tokens 陷阱） | `node tools/visual-review/ask-vision.mjs <png> "<问题>"` |
 | `motion-metrics.mjs` | 运动真实性指标（端点位移/窗、方向一致性、静止占比），跨全窗 | `node tools/visual-review/motion-metrics.mjs <engine.wasm> [seeds=5] [win=12]` |
 
-真实对照用 `viewer/data/real-game-1.json`（P35 Metrica 通路，入库）。可用 `VISUAL_REVIEW_REAL` 覆盖。
+真实对照用 `viewer/data/real-game-1.json`（P35 Metrica 通路）。⚠️ **它被 gitignore（不入库）、CI 不产**——
+生成方式：`node tools/fetch-tracking-data.mjs && node tools/convert-tracking-to-frames.mjs`；可用 `VISUAL_REVIEW_REAL` 覆盖。
+⇒ **`render.mjs` 在 CI 上跑不了**（缺 wasm + 真实帧）；所以**守护测试用合成帧**（不依赖它们，CI 必跑）。
 
 ## 流程
 

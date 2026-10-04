@@ -1,49 +1,125 @@
 // visual-review 工具的守护测试。
-// 重点守两件踩过坑的事：
-//   1. render.mjs 必须**把球画出来**（引擎帧的 ball 是数组 [x,y]，曾用 ball.x 判断 → 球漏画）。
-//      → 断 PNG 里"亮黄球像素"数量足够（球可见），且有红/蓝球员像素。
-//   2. motion-metrics 的 windowStats 必须在**全窗**上算、并回报方向一致性（跨窗纪律）。
+//
+// 设计原则（都是被独立审阅抓过才定的，别退回）：
+//   - **不依赖 wasm / 真实数据 / PIL**：用**合成帧**直接调 `buildComparison`，
+//     断言走 `getImageData`（纯 JS）→ 测试在 CI 上必跑，不会因数据缺席静默跳过。
+//   - **分排断言**：像素按「引擎行带 / 真实行带」**分别**计数、分别断言——
+//     只丢一排（正是本工具要防的原 bug 形态：「引擎那排球漏画」）必须变红。
+//   - **反证条**：每个守护都带一条「故意破坏必红」的对照断言，证明它不是空转。
 import { test } from 'node:test';
 import assert from 'node:assert';
-import { execFileSync } from 'node:child_process';
-import { readFileSync, existsSync, mkdtempSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { dirname, join, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
 
-const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const WASM = join(ROOT, 'viewer/engine.wasm');
-const HAVE = existsSync(WASM) && existsSync(join(ROOT, 'viewer/data/real-game-1.json'));
+const { buildComparison, ballXY, LAYOUT } = await import('./render.mjs');
+const { windowStats } = await import('./motion-metrics.mjs');
 
-test('render.mjs 把球画出来（球可见，不是漏画）', { skip: !HAVE && '缺 engine.wasm / real-game-1.json' }, () => {
-  const out = join(mkdtempSync(join(tmpdir(), 'vr-')), 'cmp.png');
-  execFileSync('node', [join(ROOT, 'tools/visual-review/render.mjs'), WASM, out, '42', '600', '12', '6'],
-    { cwd: ROOT, stdio: 'pipe' });
-  // parser PNG 需要解码库；本仓无依赖 → 用 python3 PIL（本机有）作外部校验，缺则跳过颜色断言。
-  let yellow = -1, red = -1, blue = -1;
-  try {
-    const py = `from PIL import Image
-from collections import Counter
-c=Counter(Image.open(${JSON.stringify(out)}).convert('RGB').get_flattened_data())
-y=sum(n for col,n in c.items() if col[0]>200 and col[1]>180 and col[2]<80)
-r=sum(n for col,n in c.items() if col[0]>180 and col[1]<90 and col[2]<90)
-b=sum(n for col,n in c.items() if col[2]>180 and col[0]<120 and col[1]>90)
-print(y,r,b)`;
-    [yellow, red, blue] = execFileSync('python3', ['-c', py], { encoding: 'utf8' }).trim().split(/\s+/).map(Number);
-  } catch { return; } // 无 PIL → 跳过（不阻塞）
-  assert.ok(yellow > 200, `亮黄球像素太少（${yellow}）——球可能又漏画了（引擎 ball 是数组 [x,y]）`);
-  assert.ok(red > 500 && blue > 500, `红/蓝球员像素不足（red=${red} blue=${blue}）`);
+// —— 合成帧：可控的球员位置与球 ——
+// mkFrames(ballPositions)：frames[i] = {t:i*0.2, players, ball:ballPositions[i]}
+// 默认 20 名球员**铺开**（避免叠在同一点）；moveFn 可给每人每帧的位置。
+function mkFrames(balls, { moveFn = null, nPlayers = 20 } = {}) {
+  return balls.map((b, i) => ({
+    t: i * 0.2,
+    players: Array.from({ length: nPlayers }, (_, k) => {
+      const pos = moveFn ? moveFn(k, i) : { x: 0.08 + (k % 5) * 0.18, y: 0.15 + Math.floor(k / 5) * 0.2 };
+      return { id: k + 1, x: pos.x, y: pos.y };   // id 1..n（避开门将 0/21）
+    }),
+    ball: b, // [x,y] 或 null
+  }));
+}
+
+// 数一块像素区带里的「亮黄球」像素（#ffe400）。
+function countYellow(img, y0, y1) {
+  let n = 0;
+  for (let y = Math.max(0, y0); y < Math.min(img.height, y1); y++) {
+    for (let x = 0; x < img.width; x++) {
+      const o = (y * img.width + x) * 4;
+      if (img.data[o] > 200 && img.data[o + 1] > 180 && img.data[o + 2] < 80) n++;
+    }
+  }
+  return n;
+}
+function countRed(img) {
+  let n = 0;
+  for (let o = 0; o < img.data.length; o += 4) {
+    if (img.data[o] > 180 && img.data[o + 1] < 90 && img.data[o + 2] < 90) n++;
+  }
+  return n;
+}
+
+test('render：引擎排与真实排**各自**都画出球（单排丢球必红）', () => {
+  const eng = mkFrames([[0.30, 0.40], [0.32, 0.40]]);
+  const real = mkFrames([[0.70, 0.60], [0.72, 0.60]]);
+  const { canvas, bands } = buildComparison(eng, real, { t0: 0, win: 12, n: 2 });
+  const img = canvas.getContext().getImageData(0, 0, canvas.width, canvas.height);
+  const eY = countYellow(img, bands.engine[0], bands.engine[1]);
+  const rY = countYellow(img, bands.real[0], bands.real[1]);
+  // 两排各自都要有球——**分别**断言，这样「只在引擎排丢球」（原 bug 形态）会红。
+  assert.ok(eY > 100, `引擎排没画球（黄像素 ${eY}）——ball 是数组 [x,y]，别用 ball.x`);
+  assert.ok(rY > 100, `真实排没画球（黄像素 ${rY}）`);
+  assert.ok(countRed(img) > 500, '球员点没画出来');
 });
 
-test('motion-metrics.windowStats 跨全窗 + 回报方向一致性', async () => {
-  // motion-metrics.mjs 有 IS_ENTRY 守卫，import 不会跑主流程。
-  const { windowStats } = await import('./motion-metrics.mjs');
-  const frames = [];
-  for (let i = 0; i < 40; i++) {
-    frames.push({ t: i * 0.2, players: Array.from({ length: 20 }, (_, id) => ({ id: id + 1, x: 0.5 + i * 0.001 * (id % 3 - 1), y: 0.5 })) });
-  }
+test('render：反证条——把某排的球置 null，那一排的黄像素必须归零', () => {
+  // 直接构造「引擎排无球」的输入，断言引擎行带无黄、真实行带有黄。
+  // 这证明上面的「引擎排 > 100」断言有区分度（不是恒真）。
+  const engNoBall = mkFrames([null, null]);
+  const realBall = mkFrames([[0.6, 0.5], [0.62, 0.5]]);
+  const { canvas, bands } = buildComparison(engNoBall, realBall, { t0: 0, win: 12, n: 2 });
+  const img = canvas.getContext().getImageData(0, 0, canvas.width, canvas.height);
+  assert.strictEqual(countYellow(img, bands.engine[0], bands.engine[1]), 0, '引擎排无球时不该有黄像素（否则断言无区分度）');
+  assert.ok(countYellow(img, bands.real[0], bands.real[1]) > 100, '真实排有球应有黄像素');
+});
+
+test('render：ballXY 统一 [x,y] 与 {x,y}，null → null', () => {
+  assert.deepStrictEqual(ballXY([0.3, 0.4]), [0.3, 0.4]);
+  assert.deepStrictEqual(ballXY({ x: 0.3, y: 0.4 }), [0.3, 0.4]);
+  assert.strictEqual(ballXY(null), null);
+  assert.strictEqual(ballXY(undefined), null);
+});
+
+// —— 运动指标：数值断言 + 反证 + 跨窗守卫 ——
+
+// 方向一致性：N 人里 a 个向东、b 个向西 → 两两余弦均值
+//   = (C(a,2) + C(b,2) − a·b) / C(a+b,2)
+function expectDir(a, b) { const N = a + b; const c = (n) => n * (n - 1) / 2; return (c(a) + c(b) - a * b) / c(N); }
+
+test('motion：方向一致性数值正确（全体同向=1 / 反向按公式）', () => {
+  const NF = 60; // 帧数 > step(=20)，保证有窗
+  const allEast = mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]), { moveFn: (k, i) => ({ x: 0.5 + i * 0.002, y: 0.5 }) });
+  assert.ok(Math.abs(windowStats(allEast, 4).dir[0] - 1) < 1e-6, '全同向应 =1');
+
+  // 4 人：2 东 2 西 → -1/3（4 人时为整数情形的经典值）
+  const four = mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]), { nPlayers: 4, moveFn: (k, i) => ({ x: 0.5 + (k < 2 ? 1 : -1) * i * 0.002, y: 0.5 }) });
+  assert.ok(Math.abs(windowStats(four, 4).dir[0] - (-1 / 3)) < 1e-6, `2东2西应 =-1/3，实得 ${windowStats(four, 4).dir[0]}`);
+
+  // 20 人：10 东 10 西 → 按公式 = (45+45−100)/190
+  const twenty = mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]), { moveFn: (k, i) => ({ x: 0.5 + (k < 10 ? 1 : -1) * i * 0.002, y: 0.5 }) });
+  const exp20 = expectDir(10, 10);
+  assert.ok(Math.abs(windowStats(twenty, 4).dir[0] - exp20) < 1e-6, `10东10西应 =${exp20}，实得 ${windowStats(twenty, 4).dir[0]}`);
+});
+
+test('motion：反证条——方向公式退化成常数必被此断言抓', () => {
+  const NF = 60;
+  const four = mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]), { nPlayers: 4, moveFn: (k, i) => ({ x: 0.5 + (k < 2 ? 1 : -1) * i * 0.002, y: 0.5 }) });
+  const d = windowStats(four, 4).dir[0];
+  assert.notStrictEqual(d, 1, '恒 1 的公式会被这条抓');
+  assert.notStrictEqual(d, 0, '恒 0 的公式会被这条抓');
+});
+
+test('motion：跨全窗（窗数 = floor((N-1)/step)，单窗实现必红）', () => {
+  // 200 帧、dt=0.2s、win=4s → step=20 → 期望窗数 = floor((200-1)/20) = 9
+  const N = 200;
+  const frames = mkFrames(Array.from({ length: N }, () => [0.5, 0.5]), { moveFn: (k, i) => ({ x: 0.5 + i * 0.002, y: 0.5 }) });
   const w = windowStats(frames, 4);
-  assert.ok(w.disp.length >= 1, '应有窗');
-  assert.ok(w.dir.length >= 1, '应回报方向一致性（区分整队平移 vs 个体跑位的判据）');
-  assert.ok(w.still.length === w.disp.length, '静止占比与位移同窗数');
+  const step = Math.round(4 / 0.2);
+  const expected = Math.ceil((N - step) / step); // 循环 i += step，i+step<N
+  assert.strictEqual(w.disp.length, expected, `应跨全窗（${expected} 个），实得 ${w.disp.length}——退回单窗实现会变红`);
+  assert.strictEqual(w.dir.length, expected, '方向一致性也应在每个有移动的窗上报');
+});
+
+test('motion：端点位移数值正确（步数 × 每帧位移）', () => {
+  // 每人每帧 x 增 0.002 归一化 → 每帧 0.002*105 = 0.21m；窗 step=20 → 位移 4.2m
+  const frames = mkFrames(Array.from({ length: 41 }, () => [0.5, 0.5]), { moveFn: (k, i) => ({ x: 0.5 + i * 0.002, y: 0.5 }) });
+  const w = windowStats(frames, 4);
+  assert.ok(Math.abs(w.disp[0] - 20 * 0.002 * 105) < 1e-6, `端点位移应 ≈4.2m，实得 ${w.disp[0]}`);
+  assert.strictEqual(w.still[0], 0, '一直在动 → 静止占比应为 0');
 });
