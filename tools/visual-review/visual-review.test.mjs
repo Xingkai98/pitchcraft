@@ -123,3 +123,39 @@ test('motion：端点位移数值正确（步数 × 每帧位移）', () => {
   assert.ok(Math.abs(w.disp[0] - 20 * 0.002 * 105) < 1e-6, `端点位移应 ≈4.2m，实得 ${w.disp[0]}`);
   assert.strictEqual(w.still[0], 0, '一直在动 → 静止占比应为 0');
 });
+
+test('motion：静止阈值被真守——含「小幅移动」（>0.05 但 <0.5m）的用例夹死阈值', () => {
+  // 关键：要有一个球员**窗内位移落在 0.05 与 0.5 之间**——阈值 0.5 判他"静止"、0.05 判他"在动"。
+  // 窗 step=20 帧、每帧位移 d（归一化）→ 窗内 = 20·d·105 m。
+  //   想要窗内 0.3m → d = 0.3/(20·105) = 1.4286e-4。
+  const NF = 41;
+  const d = 0.3 / (20 * 105);
+  const frames = mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]), {
+    moveFn: (k, i) => ({
+      // k<10：小幅动 0.3m（阈值 0.5 下算静止）；10<=k<20：大幅动 4.2m（都算在动）
+      x: k < 10 ? 0.5 + i * d : 0.5 + i * 0.002,
+      y: 0.5,
+    }),
+  });
+  const w = windowStats(frames, 4);
+  // 10 人小幅(0.3m) 在 0.5 阈值下算静止 + 10 人大幅在动 → still = 10/20 = 50。
+  // 若阈值被改成 0.05：小幅那 10 个（0.3m > 0.05）也算"在动" → still = 0 → 断言变红。
+  assert.strictEqual(w.still[0], 50, `0.5 阈值下：10 人 0.3m 算静止 → still=50，实得 ${w.still[0]}（阈值改小会变 0）`);
+
+  const none = mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]));   // 全不动
+  assert.strictEqual(windowStats(none, 4).still[0], 100, '全不动应 still=100');
+});
+
+test('motion：门将剔除被真守——id 0/21 不参与（含门将位移的对照）', () => {
+  // 造 22 人（含门将 0 与 21）：门将**大步移动**，外场不动。
+  // 若实现不剔门将，静止占比会 <100；剔了门将，外场全不动 → still=100。
+  const NF = 41;
+  const frames = Array.from({ length: NF }, (_, i) => {
+    const players = [{ id: 0, x: 0.02 + i * 0.02, y: 0.5 }, { id: 21, x: 0.98 - i * 0.02, y: 0.5 }];
+    for (let k = 1; k <= 20; k++) players.push({ id: k, x: 0.08 + (k % 5) * 0.18, y: 0.15 + Math.floor(k / 5) * 0.2 });
+    return { t: i * 0.2, players, ball: [0.5, 0.5] };
+  });
+  const w = windowStats(frames, 4);
+  assert.strictEqual(w.still[0], 100, `门将移动但已被剔除 → 外场全不动应 still=100，实得 ${w.still[0]}（不剔门将会 <100）`);
+  assert.strictEqual(w.disp[0], 0, '外场不动 → 端点位移 0（门将不计入）');
+});
