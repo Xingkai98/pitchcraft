@@ -4159,7 +4159,19 @@ fn emit_tackle_highlight_impl(
             }
         }
     }
-    movers.extend(pushed);
+    // 分离推动的队友并入 beat movers。**按 id 去重**：该队友可能已被上面的 `beat_movers`
+    // 产过一条 mover（它本拍在跑）——直接 `extend` 会让同一 id 出现在 beat.movers 两次，
+    // 触发 viewer 的 `beat mover id duplicate` 契约（实测：队形越「活」越易撞，v2-safe 基线
+    // 自己就 ~1% 崩）。命中已有 mover 时**把那条的终点更新为分离后的位置**（`st.pos` 已写），
+    // 而不是新增第二条——位移预算等价（同段被拆成一条），契约不破。
+    for p in pushed.drain(..) {
+        if let Some(m) = movers.iter_mut().find(|m| m.id == p.id) {
+            m.to_x = p.to_x;
+            m.to_y = p.to_y;
+        } else {
+            movers.push(p);
+        }
+    }
     events.push(beat_event(t, None, None, movers));
     let event = Event {
         t, type_: EventType::Tackle, subject: def_id,
