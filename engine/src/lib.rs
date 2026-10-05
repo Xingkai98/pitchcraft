@@ -9923,6 +9923,30 @@ mod tests {
             score_tackle(&f_hot), score_tackle(&f_cold));
     }
 
+    /// 反证：tackle 那一拍，被分离推动的队友会与 `beat_movers` 产的 mover 撞 id。
+    /// 修复前（`extend` 不去重）此测试**必红**；修复后（按 id 去重）**必绿**。
+    /// （独立审阅构造；`pristine` FAILED `id=8` / `HEAD` ok。）
+    #[test]
+    fn beat_movers_id_unique_on_tackle_push() {
+        use std::collections::HashSet;
+        let mut st = window_state(&[(11, 0.60, 0.50)]); // 防守者 11 贴防被抢者 9（默认 0.9333,0.5）
+        st.pos[8] = (0.97, 0.48); // 同队队友 8 摆在此处：既在跑、又会被分离推动
+        let mut rng = SeededRng::new(1);
+        let mut events = Vec::new();
+        emit_tackle_highlight_impl(
+            &mut st, &mut rng, &mut events, 1.0, 11,
+            &mut observation::BehaviorObservationRecorder::disabled(),
+        );
+        for e in &events {
+            if e.type_ != EventType::Beat { continue; }
+            let ms = e.movers.as_ref().expect("tackle 拍应有 movers");
+            let mut seen = HashSet::new();
+            for m in ms {
+                assert!(seen.insert(m.id), "beat.movers 同 id 重复：id={}（viewer 会抛 beat mover id duplicate）", m.id);
+            }
+        }
+    }
+
     /// P30 D1（cooldown **写—读闭环**，直接绑定执行路径）：不经 tally 间接证明，而是
     /// **真执行**一次抢断 / 一次犯规，断言三个 cooldown 字段被写、再经 `defensive_features`
     /// → `score_tackle` 读到惩罚、并随 tick 衰减恢复。覆盖「删掉写入点仍能过测试」的空洞
