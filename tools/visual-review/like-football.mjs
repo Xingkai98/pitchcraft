@@ -47,8 +47,8 @@ export const LOSS_METRICS = [
   { key: 'width', label: '宽度', from: 'shape' },
   { key: 'ballDist', label: '球距', from: 'shape' },
   { key: 'disp', label: '位移/窗★', from: 'motion' },
-  { key: 'lat', label: '横向占比★', from: 'motion' },   // 「铁轨」信号：main 0.147 vs 真实 0.44
-  { key: 'mix', label: '混队度★', from: 'motion' },     // 「两队是否混」：main 0.64 vs 真实 0.73（FB4 没改善）
+  { key: 'lat', label: '横向占比★', from: 'motion' },   // 「铁轨」信号：main 0.12 vs 真实 0.43
+  { key: 'mix', label: '混队度★', from: 'motion' },     // 「两队是否混」：main 0.65 vs 真实 0.80（FB4 没改善、反降）
 ];
 export const SHAPE_KEYS = LOSS_METRICS.filter(m => m.from === 'shape').map(m => m.key);
 
@@ -161,7 +161,7 @@ export function formatLossTable(eng, real, { wasmPath, sha, seeds, winSec, realL
   L.push('');
   L.push(`★ = 「机械分边」「动没动」「铁轨」「两队是否混」——过去飞轮没优化的量`);
   L.push(`  ⚠ 「横向占比 lat」单独能被"抖动"刷分（FB4 lat 0.35 逼近真实，但画面仍不对）——**必须与「混队度 mix」一起看**：`);
-  L.push(`     FB4 实测 lat 0.35 / mix 0.625（mix 没改善）⇒ 眼睛说「两队仍分开」。单看 lat 会被骗。`);
+  L.push(`     FB4 实测 lat 0.25 / mix 0.61（lat 上来了、mix 没改善甚至反降）⇒ 眼睛说「两队仍分开」。单看 lat 会被骗。`);
   L.push('');
   L.push(`**距离（幅度量 mean|ln(E/R)|，越小越像真实） = ${loss != null ? loss.toFixed(3) : 'n/a'}**`
     + `  [覆盖 ${coverage.used}/${coverage.total} 行${coverage.used < coverage.total ? '——⚠ 未满覆盖，勿与满覆盖的距离盲比' : ''}]`);

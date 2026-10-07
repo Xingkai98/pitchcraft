@@ -26,9 +26,9 @@ const median = a => { const s = [...a].sort((x, y) => x - y); return s[Math.floo
 // 一帧序列 → 逐窗的 {disp, dir, still, lat, mix}。窗 = 每 WIN 秒；逐窗算，返回数组。
 //   disp = 端点位移/窗（动没动）；dir = 方向一致性；still = 静止占比
 //   lat  = **横向运动占比** = Σ|dy| / (Σ|dx|+Σ|dy|) —— 「铁轨」信号：球员在水平线上滑 ⇒ 趋 0。
-//          2026-10-05 飞轮诊断：实测 main 0.147 / FB4 0.353 / 真实 0.44（眼睛「水平短线」的直接编码）。
+//          2026-10-05 飞轮诊断：实测 main 0.12 / FB4 0.25 / 真实 0.43（眼睛「水平短线」的直接编码；FB4 的 0.25 是「抖动刷分」，见 mix）。
 //   mix  = **混队度** = 最近邻是对手的球员占比（逐帧、非门将）—— 「两队是否混在一起」。
-//          实测 main 0.64 / FB4 0.625 / 真实 0.73（FB4 没改善 ⇒ 眼睛说「两队仍分开」）。
+//          实测 main 0.65 / FB4 0.61 / 真实 0.80（FB4 没改善、反降 ⇒ 眼睛说「两队仍分开」）。
 //          ⚠️ lat 与 mix 缺一不可：**FB4 只改好 lat（抖动刷分）、mix 没动** ⇒ 单看 lat 会被骗。
 export function windowStats(frames, WIN) {
   const dt = frames.length > 1 ? frames[1].t - frames[0].t : 0.2;
@@ -113,7 +113,7 @@ if (IS_ENTRY) {
   console.log(`  [引擎] 方向一致性   中位 ${fmt(agg.dir)}   ← 1=整队同向, 真实约 0.6`);
   console.log(`  [引擎] 静止占比(<0.5m) 中位 ${fmt(agg.still, '%')}`);
   console.log(`  [引擎] **横向运动占比 中位 ${fx(agg.lat)}   ← 「铁轨」信号: 趋 0=只水平滑, 真实 ~0.44**`);
-  console.log(`  [引擎] **混队度(最近邻异队) ${fx(agg.mix)}   ← 真实 ~0.73**`);
+  console.log(`  [引擎] **混队度(最近邻异队) ${fx(agg.mix)}   ← 真实 ~0.80**`);
   console.log(`  [真实] 端点位移/窗  中位 ${fmt(rw.disp, 'm')}`);
   console.log(`  [真实] 方向一致性   中位 ${fmt(rw.dir)}`);
   console.log(`  [真实] 静止占比     中位 ${fmt(rw.still, '%')}`);

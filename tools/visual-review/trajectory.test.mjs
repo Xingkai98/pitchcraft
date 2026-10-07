@@ -7,11 +7,18 @@ import assert from 'node:assert';
 
 const { buildTrajectoryComparison, collectPaths, T } = await import('./trajectory.mjs');
 
-// 合成帧：N 名球员沿 x 匀速右移（水平轨迹），或静止。
-function mkFrames(n, { move = true, players = 20 } = {}) {
+// 合成帧：N 名球员在**场内**沿 x 平移（轨迹跨度随帧增长），y 铺开；静止则 x 不变。
+// ⚠️ **坐标必须留在 [0,1]**（第 3 轮审阅 M3a）：旧式 `x = 0.1 + 0.02·i + k·0.03` 在 n=200 时
+// 冲到 x=4.65（场外），**引擎面板轨迹溢出到右侧真实带** → 「真实面板整条不画」的变异被溢出
+// 像素喂饱 → 4 条测试全绿（守卫静默失效）。故 x 只在 [0.15,0.70] 内、按帧序平移到上限。
+function mkFrames(n, { move = true, players = 20, tStart = 1800 } = {}) {
   return Array.from({ length: n }, (_, i) => ({
-    t: 1800 + i * 0.2,
-    players: Array.from({ length: players }, (_, k) => ({ id: k + 1, x: 0.1 + 0.02 * i * (move ? 1 : 0) + k * 0.03, y: 0.2 + (k % 4) * 0.15 })),
+    t: tStart + i * 0.2,
+    players: Array.from({ length: players }, (_, k) => ({
+      id: k + 1,
+      x: 0.15 + (move ? 0.5 * (i / Math.max(1, n - 1)) : 0) + (k % 5) * 0.01, // ∈[0.15,0.70]
+      y: 0.1 + (k / players) * 0.8,                                              // ∈[0.1,0.9]
+    })),
     ball: [0.5, 0.5],
   }));
 }
@@ -28,6 +35,14 @@ test('trajectory：collectPaths 按球员聚点、受 [t0,t0+win] 窗约束（**
   // 反证：窗更窄 → 点更少
   const p2 = collectPaths(frames, { t0: 1800, win: 1 });
   assert.ok(p2[0].pts.length < p[0].pts.length, '窄窗点应更少（证明窗约束真的生效）');
+});
+
+test('★ trajectory：collectPaths 的**下界** t0 被真守——有 t<t0 的帧时，那些帧不得进轨迹', () => {
+  // 第 3 轮审阅 M13：旧 fixture 从 t=1800=t0 起，**从无 t<t0 的帧** → 删掉下界判定
+  // `if (f.t < t0) continue` 也不红（该分支从不执行）。这里造**跨越 t0 的帧**（t 从 1795 起）。
+  const frames = mkFrames(100, { tStart: 1795 });    // t = 1795..1814.8，含 t0=1800 之前
+  const p = collectPaths(frames, { t0: 1800, win: 5 });   // 只应含 t∈[1800,1805]
+  assert.ok(p.every(x => x.pts.length === 26), `窗内应恰 26 点（不含 t<1800 的 25 帧），实得 ${p[0].pts.length}——下界没守会得 ~51`);
 });
 
 test('★ trajectory：对比图**左右两面板各自都画出了轨迹**（分面板——缺一侧必红）', () => {

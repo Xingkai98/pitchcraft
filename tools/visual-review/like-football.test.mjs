@@ -66,13 +66,24 @@ test('★ 飞轮守卫：优化一个小量、放任最大量不动 → 距离�
   assert.strictEqual(w.key, 'gap', 'FB4 的最大缺口应变成 gap（分边恶化）');
 });
 
-test('★ 表里必须有「机械分边」(gap) 与「动没动」(disp) —— 用户最不满的两点要有数字承载', () => {
+test('★ 表里必须有「机械分边」(gap)「动没动」(disp)「铁轨」(lat)「混队」(mix) —— 四个关键量都要在', () => {
   const keys = LOSS_METRICS.map(m => m.key);
-  assert.ok(keys.includes('gap'), 'gap（两队重心间距=机械分边）必须在损失表里——它是全场最大缺口之一');
-  assert.ok(keys.includes('disp'), 'disp（端点位移=动没动）必须在损失表里');
-  // ⚠️ 本条的**区分度**由审阅的变异矩阵证明（真删 LOSS_METRICS 里的 gap → 本测试红），
-  // **不能**用「对 filter 副本断言」的本地反证条冒充——那是恒真式（飞轮 review P2a）：
-  // `LOSS_METRICS.filter(m => m.key !== 'gap')` 按构造必无 gap，真删源码它照样绿。
+  for (const [k, why] of [['gap', '机械分边(两队重心间距)'], ['disp', '动没动(端点位移)'], ['lat', '铁轨(横向占比)'], ['mix', '两队是否混(混队度)']]) {
+    assert.ok(keys.includes(k), `${k}（${why}）必须在损失表里`);
+  }
+  // ⚠️ 本条的**区分度**由外部变异矩阵证明（真删 LOSS_METRICS 里的行 → 本测试红），
+  // **不能**用「对 filter 副本断言」的本地反证条冒充——那是恒真式（飞轮 review P2a）。
+});
+
+test('★ 损失表**身份唯一**：key 不重复、且 lat/mix 标 motion 口径（防「换行不换数」蒙混）', () => {
+  // 第 3 轮审阅 M19：把 lat 行换成 disp 的**重复行**（行数不变）→ 旧断言（只查 key 存在）全绿。
+  // 守卫：key 必须两两不同；且 lat/mix 必须 from:'motion'（与 disp 同源口径，误标 shape 即错）。
+  const keys = LOSS_METRICS.map(m => m.key);
+  assert.strictEqual(new Set(keys).size, keys.length, `LOSS_METRICS 的 key 不得重复（实得 ${keys.join(',')}）`);
+  for (const k of ['lat', 'mix']) {
+    const row = LOSS_METRICS.find(m => m.key === k);
+    assert.strictEqual(row.from, 'motion', `${k} 必须 from:'motion'（运动口径），实得 '${row.from}'`);
+  }
 });
 
 test('★ 退化引擎（某量为 0）不被静默剔除——记 CAP_LN 罚、进 worst（否则「完全静止」得最低距离）', () => {
