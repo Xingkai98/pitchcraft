@@ -10,7 +10,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 
 const { buildComparison, ballXY, LAYOUT } = await import('./render.mjs');
-const { windowStats } = await import('./motion-metrics.mjs');
+const { windowStats, mixing } = await import('./motion-metrics.mjs');
 
 // —— 合成帧：可控的球员位置与球 ——
 // mkFrames(ballPositions)：frames[i] = {t:i*0.2, players, ball:ballPositions[i]}
@@ -158,4 +158,34 @@ test('motion：门将剔除被真守——id 0/21 不参与（含门将位移的
   const w = windowStats(frames, 4);
   assert.strictEqual(w.still[0], 100, `门将移动但已被剔除 → 外场全不动应 still=100，实得 ${w.still[0]}（不剔门将会 <100）`);
   assert.strictEqual(w.disp[0], 0, '外场不动 → 端点位移 0（门将不计入）');
+});
+
+// —— 新增：「铁轨」信号 lat 与「混队」信号 mix（2026-10-05 飞轮诊断加的，须有区分度）——
+
+test('★ motion：横向运动占比 lat —— 纯纵向=0，纯横向=1，均衡=0.5', () => {
+  const NF = 41;
+  const mk = (vx, vy) => mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]), { moveFn: (k, i) => ({ x: 0.5 + i * vx, y: 0.5 + i * vy }) });
+  assert.ok(Math.abs(windowStats(mk(0.002, 0), 4).lat[0] - 0) < 1e-6, '纯纵（水平铁轨）→ lat=0');
+  assert.ok(Math.abs(windowStats(mk(0, 0.002), 4).lat[0] - 1) < 1e-6, '纯横 → lat=1');
+  // ⚠️ lat 在**真实米制**算（x×105 / y×68）：归一化等量 ≠ 米制等量。要 lat=0.5 需 vx×105 == vy×68。
+  const vx = 0.002, vy = vx * 105 / 68;
+  assert.ok(Math.abs(windowStats(mk(vx, vy), 4).lat[0] - 0.5) < 1e-6, `米制等量 → lat=0.5，实得 ${windowStats(mk(vx, vy), 4).lat[0]}`);
+});
+
+test('★ motion：反证条——lat 若退化成常数，上面三条必有一条红', () => {
+  const NF = 41;
+  const mk = (vx, vy) => mkFrames(Array.from({ length: NF }, () => [0.5, 0.5]), { moveFn: (k, i) => ({ x: 0.5 + i * vx, y: 0.5 + i * vy }) });
+  const a = windowStats(mk(0.002, 0), 4).lat[0], b = windowStats(mk(0, 0.002), 4).lat[0];
+  assert.notStrictEqual(a, b, '纯纵与纯横的 lat 必须不同（常数实现会被此条抓）');
+});
+
+test('★ motion：混队度 mixing —— 两队分离=0，异队相邻=1', () => {
+  // 红队 id1..10 挤在左，蓝队 id11..20 挤在右 → 每人的最近邻都是同队 → mix=0。
+  const sep = { players: [...Array(10)].map((_, i) => ({ id: i + 1, x: 0.2 + i * 0.001, y: 0.3 })).concat([...Array(10)].map((_, i) => ({ id: i + 11, x: 0.8 + i * 0.001, y: 0.3 }))) };
+  assert.strictEqual(mixing(sep), 0, '两队分离 → mix=0（最近邻全是同队）');
+  // 红蓝交替 → 每个红人的最近邻是蓝人 → mix=1。
+  const alt = { players: [...Array(10)].map((_, i) => ({ id: i + 1, x: 0.5 + i * 0.01, y: 0.3 })).concat([...Array(10)].map((_, i) => ({ id: i + 11, x: 0.505 + i * 0.01, y: 0.3 }))) };
+  assert.strictEqual(mixing(alt), 1, '红蓝交替 → mix=1（最近邻全是异队）');
+  // 反证：两者必须不同（常数实现抓得到）
+  assert.notStrictEqual(mixing(sep), mixing(alt), '分离与交替的 mix 必须不同');
 });
