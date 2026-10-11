@@ -16,7 +16,7 @@
 //! | [`probe_rejects_non_finite_and_never_hides_skips`] | 探针（**判别力**：NaN / 跳过数） | ✅ |
 //! | [`pool_rejects_index_space_mismatch`] | 探针（**判别力**：索引空间错位即红） | ✅ |
 //! | [`motif_predicates_agree_with_the_p16_reference_set`] | 净化（谓词与 P16 同源） | ✅ |
-//! | [`purification_reproduces_the_p16_verdict`] | 净化（本 change 的 Slice 1 产出） | ✅ |
+//! | [`purification_records_the_v4_verdict_pending_review`] | 净化（本 change 的 Slice 1 产出；v4 裁决待定） | ✅ |
 //! | [`intent_export_is_tick_aligned_with_positions`] | 意图接出（两条通道同拍） | ✅ |
 //! | [`intent_export_never_enters_the_formal_path`] | 意图接出（正式路径逐字节 + 空操作） | ✅ |
 //! | [`intent_semantics_are_pinned`] | 意图接出（三态语义被钉住） | ✅ |
@@ -293,29 +293,30 @@ fn motif_predicates_agree_with_the_p16_reference_set() {
     }
 }
 
-/// **Slice 1 的产出**：在净化下，P16 的裁决是否仍成立。
+/// **Slice 1 的产出**：在净化下，P16 的裁决在 v4 引擎上**是否仍成立**。
 ///
 /// ## 四个臂（见 `p124/purify.rs` 的表）
 ///
-/// | 臂 | 抽掉了什么 | 预期 |
-/// |---|---|---|
-/// | `current` | （基线） | P16 的 0.461 |
-/// | `drop_restart` | 是否重开 | 0.437（主 session 的 30 seed 实测） |
-/// | `drop_passcount` | 传球数 | 0.490 |
-/// | `empty_control` | 两个都抽 | **0.500**（结构必然） |
+/// | 臂 | 抽掉了什么 | P16 预期 | v4 实测 |
+/// |---|---|---|---|
+/// | `current` | （基线） | 0.461 | **0.388** |
+/// | `drop_restart` | 是否重开 | 0.437（主 session 的 30 seed 实测） | 0.437 |
+/// | `drop_passcount` | 传球数 | 0.490 | 0.437 |
+/// | `empty_control` | 两个都抽 | **0.500**（结构必然） | 0.500 |
 ///
 /// ## 本测试断言什么（三条，各管一件事）
 ///
-/// 1. **净化不推翻裁决**——四个臂的 AUC 全部落在 `[0.40, 0.56]`：
-///    `build_up` 与 `progression` 在**剥掉两个混淆量之后**仍分不开。
-///    这才是「P16 的裁决不是混淆造成的假象」的**证据**（P16 的 tasks.md 只记了主 session
-///    的一次口头复现，没有落成可复跑的断言）。
+/// 1. **v4 四臂读数被钉住（裁决待定）**——P16 时代四臂全在 `[0.44, 0.56]`（不可分），
+///    但四层移动层改变了 `forward_m/s` 形态后 `current` 臂左移到 **0.388** ⇒ 净化下
+///    `build_up` / `progression` **变得可分**。⚠️ **这是对 P16 裁决（「空间量不足以判这两档」）
+///    的推翻**，属**用户级动作**（仓史「结论对但机制错」教训）——本 change **不自改判**，
+///    只**记录** v4 四臂 AUC 并逐臂钉住防静默漂移；新裁决待用户拍板后另立 change。
 /// 2. **空对照无偏**（两侧取值逐位相等 + `|AUC − 0.5| ≤ 1e-3`）——比较无系统偏置
 ///    （详见 [`empty_control_is_unbiased`]）。
 /// 3. **方向仍为反向**（AUC < 0.5）——P16 实测 `build_up` 的推进速率**更低**，
 ///    这条方向信息本身是证据（`build_up` 不是「推得更快」，恰恰相反）。
 #[test]
-fn purification_reproduces_the_p16_verdict() {
+fn purification_records_the_v4_verdict_pending_review() {
     let p = pool_gate_seeds();
     println!("净化臂（{})：build_up vs progression，forward_m/s", p.caliber_line());
     let mut rows: Vec<ArmRow> = Vec::new();
@@ -1397,7 +1398,7 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
 /// 判据：在三个净化臂（current / drop_restart / drop_passcount）下，
 /// **所有非循环意图特征**对 `build_up` vs `progression` 的 AUC 都仍 ≤0.15 偏离 0.5。
 ///
-/// ⚠️ 这条**只覆盖意图特征**：空间侧的净化已在 `purification_reproduces_the_p16_verdict`
+/// ⚠️ 这条**只覆盖意图特征**：空间侧的净化已在 `purification_records_the_v4_verdict_pending_review`
 /// 里做（同管线、同反证条）。本测试是它在意图侧的**对应物**——「接入新信号后必须再净化
 /// 一次，否则分不清分开是因为意图还是因为传球数/重开」。
 #[test]

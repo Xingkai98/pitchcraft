@@ -10,7 +10,7 @@
 四层已**手写进干净源码**，在 worktree `/tmp/p143r-v4`（从 pristine `origin/main` = `8e6e292` 起，**未 commit、未 push**）。
 - change：`openspec/changes/p143r-v4-four-layer-team-behavior/`（proposal/design/tasks/spec delta 已写）
 - `MODEL_VERSION 7→8` + `engine/tests/golden-v8/` 已建；若干 seed 门已按同判据重钉
-- wasm：`/tmp/p143r-v3/viewer/engine-v4.wasm`（sha16 `b4d1d607`，流哈希 `adaad7a7b98e99a0`）
+- wasm：`/tmp/p143r-v3/viewer/engine-v4.wasm`（sha16 `c3dafc3f`，流哈希 `02f03ce1`；**P2-3 订正**：原 `b4d1d607` 非 HEAD）
 - 报告：`.scratch/notes/p143r-v4-landing-2026-10-07.md`（含**硬前沿**：ratio≥0.5 与 home>away 不可兼得；
   取 `BASE_DEF_TACKLE=-0.86` 保 home、ratio 差 3%）
 

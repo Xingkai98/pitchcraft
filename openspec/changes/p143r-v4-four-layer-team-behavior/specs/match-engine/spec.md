@@ -22,7 +22,9 @@
 - **GIVEN** `formation_target` 的球相对块实现
 - **THEN** 混合权重 SHALL 为 `FORM_MIX_X=0.5` / `FORM_MIX_Y=0.7`，
   铺开度 `FORM_SPREAD_X=0.8` / `FORM_SPREAD_Y=1.3`，个体抖动 `FORM_INDIV=0.08`
-- **AND** 这些值 SHALL 与 `design.md` §D2 的硬前沿表一致（弱化档是 ratio×home 轴上的折中）
+- **AND** 取**弱化**（而非强档）的依据 SHALL 记录在 `design.md` §D2 的机制段
+  （「v3 强度 × 传球选择 → home 反转」）：强档与传球选择叠加会**反转主客进球方向**，
+  弱化档是**保主客方向**的折中（§D2 的硬前沿扫描表是 `BASE_DEF_TACKLE` 的，与本组 `FORM_MIX_*` 无关）
 
 ### Requirement: 防守方 SHALL 在开放局对持球者实施逼抢
 

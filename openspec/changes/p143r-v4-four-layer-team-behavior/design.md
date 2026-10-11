@@ -139,5 +139,5 @@ v1..v7 保留作历史对照。`golden_dir()` 加 `8 => "tests/golden-v8"`。
 但 `build_up vs progression` 在**时长归一** `forward_m/s` 上由「分不开」（`|AUC−0.5|≤0.06`）
 变为 **0.382（可分）**——**这是对 P16 裁决（「空间量不足以判这两档」）的推翻**，属**用户级
 动作**（仓史「结论对但机制错」教训）。本 change **不自行改判**：涉及的三处（`p16::phaseability_verdict`
-②、`p124::gate_rerun` ②、`p124::purification_reproduces_the_p16_verdict` ①）**只记录 v4 读数 +
+②、`p124::gate_rerun` ②、`p124::purification_records_the_v4_verdict_pending_review` ①）**只记录 v4 读数 +
 显式注释「裁决待定」**，绝不静默放宽。**待用户拍板**后才另立 change 处理新裁决。

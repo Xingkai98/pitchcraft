@@ -45,9 +45,10 @@
 但面更大（16 条）。**逐条已归类 + 留证**（详见 `design.md` §D4 与落盘报告 §7）：
 
 - [x] 2c.1 **真不变量红（已修）**：
-  - `realism::l2_cross_event_invariants`：**根因订正**（原说「y2 越界」，**实测是 `x2` 越门线**，
-    且是 **header** 射门）：`separate_target_point` 把射门终点沿 x 推离门线（0.02→0.0192）以
-    求 2.2m 分离余量——但那对已 >2.0m detector 阈值。修：两条射门路径分离后把 x 夹回门线
+  - `realism::l2_cross_event_invariants`：**根因订正**（原说「y2 越界」，**实测是 `x2` 越门线**）：
+    `separate_target_point` 把射门终点沿 x 推离门线（0.02→0.0192/0.0194）以求 2.2m 分离余量
+    ——但那对已 >2.0m detector 阈值。⚠️ **两条射门路径都会出**（seed 1 是 header、seed 42 是
+    open-play saved，**非「唯一=header」**）。修：两条射门路径分离后都把 x 夹回门线
     （只保留 y 方向分离）。验证：seeds 1..120 无违例。
   - `p53_...between_anchors`（见 §2b.8）。
 - [x] 2c.2 **seed 覆盖门（重钉 seed，判据不变）**——6 条全修：
@@ -78,7 +79,7 @@
 后者（「两档分不分得开」）→ **推翻裁决，改判是用户级动作**，本 change **不自行改**。
 
 - [x] 2d.1 涉及测试**只记录 v4 读数 + 显式注释「裁决待定」**（`p16::phaseability_verdict...` ②、
-      `p124::gate_rerun...` ②、`p124::purification_reproduces_the_p16_verdict` ①）——**绝不静默放宽**
+      `p124::gate_rerun...` ②、`p124::purification_records_the_v4_verdict_pending_review` ①）——**绝不静默放宽**
 - [ ] 2d.2 **待用户拍板**：新裁决（「空间量能分开 build_up/progression」）是否成立、是否另立 change 处理
 
 ## 3. 验证（权威门 + 视觉）
@@ -88,7 +89,8 @@
 - [x] 3.2 `cargo test --tests --no-fail-fast` → 收尾后**全绿**（除 §2d 裁决项以「记录+待定」标注）
 - [x] 3.3 视觉：`trajectory.mjs` + `contact-sheet.mjs`（用户尺度 seed42/5min）**已 Read 图**
 - [x] 3.4 `viewer-match.mjs` 5min seed42：**传球 45 / 抢断 2 / 犯规 2 / 射门 4**
-- [x] 3.5 新 wasm 放 `/tmp/p143r-v3/viewer/engine-v4.wasm`（sha16 `b4d1d6070b534891`，**未覆盖**任何已交付 wasm）
+- [x] 3.5 新 wasm 放 `/tmp/p143r-v3/viewer/engine-v4.wasm`（sha16 `c3dafc3f0ee860ac`；**P2-3 订正**：
+      原记 `b4d1d607` 非 HEAD 构建，此为 HEAD 重建；流哈希 `02f03ce1583ce6f4`，seed42/5min 仍 45/2/2/4）
 
 ## 4. 审阅闭环（强制）
 
