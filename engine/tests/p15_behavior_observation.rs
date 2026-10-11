@@ -1059,7 +1059,9 @@ fn event_indexes_are_non_empty_monotonic_and_in_range() {
     // 原 CANARY 集合已不命中任何形态，防空转断言一度全 0）。旧写法依赖「形态 ③ 的 seed 36 恰在
     // canary 里」——那层耦合随 v4 一起断了，改为**显式**列表，与 canary 集合**不相交**，故 chain
     // 不会重复跑同一批 seed（防空转计数器不被灌水）。
-    const TRUNCATION_FORM_SEEDS: [u64; 3] = [11, 225, 42]; // ① episode / ② restart 未 taken / ③ restart 已 taken
+    // #148 同队间距修（2026-10-11）再改一次事件流：原 225 不再命中形态 ②；按同一判据在 5400 下
+    // 扫 seed 1..=400 得形态 ② 命中 seed 为 [223, 278]，取 225 → 223。仍换样本、不换判据。
+    const TRUNCATION_FORM_SEEDS: [u64; 3] = [11, 223, 42]; // ① episode / ② restart 未 taken / ③ restart 已 taken
     for seed in CANARY_SEEDS.iter().chain(TRUNCATION_FORM_SEEDS.iter()).copied() {
         let dm = observed(seed);
         let whistle_t = tail_whistle_t(&dm);

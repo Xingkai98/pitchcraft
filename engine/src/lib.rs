@@ -2813,6 +2813,10 @@ fn obs_contest_pickup(
 
 /// 飞行中高亮注册表（任意时刻至多一条）
 struct Highlight {
+    /// 高亮**开始**时刻（= 动作事件的 tick）。viewer 在参与者的两个锚点间线性插值，
+    /// 故参与者的显示轨迹是「动作前位置 → 结束位置」的直线，历时 `[t_start, t_end]`。
+    /// 供 `highlight_frozen_segs` 计算拍内滑行子段（#53 间距：接球者滑行可与队友轨迹交叉）。
+    t_start: f64,
     t_end: f64,
     participants: Vec<(i32, (f64, f64))>, // (id, 高亮结束位置)
     outcome: HighlightOutcome,
@@ -3839,6 +3843,7 @@ fn emit_pass_highlight_inner(
             );
             st.highlight = Some(Highlight {
                 obs_event: obs_last_event(events),
+                        t_start: t,
                         t_end,
                 participants: vec![(from, from_pos)],
                 outcome: HighlightOutcome::PassOutOfPlay {
@@ -3910,6 +3915,7 @@ fn intercept_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &m
     );
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(from, from_pos), (interceptor, (ix, iy))],
         outcome: HighlightOutcome::PassIntercepted {
@@ -3966,6 +3972,7 @@ fn lost_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     );
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(from, from_pos)],
         outcome: HighlightOutcome::PassLost {
@@ -4023,6 +4030,7 @@ fn normal_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut 
     let participants = vec![(from, from_pos), (to, (x2, y2))];
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants,
         outcome: HighlightOutcome::PassCaught {
@@ -4150,6 +4158,7 @@ fn emit_shot_highlight(
     };
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants,
         outcome,
@@ -4364,6 +4373,7 @@ fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events:
     let participants = vec![(from, from_pos), (to, (x2, y2))];
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants,
         outcome: HighlightOutcome::PassCaught {
@@ -4423,6 +4433,7 @@ fn emit_tackle_highlight_impl(
         // 若在这里写 `obs_last_event(events)`，绑到的是**上一拍**的事件（实测：13 次 tackle
         // 全部没绑到任何 Tackle 事件，而把 `contest_started` 绑到了更早的 beat）。
         obs_event: None,
+        t_start: t,
         t_end,
         participants: vec![(victim, carrier_end), (def_id, subject_end)],
         outcome: if success {
@@ -4920,6 +4931,7 @@ fn start_goal_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Ev
     };
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(gk_id, gk_pos)],
         outcome: HighlightOutcome::GoalKick { land, dir },
@@ -5070,6 +5082,7 @@ fn emit_corner_kick(
     };
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(kicker, flag)],
         outcome: HighlightOutcome::CornerKick { land, dir },
@@ -5106,6 +5119,7 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     });
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(thrower, out_pos), (to, (x2, y2))],
         outcome: HighlightOutcome::PassCaught {
@@ -5147,6 +5161,7 @@ fn emit_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     });
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(kicker, spot), (to, (x2, y2))],
         outcome: HighlightOutcome::PassCaught {
@@ -5408,6 +5423,7 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     };
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants,
         outcome,
@@ -5450,6 +5466,7 @@ fn emit_header_flick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
     let action_event_index = events.len() - 1;
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(header, pos), (to, (x2, y2))],
         outcome: HighlightOutcome::PassCaught {
@@ -5620,6 +5637,7 @@ fn emit_clearance(
     });
     st.highlight = Some(Highlight {
         obs_event: obs_last_event(events),
+        t_start: t,
         t_end,
         participants: vec![(def, pos)],
         outcome,
@@ -6164,7 +6182,7 @@ fn commit_beat_positions(
     frozen: &[i32],
     extras: &[(i32, (f64, f64))],
 ) {
-    commit_beat_positions_ex(st, movers, frozen, extras, &[])
+    commit_beat_positions_ex(st, movers, frozen, extras, &[], &[])
 }
 
 /// `commit_beat_positions` 的完整形态。`swept_light` = **豁免拍内扫掠侧推**的球员：
@@ -6180,6 +6198,7 @@ fn commit_beat_positions_ex(
     frozen: &[i32],
     extras: &[(i32, (f64, f64))],
     swept_light: &[i32],
+    frozen_segs: &[(i32, (f64, f64), (f64, f64))],
 ) {
     let mut frozen_mask = [false; 22];
     for &id in frozen {
@@ -6208,6 +6227,17 @@ fn commit_beat_positions_ex(
     let mut pos = st.pos;
     for m in movers.iter() { pos[m.id as usize] = (m.to_x, m.to_y); }
     for &(id, p) in extras { pos[id as usize] = p; }
+    // 冻结线段（#53 拍内滑行）：显示轨迹由 viewer 插值、不在 mover 里（高亮参与者如传球
+    // 接球者），但**拍内的显示线段**要作为约束参与扫掠分离——否则队友 mover 的轨迹可与
+    // 它交叉到 <2m 而端点检查看不见（seed 59 实测接球者滑行与队友擦身 1.937m）。这些 id
+    // 一律按冻结处理：只作约束、不被推移、不被写回、不补 mover。
+    for &(id, from, to) in frozen_segs {
+        if id >= 0 && (id as usize) < 22 {
+            before[id as usize] = from;
+            pos[id as usize] = to;
+            frozen_mask[id as usize] = true;
+        }
+    }
     separate_same_team_m(&before, &mut pos, &st.sent_off, &frozen_mask, &exempt_mask);
     for id in 0..22usize {
         if st.sent_off[id] || frozen_mask[id] { continue; }
@@ -6241,9 +6271,51 @@ fn beat_movers(
     excluded: &[i32], frozen: &[i32],
 ) -> Vec<Mover> {
     let mut movers = compute_mover_candidates(st, rng, t, excluded);
-    commit_beat_positions(st, &mut movers, frozen, &[]);
+    // 高亮参与者的**拍内滑行线段**（如传球接球者从动作前位置线性滑向落点）也要参与分离：
+    // 它不是 mover（锚点来自动作事件），但队友 mover 必须避开它的显示轨迹。
+    let segs = highlight_frozen_segs(st, t);
+    commit_beat_positions_ex(st, &mut movers, frozen, &[], &[], &segs);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     movers
+}
+
+/// 高亮参与者的**拍内显示滑行线段**（#53 拍内扫掠的参与者侧）。
+///
+/// viewer 在参与者的两个锚点间线性插值（`interpretPass` 给接球者两个同事件锚点：动作前
+/// `receiver_x/y` → 落点 `x2/y2`），故接球者的显示轨迹是「动作前位置 → 高亮终态」的直线，
+/// 历时 `[t_start, t_end]`。本拍 `[t, t+1]` 的显示线段 = 该直线的对应子段。
+///
+/// 为什么要显式加进来：接球者在高亮期**被排除出 movers、且 `st.pos` 冻结在动作前位置**
+/// （见 `tick` 的高亮分支 / 各 `emit_*` 的 `beat_movers(&[from, to], &[from, to])`），
+/// 于是分离 solver 只把接球者当作**静止一点**，看不见它边滑边与队友轨迹交叉。v4 的球导向
+/// 跑位让队友纵向位移大幅增加，这类交叉开始越界（seed 59：接球者与队友 mover 在拍中点擦到
+/// 1.937m < 2m）。把滑行线段作为**冻结线段**交给 solver 后，队友 mover 会被推离该直线。
+///
+/// **每个高亮参与者**都产一条滑行线段：起点 = 该球员动作前位置（`st.pos[id]`——高亮期参与者
+/// 被冻结，该值即动作前位置），终点 = 高亮终态 `participant end`。原地的参与者（传球者 /
+/// 射手 / 门球门将等，起点 == 终点）退化为一点、等价于旧行为；真正滑行的（接球者 / 抢断双方
+/// 的结算点 / 射门门将）得到线段。
+///
+/// 实测两类机制（seed 59 接球者、seed 18 抢断结算点）同源：参与者的**显示终点**（落点 /
+/// 结算点）不在 mover 端点里，被分离 solver 当作「动作前的静止点」，于是队友 mover 的拍内
+/// 轨迹能与参与者真实的滑行轨迹交叉到 <2m。零 RNG。
+fn highlight_frozen_segs(st: &MatchState, t: f64) -> Vec<(i32, (f64, f64), (f64, f64))> {
+    let h = match st.highlight.as_ref() {
+        Some(h) => h,
+        None => return Vec::new(),
+    };
+    let span = (h.t_end - h.t_start).max(1e-9);
+    let u = |tt: f64| ((tt - h.t_start) / span).clamp(0.0, 1.0);
+    let lerp = |a: (f64, f64), b: (f64, f64), w: f64| (a.0 + (b.0 - a.0) * w, a.1 + (b.1 - a.1) * w);
+    let mut out = Vec::new();
+    for &(id, end) in &h.participants {
+        if id < 0 || id > 21 {
+            continue;
+        }
+        let start = st.pos[id as usize];
+        out.push((id, lerp(start, end, u(t)), lerp(start, end, u(t + TICK_SECONDS))));
+    }
+    out
 }
 
 /// 本拍「carrier（main）+ 无球跑位」的统一分离提交：carrier 的候选终点经 `extras` 参与
@@ -6256,7 +6328,7 @@ fn beat_movers_main(
 ) -> Vec<Mover> {
     let mut movers = compute_mover_candidates(st, rng, t, &[carrier]);
     let light: &[i32] = if carrier_swept_light { &[carrier] } else { &[] };
-    commit_beat_positions_ex(st, &mut movers, &[], &[(carrier, cand)], light);
+    commit_beat_positions_ex(st, &mut movers, &[], &[(carrier, cand)], light, &[]);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     movers
 }
