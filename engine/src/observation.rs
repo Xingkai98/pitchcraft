@@ -4863,7 +4863,7 @@ mod tests {
         );
         assert_eq!(a.possession_episodes, b.possession_episodes);
         assert_eq!(a.restart_sequences, b.restart_sequences);
-        assert_eq!(a.gap_count(), 0, "本 seed（默认时长）不该产 gap；\n                 注意：这只是**本样本内**的 0，不是「任何真实路径都无 gap」的全称命题——\n                 终场哨落在未决飞行中途时会合法产 `full_time_during_ball_in_flight`\n                 （实测 seed 470 @ dur 120、seed 1228 @ dur 400；同一机制可由多种时长触发，但不是「任何时长」，见\n                 truncated_stream_produces_a_full_time_gap_by_design 的文档）");
+        assert_eq!(a.gap_count(), 0, "本 seed（默认时长）不该产 gap；\n                 注意：这只是**本样本内**的 0，不是「任何真实路径都无 gap」的全称命题——\n                 终场哨落在未决飞行中途时会合法产 `full_time_during_ball_in_flight`\n                 （实测 seed 562 @ dur 120、seed 348 @ dur 400；同一机制可由多种时长触发，但不是「任何时长」，见\n                 truncated_stream_produces_a_full_time_gap_by_design 的文档）");
         assert!(
             a.phase_segments.is_empty(),
             "#15B 之前 phase_segments 必须为空"
@@ -5323,14 +5323,16 @@ mod tests {
     /// 时开球刚发出就被截），长时长则需要比赛尾段恰有一脚未落地的球——**罕见，但会发生**。
     ///
     /// ⚠️ **不要写成「触发与时长无关」**（2026-09-26 审阅证伪）：逐档实测
-    /// （dur 60/120/300/400/600/1200/5400）下，`470` **只**在 dur=120 产 gap、`1228` **只**在
+    /// （dur 60/120/300/400/600/1200/5400）下，`562` **只**在 dur=120 产 gap、`348` **只**在
     /// dur=400 产，其余各档均为 0。触发条件不依赖时长这一**结构**没错，但「任何时长都会触发」
     /// 是错误全称——特定 seed 撞上哨需要尾部飞行恰好落在该时长上。
     ///
     /// 已复核示例（旧表述曾断言「dur ≥ 300 时 0 例」，**该全称已被证伪**，勿退回）：
     ///
-    /// - `seed 470 @ dur 120`：kickoff restart 在 t=119 发出、飞行被 t=120 的终场哨截断；
-    /// - `seed 1228 @ dur 400`：t=399 的 kickoff **飞行中**撞上 t=400 终场哨——**更长时长同样产 gap**。
+    /// - `seed 562 @ dur 120`（p143r-v4 重扫；原 `470` 在新事件密度下不再命中）：
+    ///   kickoff restart 在 t=119 发出、飞行被 t=120 的终场哨截断；
+    /// - `seed 348 @ dur 400`（v4 重扫；原 `1228` 在新事件密度下不再命中）：
+    ///   t=399 的 kickoff **飞行中**撞上 t=400 终场哨——**更长时长同样产 gap**。
     ///
     /// 所以「真实路径 0 gap」**只在**未被截断的干净比赛上成立，不是全称命题——
     /// `gap_count() == 0` 的几处断言各自限定了样本（本测试用 `dur 120` 只是取一个**稳定复现**的
@@ -5343,7 +5345,7 @@ mod tests {
             match_duration_seconds: 120.0,
             ..MatchConfig::default_()
         };
-        let dm = simulate_with_behavior_observations(470, config);
+        let dm = simulate_with_behavior_observations(562, config);
         assert_eq!(
             dm.gap_count(),
             1,
@@ -5439,7 +5441,7 @@ mod tests {
                     0,
                     "seed {} dur {}：本样本不该产 gap（0 只对本样本成立——终场哨落在未决飞行\
                      中途时会合法产 `full_time_during_ball_in_flight`：\
-                     已复核 seed 470 @ dur 120、seed 1228 @ dur 400。若本行变红先查它是不是\
+                     已复核 seed 562 @ dur 120、seed 348 @ dur 400。若本行变红先查它是不是\
                      那一类合法缺口，再查 SupersededByDeadBall 口径）",
                     seed,
                     dur
@@ -5528,11 +5530,18 @@ mod tests {
     /// 三种形态（防空转断言直接变红）。按同一判据在 5400 默认时长下重扫 seed 1..=400，
     /// 换用 [1, 9, 24, 36, 53, 86, 100, 317, 5]（形态①②③ 计数 1/1/2）。**换的是样本，不是判据**——
     /// 谓词、豁免条款与防空转断言都未改。
+    ///
+    /// **p143r-v4 再次重扫（2026-10-07，收尾时再钉 2026-10-11）**：四层机制把事件密度抬到
+    /// ~2.1× 后，旧集合不再命中任何形态（防空转断言红）。按同一判据在 5400 下重扫 seed 1..=400，
+    /// 换用 [11, 42, 154, 225, 288, 353, 393, 55, 43]（形态①②③ 计数 5/1/3）。收尾的
+    /// p53/l2 源码修复又改了一次事件流，原 211/223/246 不再命中，按同一判据复扫替换。
+    /// 同样是**换样本，不是换判据**——谓词、豁免条款、防空转断言均未动。
+
     #[test]
     fn every_episode_and_restart_object_has_event_indexes_or_a_documented_exception() {
         // 选种依据（实测）：5400 默认时长下命中三种形态的最小集合。
         // 形态 ①②③ 分别由 truncated_* 三个计数器证明覆盖。
-        const SEEDS: [u64; 9] = [1, 9, 24, 36, 53, 86, 100, 317, 5];
+        const SEEDS: [u64; 9] = [11, 42, 154, 225, 288, 353, 393, 55, 43];
         let mut truncated_episode = 0usize;
         let mut truncated_restart_untaken = 0usize;
         let mut truncated_restart_taken = 0usize;

@@ -1167,10 +1167,15 @@ fn l2_cross_event_invariants() {
 /// ⚠️ 口径比「红牌 + 进球」更严：本测试的意图是「进球后开球/接球的硬编码 id（9/12 开球、
 /// 10/11 接球）恰为**罚下者**时最易暴露退化」——故必须**红牌先于进球**才有意义
 /// （实测 42/69/93/103/118 虽同时含红牌与进球，但红牌发生在进球**之后**，对本路径无覆盖）。
+///
+/// P143r-v4 再更新：四层（移动/防守/密度/事件）改写事件流，原钉死 29/35/59/84 再次失效
+/// （实测 seed 29 已零红牌 → 守卫空跑）。按**同一判据**（红牌先于进球）在当前引擎上重扫
+/// （`rescan redbefore 1..=300`：64/121/168/203/232）取 **64 / 121 / 168 / 203**。
+/// **换的是样本，不是判据**——谓词、前置断言、零参与/自传断言均未动。
 /// 引擎确定性 → 永不 flaky；`n_foul_red > 0` 的前置断言保证将来引擎改动让它们再次空跑时会红。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [29u64, 35, 59, 84] {
+    for seed in [64u64, 121, 168, 203] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1204,7 +1209,8 @@ fn l2_sent_off_kickoff_seeds() {
 // 与部分事件字段（接球点/门将扑救点/开球落点等）按 `SAME_TEAM_MIN_DIST_M` 米制分离 →
 // 事件流再变，v6 与 v1..v5 逐 seed 都不同。v1..v5 保留不覆盖，作历史对照。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 7）落 v7；需要对比旧版本时读旧目录。
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 8）落 v8；需要对比旧版本时读旧目录。
+// p143r-v4：四层机制（球导向跑位/开放局逼抢/事件密度/传球选择+对抗几何）改变可观测行为 → MODEL_VERSION 7→8。
 
 /// 模型版本 → golden 基线目录名。
 fn golden_dir(model_version: u32) -> &'static str {
@@ -1216,6 +1222,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         5 => "tests/golden-v5",
         6 => "tests/golden-v6",
         7 => "tests/golden-v7",
+        8 => "tests/golden-v8",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }

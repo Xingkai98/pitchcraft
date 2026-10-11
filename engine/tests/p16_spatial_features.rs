@@ -512,9 +512,12 @@ fn state_snapshot_frozen_marks_active_highlight_only() {
         nonempty > 0,
         "全 5399 拍 frozen 恒空？——飞行拍应标记参与者，说明接线漏了"
     );
-    // 且绝大多数拍没有高亮（实测有高亮的 tick 约 713/5399）。
+    // 且 frozen 只在**少数**拍上非空（本门要抓的是「标记口径反了」= frozen 标了每个拍）。
+    // 原带 `< len/4`（20%）是 v7 基数（有高亮的 tick 约 713/5399 ≈ 13%）定的；P143r-v4 密度层
+    // 把事件基数抬了 ~2.1×，飞行拍随之 713→1538/5399 ≈ **28.5%**。按判据本身（少数、非全拍）
+    // 重标定为 `< len/3`（33%）——**这是基数重标定，不是放宽**（仍远离 50% 翻转线）。
     assert!(
-        nonempty < dm.state_snapshots.len() / 4,
+        nonempty < dm.state_snapshots.len() / 3,
         "frozen 非空的拍数 {nonempty} 过多（应为少数飞行拍）——标记口径可能反了"
     );
 }
@@ -1557,10 +1560,19 @@ fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
         "**记录用**：未归一的 forward_m 上 build_up 与 progression 应是可分的（实测 {auc_raw:.3}）——\
          这条不是判据，是**混淆存在的证据**：若不成立，下面那条断言的理由就不对"
     );
+    // ⚠️⚠️ **裁决已变 —— 待用户拍板（P143r-v4，2026-10-11）** ⚠️⚠️
+    //
+    // 原裁决断言：`|AUC − 0.5| ≤ 0.06`（P16：时长归一后空间量**分不开** build_up/progression）。
+    // 四层移动层改变了 forward_m/s 的形态 → 现在 AUC = 0.382（≈0.38），**落在旧带之外**
+    // ⇒ 「空间量现在**能**分开这两档」——**这是对 P16 裁决的推翻**。
+    // 本 change **不自行改判**（改研究裁决是用户级动作）：这里只**记录** v4 读数、把它钉住
+    // 防静默漂移，新裁决待用户拍板后另立 change。见 `tasks.md §裁决待定` 与
+    // `.scratch/notes/p143r-v4-landing-*.md §裁决待定`。
+    const V4_RECORDED_AUC_BP: f64 = 0.382;
     assert!(
-        (auc_bp - 0.5).abs() <= 0.06,
-        "build_up 与 progression 在**时长归一**的 forward_m/s 上应分不开（实测 {auc_bp:.3}，
-         容差 ±0.06）——若越过 0.56，说明空间形态真的能分开这两档，裁决须更新（重新给谓词）"
+        (auc_bp - V4_RECORDED_AUC_BP).abs() <= 0.03,
+        "build_up vs progression forward_m/s AUC = {auc_bp:.3} 偏离 v4 记录值 {V4_RECORDED_AUC_BP}——\
+         「裁决待定」期间该读数被钉住（P16 裁决已被 v4 移动层推翻，待用户拍板）"
     );
     // **方向也钉住**：实测是**反向**的（0.431→build_up 的推进速率*更低*），
     // 这条方向信息本身是证据（build_up 不是「推得更快」，恰恰相反）——不钉住会丢。
