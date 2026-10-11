@@ -322,6 +322,39 @@ test('v2 continuous: beat 事件边界无 snap（球 + 球员位置连续）', (
   assert.ok(maxPlayerJump < 0.1, `球员事件边界跳变过大 maxPlayerJump=${maxPlayerJump}`);
 });
 
+// 事件重叠（传球飞行跨过下一拍 tick）——判别性守卫：插值器不得把球冻在飞行中段再瞬移。
+// 复现 e2e-v2 seed1 的失效形态：传球 ballDur 略大于拍间隔 → 末锚点(t=1.0167)排在下一拍
+// 起点锚点(t=1)之后。旧逻辑「相邻锚点 evt 不同即 hold」会把球冻在中点(0.4525)、t=1 瞬移
+// 到落点(0.605)（≈0.15 归一化，远超阈值）——本测试就是靠这 0.15 的跳变把旧逻辑判红。
+function makeOverlapPassGame() {
+  const lineup = Array.from({ length: 22 }, (_, i) => ({ id: i, team: i <= 10 ? 'home' : 'away', x: 0.5, y: 0.5 }));
+  lineup[10] = { id: 10, team: 'home', x: 0.3, y: 0.5 };
+  lineup[11] = { id: 11, team: 'home', x: 0.6, y: 0.5 };
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup.map((p) => ({ ...p })) },
+    // 传球：dist = |0.605-0.3|·105 = 32.025m ÷ speed 31.5 = ballDur 1.0167s（> 1s 拍间距）
+    { t: 0, type: 'pass', subject: 10, from: 10, to: 11, x: 0.3, y: 0.5, x2: 0.605, y2: 0.5, speed: 31.5, result: 'success', receiver_x: 0.6, receiver_y: 0.5, h: 0 },
+    { t: 1, type: 'beat', movers: [], main: { type: 'dribble', subject: 11, x: 0.605, y: 0.5, x2: 0.615, y2: 0.5, speed: 5, touch_freq: 1.5 } },
+    { t: 2, type: 'beat', movers: [], main: { type: 'dribble', subject: 11, x: 0.615, y: 0.5, x2: 0.615, y2: 0.5, speed: 5, touch_freq: 1.5 } },
+    { t: 3, type: 'whistle', subject: 0, x: 0.5, y: 0.5, score: '0-0' },
+  ];
+  return new Game(events, lineup, 'continuous', { baseSpeed: 1, skipThreshold: Infinity });
+}
+
+test('v2 continuous: 传球飞行跨拍（事件重叠）不产生球 snap', () => {
+  const g = makeOverlapPassGame();
+  g.playing = true;
+  let prevBall = { ...g.ball };
+  let maxBallJump = 0;
+  for (let i = 0; i < 200; i++) {
+    g.step(1 / 60);
+    maxBallJump = Math.max(maxBallJump, Math.hypot(g.ball.x - prevBall.x, g.ball.y - prevBall.y));
+    prevBall = { ...g.ball };
+  }
+  // 阈值 0.05（与 e2e-v2 同口径）：修复后单帧位移 ≈ 0.005；未修复时 t=1 单帧跳 ≈ 0.15
+  assert.ok(maxBallJump < 0.05, `传球跨拍不应产生球 snap，maxBallJump=${maxBallJump}`);
+});
+
 // ---- P7：跳过机制（高亮识别 + 间隙检测 + 跳过模式）----
 
 function makeSkipGame() {
