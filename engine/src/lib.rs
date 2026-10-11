@@ -426,17 +426,32 @@ const JOCKEY_FIT_GAIN: f64 = 0.45;
 /// ⚠️ **悬崖**：本常量响应很陡（−0.70 → 25.6/场、−0.65 → 30.4、−0.30 → 232/场），
 /// 改动前务必重跑 L1 门。
 ///
-/// **p143r-v4 重标定：−0.65 → −0.86**（抢断 50.27 → **45.81**/场，收进带 `[24,50]`）。
+/// **p143r-v4 重标定：−0.65 → −0.86**（抢断 50.27 → 45.81/场，收进带 `[24,50]`）。
 /// 依据：四层机制叠加后抢断**超线性**上升——事件密度（deadline 7→2）+ 开放局逼抢
 /// 各自抬抢断、且二者相乘（接触机会 × 贴身），合并后 −0.65 已到 50.27/场（破上界 +0.27）。
 /// 本常量是**唯一能把抢断从同一块饼里切回带内**的杠杆：几何化抢断成败（`TACKLE_GEOM`）
-/// 只改**成败比**、不改**次数**，故它不能救上界。
-/// ⚠️ **取值是 −0.86，不是 −0.82**：−0.82 实测 tackles **51.46**（>50，**仍在带外**），
-/// 只有 −0.86 才收进带（45.81）。代价是 `shot/tackle` ratio 掉到 **0.4838**（<0.5，边际红）——
-/// 因为「ratio ≥ 0.5」与「主队进球 > 客队进球」是**同一根轴的两端**（`design.md` §D2 扫描表）。
-/// −0.86 档 home 1.4750 > away 1.4250 **保住了主场优势**，故取此值、接受 ratio 边际红
-/// （**用户已拍板**：保 home>away 优先于 ratio 进带）。
-const BASE_DEF_TACKLE: f64 = -0.86;
+/// 只改**成败比**、不改**次数**，故它不能救上界。−0.86 收住了上界，但 `shot/tackle`
+/// ratio 掉到 **0.4838**（<0.5，边际红）。
+///
+/// **p143r-v4 收尾联合重标定：−0.86 → −0.92**（配 `BASE_DEF_FOUL` −0.19 → −0.22，见下）。
+/// 依据：T2 二维扫掠（`.scratch/notes/p143r-v4-sweep-2026-10-11.md`）给出可行矩形
+/// **TACKLE ∈ [−0.92, −1.00] × FOUL ∈ [−0.23, −0.20]**——两轴同向改善、无对冲，证伪了
+/// 「ratio ≥ 0.5 与 home > away 对冲」的一维硬前沿（那是 200 seed 的噪声假象；600 seed 下
+/// home > away 沿整条 TACKLE 轴都成立，与 tackles 无系统关系）。
+/// ⚠️ **取值取可行矩形的最轻端 −0.92，不是 T2 报的极值 b23(−0.98, −0.23)**：T2 的扫掠在
+/// **T3 间距修之前**的树上做的；在本树（含 T3 的 `frozen_segs` 扫掠分离）实测 **b23 不迁移**——
+/// 主 1.45 ≤ 客 1.46（`l1_home_away_goal_asymmetry` 红）、禁区进球占比掉到 **0.709** ∉ [0.72,0.92]
+/// （`l3_shot_ratios` 红）。**盒内进球占比随下压整体走低、但并不严格单调**（200 seed 实测：
+/// −0.86→0.752、−0.90→0.719、−0.92→0.721、−0.96→0.709、−0.98→0.709）——−0.90 与 −0.92
+/// 差 0.002，在 200-seed 抽样噪声内**不可分**，故这只是「越深越贴 0.72 下界」的**趋势**，
+/// 不是可逐档验证的因果链。真正能定的是两端：−0.86 稳过 0.72，−0.96/−0.98 破 0.72。⇒
+/// ratio 带与 box-goal 带经 TACKLE 轴耦合（ratio 要 ≥0.5 须 TACKLE ≤ ~−0.90），故停在
+/// **刚清 ratio 且仍留在 box-goal 带内**的最轻点 −0.92（0.721，余量仅 +0.001）。
+/// **−0.92 实测**（200 seed 401..600）：抢断 **41.37**/场、`shot/tackle` ratio **0.535**（≥0.5 ✓）；
+/// 配 FOUL −0.22 → 犯规 21.05；600 seed 主 **1.487** > 客 1.455。**官方 cargo 门 9/9 全绿**。
+/// ⚠️ **两轴必须联合调**——压 TACKLE 会把犯规份额**还回去**（−0.92 单配 −0.19 时 fouls 顶到 ~28）。
+/// ⚠️ **薄余量如实记录**：盒内进球占比 0.721 距下界 0.72 仅 +0.001（本仓「贴着带沿站」的已知现象）。
+const BASE_DEF_TACKLE: f64 = -0.92;
 /// 抢断 closeness 增益：把「贴到脚下」放大到能压过 contain/jockey 的量级。必须**大于**
 /// `FOUL_CLOSENESS_GAIN`——两者形状相同，增益差决定「贴身且正面 → 抢断」的分界。
 const TACKLE_CLOSENESS_GAIN: f64 = 1.80;
@@ -462,8 +477,14 @@ const TACKLE_PAIR_CD_PENALTY: f64 = 0.60;
 /// 依据：四层叠加把犯规抬到 39/场——**开放局逼抢**（`PRESS_N`）让防守者贴到
 /// `FOUL_PRESS_DIST_M`(8m) 缠斗距离内，而事件密度↑又让每个 tick 都多一次机会点；
 /// 与 `BASE_DEF_TACKLE` 同属「同一块饼」：压抢断会把犯规份额**还回去**，故二者必须
-/// **联合**调（单独压犯规 → 抢断反弹破上界）。−0.19 是四层叠加下的联合解。
-const BASE_DEF_FOUL: f64 = -0.19;
+/// **联合**调（单独压犯规 → 抢断反弹破上界）。
+///
+/// **p143r-v4 收尾联合重标定：−0.19 → −0.22**（犯规 **21.05**/场，带 `[16,30]` 内、≈真实 ~20.5）。
+/// 依据：配 `BASE_DEF_TACKLE` −0.86 → **−0.92**（见上）——压 TACKLE 从同一块饼里把犯规份额
+/// 还回来，故须同步压 FOUL 把这部分切回带中。−0.22/−0.92 是 T2 可行矩形
+/// （TACKLE∈[−0.92,−1.00] × FOUL∈[−0.23,−0.20]）里**最轻、且在本树过全部官方带**的一点
+/// （极值 b23 不迁移到 T3 修后树，见 `BASE_DEF_TACKLE` 注释）。
+const BASE_DEF_FOUL: f64 = -0.22;
 const FOUL_DANGER_GAIN: f64 = 0.40;
 /// 犯规的 closeness 增益：**小于** `TACKLE_CLOSENESS_GAIN`（见上）。
 const FOUL_CLOSENESS_GAIN: f64 = 0.55;
@@ -908,9 +929,12 @@ fn open_play_pass_risk(pass_m: f64, nearest_defender_m: f64, liveness_bonus: f64
 }
 
 /// 出界触发概率（D2 修订：由 `pass_risk` 调制的**出界通道**，而非纯落点误差）。
-/// **离线校准参数**：`base` 对齐真实比赛的传球出界率（真实联赛界外球 ~20-25/场、
-/// 门球 ~5-8/场，换算到本引擎的有向传球量纲），`gain` 让高风险传球（长传 / 受压 /
-/// 停滞加成）显著更易出界。
+/// **离线校准参数**：`base` 对齐真实比赛的传球出界率（真实联赛界外球 **~33-43/场**
+/// ——Opta PL 2024/25 32.9、2025/26 38；Stone et al. EPL 43；Statof 全球均值 ~39.6；
+/// 见 `realism.rs` 界外球带注释的完整出处；门球 ~5-8/场，换算到本引擎的有向传球量纲），
+/// `gain` 让高风险传球（长传 / 受压 / 停滞加成）显著更易出界。
+/// ⚠️ **旧注释曾写「界外球 ~20-25/场」，那无出处且偏低（约为真实的一半）**——据此标定的
+/// 旧带 [3,20] 已过时（P143r-v4 重标为 [15,60]，见 `realism.rs`）。
 ///
 /// `gain` 标定史（每次改动都记，防「悄悄调数」）：
 /// - `0.11`：首版（接入点③**未生效**时的标定——当时 `pass_risk` 的 liveness 分量恒 0）。
@@ -4090,12 +4114,16 @@ fn emit_shot_highlight(
         ("off_target", false)
     };
     // 轨迹按 result 区分（P6）：goal/saved 瞄准球门，off_target 偏离球门
-    let (x2, y2) = shot_target(rng, home, result);
+    let (x2, aimed_y) = shot_target(rng, home, result);
     let gk_id = if home { 21 } else { 0 };
     let gk_pos = st.pos[gk_id as usize];
-    // P34（#53）：门将扑救终点（saved 时会在 finalize 写入 `st.pos[gk]`）先与**门将本方**
-    // 队友当前位置做米制分离。零 RNG，不影响已抽取的 `shot_target`/`gk_pos`。
-    let (_sx, y2) = separate_target_point(st, gk_id, (x2, y2));
+    // P34（#53）：门将扑救终点 = 射门在门线上的**落点**（saved 时 finalize 把它写入
+    // `st.ball_pos`/`carrier_from`——**不是** `st.pos[gk]`；门将身体本 tick 不动，见 finalize
+    // 的 `ShotSavedCaught` 分支），先与**门将本方**队友当前位置做米制分离。
+    // 零 RNG，不影响已抽取的 `shot_target`/`gk_pos`。
+    let (_sx, sy) = separate_target_point(st, gk_id, (x2, aimed_y));
+    // 分离可能把落点推出 result 对应的带（见 `clamp_shot_y`）——夹回，守 L2 `shot_target_violations`。
+    let y2 = clamp_shot_y(result, aimed_y, sy);
     // 射门终点必须**落在攻方门线上**（L2 不变量 `shot_target_violations`）：单点分离可能把它
     // 沿 x 推离门线（实测 header 路径把 x=0.02 推到 0.0192）。门线 x 是射门的定义性质，分离
     // 只保留 y 方向——把 x 夹回门线。
@@ -5359,11 +5387,12 @@ fn emit_header_shot(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<E
     } else {
         ("off_target", false)
     };
-    let (x2, y2) = shot_target(rng, home, result);
+    let (x2, aimed_y) = shot_target(rng, home, result);
     let gk_id = if home { 21 } else { 0 };
     let gk_pos = st.pos[gk_id as usize];
     // P34（#53）：同 `emit_shot_highlight`，门将扑救终点先与门将本方队友米制分离。
-    let (_sx, y2) = separate_target_point(st, gk_id, (x2, y2));
+    let (_sx, sy) = separate_target_point(st, gk_id, (x2, aimed_y));
+    let y2 = clamp_shot_y(result, aimed_y, sy);
     // 同 `emit_shot_highlight`：x 夹回门线（分离只保留 y 方向），守 L2「射门终点在门线」。
     let x2 = if home { 0.98 } else { 0.02 };
     let flight = distance_meters(pos, (x2, y2)) / speed;
@@ -6947,6 +6976,33 @@ fn shot_target(rng: &mut SeededRng, home: bool, result: &str) -> (f64, f64) {
 
 fn clamp01(v: f64) -> f64 {
     if v < 0.0 { 0.0 } else if v > 1.0 { 1.0 } else { v }
+}
+
+/// 射门终点 y 夹回 **result 对应的带**（L2 不变量 `shot_target_violations`）：射门「落点在其
+/// result 该在的带内」是**定义性质**——goal/saved 必须在两柱之间（0.455–0.545）、off_target
+/// 必须擦柱偏出（偏低 0.40–0.445 / 偏高 0.555–0.60）。这与 `emit_shot_*` 把 x 夹回门线**同源**。
+///
+/// 为什么需要：`separate_target_point`（门将↔本方队友米制间距，P34 #53）会推移门将扑救终点
+/// ——该终点就是**球在门线上的落点**（finalize 写 `st.ball_pos`，非门将身体位置）。若队友
+/// 贴柱，落点会被推出门柱之外（实测 seed 234 的 header goal：aim y=0.455 → 分离后
+/// 0.4548 < 0.4549 下界）。分离是「间距」的目的，不该把 **已判定为 on-target 的射门**改成
+/// 落在门外（否则「goal/saved」与落点自相矛盾）。
+///
+/// ⚠️ **取舍（如实记录）**：夹回会**部分抵消** #53 那次分离——极端情形（队友正贴柱、分离
+/// 位移较大）下，落点可能仍 < 2.14m 于该队友。当前**没有任何自动门**断言「扑救落点 ↔ 队友
+/// 米制间距」（`realism.rs` 只查落点是否在 result 对应的带内），故该残余不产生红。
+/// 但夹回量在实测里极小（本例 0.0002），且 x 已被夹回门线、分离量本就主要被丢弃——故
+/// 以「落点在带内」（定义性质、有 L2 硬门）优先。
+///
+/// `aimed_y` 用于判定 off_target 落在球门哪一侧（偏低/偏高），取夹回带时保持同一侧。
+fn clamp_shot_y(result: &str, aimed_y: f64, y: f64) -> f64 {
+    match result {
+        "goal" | "saved" => y.clamp(0.455, 0.545),
+        "off_target" => {
+            if aimed_y < 0.5 { y.clamp(0.400, 0.445) } else { y.clamp(0.555, 0.600) }
+        }
+        _ => y,
+    }
 }
 
 /// P27：出界 detail → 协议 `out_side` 枚举（"goal_line" 底线 / "sideline" 边线）。
@@ -10169,13 +10225,15 @@ mod tests {
         // 前置断言失败。**这是打分基线变更的正常后果，不是缺陷**——
         // 本测试要守的是「窗口 tick 上犯规取消射门」这条**机制**，与具体距离无关。
         // 重扫后的犯规带（两防守动作的序在 `score_foul > max(tackle, contain, jockey)` 处翻转）：
-        //   d ≈ 2.1–3.2m 且 depth_lead < 0 → Foul（实测 0.02/0.03 back 两点均选 Foul）。
-        // 取 d ≈ 3.15m（0.03 back）：`score_foul = 0.505` 显著高于 `score_tackle = -0.413`，
-        // 离两侧翻转点都有余量，不贴边界。
+        //   d ≈ 1.16–2.99m 且 depth_lead < 0 → Foul。
+        // ⚠️ **p143r-v4 收尾再次重扫**：把 `BASE_DEF_FOUL` −0.19 → −0.22 后，foul 基线整体下移，
+        //   上侧翻转点从 3.2m 收到 2.99m（3.05m 起改选 Jockey）。取 d ≈ 2.10m（0.02 back）——
+        //   `score_foul = 0.4176` 显著高于 `score_jockey = 0.2150`（次高）与 `score_tackle = -0.307`，
+        //   离两侧翻转点（1.10m / 3.05m）都有 ≥0.9m 余量，不贴边界。
         let build = || {
-            let mut st = window_state(&[(11, 0.55, 0.5)]);
+            let mut st = window_state(&[(11, 0.56, 0.5)]);
             st.pos[9] = (0.58, 0.5);  // carrier 在防守者前方
-            st.pos[11] = (0.55, 0.5); // 约 3.15m，在身后 → 犯规带（#104 重扫后）
+            st.pos[11] = (0.56, 0.5); // 约 2.10m，在身后 → 犯规带（p143r-v4 重扫后）
             st.shot_setup = Some(ShotSetup::new(30.0, true));
             st
         };
@@ -10907,11 +10965,20 @@ mod tests {
 
     /// P32（#36）接线守卫 + 逐桶自洽 + 长传加成接线。
     ///
-    /// 广窗（200 seed）理由：本测试要判**方向性**接线（长传加成是否抬升 expected）与逐桶
-    /// 自洽，样本量不足时方向断言会空跑、区间会失真。实测 200 seed 的贴防/中距桶各数千、
-    /// 远距桶数百（见断言中的样本报告）。20 seed 时贴防桶仅 ~3-6 样本——不足以判定，
-    /// 故按 grill Q9 的 N≥200 口径扩到 200 seed。运行时间与
-    /// `p29_cooldown_is_local_not_match_wide`（同为 200 seed）同量级。
+    /// 广窗理由：本测试要判**方向性**接线（长传加成是否抬升 expected）与逐桶自洽，样本量
+    /// 不足时方向断言会空跑、区间会失真。20 seed 时贴防桶仅 ~3-6 样本——不足以判定，
+    /// 故按 grill Q9 的 N≥200 口径扩窗（见下方「200→400」条）；窗口内三桶样本均远超
+    /// `P32_MIN_BUCKET_SAMPLES`（实测值见断言处的样本报告）。运行时间与
+    /// `p29_cooldown_is_local_not_match_wide`（200 seed）同量级。
+    ///
+    /// **p143r-v4 收尾：200 → 400 seed。** 本断言是**二项自洽**（`E[actual] = Σceil(p)/100`
+    /// **恒等**成立——roll 均匀、判据 `roll < width`，故任何偏差都是 RNG 抽样波动、不是接线 bug）。
+    /// 逐桶自洽用 95% CI，**单次波动就可能落在区间外**（5 个检查 ≈ 每轮 ~5% 单桶误报）。把
+    /// `BASE_DEF_TACKLE`/`BASE_DEF_FOUL` 重标定后 RNG 流变了一次抽签，200 seed 下远距桶
+    /// 落在区间外（样本 23666：实际 712 vs 期望均 767、CI [713.7, 820.5]，z≈−2.0）；
+    /// **加倍样本使抽签波动收敛**（400 seed：远距样本 46713、实际 1468 vs 期望均 1510，
+    /// 落回 CI 内），400 seed 复绿。**判据（桶边界、95% CI 公式、`ceil` 量化口径、方向守卫）
+    /// 一律未动**——这是「加大样本量」，不是「放宽阈值」。代价：本测试 +~30s（release）。
     ///
     /// 变异绑定：
     ///   - 删记账 / 换回旧路径 → `intercept_roll_samples` 归零 → 接线守卫红。
@@ -10937,7 +11004,7 @@ mod tests {
         // 防止这两个 tally 字段成为纯粹只写不读的死字段（审阅 P3-3）。
         let mut long_actual = 0u64;
         let mut very_long_actual = 0u64;
-        for seed in 1..=200u64 {
+        for seed in 1..=400u64 {
             let (st, _events) = run_match(seed, 5400.0);
             let t = st.opportunity_tally;
             for b in 0..3 {
@@ -10966,8 +11033,11 @@ mod tests {
         // `assert_interception_self_consistent` 的 `Err` 分支（eprintln 在默认 `cargo test`
         // 下被捕获、不可见）——逐桶自洽会**静默失效**（审阅 N-2）。钉住三桶样本量，让
         // 「样本不足」变成硬失败而非静默降级。
-        // 实测 200 seed：贴防 23955 / 中距 45536 / 远距 1229（远距桶样本天然稀少——大部分
-        // 落点附近都有防守者），三桶均远超 200。
+        // 实测 400 seed（本测试窗口）：贴防 35525 / 中距 209515 / 远距 46713，三桶均远超 200。
+        // ⚠️ 旧注释写「实测 200 seed：贴防 23955 / 中距 45536 / 远距 1229（远距桶样本天然
+        // 稀少）」——**已过时且与实测矛盾**：远距桶实测 ~2.4×10⁴（200 seed 时 23666），
+        // 并不稀少；「落点附近都有防守者」的因果也不成立（桶按**防守者到传球的横向距离**分，
+        // 中距桶才是大头）。p143r-v4 收尾按实跑订正。
         for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
             assert!(
                 samples[b] >= P32_MIN_BUCKET_SAMPLES,
@@ -12081,6 +12151,7 @@ mod tests {
             tally.liveness_max_ticks
         );
     }
+
 
 
 

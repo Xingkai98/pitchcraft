@@ -5542,12 +5542,20 @@ mod tests {
     /// 形态② 无 seed），按同一判据在 5400 下重扫 seed 1..=400：形态①②③ 命中 seed 分别为
     /// `[11,31,55,115,…]/[223,278]/[42,43,154]`，取 `225 → 223`（命中形态②）即可补全。
     /// 仍是**换样本，不是换判据**——同上三者均未动。
+    ///
+    /// **p143r-v4 TACKLE/FOUL 重标定（2026-10-11，同一 PR 内再扫）**：把
+    /// `BASE_DEF_TACKLE` −0.86→−0.92、`BASE_DEF_FOUL` −0.19→−0.22 又改了一次事件流；
+    /// 上面 [#148] 的 [11,42,154,223,288,353,393,55,43] 此刻**一种形态都不命中**
+    /// （防空转断言红：episode 0 / restart 未 taken 0 / restart 已 taken 0）。按同一判据在
+    /// 5400 下重扫 seed 1..=400：形态① 命中 `[51,65,112,114,145,160,189,266,276,318]`、
+    /// 形态② `[103,179]`、形态③ `[244,378]`，取 `[51,65,103,112,145,179,244,266,378]`
+    /// （计数 ①②③ = 5/2/2）。**换样本，不是换判据**——谓词、豁免条款、防空转断言均未动。
 
     #[test]
     fn every_episode_and_restart_object_has_event_indexes_or_a_documented_exception() {
         // 选种依据（实测）：5400 默认时长下命中三种形态的最小集合。
         // 形态 ①②③ 分别由 truncated_* 三个计数器证明覆盖。
-        const SEEDS: [u64; 9] = [11, 42, 154, 223, 288, 353, 393, 55, 43];
+        const SEEDS: [u64; 9] = [51, 65, 103, 112, 145, 179, 244, 266, 378];
         let mut truncated_episode = 0usize;
         let mut truncated_restart_untaken = 0usize;
         let mut truncated_restart_taken = 0usize;
@@ -7516,4 +7524,5 @@ mod tests {
             rec.invariant_violations()
         );
     }
+
 }
