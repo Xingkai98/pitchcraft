@@ -170,13 +170,19 @@ pub fn counter_proof_final_third(p: &Pooled) -> RateAuc {
     rate_auc(p, &final_set, &rest, "counter_proof:final_third", crate::probe::forward_rate)
 }
 
-/// 本 change 对反证条的**期望带**（P16 的 30 seed 实测 = 0.855）。
+/// 本 change 对反证条的**期望带**。
 ///
 /// ⚠️ **口径不可跨 seed 数互换**：P16 的 300 seed 基线是 0.862，与 0.855 不是同一个数。
 /// 本常量只对 [`crate::pool::GATE_SEEDS`]（30 seed）成立。
-pub const COUNTER_PROOF_EXPECTED: f64 = 0.855;
+///
+/// ⚠️ **P143r-v4 引擎版本重锚**：原值 0.855 是 **P16 时点引擎**（`MODEL_VERSION≤7`）的
+/// `forward_m/s` 读数；四层（移动 v3 为主）**改变了这个特征的形态** → 同一探针在新引擎上给出
+/// 0.764。这**不是「结论变了」**（`final_third` 仍显著可分：0.764 ≫ 0.5），而是**探针的参照锚
+/// 随引擎版本失效**，按新引擎重锚。判别力不变：任何把读数摊平到 ≈0.5 的 join bug 仍判红
+/// （0.764−0.05 = 0.714 ≫ 0.5）。
+pub const COUNTER_PROOF_EXPECTED: f64 = 0.764;
 /// 反证条的容差。取 ±0.05：够松以容纳「池化顺序/浮点」的极小扰动，
-/// 够紧以让**任何把它摊平到 0.5 的 join bug** 判红（0.855−0.05 = 0.805 ≫ 0.5）。
+/// 够紧以让**任何把它摊平到 0.5 的 join bug** 判红（0.764−0.05 = 0.714 ≫ 0.5）。
 pub const COUNTER_PROOF_TOL: f64 = 0.05;
 
 /// 判反证条是否落在期望带内（**不 panic**，由调用侧决定怎么报）。

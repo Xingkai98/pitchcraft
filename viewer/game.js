@@ -11,6 +11,25 @@ import { config } from './config.js';
 import { buildTimeline } from './interpretation.js';
 import { parseEventStream } from './protocol.js';
 
+// 每个锚点是否为其事件（`evt`）的**首 / 末**锚点。
+// 同一事件的锚点在全局按 `t` 排序后**可能被别的事件"插队"**：如一次长传飞行跨过下一拍
+// tick 时，传球事件的**末端**锚点（t ≈ 起飞+飞行时长）会排在下一拍 beat 的**起点**锚点
+// （t = tick）之后——此时「相邻锚点 evt 不同」并不等于「处在事件间的间隙」（`prev` 所在
+// 事件其实还没演完）。故用「每个 evt 的首 / 末索引」判定，而非只看相邻锚点。
+function eventBoundaryFlags(arr) {
+  const first = new Map();
+  const last = new Map();
+  for (let i = 0; i < arr.length; i++) {
+    const e = arr[i].evt;
+    if (!first.has(e)) first.set(e, i);
+    last.set(e, i);
+  }
+  return {
+    isFirst: arr.map((a, i) => first.get(a.evt) === i),
+    isLast: arr.map((a, i) => last.get(a.evt) === i),
+  };
+}
+
 // 播放器状态机
 export class Game {
   constructor(events, lineup, mode = 'continuous', opts = {}) {
@@ -377,6 +396,10 @@ export class Game {
         this._playerAnchors.get(a.id).push(a);
       }
     }
+    // 事件边界标记（供 `_interpolateAnchors` 区分「事件间真间隙」与「事件重叠」）。
+    this._ballBounds = eventBoundaryFlags(this._ballAnchors);
+    this._playerBounds = new Map();
+    for (const [id, arr] of this._playerAnchors) this._playerBounds.set(id, eventBoundaryFlags(arr));
   }
 
   // 由锚点插值出当前球员/球位置
@@ -419,10 +442,16 @@ export class Game {
       const prev = arr[pos];
       const next = pos + 1 < arr.length ? arr[pos + 1] : null;
       if (!next) return { x: prev.x, y: prev.y, h: prev.h ?? 0 }; // 末尾，停在最后锚点
-      // 事件间隙（不同 evt 的相邻锚点，中间无锚点）：hold 在 prev（事件之间不滑动）
-      // v2：跨拍连续由引擎保证 from(N+1)==to(N)，hold 在相同位置无视觉跳变
+      // 相邻锚点 evt 不同 → 可能是「事件间间隙」也可能是「事件重叠」（见 eventBoundaryFlags）。
+      //   真间隙（prev 是其事件末锚点、next 是其事件首锚点）：hold 在 prev（事件之间不滑动）；
+      //     v2 跨拍连续由引擎保证 from(N+1)==to(N)，hold 在相同位置无视觉跳变。
+      //   重叠（prev 所在事件尚未演完，如长传飞行跨过下一拍 tick）：**不 hold**——否则球冻在
+      //     飞行中段、待下一条锚点生效时瞬移（e2e-v2 实测 maxBallJump≈0.12）；照常插值延续本事件轨迹。
       if (prev.evt !== undefined && next.evt !== undefined && prev.evt !== next.evt) {
-        return { x: prev.x, y: prev.y, h: prev.h ?? 0 };
+        const bounds = kind === 'ball' ? this._ballBounds : this._playerBounds.get(id);
+        if (bounds && bounds.isLast[pos] && bounds.isFirst[pos + 1]) {
+          return { x: prev.x, y: prev.y, h: prev.h ?? 0 };
+        }
       }
       const span = Math.max(next.t - prev.t, 1e-6);
       const u = Math.min(Math.max((t - prev.t) / span, 0), 1);

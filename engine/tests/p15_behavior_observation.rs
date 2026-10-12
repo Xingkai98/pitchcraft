@@ -92,6 +92,11 @@ const DUR: f64 = 5400.0;
 /// 分支上选的；P15A 移植到 main（`v7`，含 P104 体积重标定）后三种形态**一个都没命中**，
 /// 防空转断言直接变红。按同一判据在 5400 默认时长下重扫 seed 1..=600 后补入 24/9/36
 /// （形态①②③ 计数 1/1/2）。**换的是样本，不是判据。**
+///
+/// **P143r-v4 再重标定**：四层改事件流后，本集合（含 24/9/36）**再次一个形态都没命中**。
+/// 三种形态的覆盖改为**独立**的 `TRUNCATION_FORM_SEEDS`（见 `event_indexes_are_non_empty...`），
+/// 与本集合**不相交**——把「截断形态覆盖」与「canary 集合」解耦，不再让一处漂移连带另一处。
+/// 本集合保留其余 test（确定性和终态不变量 / 重开 kind 覆盖 / 进球后开球）所需的 seed。
 const CANARY_SEEDS: [u64; 13] = [1, 5, 9, 15, 24, 33, 36, 86, 97, 100, 120, 157, 317];
 
 /// 「争抢原因 ↔ 引擎事件」门的 seed 集：canary + 5 个**只为 `shot_rebound` 而加**的 seed。
@@ -106,7 +111,17 @@ const CANARY_SEEDS: [u64; 13] = [1, 5, 9, 15, 24, 33, 36, 86, 97, 100, 120, 157,
 /// **2026-09-25 重标定**：原补种子 24/38/49/80/84 是 `v6` 基线上选的；移植到 main（`v7`）
 /// 后该集合上 `shot_rebound` 只剩 3 条（低于下限 4），防空转断言变红。按同一判据重扫后换用
 /// 上列 5 个。**换的是样本，不是判据。**
-const CONTEST_SEEDS: [u64; 15] = [1, 5, 15, 33, 86, 97, 100, 120, 157, 317, 37, 41, 66, 106, 107];
+///
+/// **P143r-v4 重标定**：四层改事件流后，原集合上**一条 `match_end` 收束都没扫到**
+/// （`StreamBoundary → MatchEnd` 分支变休眠，防空转断言红）。按同一判据重扫
+/// （`rescan contest 1..=300`：7/35/40/42/…），补入 **7**（有 1 条 match_end 收束）。
+/// **换的是样本，不是判据**——谓词、5 类原因覆盖、各下限断言均未动。
+///
+/// **p143r-v4 TACKLE/FOUL 重标定（2026-10-11，同一 PR 内再扫）**：`BASE_DEF_TACKLE` −0.86→−0.92、
+/// `BASE_DEF_FOUL` −0.19→−0.22 又改一次事件流，**7 不再产 `match_end` 收束**（防空转断言红）。
+/// 按同一判据重扫 seed 1..=400（`observed` @ DUR，扫 `ContestEnd(match_end)`：9/14/18/24/…），
+/// **追加 9**（同时保留 7，样本只增不减）。**换的是样本，不是判据。**
+const CONTEST_SEEDS: [u64; 17] = [1, 5, 15, 33, 86, 97, 100, 120, 157, 317, 37, 41, 66, 106, 107, 7, 9];
 
 /// 与 `tests/realism.rs::GOLDEN_SEEDS` **必须一致**的 canary seed 集；对应哪个 golden 目录由
 /// `MODEL_VERSION` 决定（main 上为 `golden-v7`）。
@@ -561,7 +576,8 @@ fn restart_kind_decides_the_delivered_episode_start_reason() {
 /// 补上：它走 `simulate_with_behavior_observations`，读的是**引擎自己提交**的事实。
 ///
 /// **覆盖全部 5 个引擎可达的 `ContestStartReason`**（不是只挑几个）。下表全部来自实测
-/// （`CONTEST_SEEDS`，共 15 场；括号内为该组样本上的条数）：
+/// （`CONTEST_SEEDS`，共 17 场；括号内为该组样本上的条数；下表条数取自早先 15 场版本，
+/// 本门只断言机制、条数随 seed 集变）：
 ///
 /// | 争抢 `reason` | 引擎事件（`source_event_index` 指向） | 同刻关闭的 episode `end_reason` |
 /// |---|---|---|
@@ -572,7 +588,7 @@ fn restart_kind_decides_the_delivered_episode_start_reason() {
 /// | `delivery_loose` | `Pass` / `result="contested"`（= 角球 / 门球 / 解围三类交付落点） | **不约束**——见下 |
 ///
 /// `delivery_loose` 的「同刻关闭的 episode」形态**本来就不同**：交付落点争抢开启时原 episode
-/// 通常已在出球提交点关闭（**15 场 CONTEST_SEEDS** 实测 313 条里 296 条同刻 0 条关闭、
+/// 通常已在出球提交点关闭（**早先 15 场 CONTEST_SEEDS** 实测 313 条里 296 条同刻 0 条关闭、
 /// 17 条 1 条且 `end_reason` 全为 `ControlLost`）。故对它只断言**绑定事件 + 收束原因 + 下一条事实**，
 /// 不硬套「恰好一条」——那会测出一个引擎不产生的形状。（它曾经被本门用一句注释「转交」
 /// 给 `restart_kind_decides_the_delivered_episode_start_reason`，而**那条门根本不读
@@ -603,7 +619,7 @@ fn contest_reasons_and_settlements_are_bound_to_their_own_engine_events() {
         /// 恰好一条，且 `end_reason` 等于给定值。
         ExactlyOne(EpisodeEndReason),
         /// `delivery_loose` 专用：条数**不约束**（交付落点争抢开启时，原 episode 通常已在出球
-        /// 提交点关闭——15 场实测 313 条里 296 条同刻 0 条关闭），但**凡是有同刻关闭的**，其 `end_reason`
+        /// 提交点关闭——早先 15 场实测 313 条里 296 条同刻 0 条关闭），但**凡是有同刻关闭的**，其 `end_reason`
         /// 必须是给定值。这样既不硬套引擎不产生的「恰好一条」，又不把「`end_reason` 被改错」
         /// 放过去（实测：把 `ControlLost` 改成别的值时，17 条 episode 全部漂移）。
         AnyCountButReason(EpisodeEndReason),
@@ -1045,10 +1061,18 @@ fn event_indexes_are_non_empty_monotonic_and_in_range() {
     let mut truncated_episode = 0usize;
     let mut truncated_restart_untaken = 0usize;
     let mut truncated_restart_taken = 0usize;
-    // 命中形态 ③（`dur` 时刻已 taken 的门球）的 seed 36 **已经在** `CANARY_SEEDS` 里
-    // （见模块头注释），故这里直接用 canary 集合——不要再 chain 一遍，那会重复跑同一批 seed
-    // 而让样本数看起来更大（防空转计数器也会被灌水）。
-    for seed in CANARY_SEEDS {
+    // 三种截断形态各取一个**不在** `CANARY_SEEDS` 里的定点 seed（P143r-v4 重扫：四层改事件流后，
+    // 原 CANARY 集合已不命中任何形态，防空转断言一度全 0）。旧写法依赖「形态 ③ 的 seed 36 恰在
+    // canary 里」——那层耦合随 v4 一起断了，改为**显式**列表，与 canary 集合**不相交**，故 chain
+    // 不会重复跑同一批 seed（防空转计数器不被灌水）。
+    // #148 同队间距修（2026-10-11）再改一次事件流：原 225 不再命中形态 ②；按同一判据在 5400 下
+    // 扫 seed 1..=400 得形态 ② 命中 seed 为 [223, 278]，取 225 → 223。仍换样本、不换判据。
+    // p143r-v4 TACKLE/FOUL 重标定（2026-10-11，同一 PR 内再扫）：`BASE_DEF_TACKLE` −0.86→−0.92、
+    // `BASE_DEF_FOUL` −0.19→−0.22 又改一次事件流，[11,223,42] **一种形态都不命中**。按同一判据在
+    // 5400 下重扫 seed 1..=400：形态① 命中 [51,65,112,114,145,160,189,266,276,318]、形态②
+    // [103,179]、形态③ [244,378]，取 [51,103,244]（计数 1/1/1）。仍换样本、不换判据。
+    const TRUNCATION_FORM_SEEDS: [u64; 3] = [51, 103, 244]; // ① episode / ② restart 未 taken / ③ restart 已 taken
+    for seed in CANARY_SEEDS.iter().chain(TRUNCATION_FORM_SEEDS.iter()).copied() {
         let dm = observed(seed);
         let whistle_t = tail_whistle_t(&dm);
         for e in &dm.possession_episodes {
@@ -1183,12 +1207,15 @@ fn gap_is_a_classified_outcome_not_a_failure() {
     }
 
     // ② 截断样本：合法产 gap，且原因**必须**属于设计允许的分类。
-    //    两个样本都来自 design §15.5 的已复核记录（不是自选样本）：
-    //    seed 470 @ dur 120（开球在 t=119 发出、被 t=120 哨截断）与
-    //    seed 1228 @ dur 400（t=399 的 kickoff 飞行中撞哨——**更长时长同样产**）。
-    //    两个样本均为 2026-09-25 在 main(v7) 基线上重扫所得（原 147/368 只对 v6 成立）。
+    //    两个样本按**同一判据**（哨声打断未决飞行 → gap）在当前引擎重扫：
+    //    seed 562 @ dur 120（开球飞行中撞 t=120 哨）与 seed 347 @ dur 300。
+    //    P143r-v4 重扫（`rescan gap 1..=1000`：112@5400 / 347@300 / 348@400 / 367@400 / 562@120）；
+    //    旧样本 470@120 / 1228@400 在四层改流后不再产 gap（守卫空跑）。**换的是样本，不是判据。**
+    //    TACKLE/FOUL 重标定后 348@400 不再产 gap，按同一判据复扫（seed 1..=800 × dur ∈
+    //    {120,300,400,700}：139@700 / 343@400 / 347@300 / 441@700 / 562@120），取 **347@300**
+    //    换掉 348@400。仍是**换样本，不换判据**。
     let mut classified = 0usize;
-    for (seed, dur) in [(470u64, 120.0), (1228u64, 400.0)] {
+    for (seed, dur) in [(562u64, 120.0), (347u64, 300.0)] {
         let dm = simulate_with_behavior_observations(seed, cfg(dur));
         assert!(
             dm.gap_count() >= 1,
@@ -1287,7 +1314,8 @@ fn every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect() {
     // 属自我确认断言。
     let mut observed_gaps = 0usize;
     // canary（含短时长） + 两个已复核的截断样本（保证本门真的扫到 gap）。
-    let truncated: [(u64, f64); 2] = [(470, 120.0), (1228, 400.0)];
+    // TACKLE/FOUL 重标定后 348@400 失效 → 换 347@300（同上，换样本不换判据）。
+    let truncated: [(u64, f64); 2] = [(562, 120.0), (347, 300.0)];
     for seed in CANARY_SEEDS {
         for dur in [DUR, 300.0, 120.0] {
             let dm = simulate_with_behavior_observations(seed, cfg(dur));
