@@ -64,12 +64,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 
 ### 4. 浏览器缓存强制刷新（JS 修改后必须更新版本号）
 
-**每次修改 `viewer/` 下的 JS 代码（app.js / interpretation.js / renderer.js 等）或 HTML 后，必须更新 `viewer/index.html` 里 `<script>` 标签的版本号**，否则浏览器会缓存旧 JS，用户看不到改动。
+**每次修改 `viewer/` 下的 JS 代码（app.js / interpretation.js / renderer.js 等）或 HTML 后，必须更新相关的 `?v=` 版本号**（`index.html` 的 `<script>` 标签 **以及** 模块间 import 串，见下），否则浏览器会缓存旧 JS，用户看不到改动。
 
 当前：`<script type="module" src="./app.js?v=20260805-1"></script>`
 
 规则：
 - 改 JS/HTML 后，把 `?v=` 后的版本号改成新值（如 `20260805-2`、`20260805-3`），格式 `YYYYMMDD-N`（日期-当日序号）。
+- ⚠️ **子模块的 `?v=` 不在 `index.html` 里，挂在「引用方的 import specifier」上**：`viewer/` 模块之间用**带 `?v=` 的具名导入**（如 `app.js` 里的 `import { Game } from './game.js?v=20260805-1'`）。**只改 `index.html` 的 `<script>` 标签刷不掉子模块**——改哪个子模块，就要把它**每一处引用**那条 import 串的 `?v=` 一起改（2026-10-12 #154 实测：只改 index.html 时子模块仍走浏览器旧缓存）。
 - `engine.wasm` 已有 app.js 里的自动 cache-busting（`fetch ?v=${Date.now()}`），无需手动改。
 - 改 JS 但忘改版本号 = 用户刷新看到旧效果，视为遗漏（提交前检查）。
 
