@@ -313,7 +313,7 @@ test('CLI：非法 SWEEP_CONCURRENCY 直接报错退出 2（不静默回落成�
 // 「findings / worst」汇总的判据在这个 change 上**恒真**、没有区分度（#152 审阅 P2-1 的同类教训：
 // 判据空转）。故本组用例：
 //   ① 逐窗比 `captureObservation` 的**整包**（逐窗重建的参照实现 vs 复用索引的被测实现）；
-//   ② 用 `detect` 注入点（#152 已有的测试钩子，非本 change 新增）把**生产路径 `runSeed`** 每窗
+//   ② 用 `detect` 注入点（#152 已有的测试钩子）把**生产路径 `runSeed`** 每窗
 //      喂给 detector 的**输入**（`bundle.audit_input.players`：米制、含 ±5s 内 0.2s 采样的整窗
 //      快照与派生特征）与输出逐窗抄下来，和参照实现逐位比 ——**比输入而不是只比输出**：
 //      本 seed 集下 finding 恒为空，只比输出会恒真；
@@ -363,10 +363,11 @@ test('缓存索引 == 逐窗重建（真实 wasm，逐窗逐位一致）：captu
     assert.notEqual(refBundles[0], refBundles[1], '相邻窗口的观测包必须不同（判据不得跨窗恒等）');
     assert.notEqual(refInputs[0], refInputs[1], '相邻窗口的 detector 输入必须不同（判据不得跨窗恒等）');
 
-    // ② **生产路径** `runSeed` 真的在用缓存索引，且每窗喂给 detector 的快照与逐窗重建逐位相同。
+    // ② **生产路径** `runSeed` 每窗喂给 detector 的输入与输出，与逐窗重建逐位相同。
     //    用注入的 `detect` 抄一份**输入**——注入点不改调用契约（每窗一次、传本窗快照、用生产
     //    profile），故这里测的仍是真实生产循环，而不是测试里另写一遍的循环。
     //    比**输入**而不是只比 finding：本 seed 集下 finding 恒为空（`[]`），只比输出会**恒真**。
+    //    ⚠️ ② **本身不证明**「生产路径用的是缓存索引」——它对这件事不可观测（见 ②b）。
     const liveInputs = [];
     const liveFindings = [];
     const seenProfiles = [];
