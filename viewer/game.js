@@ -45,7 +45,8 @@ function computeEventEnds(events, timeline) {
   return ends;
 }
 
-// 静态索引：只由 `(events, lineup, mode)` 决定，**与播放时刻 `t` 无关**。
+// 静态索引：由 `(events, lineup, mode)` 与**建索引时刻读到的 `config` 常量**决定，
+// **与播放时刻 `t` 无关**。
 //
 // 为什么单独抽出来（#154）：`Game` 构造的成本几乎全在这里——整场锚点时间线
 // （P3.5 起 ~2900 事件数万锚点）+ 按实体分组的时间索引 + 每个事件的结束时间。
@@ -53,6 +54,14 @@ function computeEventEnds(events, timeline) {
 // 实测占逐窗成本的 **91.5%**（`openspec/changes/p154-game-index-cache/design.md` §D1）。
 // 把它算成**可复用的纯计算结果**：每份事件流算一次，逐窗传给
 // `new Game(events, lineup, mode, { index })`。
+//
+// ⚠️ **`config` 是被烘进来的**（如实写，勿当「只依赖三个入参」）：`buildTimeline` 会读
+// `config.interpretation.*` / `config.defaults.*` / `config.pitch.*`（实测活读取 5 个叶子：
+// `shot.keeperReactDelay`、`tackle.deflectSpeed`、`defaults.runSpeed`、`pitch.lengthMeters`、
+// `pitch.widthMeters`——#154 审阅 P2-4 实测）。同源守卫（身份比较，见构造函数）**看不见
+// config 变化**：在「建索引」与「构造 `Game`」之间改 config，守卫会放行而索引已陈旧。
+// 当前调用方不触碰这条边界（`tools/spacing-sweep-core.mjs` 在模块加载时设一次 config 后
+// 不再改；App 侧不传索引），故如实记为**已知边界**而非缺口。
 //
 // 契约：本函数只读输入，返回对象的任何字段**在构造后都不被 `Game` 写入**
 // （守卫见 §D7 的「索引在整轮扫描后逐位不变」用例）——故可安全跨窗复用。
@@ -108,9 +117,9 @@ export class Game {
     this.speedIndex = 0; // 0 -> 1x, 1 -> 2x, 2 -> 4x
     this.playTime = 0; // 当前播放的比赛秒
     // 静态索引（timeline / 锚点索引 / 每事件结束时刻 / 比赛总时长）：只依赖 (events, lineup,
-    // mode)，与 t 无关。默认**每次新建**（App 与其它单次构造路径 = 原行为，逐位不变）；
-    // 调用方可传一份 `buildGameIndex` 算好的 `opts.index` 复用（整场滑窗扫描逐窗构造：
-    // 同一份事件流下这块是逐窗成本的主体，见 #154 §D1）。
+    // mode) 与建索引时刻的 config 常量，与 t 无关。默认**每次新建**（App 与其它单次构造路径
+    // = 原行为，逐位不变）；调用方可传一份 `buildGameIndex` 算好的 `opts.index` 复用
+    // （整场滑窗扫描逐窗构造：同一份事件流下这块是逐窗成本的主体，见 #154 §D1）。
     const index = opts.index ?? buildGameIndex(events, lineup, this.mode);
     // 缓存复用必须满足的前提：索引与本次的事件流/站位/模式同源。身份比较是 O(1)，
     // 且能挡住唯一现实的误用（把某条事件流的索引喂给另一条）——静默用错索引会产出

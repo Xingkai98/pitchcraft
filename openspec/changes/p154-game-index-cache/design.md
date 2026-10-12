@@ -44,6 +44,20 @@ detector 阈值 / audit profile；**不动 `engine/`**；不抬 `ci.yml` 的 `ti
 > `Game.prototype` 上互不嵌套的私有方法累加。两者之和与「构造函数总耗时」在 ±3% 内闭合
 > （单独测的 `buildTimeline` 略高于构造内实测——独立测量时的 JIT/GC 状态不同）。
 
+**改后（同一探针、同一窗口集、同一机）**：
+
+| | 改前 | 改后 | |
+|---|---|---|---|
+| `new Game(...)` | 148.05 ms/窗 | **0.51 ms/窗**（只做可变状态初始化） | 索引只算一次 = 202 ms/seed |
+| `captureObservation` | 11.98 ms/窗 | 13.42 ms/窗 | 未动（含测量噪声） |
+| `detectPlayerOverlap` | 0.55 ms/窗 | 0.49 ms/窗 | 未动 |
+| `seekTo` | 0.04 ms/窗 | 0.03 ms/窗 | 未动 |
+| **逐窗合计** | **160.61 ms/窗** → 5.77 min/seed | **14.46 ms/窗** → **0.52 min/seed** | **11.11×** |
+
+> 口径说明：两个读数在同一次探针运行内前后相接测出（机器当时 load ≈ 3.7，仍非空闲机），
+> 故**绝对值不可与 §D1 的 140.28 ms 直接比**（§D1 是另一次运行）；**比值 11.11× ≈ 理论 11.9×**
+> 不受机型影响。独立审阅者在另一台更慢的机器上复现得到 14.78×（同向结论）。
+
 ## D2 取哪条路：(a) 抽静态索引 + 逐窗仍新建对象，而不是 (b) 复用实例 + 复位可变状态
 
 #152 §D5 把「跨窗复用」记为另立票据，理由是**行为差异**：`_interpolateAnchors` 返回 `null`
@@ -67,16 +81,26 @@ detector 阈值 / audit profile；**不动 `engine/`**；不抬 `ci.yml` 的 `ti
 
 ## D3 索引里放什么、不放什么
 
-**放**（只依赖 `(events, lineup, mode)`，构造后**只读**）：`timeline`、`ballAnchors`、`playerAnchors`、
-`ballBounds`、`playerBounds`、`eventEnds`、`matchEnd`。
+**放**（只依赖 `(events, lineup, mode)` 与**建索引时刻的 `config` 常量**，构造后**只读**）：
+`timeline`、`ballAnchors`、`playerAnchors`、`ballBounds`、`playerBounds`、`eventEnds`、`matchEnd`。
 
-**不放**（构造期可变 / 依赖 config，逐窗重建）：
+**不放**（构造期可变 / 依赖逐次构造的入参，逐窗重建）：
 - `sentOffAt`：**可变 Map**（虽然内容其实只依赖事件流）。共享可变结构得不偿失；整场一遍线性扫描
   成本可忽略（0.1 ms 量级）。**边界效应**：`deriveAuditInput` 另有自己的 `sentOffTimes(allEvents)`
   推导——那条路径读的是 `game.events`（整场事件，本就不经索引），不受本 change 影响。
-- `_highlightWindows`：由 `_eventEnds` + `_skipThreshold` 派生，而 `_skipThreshold` 来自
-  `config`/`opts`，是**构造期**语义（调用方可在两次构造之间改 `config.playback.skipThresholdSeconds`
-  并期望生效）。重建成本 0.38 ms/窗（0.25%），不值得为它把 config 语义冻进缓存。
+- `_highlightWindows`：由 `_eventEnds`（静态）**加上 `this._skipThreshold`** 派生，而
+  `_skipThreshold = opts.skipThreshold ?? config.playback.skipThresholdSeconds` —— 它依赖
+  **逐次构造的入参 `opts`**，而索引在构造时**看不到 `opts`**。把它冻进索引就等于让同一次
+  缓存复用无视调用方传的 `skipThreshold`（`viewer/*.test.js` 大量用 `skipThreshold: Infinity`
+  关跳过），是**语义变化**。重建成本 0.38 ms/窗（0.25%），不值得。
+  （⚠️ 先前的表述把理由写成「它依赖 config」——**机制说错了**：`eventEnds` 同样是 config 相关的
+  产物；真正的理由是「依赖逐次构造的 `opts`」。#154 审阅 P2-4 指出。）
+
+**索引依赖 `config`（如实写）**：`buildTimeline` 在**建索引时**读 `config`（实测活读取 5 个叶子：
+`interpretation.shot.keeperReactDelay`、`interpretation.tackle.deflectSpeed`、`defaults.runSpeed`、
+`pitch.lengthMeters`、`pitch.widthMeters`），这些值被烘进索引。因此「索引只依赖 `(events, lineup,
+mode)`」**不准确**，正确表述是「只依赖这三个入参 + 建索引时刻的 config 常量」。同源守卫
+（身份比较）**看不见 config 变化**——见 §D4 的边界条。
 
 ## D4 缓存失效条件（本设计最大的语义风险面）
 
@@ -93,6 +117,22 @@ if (index.events !== events || index.lineup !== lineup || index.mode !== this.mo
 
 `mode` 归一化（`clip` / `continuous`）在索引与构造函数两侧用**同一表达式**，否则
 `new Game(..., 'clip')` 会被自己的守卫拒掉。
+
+**守卫的第一个边界：config（#154 审阅 P2-4 独立实测）**。索引把建索引时刻的 config 常量烘了进去，
+而守卫只比 `events`/`lineup`/`mode` 的身份——**在「建索引」与「构造 Game」之间改 config，守卫放行，
+但索引已陈旧**。审阅者实测：改 `config.interpretation.shot.keeperReactDelay` 后，用旧索引构造的
+`Game` 在 `t=120` 的观测包与「用新 config 重建」**不同**。
+**当前不可达**：唯一传索引的调用方 `tools/spacing-sweep-core.mjs` 在模块加载时设定 config
+（`debug.enabled=false` / `skipThresholdSeconds=Infinity`）后再不改动，且整个 `runSeed` 里 config
+是常量；App 侧不传索引。故记为**已知边界**：将来若出现「运行中改 config + 复用索引」的用法，
+需要把 config 指纹并入索引（或让守卫比它）。
+
+**守卫的第二个边界：内容**。身份比较**看得见「换了一个数组」，看不见「原地改了同一个数组的内容」**
+——若某调用方在「建索引」与「构造 Game」之间**就地修改** `events` 或 `lineup`，守卫会放行而索引
+已陈旧。本 change 的用法不触碰这条边界（`runSeed` 在 `parseEventStream` 之后立刻建索引，
+两者之间没有任何写入；`events`/`lineup` 在整个 seed 内是只读的，且由 `viewer/game.test.js` 的
+「输入与索引不被改写」用例钉住）。把它**做实**（深比较整场事件流）会让每次构造多付一次 O(事件数)
+——那是把守卫的成本提到与它要防的问题同量级，故不做。这是**已知且被记录**的盲区，不是无意的缺口。
 
 ## D5 实测：naive「复用同一个 `Game` 实例」在生产窗区间**不可分**
 
@@ -112,6 +152,13 @@ if (index.events !== events || index.lineup !== lineup || index.mode !== this.mo
 任何实体的 `pos ≥ 0`——**这条分支在本门的窗口区间不可达**。降序也测了：即使倒着走，
 每个实体也总已有锚点。
 
+**独立审阅者复现并加强了这条**（#154 审阅 §3.4）：8 个默认 seed 全部满足「23 个实体（球 + 22 人）
+的**最早锚点 `t` 都 = 0**」、`lineup` 里无锚点的球员 = 0，且以 step 12.7 s 逐点调用
+`_interpolateAnchors` 扫过整个窗口区间 → **null 次数 = 0**；结论与机制都成立，且**比本文写的更强**
+（连 `t = 0` 都不可达，不只是 `t ≥ 5`）。
+⚠️ 反过来说：**这条分支在合成 fixture 里是可以被走到的**（`lineup` 里有、`lineup` 事件的
+`players` 里没有的球员），故 `viewer/game.test.js` 靠这种方式把它**真的**覆盖住（见 §D7）。
+
 **这条读数的意义（如实写）**：
 - 它**修正**了「复用会因这条分支改变行为」的表述：在本门的窗口区间，naive 复用与逐窗新建
   **行为等价**。#152 的顾虑在**语用上**（App 的 seek 可以落在 t < 5、clip 模式、`jumpToEvent`）
@@ -130,24 +177,51 @@ if (index.events !== events || index.lineup !== lineup || index.mode !== this.mo
 |---|---|---|---|---|
 | 全 8 seed × 2157 窗（生产密度） | 8 × 2157 = 17,256 | **0** | 两路径**逐 seed 相同** | 一致 |
 
-**逐 seed 明细**（复用索引 / 逐窗重建两条路径）：
+**逐 seed 明细**（两条路径各自的**整轮观测流 sha256**，以及 detector 汇总）：
 
-<!-- FILL:D6-FULLCALIBER -->
+| seed | 窗口数 | 不同窗数 | sha256（复用索引） | sha256（逐窗重建） | findings | worst |
+|---|---|---|---|---|---|---|
+| 42 | 2157 | **0** | `c9a7fb84…` | `c9a7fb84…` | 0 / 0 | null / null |
+| 1 | 2157 | **0** | `fc48256a…` | `fc48256a…` | 0 / 0 | null / null |
+| 2 | 2157 | **0** | `eacc60c6…` | `eacc60c6…` | 0 / 0 | null / null |
+| 3 | 2157 | **0** | `ad224f16…` | `ad224f16…` | 0 / 0 | null / null |
+| 7 | 2157 | **0** | `1a2ea9b3…` | `1a2ea9b3…` | 0 / 0 | null / null |
+| 59 | 2157 | **0** | `d34c916b…` | `d34c916b…` | 0 / 0 | null / null |
+| 18 | 2157 | **0** | `17deb132…` | `17deb132…` | 0 / 0 | null / null |
+| 94 | 2157 | **0** | `acdc2ed5…` | `acdc2ed5…` | 0 / 0 | null / null |
 
-**结论**：**TBD**
+（sha256 为完整 64 位十六进制，此处截断显示；签名的定义 = 每窗 `captureObservation` **整包**
+JSON 依次喂进哈希。seed 59 / 18 / 94 = 红牌 seed，覆盖罚下路径下的窗口。）
+
+**结论**：**17,256 窗逐窗逐位相同（不同窗数 = 0）**，detector 汇总（finding 数 / 最恶劣间距）也相同。
+全量跑在本机（load ≈ 4-20，非空闲）耗时约 **16 分钟/seed**（两条路径合跑），4 进程并行确实跑完。
+
+**改后端到端（生产 CLI）**：
+
+| 跑法 | 本 change 之后 | #152 记录的改前（本机、空闲机） |
+|---|---|---|
+| `node tools/spacing-sweep.mjs`（默认 8 seed，并发 4，**本机**） | **2m28s**（`user 3m54s`；机器当时还在跑 `cargo test` + 别的会话） | **21m32s**（并发） |
+| `SWEEP_CONCURRENCY=1 node tools/spacing-sweep.mjs 42 59`（2 seed 串行） | 1m41s | —（折算串行 **43m21s** / 8 seed = 5m25s/seed） |
+| 默认 8 seed（**独立审阅者的机器**） | 3m18.7s | — |
+
+三组 stdout 均为 8×2157 窗、`findings=0`、末行 `OK`、exit 0 —— **与改前逐字相同**。
+⇒ 端到端 **≈ 8.7×**（21m32s → 2m28s，且这次机器更忙）；逐窗成本 **11.11×**（§D1）。
+**目标「~1.5–2 分钟」在 CI 机型上的最终读数见 §D9**（CI 机型波动大，以 CI 为准）。
 
 ## D7 守护测试与定向变异
 
 ### 守什么
 
-| 用例（`tools/spacing-sweep.test.mjs` 新增 4 条 + `viewer/game.test.js` 新增 3 条） | 守什么 |
+| 用例（`tools/spacing-sweep.test.mjs` 新增 4 条 + `viewer/game.test.js` 新增 4 条） | 守什么 |
 |---|---|
-| **缓存索引 == 逐窗重建（真实 wasm）** | 逐窗比 `captureObservation` **整包** + detector 输出；并用 `detect` 注入点把**生产路径 `runSeed`** 每窗喂给 detector 的快照与逐窗重建逐位比。**反证条**：相邻窗口观测包必须不同（判据不得跨窗恒等 ⇒ 防空转） |
-| **静态索引是确定性纯函数 + 整轮扫描后逐字节未变** | 覆盖**全部窗口**（不止抽样窗口）：`buildGameIndex` 两次构造逐字节相同；整轮构造 + `seekTo` + 采集 + detect 之后索引摘要不变 |
+| **缓存索引 == 逐窗重建（真实 wasm）** | 逐窗比 `captureObservation` **整包**；并用 `detect` 注入点把**生产路径 `runSeed`** 每窗喂给 detector 的**输入**与输出与逐窗重建逐位比（**比输入**：本 seed 集 finding 恒空，只比输出会恒真）。**反证条**：相邻窗口的观测包与 detector 输入都必须不同（判据不得跨窗恒等 ⇒ 防空转） |
+| **注入守卫**（同一条用例内 ②b） | 「生产路径真的在用这份缓存索引」**只能靠注入判**：断言 `buildIndex` **每 seed 恰好调用 1 次**（挪回窗口循环 → 变 2157），并**篡改式验证接线**——把注入索引的 `timeline` 掏空，逐窗 detector 输入必须随之与重建路径**不同**（拿掉 `{ index }` 则篡改无效 ⇒ 变红） |
+| **静态索引是确定性纯函数 + 全窗扫描后逐字节未变** | `buildGameIndex` 两次构造逐字节相同；**全部 2157 窗**（生产 `STEP=2.5`）的**构造/`seekTo`/`step`** 之后索引摘要不变；另跑 22 个抽样窗口的**采集 + detector 管线**（全窗管线对照见 §D6，代价所限） |
 | **反证条：索引摘要的区分度** | 摘要对「锚点被删/改、球锚点表被增补、分组 Map 被改写（含组内删锚点）、结束时刻被改、总时长被改」**都必须判不同** |
 | **缓存失效条件** | 同源放行；跨事件流 / 跨 lineup / 跨 mode **报错** |
-| `viewer/game.test.js`：复用 == 重建（合成事件） | 构造态 + 12 个时刻的 `seekTo` + 40 步 `step` 序列，比较球员/球/时刻/事件索引/高亮窗口/纪律牌/进度；**不依赖 wasm**（CI 与本地都恒跑） |
-| `viewer/game.test.js`：输入与索引不被改写 | 连构造推进 5 个 Game 后 `events`/`lineup`/索引逐字节不变 |
+| `viewer/game.test.js`：复用 == 重建（合成事件） | 构造态 + 12 个时刻的 `seekTo` + 40 步 `step` 序列，比较球员/球/时刻/事件索引/高亮窗口/纪律牌/进度；**不依赖 wasm**（CI 与本地都恒跑）。**前提自证**：断言 fixture 里那个无锚点球员的插值**真的**返回 `null`（否则「覆盖了回落分支」是空话——审阅 P2-7 实测旧 fixture null 命中 0 次） |
+| `viewer/game.test.js`：输入与索引不被改写 | 连构造推进 5 个 Game 后 `events`/`lineup`/索引逐字节不变；摘要**显式展开 Map**（审阅 P2-3 实测：裸 `JSON.stringify` 对分组污染全盲） |
+| `viewer/game.test.js`：摘要反证条 | 分组 Map 整组删 / 组内删锚点 / 锚点被改 / 结束时刻被改 → 摘要**都必须判不同** |
 | `viewer/game.test.js`：同源守卫 | 三类不同源都报错，同源（含 clip）放行 |
 
 **摘要实现的一个坑（本项目内实测踩到）**：`JSON.stringify` 把 `Map` 序列化成 `{}` ——
@@ -156,41 +230,71 @@ if (index.events !== events || index.lineup !== lineup || index.mode !== this.mo
 
 ### 定向变异（单点替换，命中数必须为 1；跑完逐字节还原）
 
-| 变异 | 落点 | 结果 |
-|---|---|---|
-| **M1** 共享索引被就地改写（`_playerAnchors.delete(...)`，模拟将来某处「剔除/剪枝」） | `viewer/game.js` | **红 1 条**：「静态索引……逐字节未被改写」——这正是摘要必须显式展开 Map 的那条 |
-| **M2** 缓存失效守卫被削弱（只比 `mode`，不比 `events`/`lineup` 同源） | `viewer/game.js` | **红 1 条**：「索引缓存失效条件……报错」 |
-| **M3** 缓存被污染（取出索引时**就地累加**每事件结束时刻） | `viewer/game.js` | **红 2 条**：逐窗逐位一致 + 索引未被改写 |
-| **M4** naive 复用：把 `new Game` 挪出窗口循环 | `spacing-sweep-core.mjs` | **绿（存活）** —— 见 §D5：该变异在窗口区间**行为等价**，是不可分的**真等价变异**，不是盲区 |
-| **M5** 生产路径的索引与本次事件流**不同源**（`lineup.map(p => ({...p}))`） | `spacing-sweep-core.mjs` | **红 6 条**（含逐窗一致、并发==串行、`runSweep` 三条编排）——缓存拿错时 **fail-loud**，不会静默用错索引 |
+变异施加脚本对每个变异**打印命中数并要求恰好为 1**，跑完立即用备份还原，最后比对整文件字节。
+**变异 hunk 原文一并记录**（审阅 §4.1 指出：只写文字描述则取证不可复核——审阅者按最自然的落点
+复现 M1 得到的是 2 红而不是表里的 1 红，正是因为表里没写清「删的是哪个键」）。
 
-**M1/M3 的红为什么只落在「摘要」与「逐窗一致」上、而不是别处**：`viewer/game.js` 的构造函数是
-**两条路径共用的同一段代码**，故绝大多数变异是**对称**的（两条路径同时坏 → 逐窗比对看不出来）。
-能被「缓存 vs 重建」这条判据抓住的，只可能是**利用了索引被跨窗共享**这件事的变异——M3
-（就地累加，共享实例上会累积、每窗新建的临时索引不会）正是这一类；M1（就地删 Map 项）则
-由摘要用例抓住。**这条观察本身就是本设计的风险画像**：本 change 引入的新风险面只有
-「索引被污染」与「索引与输入不同源」两个，判据面与变异面**一一对应**。
+| # | 变异（单点替换的 `to` 片段；`// MUTANT` 为标记） | 落点 | 结果 |
+|---|---|---|---|
+| **M1** | 在 `this._playerAnchors = index.playerAnchors;` 后插 `if (this._players.length) this._playerAnchors.delete(this._players[0].id); // MUTANT` | `viewer/game.js` | **红 1 条**：「静态索引……逐字节未被改写」。**为什么是 1 条而不是 2 条**：构造函数是两条路径共用的同一段代码，删锚点对「逐窗重建」路径同样生效（它每次只有一窗的生命周期）⇒ 两条路径的观测仍等价，只有「共享索引被改写」这件事本身被摘要看见 |
+| **M2** | `if (index.events !== events \|\| index.lineup !== lineup \|\| index.mode !== this.mode) {` → `if (index.mode !== this.mode) { // MUTANT` | `viewer/game.js` | **红 1 条**：「索引缓存失效条件……报错」 |
+| **M3** | 在 `this._eventEnds = index.eventEnds;` 后插 `for (let i = 0; i < this._eventEnds.length; i += 2) this._eventEnds[i] += 0.5; // MUTANT` | `viewer/game.js` | **红 2 条**：逐窗逐位一致 + 索引未被改写。**这是唯一一条能同时打红「逐窗一致」的**——它是**就地累加**：共享索引上跨窗累积，而逐窗重建每次拿到的是只活一窗的新数组 |
+| **M4** | 把 `const game = new Game(events, lineup, 'continuous', { index });` 从循环内提到循环外（`game.seekTo(t)` 照旧） | `spacing-sweep-core.mjs` | **绿（存活）** —— 见 §D5：该变异在生产窗口区间**行为等价**，是**真等价变异**，不是判据盲区 |
+| **M5** | `const index = buildIndex(events, lineup, 'continuous');` → `buildIndex(events, lineup.map((p) => ({ ...p })), 'continuous'); // MUTANT` | `spacing-sweep-core.mjs` | **红 6 条**（逐窗一致、并发==串行、detector 接线、`runSweep` 三条编排）——缓存与输入不同源时 **fail-loud** |
+| **M6** | `const game = new Game(events, lineup, 'continuous', { index });` → `new Game(events, lineup, 'continuous'); // MUTANT`（**把优化整个摘掉**） | `spacing-sweep-core.mjs` | **红 1 条**（逐窗一致用例里的注入守卫）。⚠️ **这条是本 change 第一版审阅实测「20/20 全绿」的存活变异**（审阅 P1-1）——第一版套件的等价判据对「优化被摘掉」不可观测（摘掉后两条路径仍等价）。修法是加 `buildIndex` 注入点 + 篡改式接线断言 |
+| **M7** | 在窗口循环内再插一行 `const idx2 = buildIndex(events, lineup, 'continuous'); // MUTANT` 并改用它 | `spacing-sweep-core.mjs` | **红 1 条**（注入守卫的「每 seed 恰好 1 次」断言 → 实测 2158 次）——缓存退化成每窗重建时变红 |
 
-还原校验：两轮变异跑完 `diff` 与备份相同、无 `MUTANT` 残留。
+**为什么 M1 只红「摘要」、M3 才能红「逐窗一致」**：构造函数是两条路径共用的同一段代码，故绝大多数
+变异是**对称**的（两条路径同时坏 ⇒ 逐窗比对看不出来）。能被「缓存 vs 重建」抓住的，只可能是
+**利用了索引被跨窗共享**这件事的变异（M3 的累加）。**这条观察就是本设计的风险画像**：本 change
+引入的新风险面只有三个——「索引被污染」（M1/M3）、「索引与输入不同源」（M5）、「优化被悄悄摘掉」
+（M6/M7）——判据面与变异面**一一对应**，且 M6 的存活是**第一版漏掉的那一面**。
+
+**还原校验**：脚本对每个变异立即还原并在末尾逐文件比对字节，输出「逐字节相同 ✅」；工作树无
+`MUTANT` 残留（`grep -rn MUTANT` 为空）。
 
 ### 覆盖边界（如实写，勿当全覆盖）
 
-- 真实 wasm 的逐窗等价用例**调粗了 `STEP`**（250s）——`DUR` 与事件流/索引规模是 production 的
-  （构造成本、105,411 个锚点都是真的），少的只是**抽样窗口数**（2157 → 22）。它守的是
-  「两条路径的观测等价」，而「全部 2157 窗」由 §D6 的人工全量对照 + 摘要用例（覆盖全窗口）覆盖。
+- 真实 wasm 的**逐窗等价用例**调粗了 `STEP`（250s）——`DUR` 与事件流/索引规模是 production 的
+  （构造成本、105,411 个锚点都是真的），少的只是**抽样窗口数**（2157 → 22）。
 - **时域局部的索引污染**在粗 `STEP` 下可能**不落在抽样窗口内**（例如只污染某一个锚点，
-  其影响区间只有 ~0.5s）⇒ 逐窗用例可能漏。这条由**摘要用例**兜底（它对污染不挑时刻），
-  但**摘要用例自己不检查行为**，只检查「索引有没有变」——两者互补，缺一不可。
+  其影响区间只有 ~0.5s）⇒ 逐窗等价用例可能漏。兜底的是**摘要用例**——它对污染不挑时刻；
+  而摘要用例的**构造/`seekTo`/`step` 部分已覆盖全部 2157 窗**（生产密度，成本 ~0.2 ms/窗），
+  只有**采集 + detector 管线**部分是 22 窗抽样（全窗 ≈ 26 s，不进 CI 预算）。
+  ⚠️ **第一版这里写的是「摘要用例覆盖全部窗口」，而代码用的是 step=250（22 窗）——声明与断言
+  体不符**（#154 审阅 P1-2 实测：被兜底者与兜底者抽样完全相同 ⇒ 兜底**不存在**）。现已把构造层
+  改成真全窗，管线层如实标注为抽样。
+- 摘要用例**自己不检查行为**，只检查「索引有没有变」——与逐窗等价用例互补，缺一不可。
+- **「生产路径真的在用缓存索引」不能靠等价性证明**（等价性对它不可观测，见 M6），只能靠**注入**：
+  本套件用 `buildIndex` 注入点 + 篡改式接线断言。审阅者另指出：任何**未来**新增的、绕过
+  `runSeed` 直接构造 `Game` 的加速路径不受本套件保护——本 change 未新增这类路径。
 - 单测**不**证明多线程/worker 下的行为（本 change 未触及并发路径；#152 的并发==串行用例仍在跑）。
 - 缺 `viewer/engine.wasm` 时，真实 wasm 用例**显式 skip**（CI 里 `verify.sh` 第 4 步会先挡住缺产物）；
-  `viewer/game.test.js` 的 3 条是合成的、**恒跑**。
+  `viewer/game.test.js` 的 4 条是合成的、**恒跑**。
+
+### 新增用例的 CI 成本（如实记，本仓有「CI 预算债」前科）
+
+`tools/spacing-sweep.test.mjs` 从 16 条 / 16 例 → **20 条**；改后整文件在本机（load ≈ 4）
+**≈ 18–21 s**（其中 #154 的 4 条 ≈ 12 s）。相对本 change 在 step 5 上省下的 7–10 分钟，这笔账是划算的；
+`viewer/game.test.js` 的新用例是纯合成的（毫秒级）。
 
 ## D8 现场记录
 
-- 探针 `tools/zz-profile-sweep.mjs` 与全量对照脚本为一次性工具，读数固化到 §D1/§D5/§D6 后**删除**
-  （本仓「探针用完即删」纪律）。
+- 探针 `tools/zz-profile-sweep.mjs` 与全量对照脚本为一次性工具，读数固化到 §D1/§D5/§D6 后
+  **删除**（本仓「探针用完即删」纪律；`git rm` 见提交历史）。全量对照脚本落在 `/tmp`，未入库。
+- **隐式 API 变更（如实记）**：`Game.prototype._buildAnchorIndex` / `_computeEventEnds` 两个方法
+  被删除，其函数体移入模块级 `buildGameIndex` / `computeEventEnds`。全仓（含 `openspec/`）grep
+  过：除本 change 那个已删的探针外**无** monkey-patcher 依赖这两个 prototype 方法。被删探针当时
+  在 `Game.prototype` 上包装它们，删除后包装成空壳（打印 0）——那是探针的一次性问题，随探针一起消失。
+- **构造函数的字段赋值顺序变了**（`_eventEnds` / `_matchEnd` 现在先于 `sentOffAt` / `_clipIndex`
+  赋值；独立审阅者逐条核过无语义差异：被前移的三段都不读 `sentOffAt` / `_clipIndex`，
+  `_buildHighlightIndex` 仍在 `_eventEnds` 之后、`_initToEvent(0)` 仍在最后）。**记在这里，
+  免得日后的 diff 把它误判为可疑改动。**
 - 本 worktree 的 `viewer/engine.wasm` 由**本 worktree 源码**构建（未拷旧实验产物），
   且不入库（`.gitignore`）。
 - **未纳入本 change 的同类站点**（如实记，避免「已全面加速」的误读）：
   `tools/fixtures/generate-real-audit-fixture.mjs:101` 也逐窗 `new Game(...)`。它是手工运行的
   夹具生成器（约 10 窗），**不在 CI 关键路径**上，故不动它（动了是无关风险的扩散）。
+- **本 worktree 的 `node_modules` 是入库的自指 symlink**（指向主仓库的 `node_modules`，而后者
+  本身断成自指环）。为本地跑 `app.test.js`（jsdom）曾在本 worktree 临时 `npm ci` 出真实目录，
+  用完已还原 symlink（见提交前自查）。CI 走 `npm ci`，不受影响。

@@ -582,17 +582,23 @@ test('micro-motion 抑制：犯规窗口内仍能取到参与者（foul 不产 b
 // 逐窗重建整场锚点索引是整场滑窗扫描逐窗成本的主体（91.5%，见
 // `openspec/changes/p154-game-index-cache/design.md` §D1），故把它抽成可复用的纯计算结果。
 // 这里钉死的是：**复用索引构造出的 Game 与每次重建构造出的 Game 完全一致**——包括
-// `_interpolateAnchors` 返回 null 时回落 lineup 站位的那条分支（#152 记为「复用实例的行为差异」；
-// 本 change 不复用实例、只复用索引，故那条分支逐位保持）。
+// `_interpolateAnchors` 返回 null（该实体此刻无锚点）时回落初始站位的那条分支（#152 记为
+// 「复用实例的行为差异」；本 change 不复用实例、只复用索引，故那条分支逐位保持）。
+// ⚠️ 该分支在**真实事件流**里于窗口区间不可达（§D5 实测：引擎在 lineup/kickoff 就为每个球员
+// 发了锚点），故 fixture 里**刻意放一个「在 `game.lineup` 里、但不在 `lineup` 事件的 `players`
+// 里」的球员（id 7）**——锚点由 `lineup` 事件的 `players` 产生（`interpretation.js` 的 `lineup`
+// 分支），故他会插值返回 null。否则「本用例覆盖了这条分支」就是一句空话
+// （#154 审阅 P2-7 实测：旧 fixture 在 12 个时刻上 null 命中 0 次）。
 function indexFixture() {
   const lineup = [
     { id: 0, team: 'home', x: 0.02, y: 0.5 },
     { id: 5, team: 'home', x: 0.5, y: 0.5 },
+    { id: 7, team: 'home', x: 0.3, y: 0.62 }, // 刻意：无任何锚点 → 插值返回 null
     { id: 9, team: 'home', x: 0.4, y: 0.5 },
     { id: 15, team: 'away', x: 0.6, y: 0.5 },
   ];
   const events = [
-    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup },
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup.filter((p) => p.id !== 7) },
     { t: 0, type: 'kickoff', subject: 5, x: 0.5, y: 0.5 },
     { t: 5, type: 'pass', subject: 5, from: 5, to: 9, x: 0.5, y: 0.5, x2: 0.4, y2: 0.5, speed: 10, result: 'success' },
     { t: 5, type: 'beat', movers: [{ id: 15, from_x: 0.6, from_y: 0.5, to_x: 0.62, to_y: 0.55, speed: 4, action: 'run' }] },
@@ -625,6 +631,11 @@ function snapshotOf(g) {
 test('#154 复用静态索引 == 每窗重建：构造态、seekTo、step 序列逐位一致', () => {
   const { events, lineup } = indexFixture();
   const index = buildGameIndex(events, lineup, 'continuous');
+  // 前提自证（防空转）：fixture 里那个无锚点球员**在窗口区间真的会让插值返回 null**——
+  // 否则「覆盖了回落分支」这句话没有断言支撑（#154 审阅 P2-7）。
+  const probe = new Game(events, lineup, 'continuous');
+  probe.seekTo(20);
+  assert.equal(probe._interpolateAnchors('player', 20, 7), null, 'fixture 必须让 id=7 的插值返回 null');
   // 构造态
   assert.equal(
     snapshotOf(new Game(events, lineup, 'continuous', { index })),
@@ -653,22 +664,57 @@ test('#154 复用静态索引 == 每窗重建：构造态、seekTo、step 序列
   }
 });
 
+// 索引摘要。`playerAnchors` / `playerBounds` 是 **Map**，而 `JSON.stringify` 把 Map 序列化成
+// `{}` —— 裸 `{ ...index }` 摘要对「分组被就地改写 / 组内锚点被删」这一整类污染**完全看不见**
+// （#154 审阅 P2-3 实测三类全盲）。故摘要**显式展开 Map**。与 `tools/spacing-sweep.test.mjs`
+// 的 `digestIndex` 同口径（那边由一条反证条用例自证区分度；这边由下面那条反证条自证）。
+function digestIndexForTest(index) {
+  const entries = (m) => [...m].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  return JSON.stringify({
+    mode: index.mode,
+    timeline: index.timeline,
+    ballAnchors: index.ballAnchors,
+    playerAnchors: entries(index.playerAnchors),
+    ballBounds: index.ballBounds,
+    playerBounds: entries(index.playerBounds),
+    eventEnds: index.eventEnds,
+    matchEnd: index.matchEnd,
+  });
+}
+
+test('#154 索引摘要反证条：对「分组 Map 被改写 / 组内锚点被删 / 锚点被改」都有区分度', () => {
+  const { events, lineup } = indexFixture();
+  const base = buildGameIndex(events, lineup, 'continuous');
+  const d = digestIndexForTest(base);
+  assert.equal(digestIndexForTest(buildGameIndex(events, lineup, 'continuous')), d, '自反：同输入必须判相同');
+  const dropped = new Map(base.playerAnchors);
+  dropped.delete(5);
+  assert.notEqual(digestIndexForTest({ ...base, playerAnchors: dropped }), d, '分组 Map 整组被删必须判不同');
+  const shrunk = new Map(base.playerAnchors);
+  shrunk.set(5, shrunk.get(5).slice(0, -1));
+  assert.notEqual(digestIndexForTest({ ...base, playerAnchors: shrunk }), d, '组内锚点被删必须判不同');
+  assert.notEqual(
+    digestIndexForTest({ ...base, timeline: base.timeline.map((a, i) => (i === 0 ? { ...a, x: a.x + 0.01 } : a)) }),
+    d,
+    '锚点被改必须判不同'
+  );
+  const ends = base.eventEnds.slice();
+  ends[0] = (ends[0] ?? 0) + 1;
+  assert.notEqual(digestIndexForTest({ ...base, eventEnds: ends }), d, '结束时刻被改必须判不同');
+});
+
 test('#154 索引复用不改变外部输入：构造多窗不修改 events / lineup / 索引本身', () => {
   const { events, lineup } = indexFixture();
   const before = JSON.stringify({ events, lineup });
   const index = buildGameIndex(events, lineup, 'continuous');
-  const indexDigest = JSON.stringify({ ...index, events: null, lineup: null });
+  const indexDigest = digestIndexForTest(index);
   for (let i = 0; i < 5; i++) {
     const g = new Game(events, lineup, 'continuous', { index });
     g.seekTo(5 + i * 5);
     g.step(0.1);
   }
   assert.equal(JSON.stringify({ events, lineup }), before, '构造/推进不得改写传入的 events / lineup');
-  assert.equal(
-    JSON.stringify({ ...index, events: null, lineup: null }),
-    indexDigest,
-    '构造/推进不得改写被复用的静态索引'
-  );
+  assert.equal(digestIndexForTest(index), indexDigest, '构造/推进不得改写被复用的静态索引');
 });
 
 test('#154 索引复用必须同源：换了事件流/站位/模式 → 报错（不静默用错）', () => {

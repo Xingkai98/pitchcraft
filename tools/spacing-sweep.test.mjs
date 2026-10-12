@@ -256,9 +256,9 @@ test('runSweep：引擎产物缺失/不可读 → 退出码 2（不是 1、更�
   assert.equal(out.lines.length, 0, '此路径不得有 stdout 输出');
 });
 
-test('detect 注入 + 并发 > 1 必须**报错**（不得静默忽略注入）', async () => {
-  // 函数无法跨 worker 传递 ⇒ 并发路径恒用生产 detector。若静默忽略，测试会「以为在测注入
-  // 的检测器、其实没测」——这类静默失效正是本仓反复出现的一类缺陷，故 fail-loud。
+test('detect / buildIndex 注入 + 并发 > 1 必须**报错**（不得静默忽略注入）', async () => {
+  // 函数无法跨 worker 传递 ⇒ 并发路径恒用生产 detector / 生产索引构造。若静默忽略，测试会
+  // 「以为在测注入的实现、其实没测」——这类静默失效正是本仓反复出现的一类缺陷，故 fail-loud。
   await assert.rejects(
     runSweep({
       seeds: [42],
@@ -269,7 +269,19 @@ test('detect 注入 + 并发 > 1 必须**报错**（不得静默忽略注入）'
       log: () => {},
       logError: () => {},
     }),
-    /detect 注入只支持串行路径/
+    /注入只支持串行路径/
+  );
+  await assert.rejects(
+    runSweep({
+      seeds: [42],
+      concurrency: 2,
+      dur: 60,
+      step: 30,
+      buildIndex: () => ({}),
+      log: () => {},
+      logError: () => {},
+    }),
+    /注入只支持串行路径/
   );
 });
 
@@ -300,12 +312,19 @@ test('CLI：非法 SWEEP_CONCURRENCY 直接报错退出 2（不静默回落成�
 // 为什么判据必须落到**每窗**：默认 8 个 seed 的 finding 恒 0（这正是门能绿的原因），任何只看
 // 「findings / worst」汇总的判据在这个 change 上**恒真**、没有区分度（#152 审阅 P2-1 的同类教训：
 // 判据空转）。故本组用例：
-//   ① 用 `detect` 注入点（#152 已有的测试钩子，非本 change 新增）把**每窗 detector 的实际输入**
-//      （`bundle.audit_input.players`：米制、含 ±5s 内 0.2s 采样的整窗快照与派生特征）逐窗收集成
-//      签名序列，与**逐窗重建**的参照实现逐位比；
-//   ② 同时比 detector 的输出（`findings` / `worst`）；
-//   ③ 另有一条**结构性**用例覆盖「全部窗口」而非抽样的窗口：`buildGameIndex` 是确定性纯函数、
+//   ① 逐窗比 `captureObservation` 的**整包**（逐窗重建的参照实现 vs 复用索引的被测实现）；
+//   ② 用 `detect` 注入点（#152 已有的测试钩子，非本 change 新增）把**生产路径 `runSeed`** 每窗
+//      喂给 detector 的**输入**（`bundle.audit_input.players`：米制、含 ±5s 内 0.2s 采样的整窗
+//      快照与派生特征）与输出逐窗抄下来，和参照实现逐位比 ——**比输入而不是只比输出**：
+//      本 seed 集下 finding 恒为空，只比输出会恒真；
+//   ②b **注入守卫**：上面的等价判据对「优化被整个摘掉」**不可观测**（摘掉后两条路径仍然等价），
+//      故必须用 `buildIndex` 注入点正面断言「每 seed **恰好**构造一次」+「注入的索引**真的**被
+//      构造消费」（把一个会被观测到的字段改坏，观测必须随之与重建路径不同）；
+//   ③ 再钉住 detector 输出的汇总口径（`findings` / `worst`）；
+//   ④ 另有一条**结构性**用例覆盖「全部窗口」而非抽样的窗口：`buildGameIndex` 是确定性纯函数、
 //      且整轮扫描后索引逐字节未被改写——这是「两条路径在**每一个**窗口上都相等」的根据。
+//      抽象地说：构造函数是两条路径**共用的同一段代码**，故只有当**共享索引本身**被污染时
+//      两条路径才可能分岔；结构性用例正面守的就是这一点。
 //
 // 覆盖边界（如实写）：真实 wasm 用例沿用 #152 的口径——`DUR` 与事件流是 production 规模
 // （`Game` 构造成本、索引规模都是真的），把 `STEP` 调粗以少跑几窗（2157 → 22）。**全 8 seed ×
@@ -320,15 +339,17 @@ test('缓存索引 == 逐窗重建（真实 wasm，逐窗逐位一致）：captu
     const { events, lineup } = simulateEvents({ wasm, seed, dur });
     const index = buildGameIndex(events, lineup, 'continuous');
 
-    const refBundles = []; // 逐窗重建（本 change 之前的行为）
-    const refSigs = []; // 生产路径（runSeed，复用索引）里 detector 实际收到的输入
+    const refBundles = []; // 逐窗重建（本 change 之前的行为）：整包 + detector 的输入/输出
+    const refInputs = [];
+    const refFindings = [];
     const cachedBundles = [];
     for (let t = 5; t <= dur - 5; t += step) {
       const rebuilt = new Game(events, lineup, 'continuous'); // 对照：无索引 → 每次重建
       rebuilt.seekTo(t);
       const refBundle = observe(rebuilt, seed, dur);
       refBundles.push(JSON.stringify(refBundle));
-      refSigs.push(JSON.stringify(detectPlayerOverlap(refBundle.audit_input.players, DEFAULT_AUDIT_PROFILE)));
+      refInputs.push(JSON.stringify(refBundle.audit_input.players));
+      refFindings.push(JSON.stringify(detectPlayerOverlap(refBundle.audit_input.players, DEFAULT_AUDIT_PROFILE)));
 
       const cached = new Game(events, lineup, 'continuous', { index }); // 被测：复用静态索引
       cached.seekTo(t);
@@ -337,14 +358,17 @@ test('缓存索引 == 逐窗重建（真实 wasm，逐窗逐位一致）：captu
 
     // ① captureObservation 的**整包**（含 audit_input、viewer_snapshot、窗口事件、lineup）逐位相同
     assert.deepEqual(cachedBundles, refBundles, `seed ${seed}：逐窗观测包必须逐位相同`);
-    // 反证条（防空转）：判据必须**分得开不同的窗口**——否则「逐窗相同」可能只是因为签名
-    // 跨窗恒等（签名写得太平，任何两条路径都比得绿）。相邻两窗的观测包必须不同。
+    // 反证条（防空转）：判据必须**分得开不同的窗口**——否则「逐窗相同」可能只是签名跨窗恒等
+    // （签名写得太平，任何两条路径都比得绿）。相邻两窗的观测包与 detector 输入都必须不同。
     assert.notEqual(refBundles[0], refBundles[1], '相邻窗口的观测包必须不同（判据不得跨窗恒等）');
+    assert.notEqual(refInputs[0], refInputs[1], '相邻窗口的 detector 输入必须不同（判据不得跨窗恒等）');
 
-    // ② 生产路径 `runSeed` 真的在用缓存索引，且每窗喂给 detector 的快照与参照实现逐位相同。
-    //    用注入的 `detect` 抄一份输入——注入点不改调用契约（每窗一次、传本窗快照、用生产 profile），
-    //    故这里测的仍是**真实生产循环**，而不是测试里另写一遍的循环。
-    const liveSigs = [];
+    // ② **生产路径** `runSeed` 真的在用缓存索引，且每窗喂给 detector 的快照与逐窗重建逐位相同。
+    //    用注入的 `detect` 抄一份**输入**——注入点不改调用契约（每窗一次、传本窗快照、用生产
+    //    profile），故这里测的仍是真实生产循环，而不是测试里另写一遍的循环。
+    //    比**输入**而不是只比 finding：本 seed 集下 finding 恒为空（`[]`），只比输出会**恒真**。
+    const liveInputs = [];
+    const liveFindings = [];
     const seenProfiles = [];
     const result = runSeed({
       wasm,
@@ -352,16 +376,59 @@ test('缓存索引 == 逐窗重建（真实 wasm，逐窗逐位一致）：captu
       dur,
       step,
       detect: (players, profile) => {
-        liveSigs.push(JSON.stringify(detectPlayerOverlap(players, profile)));
+        liveInputs.push(JSON.stringify(players));
+        const f = detectPlayerOverlap(players, profile);
+        liveFindings.push(JSON.stringify(f));
         seenProfiles.push(profile);
-        return detectPlayerOverlap(players, profile);
+        return f;
       },
     });
-    assert.deepEqual(liveSigs, refSigs, `seed ${seed}：生产路径每窗 detector 输出必须与逐窗重建一致`);
+    assert.deepEqual(liveInputs, refInputs, `seed ${seed}：生产路径每窗 detector 输入必须与逐窗重建一致`);
+    assert.deepEqual(liveFindings, refFindings, `seed ${seed}：生产路径每窗 detector 输出必须与逐窗重建一致`);
     assert.ok(seenProfiles.every((p) => p === DEFAULT_AUDIT_PROFILE), 'detector 必须每窗收到生产 profile');
     assert.equal(result.windows, refBundles.length, `seed ${seed}：窗口数一致`);
-    // ③ detector 输出经生产路径汇总后一致（finding 集合/顺序/min_distance 已由 ②逐窗比过）
-    const refFind = refSigs.flatMap((s) => JSON.parse(s));
+
+    // ②b **注入守卫**——「生产路径真的在用这份缓存索引」只能靠注入来判：等价判据本身对
+    //     「优化被整个摘掉」不可观测（摘掉后两条路径仍然等价，断言照样绿）。
+    //     (i) 索引**每 seed 恰好构造一次**（把它挪回窗口循环里 → 这里会变成 2157）；
+    let indexCalls = 0;
+    runSeed({
+      wasm,
+      seed,
+      dur,
+      step,
+      detect: () => [],
+      buildIndex: (ev, lu, m) => {
+        indexCalls += 1;
+        return buildGameIndex(ev, lu, m);
+      },
+    });
+    assert.equal(indexCalls, 1, `seed ${seed}：静态索引每 seed 只应构造一次（实测 ${indexCalls} 次）`);
+    //     (ii) 注入的索引**真的被构造消费**：把索引的**时间线掏空**——detector 的输入
+    //     （`audit_input.players`）由 `deriveAuditInput` 从 `game.timeline` 推出来，掏空后
+    //     逐窗输入必须与「逐窗重建」**不同**。若 `runSeed` 丢了 `{ index }`，篡改对观测毫无
+    //     影响 ⇒ 输入与重建一致 ⇒ 本断言变红。（先试过改 `playerBounds`：那条**改了也没用**
+    //     ——audit 通路用自己从 `timeline` 分组的锚点，不看 `_playerBounds`。判据必须落在
+    //     「改了就一定看得见」的字段上，否则这条守卫自己会空转。）
+    const tamperedInputs = [];
+    runSeed({
+      wasm,
+      seed,
+      dur,
+      step,
+      detect: (players) => {
+        tamperedInputs.push(JSON.stringify(players));
+        return [];
+      },
+      buildIndex: (ev, lu, m) => ({ ...buildGameIndex(ev, lu, m), timeline: [] }),
+    });
+    assert.notDeepEqual(
+      tamperedInputs,
+      refInputs,
+      `seed ${seed}：注入的索引必须真的被构造消费（否则「优化被摘掉」在本套件里不可观测）`
+    );
+    // ③ detector 输出经生产路径汇总后一致（逐窗序列已由 ② 比过，这里钉住汇总口径）
+    const refFind = refFindings.flatMap((s) => JSON.parse(s));
     assert.equal(result.findings, refFind.length, `seed ${seed}：finding 数一致`);
     assert.equal(
       result.worst,
@@ -386,7 +453,6 @@ function observe(game, seed, dur) {
 
 test('静态索引是确定性纯函数，且整轮扫描后逐字节未被改写（真实 wasm）', { skip: !existsSync(WASM_PATH) && '缺 viewer/engine.wasm（先构建）' }, async () => {
   const dur = DEFAULT_DUR;
-  const step = 250;
   const wasm = await instantiateWasm(WASM_PATH);
   const { events, lineup } = simulateEvents({ wasm, seed: 42, dur });
 
@@ -395,17 +461,35 @@ test('静态索引是确定性纯函数，且整轮扫描后逐字节未被改�
   const again = buildGameIndex(events, lineup, 'continuous');
   assert.equal(digestIndex(index), digestIndex(again), 'buildGameIndex 必须是确定性纯函数');
 
-  // 不被改写：整轮扫描（每窗构造 + seekTo + 采集 + detect）之后，索引仍逐字节相同。
-  // 这条是「逐窗比对的抽样窗口」推广到**全部窗口**的根据——若 `Game` 在某类窗口上改写了共享
-  // 索引，后续窗口就会用被污染的数据，而缓存路径与重建路径的分歧会随窗口累积。
   const before = digestIndex(index);
-  for (let t = 5; t <= dur - 5; t += step) {
+
+  // ① **全部 2157 窗**（生产 `STEP=2.5`）：每窗构造 + `seekTo` + 推进。
+  //    这一层是「共享索引被构造/插值路径改写」的正面守卫，且**不抽样**（成本 ~0.2 ms/窗，
+  //    与上面那条逐窗等价用例的抽样窗口无关）。#154 审阅 P1-2 指出：原先这里也用 step=250，
+  //    于是 design 里「摘要用例覆盖全部窗口」这句话是**假的**（实为 22/2157 = 1.0%）。
+  let fullWindows = 0;
+  for (let t = 5; t <= dur - 5; t += DEFAULT_STEP) {
+    const game = new Game(events, lineup, 'continuous', { index });
+    game.seekTo(t);
+    game.playing = true;
+    game.step(0.05); // 让 _updateFromTimeline 再走一遍
+    fullWindows += 1;
+  }
+  assert.equal(fullWindows, 2157, '全窗对照的窗口数必须等于生产密度下的窗口数（2157）');
+  assert.equal(digestIndex(index), before, '全部 2157 窗的构造/seekTo/step 之后索引仍须逐字节相同');
+
+  // ② **采集 + detector 管线**：抽样窗口（每窗 ≈ 12 ms，全覆盖要 ~26 s —— 本条不进 CI 预算；
+  //    全窗的管线对照见 design §D6 的人工全量 run，以及审阅者独立跑的 2157 窗深摘要）。
+  let sampled = 0;
+  for (let t = 5; t <= dur - 5; t += 250) {
     const game = new Game(events, lineup, 'continuous', { index });
     game.seekTo(t);
     const bundle = observe(game, 42, dur);
     detectPlayerOverlap(bundle.audit_input.players, DEFAULT_AUDIT_PROFILE);
+    sampled += 1;
   }
-  assert.equal(digestIndex(index), before, '整轮扫描不得改写被复用的静态索引');
+  assert.equal(sampled, 22, '抽样窗口数（步长 250s）应为 22');
+  assert.equal(digestIndex(index), before, '采集 + detector 管线（抽样窗口）之后索引仍须逐字节相同');
 });
 
 // 索引摘要。**Map 必须显式展开**：`JSON.stringify` 把 Map 序列化成 `{}`，直接用它会漏掉
