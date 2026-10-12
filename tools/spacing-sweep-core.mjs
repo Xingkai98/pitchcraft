@@ -18,7 +18,7 @@ import { Worker } from 'node:worker_threads';
 
 import { config } from '../viewer/config.js';
 import { parseEventStream } from '../viewer/protocol.js';
-import { Game } from '../viewer/game.js';
+import { Game, buildGameIndex } from '../viewer/game.js';
 import { captureObservation } from '../viewer/observation.js';
 import { DEFAULT_AUDIT_PROFILE, detectPlayerOverlap } from './detectors.mjs';
 
@@ -73,14 +73,11 @@ export async function instantiateWasm(wasmPath = WASM_PATH) {
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
-// 单 seed 整场滑窗扫描。**这是并发与串行共用的唯一实现**——改动它同时改动两条路径。
-// 注意：wasm 实例（含线性内存与模块全局）本就**无法跨线程共享**，故每个执行单元各自实例化；
-// 同一实例内**顺序**跑多个 seed 是安全的（原脚本即如此，且引擎跨调用无残留状态——见 design §D2）。
-//
-// `detect` 是**测试注入点**（默认生产 detector）：没有它，「detector 被摘掉 / profile 被换掉 /
-// findings>0 分支从不执行」这类变异会**静默存活**（#152 审阅 P1-1 实测 M6/M9 全绿）。函数无法
-// 跨 worker 传递，故它只在**进程内**（串行）路径生效——`runSweep` 对并发 + 非默认 detect 会报错。
-export function runSeed({ wasm, seed, dur = DEFAULT_DUR, step = DEFAULT_STEP, detect = detectPlayerOverlap }) {
+// 跑一次 wasm `simulate` 并把事件流解析成 `{events, lineup}`。
+// 抽出来（#154）是为了让**同一份事件流**既能喂给生产路径（`runSeed`），也能喂给等价守卫
+// （`spacing-sweep.test.mjs` 的「缓存索引 vs 逐窗重建」用例）——否则守卫得自己复制一遍
+// 这段 wasm 交互，两边就可能悄悄漂移。
+export function simulateEvents({ wasm, seed, dur = DEFAULT_DUR }) {
   const cfgBytes = encoder.encode(JSON.stringify({ match_duration_seconds: dur }));
   new Uint8Array(wasm.memory.buffer, SCRATCH, cfgBytes.length).set(cfgBytes);
   wasm.simulate(BigInt(seed), SCRATCH, cfgBytes.length);
@@ -88,13 +85,47 @@ export function runSeed({ wasm, seed, dur = DEFAULT_DUR, step = DEFAULT_STEP, de
     decoder.decode(new Uint8Array(wasm.memory.buffer, wasm.get_json_ptr(), wasm.get_json_length()))
   );
   wasm.free_json();
-  const { events, lineup } = parseEventStream(raw);
+  return parseEventStream(raw);
+}
 
+// 单 seed 整场滑窗扫描。**这是并发与串行共用的唯一实现**——改动它同时改动两条路径。
+// 注意：wasm 实例（含线性内存与模块全局）本就**无法跨线程共享**，故每个执行单元各自实例化；
+// 同一实例内**顺序**跑多个 seed 是安全的（原脚本即如此，且引擎跨调用无残留状态——见 design §D2）。
+//
+// `detect` 与 `buildIndex` 是**测试注入点**（默认分别为生产 detector 与生产索引构造）：
+//
+// - `detect`：没有它，「detector 被摘掉 / profile 被换掉 / findings>0 分支从不执行」这类变异会
+//   **静默存活**（#152 审阅 P1-1 实测 M6/M9 全绿）。
+// - `buildIndex`（#154）：本 change 的**唯一交付物**就是「索引只算一次」。而「缓存路径与逐窗重建
+//   等价」这条判据对「优化被整个摘掉」**不可观测**——摘掉之后两条路径仍然等价，判据照样绿
+//   （#154 审阅 P1-1 实测：删掉下面 `{ index }` 后 20/20 全绿）。故索引构造必须可注入，
+//   守卫才能断言「每 seed **恰好**构造一次」且「注入的索引**真的**被构造消费」。
+//
+// 函数无法跨 worker 传递，故两个注入点都只在**进程内**（串行）路径生效——`runSweep` 对
+// 并发 + 非默认注入会**报错**（不静默忽略）。
+export function runSeed({
+  wasm,
+  seed,
+  dur = DEFAULT_DUR,
+  step = DEFAULT_STEP,
+  detect = detectPlayerOverlap,
+  buildIndex = buildGameIndex,
+}) {
+  const { events, lineup } = simulateEvents({ wasm, seed, dur });
+
+  // **静态索引只算一次**（#154）：`buildGameIndex` 的结果（整场锚点时间线 + 按实体分组的
+  // 时间索引 + 每事件结束时刻）只依赖 (events, lineup, mode) **与建索引时刻的 config 常量**
+  // （见 viewer/game.js 的 `buildGameIndex` 注释与 design §D3），与窗时刻 `t` 无关。本扫描的
+  // 事件流/站位逐窗不变，而这块占逐窗成本的 91.5%（§D1）——每窗重建它是纯重复劳动。
+  // 逐窗仍**新建** `Game` 对象（只复用索引）：可变状态（`_players`/`ball`/`playTime`）由构造
+  // 函数照常初始化，故不存在「复用实例」的语义分歧（`_interpolateAnchors` 返回 `null` 时
+  // 回落 lineup 站位的行为逐位保持）。等价性由 §D7 的守卫用例钉住。
+  const index = buildIndex(events, lineup, 'continuous');
   let findings = 0;
   let worst = Infinity;
   let windows = 0;
   for (let t = 5; t <= dur - 5; t += step) {
-    const game = new Game(events, lineup, 'continuous');
+    const game = new Game(events, lineup, 'continuous', { index });
     game.seekTo(t);
     const bundle = captureObservation({
       game,
@@ -143,9 +174,10 @@ export async function runSerial({
   step = DEFAULT_STEP,
   wasmPath = WASM_PATH,
   detect = detectPlayerOverlap,
+  buildIndex = buildGameIndex,
 }) {
   const wasm = await instantiateWasm(wasmPath);
-  return seeds.map((seed) => runSeed({ wasm, seed, dur, step, detect }));
+  return seeds.map((seed) => runSeed({ wasm, seed, dur, step, detect, buildIndex }));
 }
 
 // 一个 worker 的客户端：请求/响应一次一条，由 `runConcurrent` 的空闲表保证不重入。
@@ -265,6 +297,7 @@ export async function runSweep({
   step = DEFAULT_STEP,
   wasmPath = WASM_PATH,
   detect = detectPlayerOverlap,
+  buildIndex = buildGameIndex,
   log = console.log,
   logError = console.error,
 }) {
@@ -279,14 +312,16 @@ export async function runSweep({
     );
     return 2;
   }
-  if (concurrency > 1 && detect !== detectPlayerOverlap) {
-    throw new Error('detect 注入只支持串行路径：函数无法跨 worker 传递（并发路径恒用生产 detector）');
+  if (concurrency > 1 && (detect !== detectPlayerOverlap || buildIndex !== buildGameIndex)) {
+    throw new Error(
+      'detect / buildIndex 注入只支持串行路径：函数无法跨 worker 传递（并发路径恒用生产实现）'
+    );
   }
   let results;
   try {
     results =
       concurrency === 1
-        ? await runSerial({ seeds, dur, step, wasmPath, detect })
+        ? await runSerial({ seeds, dur, step, wasmPath, detect, buildIndex })
         : await runConcurrent({ seeds, concurrency, dur, step, wasmPath });
   } catch (err) {
     // worker 崩溃 / 实例化失败：**必须**非零退出，绝不能静默当成「门通过」。

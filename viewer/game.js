@@ -30,6 +30,77 @@ function eventBoundaryFlags(arr) {
   };
 }
 
+// 每个事件的结束时间：该事件所有锚点里最大的 t（无锚点则回落事件自身的 t）。
+function computeEventEnds(events, timeline) {
+  const ends = new Array(events.length);
+  // 按 evt 索引收集每个事件的最大锚点 t
+  const maxByEvt = new Map();
+  for (const a of timeline) {
+    const cur = maxByEvt.get(a.evt) ?? -Infinity;
+    if (a.t > cur) maxByEvt.set(a.evt, a.t);
+  }
+  for (let i = 0; i < events.length; i++) {
+    ends[i] = maxByEvt.get(i) ?? events[i].t;
+  }
+  return ends;
+}
+
+// 静态索引：由 `(events, lineup, mode)` 与**建索引时刻读到的 `config` 常量**决定，
+// **与播放时刻 `t` 无关**。
+//
+// 为什么单独抽出来（#154）：`Game` 构造的成本几乎全在这里——整场锚点时间线
+// （P3.5 起 ~2900 事件数万锚点）+ 按实体分组的时间索引 + 每个事件的结束时间。
+// 本仓的整场滑窗扫描（`tools/spacing-sweep.mjs`）对**同一份**事件流逐窗重建它，
+// 实测占逐窗成本的 **91.5%**（`openspec/changes/p154-game-index-cache/design.md` §D1）。
+// 把它算成**可复用的纯计算结果**：每份事件流算一次，逐窗传给
+// `new Game(events, lineup, mode, { index })`。
+//
+// ⚠️ **`config` 是被烘进来的**（如实写，勿当「只依赖三个入参」）：`buildTimeline` 会读
+// `config.interpretation.*` / `config.defaults.*` / `config.pitch.*`（实测活读取 5 个叶子：
+// `shot.keeperReactDelay`、`tackle.deflectSpeed`、`defaults.runSpeed`、`pitch.lengthMeters`、
+// `pitch.widthMeters`——#154 审阅 P2-4 实测）。同源守卫（身份比较，见构造函数）**看不见
+// config 变化**：在「建索引」与「构造 `Game`」之间改 config，守卫会放行而索引已陈旧。
+// 当前调用方不触碰这条边界（`tools/spacing-sweep-core.mjs` 在模块加载时设一次 config 后
+// 不再改；App 侧不传索引），故如实记为**已知边界**而非缺口。
+//
+// 契约：本函数只读输入，返回对象的任何字段**在构造后都不被 `Game` 写入**
+// （守卫见 §D7 的「索引在整轮扫描后逐位不变」用例）——故可安全跨窗复用。
+export function buildGameIndex(events, lineup, mode = 'continuous') {
+  const m = mode === 'clip' ? 'clip' : 'continuous';
+  const timeline = buildTimeline(events, m); // 锚点时间线（continuous 启用 carry-beat 丢弃）
+  // 按实体分组的时间索引（球一组、每球员一组）。timeline 已按 t 排序，分组后仍有序。
+  const ballAnchors = [];
+  const playerAnchors = new Map();
+  for (const a of timeline) {
+    if (a.kind === 'ball') {
+      ballAnchors.push(a);
+    } else if (a.kind === 'player' && a.id !== undefined) {
+      if (!playerAnchors.has(a.id)) playerAnchors.set(a.id, []);
+      playerAnchors.get(a.id).push(a);
+    }
+  }
+  // 事件边界标记（供 `_interpolateAnchors` 区分「事件间真间隙」与「事件重叠」）。
+  const ballBounds = eventBoundaryFlags(ballAnchors);
+  const playerBounds = new Map();
+  for (const [id, arr] of playerAnchors) playerBounds.set(id, eventBoundaryFlags(arr));
+  // 比赛总时长（continuous 播到这就结束）：取最后锚点 t（保证尾部动画不被截断）
+  const matchEnd = timeline.length > 0
+    ? Math.max(events[events.length - 1]?.t ?? 0, timeline[timeline.length - 1].t)
+    : 0;
+  return {
+    events,
+    lineup,
+    mode: m,
+    timeline,
+    ballAnchors,
+    playerAnchors,
+    ballBounds,
+    playerBounds,
+    eventEnds: computeEventEnds(events, timeline),
+    matchEnd,
+  };
+}
+
 // 播放器状态机
 export class Game {
   constructor(events, lineup, mode = 'continuous', opts = {}) {
@@ -45,27 +116,41 @@ export class Game {
     this.playing = false; // 默认不自动播放
     this.speedIndex = 0; // 0 -> 1x, 1 -> 2x, 2 -> 4x
     this.playTime = 0; // 当前播放的比赛秒
-    this.timeline = buildTimeline(events, this.mode); // 锚点时间线（continuous 启用 carry-beat 丢弃）
+    // 静态索引（timeline / 锚点索引 / 每事件结束时刻 / 比赛总时长）：只依赖 (events, lineup,
+    // mode) 与建索引时刻的 config 常量，与 t 无关。默认**每次新建**（App 与其它单次构造路径
+    // = 原行为，逐位不变）；调用方可传一份 `buildGameIndex` 算好的 `opts.index` 复用
+    // （整场滑窗扫描逐窗构造：同一份事件流下这块是逐窗成本的主体，见 #154 §D1）。
+    const index = opts.index ?? buildGameIndex(events, lineup, this.mode);
+    // 缓存复用必须满足的前提：索引与本次的事件流/站位/模式同源。身份比较是 O(1)，
+    // 且能挡住唯一现实的误用（把某条事件流的索引喂给另一条）——静默用错索引会产出
+    // 「看起来正常但错」的位置与 finding，故这里**报错**而不是回落重建。
+    if (index.events !== events || index.lineup !== lineup || index.mode !== this.mode) {
+      throw new Error(
+        'Game: opts.index 与本次构造的 (events, lineup, mode) 不同源——静态索引不得跨事件流复用'
+      );
+    }
+    this.timeline = index.timeline; // 锚点时间线（continuous 启用 carry-beat 丢弃）
+    this._ballAnchors = index.ballAnchors; // 按实体分组的时间索引（P3.5：数万锚点，线性扫描会卡）
+    this._playerAnchors = index.playerAnchors;
+    this._ballBounds = index.ballBounds;
+    this._playerBounds = index.playerBounds;
+    this._eventEnds = index.eventEnds; // 每事件的结束时刻（该事件最后一个锚点的 t）
+    this._matchEnd = index.matchEnd; // 比赛总时长（continuous 播到这就结束；取最后锚点 t，尾部动画不被截断）
     // 罚下集合（红牌 / 二黄升级）。引擎 `apply_card` 把二黄升级也记为 `card:"red"`，故
     // `foul` 的 `card:"red"` 是罚下的唯一对外信号。罚下后引擎不再发射该球员的任何锚点
     // （spec：不得进 movers / 不得持球），但时间线会**保持其最后锚点**——若不在渲染层
     // 排除，红牌球员会以「幽灵」永远杵在场上（P34 审阅 R3-P2-3；同 `derive-audit-features`
     // 的 `sentOffTimes`，两处口径一致）。
     // id → 罚下时刻（该时刻之后才离场；时刻之前仍在场上，须正常渲染）。
+    // 不进静态索引：它是**可变 Map**，逐窗重建（整场一遍线性扫描，成本可忽略），
+    // 共享可变结构得不偿失。
     this.sentOffAt = new Map();
     for (const e of events) {
       if (e && e.type === 'foul' && e.card === 'red' && typeof e.subject === 'number') {
         if (!this.sentOffAt.has(e.subject)) this.sentOffAt.set(e.subject, e.t);
       }
     }
-    this._buildAnchorIndex(); // 按实体分组的时间索引（P3.5：~2900 事件数万锚点，线性扫描会卡）
     this._clipIndex = 0; // clip 模式：当前选中事件索引
-    // 每个事件的结束时间：该事件最后一个锚点的 t + 余量，作为独立片段时长（clip 用）
-    this._eventEnds = this._computeEventEnds(events);
-    // 比赛总时长（continuous 播到这就结束）：取最后锚点 t（保证尾部动画不被截断）
-    this._matchEnd = this.timeline.length > 0
-      ? Math.max(events[events.length - 1]?.t ?? 0, this.timeline[this.timeline.length - 1].t)
-      : 0;
     // P7：跳过机制——高亮段正常播放（baseSpeed=1，球员真实速度），非精彩段（间隙 > 阈值）快进/跳过。
     // opts.baseSpeed 可覆盖基速（测试用 1x）；opts.skipThreshold 可覆盖间隙阈值（测试用 Infinity 关闭跳过）。
     this._baseSpeed = opts.baseSpeed ?? 1;
@@ -166,21 +251,6 @@ export class Game {
 
   getSkipChoice() {
     return config.playback.skipChoices[this.skipChoiceIndex];
-  }
-
-  // 计算每个事件的结束时间：该事件所有锚点里最大的 t
-  _computeEventEnds(events) {
-    const ends = new Array(events.length);
-    // 按 evt 索引收集每个事件的最大锚点 t
-    const maxByEvt = new Map();
-    for (const a of this.timeline) {
-      const cur = maxByEvt.get(a.evt) ?? -Infinity;
-      if (a.t > cur) maxByEvt.set(a.evt, a.t);
-    }
-    for (let i = 0; i < events.length; i++) {
-      ends[i] = maxByEvt.get(i) ?? events[i].t;
-    }
-    return ends;
   }
 
   // 初始化/切换到某事件的初始状态：playTime = 事件 t，球员/球回到该事件起点锚点
@@ -382,24 +452,6 @@ export class Game {
       }
     }
     return cards;
-  }
-
-  // 按实体构建时间索引：球一组、每球员一组（timeline 已按 t 排序，分组后仍有序）
-  _buildAnchorIndex() {
-    this._ballAnchors = [];
-    this._playerAnchors = new Map();
-    for (const a of this.timeline) {
-      if (a.kind === 'ball') {
-        this._ballAnchors.push(a);
-      } else if (a.kind === 'player' && a.id !== undefined) {
-        if (!this._playerAnchors.has(a.id)) this._playerAnchors.set(a.id, []);
-        this._playerAnchors.get(a.id).push(a);
-      }
-    }
-    // 事件边界标记（供 `_interpolateAnchors` 区分「事件间真间隙」与「事件重叠」）。
-    this._ballBounds = eventBoundaryFlags(this._ballAnchors);
-    this._playerBounds = new Map();
-    for (const [id, arr] of this._playerAnchors) this._playerBounds.set(id, eventBoundaryFlags(arr));
   }
 
   // 由锚点插值出当前球员/球位置

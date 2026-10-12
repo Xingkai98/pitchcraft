@@ -7,7 +7,7 @@
 // 未带版本号（Node 测试不支持查询串），改动它们时靠 HTTP 重新校验/硬刷新兜底
 import { config } from './config.js?v=20260918-15';
 import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20260913-1';
-import { createGame } from './game.js?v=20260918-15';
+import { createGame } from './game.js?v=20261012-2';
 import { createTrackingPlayer } from './tracking-player.js?v=20260918-3';
 import { mockEventStream } from './mock-event-stream.js?v=20260913-1';
 import { resetMicroMotion } from './micro-motion.js?v=20260913-1';
