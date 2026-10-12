@@ -59,9 +59,10 @@
 - [x] 6.2 修完 P1×2 / P2×3 并**复变异全红**（4.4）；NIT 逐条落 design（§D2 措辞、§D3 已知差异、
       §D7 覆盖边界），NIT-2 已改回 try/catch，NIT-3 已断言
 - [ ] 6.3 第二个跨模型审阅（GPT via opencode）到达后逐条核对 → 再审
-- [x] 6.4 push → PR [#153](https://github.com/Xingkai98/pitchcraft/pull/153)（base `main`）→ **CI 全绿**
-      （两个 run 都 success）。**CI 读数**：step 5 `spacing-sweep` **17m45s → 12m01s（1.48×）**，
-      job 总时长 **26m52s → 24m03s**（step 1 `cargo test` 本次慢 2m19s，掩盖了部分收益）。
-      ⚠️ **低于本机 2.01×**，相对 30 分钟上限只余 ~6 分钟 —— 若要更大余量须做 §D5 的下一根杠杆
-      （需另立 change，见 `REPORT-to-main-session.md` §6）
+- [x] 6.4 push → PR [#153](https://github.com/Xingkai98/pitchcraft/pull/153)（base `main`）→ **CI 全绿**。
+      **CI 读数（机型波动大，三次并列；`cargo test` 当机型代理）**：
+      #150（改前）`cargo test` 7m12s / sweep **17m45s（串行）** / job 26m52s；
+      本 PR `38239967460` 9m31s / 12m01s / 24m03s；
+      本 PR `38243256544` 5m30s / **9m06s** / **16m12s**。
+      ⇒ sweep 提速 **1.48×–1.95×**；**正常机型上 job 16m12s，离 30 分钟上限 ~14 分钟余量，目标达成**
 - [ ] 6.5 `REPORT-to-main-session.md`（**不自行 merge**，等主 session）
