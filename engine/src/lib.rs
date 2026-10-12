@@ -750,6 +750,19 @@ fn same_team_ok_m(a: (f64, f64), b: (f64, f64)) -> bool {
     same_team_dist_m(a, b) >= SAME_TEAM_MIN_DIST_M - SAME_TEAM_EPS
 }
 
+/// 点到线段（米制）最近距离。供 #149 的**窄触发**判定用：只在「某点真落在某移动线段 2.0m 内」
+/// 时才把该点纳入约束。
+fn point_seg_dist_m(p: (f64, f64), a: (f64, f64), b: (f64, f64)) -> f64 {
+    let (px, py) = (p.0 * PITCH_LENGTH_M, p.1 * PITCH_WIDTH_M);
+    let (ax, ay) = (a.0 * PITCH_LENGTH_M, a.1 * PITCH_WIDTH_M);
+    let (bx, by) = (b.0 * PITCH_LENGTH_M, b.1 * PITCH_WIDTH_M);
+    let (dx, dy) = (bx - ax, by - ay);
+    let vv = dx * dx + dy * dy;
+    let s = if vv < 1e-12 { 0.0 } else { (((px - ax) * dx + (py - ay) * dy) / vv).clamp(0.0, 1.0) };
+    let (cx, cy) = (ax + s * dx, ay + s * dy);
+    ((px - cx).powi(2) + (py - cy).powi(2)).sqrt()
+}
+
 /// 拍内扫掠阈值 = `SAME_TEAM_MIN_DIST_M` − 6cm（= 2.14m）：只修正**真正会逼近 detector
 /// 阈值**（strict `<2.0m`）的轨迹内凹；更小的内凹对 detector 无害、不介入（最小扰动原则
 /// ——多轮扫掠的推移是累积的，介入越少、对比赛动态扰动越小）。
@@ -762,6 +775,16 @@ fn same_team_ok_m(a: (f64, f64), b: (f64, f64)) -> bool {
 /// - detector 真实门 `strict < 2.0m`：两者共同对它有 ≥0.14m 裕度。
 /// 三者**不是叠加**关系：端点门守「发射坐标」、扫掠门守「拍内中点」，各自独立留余量。
 const SAME_TEAM_SWEPT_MIN_M: f64 = SAME_TEAM_MIN_DIST_M - 0.06;
+
+/// `player_overlap` detector 的**真实阈值**（`tools/detectors.mjs` 的 `player_overlap.min_distance`
+/// = 2.0m，严格 `<`）——与 `SAME_TEAM_SWEPT_MIN_M`(2.14) 是**两个不同的量**：后者是引擎内部的
+/// 「带余量目标」，前者是 detector 的**判定门**。
+///
+/// 供 #149 的**窄触发**（`highlight_frozen_segs`）用：高亮参与者的落点只在「真落在某同队 mover
+/// 本拍轨迹的 **2.0m** 内」（即真会破 detector 阈）时才纳入分离约束——否则保持 T3 原口径。
+/// 依据：正确修 ≠ 必须最大扰动；把触发收到 detector 真实门，可把对**无缝隙比赛**的扰动压到最小
+/// （见 `openspec/changes/p143r-v4-spacing-gap/design.md` §D2）。
+const SAME_TEAM_OVERLAP_MIN_M: f64 = 2.0;
 
 /// carrier（或其它需保护几何的球员）在拍内侧推中的**分摊比例**：只承担这一小份，队友
 /// 吸收其余，以尽量少改 carrier 的推进/起脚几何。
@@ -6302,7 +6325,9 @@ fn beat_movers(
     let mut movers = compute_mover_candidates(st, rng, t, excluded);
     // 高亮参与者的**拍内滑行线段**（如传球接球者从动作前位置线性滑向落点）也要参与分离：
     // 它不是 mover（锚点来自动作事件），但队友 mover 必须避开它的显示轨迹。
-    let segs = highlight_frozen_segs(st, t);
+    // 传 mover 候选给 `highlight_frozen_segs` 供 #149 的**窄触发**判定（参与者落点是否真落在
+    // 某同队 mover 本拍轨迹 2.0m 内）。
+    let segs = highlight_frozen_segs(st, t, &movers);
     commit_beat_positions_ex(st, &mut movers, frozen, &[], &[], &segs);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
     movers
@@ -6328,7 +6353,37 @@ fn beat_movers(
 /// 实测两类机制（seed 59 接球者、seed 18 抢断结算点）同源：参与者的**显示终点**（落点 /
 /// 结算点）不在 mover 端点里，被分离 solver 当作「动作前的静止点」，于是队友 mover 的拍内
 /// 轨迹能与参与者真实的滑行轨迹交叉到 <2m。零 RNG。
-fn highlight_frozen_segs(st: &MatchState, t: f64) -> Vec<(i32, (f64, f64), (f64, f64))> {
+///
+/// **#149 修：把「落点 / 保持段」按需纳入 solver 视野（窄触发）。**
+///
+/// 参与者的显示滑行在 `t_end` 抵达落点，而 `t_end` **几乎从不落在拍边界上**（传球飞行时长 =
+/// 距离 ÷ 事件 RNG 速度，非整数）：落点必然落在飞行最后一拍的**拍中**，参与者拍中即抵达落点、
+/// **原地保持**到下一锚点。此处 mover 的**下一拍起点在该拍不可动**（`starts`），若这一拍 mover
+/// 的终点离落点太近，下一拍（参与者已停在落点）就整拍残留、救不回。且只按「本拍子段终点
+/// `lerp(u(t+1))`」算最近点会让 solver 用**均匀拉伸**的时序低估参与者前进量：seed 2 实测
+/// solver 口径 2.146m ≥ 阈值 ⇒ 判无冲突，而 viewer 真实显示最近点 **1.258m**（`t_end` 与拍边界
+/// 错开多少，就漏多少）。
+///
+/// **窄触发（`breach`）**：只在「参与者的落点真落在某**同队** mover 本拍轨迹
+/// `SAME_TEAM_OVERLAP_MIN_M`(2.0m，= detector `player_overlap.min_distance`) 内」时才介入——
+/// 即**真会破 detector 阈**才改；否则保持 T3 原口径（只约束拍内子段）。依据：正确修 ≠ 必最大
+/// 扰动；把触发收到 detector 真实门，可把对**无缝隙比赛**的扰动压到最小（design §D2）。
+///
+/// 触发后按 `t_end` 相对本拍分两档：
+/// - **严格在本拍内完成**（`t < t_end < t+TICK`，有保持段）：落点退化为**一点** `(end,end)`，
+///   逼 mover 整条拍内轨迹避开落点。覆盖边界**如实记**：本拍 mover 的**起点侧**由上一拍线段
+///   （终点 = 落点）约束（本拍起点 = 上一拍终点，恒被逼离落点 ≥ **detector 阈值 2.0m**；上一拍也走破阈档时
+///   ≥ 引擎目标 2.14m）；本拍轨迹**内部**对
+///   「滑行尾段 `[lerp(u(t)), end]`」**无显式约束**（欠约束上界 = 尾段长 = `(t_rem/span)·|glide|`；
+///   单拍飞行时无上一拍、尾段即整段）。实测默认 8 seed + L1 抽样均未越界——此处如实记边界，
+///   **不据此加约束**（加会顶破贴沿带 `l3_shot_ratios`，见 design §D2）。
+///   **必须严格**：`t_end == t+TICK`（如抢断）是「滑行恰好占满整拍、无保持段」，当保持拍会丢掉
+///   参与者**起点侧**的扫掠覆盖（实测新造缝隙：seed 18 t=242.5 pair 5↔9），退回原口径。
+/// - **在下一拍内完成**（`t+TICK < t_end < t+2·TICK`）：线段终点钉在落点 `end`，逼 mover **本拍
+///   终点**（= 下一拍起点）离落点 ≥ 阈值——被漏掉的**跨拍约束**。
+///
+/// 未触发 / 其余拍：原口径（本拍子段）。零 RNG、确定性。
+fn highlight_frozen_segs(st: &MatchState, t: f64, movers: &[Mover]) -> Vec<(i32, (f64, f64), (f64, f64))> {
     let h = match st.highlight.as_ref() {
         Some(h) => h,
         None => return Vec::new(),
@@ -6336,13 +6391,28 @@ fn highlight_frozen_segs(st: &MatchState, t: f64) -> Vec<(i32, (f64, f64), (f64,
     let span = (h.t_end - h.t_start).max(1e-9);
     let u = |tt: f64| ((tt - h.t_start) / span).clamp(0.0, 1.0);
     let lerp = |a: (f64, f64), b: (f64, f64), w: f64| (a.0 + (b.0 - a.0) * w, a.1 + (b.1 - a.1) * w);
+    let t_rem = h.t_end - t;
+    let completes_mid_tick = t_rem < TICK_SECONDS;
+    let completes_mid_next = t_rem > TICK_SECONDS && t_rem < 2.0 * TICK_SECONDS;
     let mut out = Vec::new();
     for &(id, end) in &h.participants {
         if id < 0 || id > 21 {
             continue;
         }
         let start = st.pos[id as usize];
-        out.push((id, lerp(start, end, u(t)), lerp(start, end, u(t + TICK_SECONDS))));
+        let breach = movers.iter().any(|m| {
+            m.id >= 0
+                && m.id <= 21
+                && ((m.id <= 10) == (id <= 10))
+                && point_seg_dist_m(end, (m.from_x, m.from_y), (m.to_x, m.to_y)) < SAME_TEAM_OVERLAP_MIN_M
+        });
+        if breach && completes_mid_tick {
+            out.push((id, end, end));
+        } else if breach && completes_mid_next {
+            out.push((id, lerp(start, end, u(t)), end));
+        } else {
+            out.push((id, lerp(start, end, u(t)), lerp(start, end, u(t + TICK_SECONDS))));
+        }
     }
     out
 }
@@ -8595,6 +8665,52 @@ mod tests {
             same_team_dist_m(st.pos[1], st.pos[2]));
         assert!(st.pos[1] == (0.4, 0.5), "冻结参与者自身不得被推动");
         assert!(movers.iter().any(|m| m.id == 2), "被推开的 id2 应出现在 movers");
+    }
+
+    #[test]
+    fn p53_highlight_landing_enters_solver_on_breach() {
+        // #149：高亮参与者的**落点**只在「真落在某**同队** mover 本拍候选轨迹
+        // `SAME_TEAM_OVERLAP_MIN_M`(2.0m，= detector `player_overlap.min_distance`) 内」时才纳入
+        // 分离段（窄触发）。覆盖：破阈+本拍内完成→退化为落点一点；破阈+下一拍内完成→终点钉落点；
+        // 未破阈→原口径；`t_rem==TICK`（抢断式满拍）→严格不触发；跨队 mover→不触发。
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        let landing = (0.4, 0.5);
+        st.pos[1] = (0.5, 0.5); // 参与者动作前位置
+        let mk = |id: i32, tx: f64| Mover {
+            id, from_x: 0.1, from_y: 0.1, to_x: tx, to_y: 0.5,
+            speed: RUN_SPEED_MS, action: "run".to_string(),
+        };
+        let set_end = |st: &mut MatchState, t_end: f64| {
+            st.highlight = Some(Highlight {
+                obs_event: None,
+                t_start: 10.0,
+                t_end,
+                participants: vec![(1, landing)],
+                outcome: HighlightOutcome::PassLost { land: landing, dir: (1.0, 0.0) },
+            });
+        };
+        let seg_of = |st: &MatchState, movers: &[Mover]| -> ((f64, f64), (f64, f64)) {
+            let &(_, f, t) = highlight_frozen_segs(st, 10.0, movers)
+                .iter()
+                .find(|(id, _, _)| *id == 1)
+                .unwrap();
+            (f, t)
+        };
+        let near = mk(2, 0.405); // 同队 mover 终点贴着落点（≈0.5m < 2.0）
+        set_end(&mut st, 10.5); // t_rem = 0.5 < TICK：本拍内完成（有保持段）
+        let (f, t) = seg_of(&st, &[near.clone()]);
+        assert!(f == landing && t == landing, "破阈+本拍内完成应退化为落点一点（f={:?} t={:?}）", f, t);
+        set_end(&mut st, 11.5); // t_rem = 1.5 ∈ (TICK, 2·TICK)：下一拍内完成
+        let (_, t) = seg_of(&st, &[near.clone()]);
+        assert!(t == landing, "破阈+下一拍内完成应把终点钉在落点");
+        let far = mk(2, 0.1); // 同队但 mover 远离落点
+        assert!(seg_of(&st, &[far]).1 != landing, "未破阈应保持原口径（终点 = lerp(u(t+1)) ≠ 落点）");
+        let cross = mk(12, 0.405); // 同坐标但跨队
+        assert!(seg_of(&st, &[cross]).1 != landing, "跨队 mover 不应触发同队约束");
+        set_end(&mut st, 11.0); // t_rem = TICK（抢断式满拍，无保持段）
+        // 此档 `to` 恰等于 lerp(u(t+1)) = 落点（数值上不可区分），改看 `from`：原口径 from = 动作前位置。
+        assert!(seg_of(&st, &[near]).0 == (0.5, 0.5), "t_rem==TICK 应走原口径（严格 <，from=动作前位置）");
     }
 
     #[test]
