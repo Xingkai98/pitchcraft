@@ -1,7 +1,7 @@
 // Game 播放控制单测（解耦模式：每个事件独立片段，默认不播放，点播才播）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Game } from './game.js';
+import { Game, buildGameIndex } from './game.js';
 import { config } from './config.js';
 import { interpretEvent } from './interpretation.js';
 
@@ -576,4 +576,110 @@ test('micro-motion 抑制：犯规窗口内仍能取到参与者（foul 不产 b
   g.playTime = 10 + config.interpretation.foul.cardShowDuration * 0.5;
   const parts = g.currentHighlightParticipants().sort((a, b) => a - b);
   assert.deepEqual(parts, [6, 15], '犯规窗口内应取到 subject/carrier（不被零长度窗口吞掉）');
+});
+
+// ---- #154：静态索引（`buildGameIndex` + `new Game(..., { index })`）----
+// 逐窗重建整场锚点索引是整场滑窗扫描逐窗成本的主体（91.5%，见
+// `openspec/changes/p154-game-index-cache/design.md` §D1），故把它抽成可复用的纯计算结果。
+// 这里钉死的是：**复用索引构造出的 Game 与每次重建构造出的 Game 完全一致**——包括
+// `_interpolateAnchors` 返回 null 时回落 lineup 站位的那条分支（#152 记为「复用实例的行为差异」；
+// 本 change 不复用实例、只复用索引，故那条分支逐位保持）。
+function indexFixture() {
+  const lineup = [
+    { id: 0, team: 'home', x: 0.02, y: 0.5 },
+    { id: 5, team: 'home', x: 0.5, y: 0.5 },
+    { id: 9, team: 'home', x: 0.4, y: 0.5 },
+    { id: 15, team: 'away', x: 0.6, y: 0.5 },
+  ];
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: lineup },
+    { t: 0, type: 'kickoff', subject: 5, x: 0.5, y: 0.5 },
+    { t: 5, type: 'pass', subject: 5, from: 5, to: 9, x: 0.5, y: 0.5, x2: 0.4, y2: 0.5, speed: 10, result: 'success' },
+    { t: 5, type: 'beat', movers: [{ id: 15, from_x: 0.6, from_y: 0.5, to_x: 0.62, to_y: 0.55, speed: 4, action: 'run' }] },
+    { t: 12, type: 'shot', subject: 9, x: 0.7, y: 0.5, x2: 0.95, y2: 0.5, speed: 25, result: 'goal' },
+    { t: 30, type: 'foul', subject: 15, x: 0.6, y: 0.5, card: 'red' },
+    { t: 40, type: 'beat', movers: [{ id: 5, from_x: 0.5, from_y: 0.5, to_x: 0.55, to_y: 0.5, speed: 4, action: 'run' }] },
+  ];
+  return { events, lineup };
+}
+
+// 可观测状态快照：位置/球/播放时刻/当前事件/高亮窗口/卡牌 —— 覆盖构造期全部可见产物。
+function snapshotOf(g) {
+  return JSON.stringify({
+    players: g.players.map((p) => ({ id: p.id, x: p.x, y: p.y })),
+    allPlayers: g._players.map((p) => ({ id: p.id, x: p.x, y: p.y })),
+    ball: g.ball,
+    playTime: g.playTime,
+    playing: g.playing,
+    clipIndex: g._clipIndex,
+    matchEnd: g.matchEnd,
+    eventEnds: [...g._eventEnds],
+    highlightWindows: g._highlightWindows,
+    idx: g.currentEventIndex(),
+    participants: g.currentHighlightParticipants(),
+    cards: g.activeCards(),
+    progress: g.getProgress(),
+  });
+}
+
+test('#154 复用静态索引 == 每窗重建：构造态、seekTo、step 序列逐位一致', () => {
+  const { events, lineup } = indexFixture();
+  const index = buildGameIndex(events, lineup, 'continuous');
+  // 构造态
+  assert.equal(
+    snapshotOf(new Game(events, lineup, 'continuous', { index })),
+    snapshotOf(new Game(events, lineup, 'continuous')),
+    '构造后的初始状态必须一致'
+  );
+  // 逐窗（含 t 落在首个锚点之前/窗口之间/末尾/红牌前后的时刻）
+  for (const t of [0, 0.5, 3, 5, 9.999, 12, 20, 29.5, 30, 30.5, 45, 999]) {
+    const cached = new Game(events, lineup, 'continuous', { index });
+    const rebuilt = new Game(events, lineup, 'continuous');
+    cached.seekTo(t);
+    rebuilt.seekTo(t);
+    assert.equal(snapshotOf(cached), snapshotOf(rebuilt), `t=${t} 处 seekTo 后的状态必须一致`);
+  }
+  // 推进序列（step 会改 playTime 与插值态）
+  const a = new Game(events, lineup, 'continuous', { index });
+  const b = new Game(events, lineup, 'continuous');
+  a.seekTo(5);
+  b.seekTo(5);
+  a.playing = true;
+  b.playing = true;
+  for (let i = 0; i < 40; i++) {
+    a.step(0.05);
+    b.step(0.05);
+    assert.equal(snapshotOf(a), snapshotOf(b), `第 ${i} 次 step 后必须一致`);
+  }
+});
+
+test('#154 索引复用不改变外部输入：构造多窗不修改 events / lineup / 索引本身', () => {
+  const { events, lineup } = indexFixture();
+  const before = JSON.stringify({ events, lineup });
+  const index = buildGameIndex(events, lineup, 'continuous');
+  const indexDigest = JSON.stringify({ ...index, events: null, lineup: null });
+  for (let i = 0; i < 5; i++) {
+    const g = new Game(events, lineup, 'continuous', { index });
+    g.seekTo(5 + i * 5);
+    g.step(0.1);
+  }
+  assert.equal(JSON.stringify({ events, lineup }), before, '构造/推进不得改写传入的 events / lineup');
+  assert.equal(
+    JSON.stringify({ ...index, events: null, lineup: null }),
+    indexDigest,
+    '构造/推进不得改写被复用的静态索引'
+  );
+});
+
+test('#154 索引复用必须同源：换了事件流/站位/模式 → 报错（不静默用错）', () => {
+  const { events, lineup } = indexFixture();
+  const index = buildGameIndex(events, lineup, 'continuous');
+  assert.doesNotThrow(() => new Game(events, lineup, 'continuous', { index }), '同源复用必须放行');
+  const other = indexFixture();
+  assert.throws(() => new Game(other.events, other.lineup, 'continuous', { index }), /不同源/);
+  assert.throws(() => new Game(events, [...lineup], 'continuous', { index }), /不同源/);
+  assert.throws(() => new Game(events, lineup, 'clip', { index }), /不同源/);
+  // 合法路径：clip 模式的索引给 clip 模式用
+  const clipIndex = buildGameIndex(events, lineup, 'clip');
+  assert.doesNotThrow(() => new Game(events, lineup, 'clip', { index: clipIndex }), 'clip 索引复用到 clip 模式必须放行');
 });

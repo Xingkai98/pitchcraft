@@ -18,7 +18,9 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { DEFAULT_AUDIT_PROFILE } from './detectors.mjs';
+import { DEFAULT_AUDIT_PROFILE, detectPlayerOverlap } from './detectors.mjs';
+import { Game, buildGameIndex } from '../viewer/game.js';
+import { captureObservation } from '../viewer/observation.js';
 import {
   DEFAULT_DUR,
   DEFAULT_SEEDS,
@@ -33,6 +35,7 @@ import {
   runSeed,
   runSerial,
   runSweep,
+  simulateEvents,
   sweepExitCode,
   totalFindings,
 } from './spacing-sweep-core.mjs';
@@ -284,4 +287,197 @@ test('CLI：非法 SWEEP_CONCURRENCY 直接报错退出 2（不静默回落成�
   });
   assert.equal(r.status, 2, `期望退出码 2，实得 ${r.status}\n${r.stderr}`);
   assert.match(r.stderr, /SWEEP_CONCURRENCY/);
+});
+
+// ---------------------------------------------------------------------------------------------
+// #154：静态索引缓存的等价守卫
+//
+// 背景：逐窗 `new Game(events, lineup, 'continuous')` 的 91.5% 是**与窗时刻无关**的静态索引
+// （timeline + 按实体分组的锚点索引 + 每事件结束时刻）。`runSeed` 现在把它算一次、逐窗传给
+// `new Game(..., { index })`。守的**核心不变量**：这么提出来之后，**逐窗的观测与 finding 必须
+// 与「每窗重建」逐位相同**——不是「差不多」、不是「汇总数相同」。
+//
+// 为什么判据必须落到**每窗**：默认 8 个 seed 的 finding 恒 0（这正是门能绿的原因），任何只看
+// 「findings / worst」汇总的判据在这个 change 上**恒真**、没有区分度（#152 审阅 P2-1 的同类教训：
+// 判据空转）。故本组用例：
+//   ① 用 `detect` 注入点（#152 已有的测试钩子，非本 change 新增）把**每窗 detector 的实际输入**
+//      （`bundle.audit_input.players`：米制、含 ±5s 内 0.2s 采样的整窗快照与派生特征）逐窗收集成
+//      签名序列，与**逐窗重建**的参照实现逐位比；
+//   ② 同时比 detector 的输出（`findings` / `worst`）；
+//   ③ 另有一条**结构性**用例覆盖「全部窗口」而非抽样的窗口：`buildGameIndex` 是确定性纯函数、
+//      且整轮扫描后索引逐字节未被改写——这是「两条路径在**每一个**窗口上都相等」的根据。
+//
+// 覆盖边界（如实写）：真实 wasm 用例沿用 #152 的口径——`DUR` 与事件流是 production 规模
+// （`Game` 构造成本、索引规模都是真的），把 `STEP` 调粗以少跑几窗（2157 → 22）。**全 8 seed ×
+// 2157 窗的逐窗对照**是 change 报告里的人工复验项，不在单测里（一次 ≈ 45 分钟 CPU）。
+
+test('缓存索引 == 逐窗重建（真实 wasm，逐窗逐位一致）：captureObservation + detector 输出', { skip: !existsSync(WASM_PATH) && '缺 viewer/engine.wasm（先构建）' }, async () => {
+  const dur = DEFAULT_DUR; // production 5400：事件流与索引规模是真的
+  const step = 250; // 只调粗**窗口数**（生产 2.5）；判据面（DUR/STEP/阈值）本 change 未动
+  const wasm = await instantiateWasm(WASM_PATH);
+
+  for (const seed of [42, 59]) { // 59 = 含红牌 seed（覆盖罚下路径下的窗口）
+    const { events, lineup } = simulateEvents({ wasm, seed, dur });
+    const index = buildGameIndex(events, lineup, 'continuous');
+
+    const refBundles = []; // 逐窗重建（本 change 之前的行为）
+    const refSigs = []; // 生产路径（runSeed，复用索引）里 detector 实际收到的输入
+    const cachedBundles = [];
+    for (let t = 5; t <= dur - 5; t += step) {
+      const rebuilt = new Game(events, lineup, 'continuous'); // 对照：无索引 → 每次重建
+      rebuilt.seekTo(t);
+      const refBundle = observe(rebuilt, seed, dur);
+      refBundles.push(JSON.stringify(refBundle));
+      refSigs.push(JSON.stringify(detectPlayerOverlap(refBundle.audit_input.players, DEFAULT_AUDIT_PROFILE)));
+
+      const cached = new Game(events, lineup, 'continuous', { index }); // 被测：复用静态索引
+      cached.seekTo(t);
+      cachedBundles.push(JSON.stringify(observe(cached, seed, dur)));
+    }
+
+    // ① captureObservation 的**整包**（含 audit_input、viewer_snapshot、窗口事件、lineup）逐位相同
+    assert.deepEqual(cachedBundles, refBundles, `seed ${seed}：逐窗观测包必须逐位相同`);
+    // 反证条（防空转）：判据必须**分得开不同的窗口**——否则「逐窗相同」可能只是因为签名
+    // 跨窗恒等（签名写得太平，任何两条路径都比得绿）。相邻两窗的观测包必须不同。
+    assert.notEqual(refBundles[0], refBundles[1], '相邻窗口的观测包必须不同（判据不得跨窗恒等）');
+
+    // ② 生产路径 `runSeed` 真的在用缓存索引，且每窗喂给 detector 的快照与参照实现逐位相同。
+    //    用注入的 `detect` 抄一份输入——注入点不改调用契约（每窗一次、传本窗快照、用生产 profile），
+    //    故这里测的仍是**真实生产循环**，而不是测试里另写一遍的循环。
+    const liveSigs = [];
+    const seenProfiles = [];
+    const result = runSeed({
+      wasm,
+      seed,
+      dur,
+      step,
+      detect: (players, profile) => {
+        liveSigs.push(JSON.stringify(detectPlayerOverlap(players, profile)));
+        seenProfiles.push(profile);
+        return detectPlayerOverlap(players, profile);
+      },
+    });
+    assert.deepEqual(liveSigs, refSigs, `seed ${seed}：生产路径每窗 detector 输出必须与逐窗重建一致`);
+    assert.ok(seenProfiles.every((p) => p === DEFAULT_AUDIT_PROFILE), 'detector 必须每窗收到生产 profile');
+    assert.equal(result.windows, refBundles.length, `seed ${seed}：窗口数一致`);
+    // ③ detector 输出经生产路径汇总后一致（finding 集合/顺序/min_distance 已由 ②逐窗比过）
+    const refFind = refSigs.flatMap((s) => JSON.parse(s));
+    assert.equal(result.findings, refFind.length, `seed ${seed}：finding 数一致`);
+    assert.equal(
+      result.worst,
+      refFind.length ? Math.min(...refFind.map((f) => f.features.min_distance)) : null,
+      `seed ${seed}：最恶劣间距一致`
+    );
+  }
+});
+
+function observe(game, seed, dur) {
+  return captureObservation({
+    game,
+    statement: '',
+    selectedEntities: [],
+    window: { before: 5, after: 5 },
+    seed,
+    config: { match_duration_seconds: dur },
+    sourceRevision: '<spacing-sweep>',
+    opts: { idFactory: () => 'sweep', now: 1 },
+  });
+}
+
+test('静态索引是确定性纯函数，且整轮扫描后逐字节未被改写（真实 wasm）', { skip: !existsSync(WASM_PATH) && '缺 viewer/engine.wasm（先构建）' }, async () => {
+  const dur = DEFAULT_DUR;
+  const step = 250;
+  const wasm = await instantiateWasm(WASM_PATH);
+  const { events, lineup } = simulateEvents({ wasm, seed: 42, dur });
+
+  // 纯函数：同一输入两次构造 → 逐字节相同（缓存能成立的前提）。
+  const index = buildGameIndex(events, lineup, 'continuous');
+  const again = buildGameIndex(events, lineup, 'continuous');
+  assert.equal(digestIndex(index), digestIndex(again), 'buildGameIndex 必须是确定性纯函数');
+
+  // 不被改写：整轮扫描（每窗构造 + seekTo + 采集 + detect）之后，索引仍逐字节相同。
+  // 这条是「逐窗比对的抽样窗口」推广到**全部窗口**的根据——若 `Game` 在某类窗口上改写了共享
+  // 索引，后续窗口就会用被污染的数据，而缓存路径与重建路径的分歧会随窗口累积。
+  const before = digestIndex(index);
+  for (let t = 5; t <= dur - 5; t += step) {
+    const game = new Game(events, lineup, 'continuous', { index });
+    game.seekTo(t);
+    const bundle = observe(game, 42, dur);
+    detectPlayerOverlap(bundle.audit_input.players, DEFAULT_AUDIT_PROFILE);
+  }
+  assert.equal(digestIndex(index), before, '整轮扫描不得改写被复用的静态索引');
+});
+
+// 索引摘要。**Map 必须显式展开**：`JSON.stringify` 把 Map 序列化成 `{}`，直接用它会漏掉
+// 「`playerAnchors`/`playerBounds` 被就地改写」这整整一类污染——摘要看着相等，索引其实变了。
+// 反证条见下一条用例。
+function digestIndex(index) {
+  const mapEntries = (m) => [...m].sort((a, b) => String(a[0]).localeCompare(String(b[0])));
+  return JSON.stringify({
+    mode: index.mode,
+    timeline: index.timeline,
+    ballAnchors: index.ballAnchors,
+    playerAnchors: mapEntries(index.playerAnchors),
+    ballBounds: index.ballBounds,
+    playerBounds: mapEntries(index.playerBounds),
+    eventEnds: index.eventEnds,
+    matchEnd: index.matchEnd,
+  });
+}
+
+test('反证条：索引摘要对「锚点被增删改 / 分组被改写 / 结束时刻被改」都有区分度', () => {
+  const events = [
+    { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [] },
+    { t: 1, type: 'beat', x: 0.5, y: 0.5, movers: [{ id: 0, x: 0.6, y: 0.5 }] },
+    { t: 2, type: 'beat', x: 0.5, y: 0.5, movers: [{ id: 0, x: 0.7, y: 0.5 }] },
+  ];
+  const lineup = [{ id: 0, team: 'home', x: 0.5, y: 0.5 }];
+  const base = buildGameIndex(events, lineup, 'continuous');
+  const d = digestIndex(base);
+  assert.equal(digestIndex(buildGameIndex(events, lineup, 'continuous')), d, '自反：同输入必须判相同');
+  // ① 锚点表被删一条 / 某个锚点的 t 被改 / 球锚点表被增补
+  assert.notEqual(digestIndex({ ...base, timeline: base.timeline.slice(0, -1) }), d, '锚点被删必须判不同');
+  assert.notEqual(
+    digestIndex({ ...base, timeline: base.timeline.map((a, i) => (i === 0 ? { ...a, t: a.t + 0.5 } : a)) }),
+    d,
+    '锚点被改必须判不同'
+  );
+  assert.ok(base.ballAnchors.length === 0, '前提：本 fixture 无球锚点（否则下一条会变成空转）');
+  assert.notEqual(
+    digestIndex({ ...base, ballAnchors: [{ t: 0, kind: 'ball', x: 0.5, y: 0.5, evt: 0 }] }),
+    d,
+    '球锚点表被增补必须判不同'
+  );
+  // ② 分组（Map）被改写——这正是裸 `JSON.stringify` 看不见的那一类
+  const dropped = new Map(base.playerAnchors);
+  dropped.delete(0);
+  assert.notEqual(digestIndex({ ...base, playerAnchors: dropped }), d, '分组 Map 被改写必须判不同');
+  const shrunk = new Map(base.playerAnchors);
+  shrunk.set(0, shrunk.get(0).slice(0, -1));
+  assert.notEqual(digestIndex({ ...base, playerAnchors: shrunk }), d, '分组内锚点被删必须判不同');
+  // ③ 每事件结束时刻被改
+  const ends = base.eventEnds.slice();
+  ends[1] += 1;
+  assert.notEqual(digestIndex({ ...base, eventEnds: ends }), d, '结束时刻被改必须判不同');
+  assert.notEqual(digestIndex({ ...base, matchEnd: base.matchEnd + 1 }), d, '比赛总时长被改必须判不同');
+});
+
+test('索引缓存失效条件：索引与本次 (events, lineup, mode) 不同源 → 报错（不静默用错）', () => {
+  const mk = () => ({
+    events: [
+      { t: 0, type: 'lineup', subject: 0, x: 0.5, y: 0.5, players: [] },
+      { t: 1, type: 'beat', x: 0.5, y: 0.5, movers: [{ id: 0, x: 0.6, y: 0.5 }] },
+    ],
+    lineup: [{ id: 0, team: 'home', x: 0.5, y: 0.5 }],
+  });
+  const a = mk();
+  const index = buildGameIndex(a.events, a.lineup, 'continuous');
+  // 同源 → 正常复用（否则守卫会误伤唯一合法用法）
+  assert.ok(new Game(a.events, a.lineup, 'continuous', { index }) instanceof Game);
+  // 另一条事件流的索引喂进来 → 必须报错：拿错索引会产出「看起来正常但错」的位置与 finding，
+  // 静默回落重建会把这类误用藏起来（本仓「工具不得静默走已知缺失路径」纪律）。
+  const b = mk();
+  assert.throws(() => new Game(b.events, b.lineup, 'continuous', { index }), /不同源/);
+  assert.throws(() => new Game(a.events, [...a.lineup], 'continuous', { index }), /不同源/);
+  assert.throws(() => new Game(a.events, a.lineup, 'clip', { index }), /不同源/);
 });
