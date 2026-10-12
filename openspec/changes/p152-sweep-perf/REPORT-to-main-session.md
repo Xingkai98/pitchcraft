@@ -1,7 +1,15 @@
 # REPORT → 主 session：p152-sweep-perf（GitHub #152）
 
-**状态**：实现 + profile + 全量复验 + 独立审阅（2 轮）+ 定向变异完成，**待 CI**（未 merge）。
-分支 `p152-sweep-perf/2026-10-12`（base main `15929ad`）。
+**状态**：实现 + profile + 全量复验 + 独立审阅（2 轮）+ 定向变异 + **CI 全绿**完成，**待用户拍板**
+（未 merge）。分支 `p152-sweep-perf/2026-10-12`（base main `15929ad`）→ **PR
+[#153](https://github.com/Xingkai98/pitchcraft/pull/153)**。
+
+## ⚠️ 一句话给用户（需要拍板）
+
+**改善是确定的，但余量不够宽**：CI 的 sweep **17m45s → 12m01s（1.48×）**、job **26m52s → 24m03s**，
+相对 30 分钟上限**只余 ~6 分钟**（同一份代码在 CI 的历史波动可达 3 倍）。
+**要不要就此合入、还是再加一根杠杆**（缓存 `Game` 的静态索引，命中 profile 里 91.6 % 的开销，
+但要动 viewer 侧语义、须另立 change）——请用户拍板。
 
 ## TL;DR
 
@@ -81,13 +89,37 @@ detector→`[]`（9、11 红）、`toFixed(2)`（9、11 红）、`runSweep` 失�
 - **未**降采样密度、**未**抬 `timeout-minutes`、**未**拆 job（design §D5 记了为何不采用这三条）。
 - `viewer/engine.wasm` 由**本 worktree 从源码**构建（非旧实验产物）。
 
-## 6. 待办 / 下一步
+## 6. CI 实测（PR #153）
 
-- **CI 实测**：push → PR（base main）→ 报 **CI 总耗时**（对比 26m55s / 29m29s）。
-- **本 change 的验收缺口**（如实写）：本机 2.01× 是**受外部负载压制的下界**；CI 独占 4 核的真实提速
-  只有 CI 跑完才知道。若 CI 仍未离开危险区，下一根杠杆是 design §D5 记的「复用同一个 `Game` 跨窗」
-  （D1 的 91.6 %，但涉及 viewer 层语义，需另立 change）。
-- **本 change 已知盲区**（design §D7）：worker「活着但不回消息」无超时（挂到 CI job timeout 才红，fail-closed）；
-  缺 wasm 时 4 条真 wasm 用例显式 skip（CI 侧由 `verify.sh` 第 4 步挡住）；`npx openspec` 在本 worktree 不可用
-  （`node_modules` 自指 symlink），用了**全局 `openspec` 二进制**。
-- **不自行 merge**，等主 session 转达用户确认。
+| | step 5 `spacing-sweep` | job 总时长 |
+|---|---|---|
+| 改动前（#150，run `38211181679`） | **17m45s** | 26m52s |
+| **本 PR（run `38239967460`，两个 run 都 success）** | **12m01s（1.48×）** | **24m03s** |
+
+- **确定是改善**：sweep 少 5m44s。job 只少 2m49s，是因为**同一次 CI 里 step 1 `cargo test` 比 #150 慢了
+  2m19s**（7m12s → 9m31s，与本 change 无关的 runner 波动），把收益掩盖了一部分。
+- ⚠️ **CI 提速（1.48×）明显低于本机（2.01×）**，也低于「按 4 核推算」的预期。本 change **没有打点**，
+  所以「runner 实际可用核数 / 共享 vCPU / 内存带宽」到底是哪一条，**未定**（如实记为盲区）。
+- ⚠️ **余量仍不宽**：24m03s 对 30 分钟上限只余 ~6 分钟；而 CI 的历史波动不小——另一次 main run 的
+  sweep 折算 **~6.9 min/seed**（#150 是 2m13s/seed，3 倍多），说明**换一台慢 runner 仍可能贴边**。
+
+## 7. 待办 / 下一步（需用户拍板）
+
+**要不要再加一根杠杆？** 本 change 的 profile 已经指明下一根杠杆在哪：每窗 `new Game(...)` 重建
+整场锚点索引 = **91.6 %**，而它的输入（events/lineup/timeline）**逐 seed 不变** ⇒ 缓存静态索引后
+逐窗成本 ≈ 1/10，sweep 可望从 12 分钟量级降到 **~1.5–2 分钟量级**（决定性余量）。
+
+- **为什么本 change 没做**：它要么改 `viewer/game.js`（把静态索引抽成可复用的纯计算结果，**App 也共用
+  这个文件**），要么在 `tools/` 侧复用 `Game` 实例并复位其可变状态（`_players`/`ball`）——两条都能做到
+  「行为逐位等价 + 守卫测试钉住」，但**改动面从 tools/ 扩到 viewer/ 语义**，`design.md` §D5 已把它
+  记为「另立 change」，两轮独立审阅也是按这个边界审的。
+- **建议**：若用户接受「24m03s / 余 6 分钟」→ 直接合入 #153；若不接受 → 本 change 先合入（它本身是
+  确定收益且判据零改动），**另立一个 change** 做索引缓存，两者叠加最稳。
+
+**本 change 已知盲区**（design §D7）：worker「活着但不回消息」无超时（挂到 CI job timeout 才红，fail-closed）；
+缺 wasm 时 4 条真 wasm 用例显式 skip（CI 侧由 `verify.sh` 第 4 步挡住）；`npx openspec` 在本 worktree 不可用
+（`node_modules` 自指 symlink），用了**全局 `openspec` 二进制**；CI 的 `availableParallelism()` 未打点。
+
+## 8. 纪律声明
+
+**不自行 merge**。PR #153 已绿、可合；等主 session 转达用户确认后再动。
