@@ -70,6 +70,11 @@
       P2-5 → 探针 `git rm`；P2-6 → `app.js` 的 `game.js?v=` 已 bump；
       P2-7 → fixture 加「在 lineup 里但不在 lineup 事件 players 里」的球员，让回落分支**真的**被走到；
       NIT-2/NIT-3 → design §D8/§D7 记录隐式 API 变更与新增用例的 CI 成本
-- [ ] 6.2b 第二轮独立审阅（复审修复）→ 报告落 `reviews/`
-- [ ] 6.3 push → PR（base `main`）→ CI 全绿；记录 **CI step 5 与 job 总耗时**（对比 #153 的 12m01s / 24m03s）
+- [x] 6.2b 第二轮独立审阅（复审修复）→ `reviews/independent-review-round2-claude-2026-10-12.md`：**通过**
+      （第一轮 15 条逐条独立复跑确认修掉；新发现 6 条**全是 NIT**，已修入 `1fe69c4`）
+- [x] 6.3 push → PR [#155](https://github.com/Xingkai98/pitchcraft/pull/155)（base `main`）→ **两次 run 都 success**；
+      **CI 读数**（机型波动大，用 step 1 `cargo test` 当代理）：
+      #150（改前）7m12s / **17m45s（串行）** / 26m52s；#153 9m31s / 12m01s / 24m03s 与 5m30s / 9m06s / 16m12s；
+      本 PR 7m58s / **36.2 s** / **10m47s** 与 9m39s / **43.1 s** / **13m34s**。
+      ⇒ **step 5 提速 ≈17×–20×**，job 离 30 分钟上限 **16–19 分钟余量**；目标（~1.5–2 分钟）达成并超出
 - [ ] 6.4 `REPORT-to-main-session.md`（**不自行 merge**，等主 session）

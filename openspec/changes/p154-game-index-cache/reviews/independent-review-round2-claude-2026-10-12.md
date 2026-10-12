@@ -219,7 +219,19 @@ git status --porcelain                                            # 空
 
 ## 7. 真实门复跑（0d089f1，本机）
 
-见文末追加段（后台任务完成后补记）。
+```
+$ time node tools/spacing-sweep.mjs
+seed 42: 2157 windows, player_overlap findings=0
+…（8 seed 各一行，全部 2157 窗 / findings=0）
+OK: no player_overlap findings over the swept windows
+real 1m29.221s   user 4m18.670s   EXIT=0
+```
+
+- 结果与改前**逐字相同**（8×2157 窗、findings=0、末行 `OK`、exit 0）✅
+- 注入点没有破坏生产 CLI 路径（默认 `buildIndex = buildGameIndex`，worker 路径照常）✅
+- ⚠️ 读数波动（同一台机器）：第一轮同一命令 **3m18.7s**、本轮 **1m29.2s**（`user` 3m54s → 4m19s 基本不变，
+  差的是机器负载）。**结论：这类时长读数必须带负载口径读**（同 §2.6 的 167s vs 22.7s）——
+  实现者 §D6 记的「本机 2m28s」「独立审阅者的机器 3m18.7s」都在这个波动带内，与我的两次读数不矛盾。
 
 ---
 

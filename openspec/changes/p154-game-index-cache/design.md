@@ -34,7 +34,8 @@ detector 阈值 / audit profile；**不动 `engine/`**；不抬 `ci.yml` 的 `ti
 
 **结论**：
 1. **91.5% 是可缓存的**：前四行（`buildTimeline` + `_buildAnchorIndex` + `_computeEventEnds` +
-   `_buildHighlightIndex` = 141.42 ms/窗 = 92.2%）**只依赖 `(events, lineup, mode)`**，与 `t` 无关。
+   `_buildHighlightIndex` = 141.42 ms/窗 = 92.2%）**只依赖 `(events, lineup, mode)` 与建索引时刻的
+   config 常量**（⚠️ config 那半句是 §D3 订正后补的），与 `t` 无关。
    真正 per-window 的只有 `_initToEvent` + `seekTo` = **0.15 ms/窗**（占 0.1%）。
 2. 逐窗合计 153.3 ms/窗 ⇒ 折算全 2157 窗 = **5.51 min/seed**（本机）。缓存后可降至 ≈ 12.9 ms/窗
    （`captureObservation` 12.36 + `detect` 0.58 + 初始化 0.15）⇒ **理论 ≈ 11.9×**。
@@ -306,3 +307,24 @@ JSON 依次喂进哈希。seed 59 / 18 / 94 = 红牌 seed，覆盖罚下路径�
 - **本 worktree 的 `node_modules` 是入库的自指 symlink**（指向主仓库的 `node_modules`，而后者
   本身断成自指环）。为本地跑 `app.test.js`（jsdom）曾在本 worktree 临时 `npm ci` 出真实目录，
   用完已还原 symlink（见提交前自查）。CI 走 `npm ci`，不受影响。
+
+
+## D9 CI 实测（PR [#155](https://github.com/Xingkai98/pitchcraft/pull/155)，两次 run 都 success）
+
+代码态 = commit `1fe69c4`。CI 机型波动大（用 step 1 `cargo test` 当机型代理），故读数并列：
+
+| run | 机型（`cargo test`） | **step 5 `spacing-sweep`** | job 总时长 |
+|---|---|---|---|
+| #150（改前，串行） | 7m12s | **17m45s** | 26m52s |
+| #153 run A | 9m31s（偏慢） | 12m01s | 24m03s |
+| #153 run B | 5m30s（偏快） | 9m06s | 16m12s |
+| **本 PR** `38264260625`（push 触发，见下方 §D9 链接） | 7m58s | **36.2 s** | **10m47s** |
+| **本 PR** `38264265432`（PR 触发） | 9m39s（偏慢） | **43.1 s** | **13m34s** |
+
+- **step 5：12m01s → 36–43 s（≈17×–20×）**；相对 #150 的 17m45s 是 **≈25×–29×**。
+  两次 run 的 stdout 与改前**逐字相同**（8 × 2157 窗、`findings=0`、末行 `OK`、exit 0）。
+- **目标「~1.5–2 分钟」达成并超出**（36–43 s）。job 总时长 10m47s–13m34s，
+  离 `timeout-minutes: 30` 有 **16–19 分钟余量**。
+- 读法：两行是**同一份代码**的两个 run，差异来自 runner 机型（`cargo test` 7m58s vs 9m39s）——
+  快机上 step 5 反而更短（36s vs 43s），与「省下的是机型无关的每 seed 固定成本」一致。
+- 其余 step 未被本 change 影响（viewer 10s / tools 12–15s / e2e 10–13s 量级）。
