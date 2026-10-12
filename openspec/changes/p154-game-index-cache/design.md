@@ -231,18 +231,25 @@ JSON 依次喂进哈希。seed 59 / 18 / 94 = 红牌 seed，覆盖罚下路径�
 ### 定向变异（单点替换，命中数必须为 1；跑完逐字节还原）
 
 变异施加脚本对每个变异**打印命中数并要求恰好为 1**，跑完立即用备份还原，最后比对整文件字节。
-**变异 hunk 原文一并记录**（审阅 §4.1 指出：只写文字描述则取证不可复核——审阅者按最自然的落点
-复现 M1 得到的是 2 红而不是表里的 1 红，正是因为表里没写清「删的是哪个键」）。
+**变异 hunk 原文一并记录**（第一轮审阅 §4.1 指出：只写文字描述则取证不可复核）。
+表的「结果」列**口径 = `tools/spacing-sweep.test.mjs` 内**；仓库级红数见每行的括注。
+
+> ⚠️ **一处记录订正（第二轮审阅 NIT-1）**：第一版这里把「审阅者复现 M1 得 2 红 vs 表里的 1 红」
+> 归因为「表里没写清删的是哪个键」。**机制说错了**：两个 hunk 删的是**同一个键**（seed 42 下
+> `playerAnchors` 首个键 = `_players[0].id` = `0`）。真正的差异是**该 hunk 是否被 `opts.index` 守卫**：
+> 审阅者的 hunk 写成 `if (opts.index && …)` ⇒ **只在复用路径删**、逐窗重建路径不删 ⇒ 两条路径分岔
+> ⇒ 连「逐窗一致」用例也红（2 红）；本表 M1 的 hunk 是**无条件**删 ⇒ 两条路径同样删 ⇒ 逐窗一致绿、
+> 只有摘要红（1 红）。两个 hunk 审阅者都实跑过，与上述解释吻合。
 
 | # | 变异（单点替换的 `to` 片段；`// MUTANT` 为标记） | 落点 | 结果 |
 |---|---|---|---|
-| **M1** | 在 `this._playerAnchors = index.playerAnchors;` 后插 `if (this._players.length) this._playerAnchors.delete(this._players[0].id); // MUTANT` | `viewer/game.js` | **红 1 条**：「静态索引……逐字节未被改写」。**为什么是 1 条而不是 2 条**：构造函数是两条路径共用的同一段代码，删锚点对「逐窗重建」路径同样生效（它每次只有一窗的生命周期）⇒ 两条路径的观测仍等价，只有「共享索引被改写」这件事本身被摘要看见 |
-| **M2** | `if (index.events !== events \|\| index.lineup !== lineup \|\| index.mode !== this.mode) {` → `if (index.mode !== this.mode) { // MUTANT` | `viewer/game.js` | **红 1 条**：「索引缓存失效条件……报错」 |
+| **M1** | 在 `this._playerAnchors = index.playerAnchors;` 后插 `if (this._players.length) this._playerAnchors.delete(this._players[0].id); // MUTANT` | `viewer/game.js` | tools 套件内**红 1 条**：「静态索引……逐字节未被改写」。**仓库级 4 条红**（另加 `viewer/game.test.js` 的「索引复用不改变外部输入」+ tackle 那两条连带——因为该 hunk 是**无条件**的，连默认路径的行为一起改了）。**为什么 tools 内是 1 条而不是 2 条**：构造函数是两条路径共用的同一段代码，无条件删锚点对「逐窗重建」路径同样生效（它每次只有一窗的生命周期）⇒ 两条路径的观测仍等价 |
+| **M2** | `if (index.events !== events \|\| index.lineup !== lineup \|\| index.mode !== this.mode) {` → `if (index.mode !== this.mode) { // MUTANT` | `viewer/game.js` | **红 1 条**：「索引缓存失效条件……报错」（`viewer/game.test.js` 侧另有 1 条） |
 | **M3** | 在 `this._eventEnds = index.eventEnds;` 后插 `for (let i = 0; i < this._eventEnds.length; i += 2) this._eventEnds[i] += 0.5; // MUTANT` | `viewer/game.js` | **红 2 条**：逐窗逐位一致 + 索引未被改写。**这是唯一一条能同时打红「逐窗一致」的**——它是**就地累加**：共享索引上跨窗累积，而逐窗重建每次拿到的是只活一窗的新数组 |
 | **M4** | 把 `const game = new Game(events, lineup, 'continuous', { index });` 从循环内提到循环外（`game.seekTo(t)` 照旧） | `spacing-sweep-core.mjs` | **绿（存活）** —— 见 §D5：该变异在生产窗口区间**行为等价**，是**真等价变异**，不是判据盲区 |
-| **M5** | `const index = buildIndex(events, lineup, 'continuous');` → `buildIndex(events, lineup.map((p) => ({ ...p })), 'continuous'); // MUTANT` | `spacing-sweep-core.mjs` | **红 6 条**（逐窗一致、并发==串行、detector 接线、`runSweep` 三条编排）——缓存与输入不同源时 **fail-loud** |
+| **M5** | `const index = buildIndex(events, lineup, 'continuous');` → `buildIndex(events, lineup.map((p) => ({ ...p })), 'continuous'); // MUTANT` | `spacing-sweep-core.mjs` | **红 6 条** = 并发==串行 / 门被悄悄放宽（判据面被连带打红）/ detector 接线 / `runSweep` **两条**编排（干净路径、finding 路径；崩溃路径那条绿）/ 逐窗一致——缓存与输入不同源时 **fail-loud**。⚠️ 第一版这里把清单写成「`runSweep` 三条」并漏了「门被悄悄放宽」；第二轮审阅逐条实跑订正 |
 | **M6** | `const game = new Game(events, lineup, 'continuous', { index });` → `new Game(events, lineup, 'continuous'); // MUTANT`（**把优化整个摘掉**） | `spacing-sweep-core.mjs` | **红 1 条**（逐窗一致用例里的注入守卫）。⚠️ **这条是本 change 第一版审阅实测「20/20 全绿」的存活变异**（审阅 P1-1）——第一版套件的等价判据对「优化被摘掉」不可观测（摘掉后两条路径仍等价）。修法是加 `buildIndex` 注入点 + 篡改式接线断言 |
-| **M7** | 在窗口循环内再插一行 `const idx2 = buildIndex(events, lineup, 'continuous'); // MUTANT` 并改用它 | `spacing-sweep-core.mjs` | **红 1 条**（注入守卫的「每 seed 恰好 1 次」断言 → 实测 2158 次）——缓存退化成每窗重建时变红 |
+| **M7** | 在窗口循环内再插一行 `const idx2 = buildIndex(events, lineup, 'continuous'); // MUTANT` 并改用它 | `spacing-sweep-core.mjs` | **红 1 条**（注入守卫的「每 seed 恰好 1 次」断言）。实测计数 = **23**（= 循环外 1 次 + 该用例的 22 窗各 1 次；那条用例的 step 是 250）。⚠️ 第一版这里记「2158 次」——那是按生产密度（`step=2.5`）算出来的，与该用例的 `step=250` **不自洽**；第二轮审阅实跑订正 |
 
 **为什么 M1 只红「摘要」、M3 才能红「逐窗一致」**：构造函数是两条路径共用的同一段代码，故绝大多数
 变异是**对称**的（两条路径同时坏 ⇒ 逐窗比对看不出来）。能被「缓存 vs 重建」抓住的，只可能是
@@ -274,9 +281,10 @@ JSON 依次喂进哈希。seed 59 / 18 / 94 = 红牌 seed，覆盖罚下路径�
 
 ### 新增用例的 CI 成本（如实记，本仓有「CI 预算债」前科）
 
-`tools/spacing-sweep.test.mjs` 从 16 条 / 16 例 → **20 条**；改后整文件在本机（load ≈ 4）
-**≈ 18–21 s**（其中 #154 的 4 条 ≈ 12 s）。相对本 change 在 step 5 上省下的 7–10 分钟，这笔账是划算的；
-`viewer/game.test.js` 的新用例是纯合成的（毫秒级）。
+`tools/spacing-sweep.test.mjs` 从 16 条 / 16 例 → **20 条**；改后整文件在本机**空闲时 ≈ 18–23 s**
+（其中 #154 的 4 条 ≈ 12 s）。⚠️ **不可当上界读**：同一文件在**负载高**的机器上量到过 **167 s**
+（#17 单条 43 s）——同一台机器差 7×，与仓内「CI 机型速度波动大」那条教训一致。
+相对本 change 在 step 5 上省下的 7–10 分钟，这笔账是划算的；`viewer/game.test.js` 的新用例是纯合成的（毫秒级）。
 
 ## D8 现场记录
 

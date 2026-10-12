@@ -422,6 +422,12 @@ test('缓存索引 == 逐窗重建（真实 wasm，逐窗逐位一致）：captu
       },
       buildIndex: (ev, lu, m) => ({ ...buildGameIndex(ev, lu, m), timeline: [] }),
     });
+    // 先钉窗数再比内容：否则「跑成 0 窗」也会让 notDeepEqual 因**错的理由**通过（#154 审阅二轮 NIT-5）。
+    assert.equal(
+      tamperedInputs.length,
+      refInputs.length,
+      `seed ${seed}：篡改后的窗口数必须与参照一致（否则下面的「不同」可能是退化造成的）`
+    );
     assert.notDeepEqual(
       tamperedInputs,
       refInputs,
