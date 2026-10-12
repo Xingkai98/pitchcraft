@@ -11,93 +11,35 @@
 //     && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)
 //   node tools/spacing-sweep.mjs            # 默认 seed 42 1 2 3 7 59 18 94
 //   node tools/spacing-sweep.mjs 42 1 2     # 指定 seed
+//   SWEEP_CONCURRENCY=1 node tools/spacing-sweep.mjs   # 强制串行（默认并发跑 seed）
 //
-// 退出码：任一 seed 出现 finding 即 1（可作 CI 门；默认 seed 集下当前应为 0）。
+// 退出码：任一 seed 出现 finding 即 1（可作 CI 门；默认 seed 集下当前应为 0）；缺 wasm 2。
+//
+// **#152 提速**：每 seed 互相独立，默认以 worker_threads 并发跑（`SWEEP_CONCURRENCY`，
+// 默认 `min(4, CPU 数)`）。并发与串行的结果**逐位一致**——两条路径跑的是同一个 `runSeed`
+// （`tools/spacing-sweep-core.mjs`），差别只在「在哪个线程里跑」；输出仍按**入参 seed 序**
+// 打印。**判据、采样密度（`DUR`/`STEP`）、detector 阈值一律未动**。见
+// `openspec/changes/p152-sweep-perf/`。
+//
+// 本文件只做「解析 argv/env → 交给 `runSweep` → `process.exit(退出码)`」。**sweep 的主体
+// 逻辑在 core 里**（可 import），这样「打印顺序 / OK·FAIL / 退出码 0·1」能在单测里被真正执行
+// ——否则 CLI 只有「非法 SWEEP_CONCURRENCY → exit 2」这一条分支被跑到（#152 审阅 P1-2）。
 
-import { readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
-import { fileURLToPath } from 'node:url';
+import {
+  WASM_PATH,
+  parseSeeds,
+  resolveConcurrency,
+  runSweep,
+} from './spacing-sweep-core.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
-const { config } = await import(join(ROOT, 'viewer', 'config.js'));
-const { parseEventStream } = await import(join(ROOT, 'viewer', 'protocol.js'));
-const { Game } = await import(join(ROOT, 'viewer', 'game.js'));
-const { captureObservation } = await import(join(ROOT, 'viewer', 'observation.js'));
-const { DEFAULT_AUDIT_PROFILE, detectPlayerOverlap } = await import(join(ROOT, 'tools', 'detectors.mjs'));
+const seeds = parseSeeds(process.argv.slice(2));
 
-config.debug.enabled = false; // 关调试日志；跳过机制会改 playTime，关掉
-config.playback.skipThresholdSeconds = Infinity;
-
-const WASM = join(ROOT, 'viewer', 'engine.wasm');
-let wasmBytes;
+let concurrency;
 try {
-  wasmBytes = readFileSync(WASM);
-} catch {
-  console.error(
-    `缺少 ${WASM}。先构建 WASM：\n` +
-      '  (cd engine && cargo build --target wasm32-unknown-unknown --release)\n' +
-      '  cp engine/target/wasm32-unknown-unknown/release/fm_engine.wasm viewer/engine.wasm'
-  );
+  concurrency = resolveConcurrency({ env: process.env.SWEEP_CONCURRENCY, seedCount: seeds.length });
+} catch (err) {
+  console.error(String((err && err.message) || err));
   process.exit(2);
 }
 
-const DUR = 5400; // 90 分钟
-const STEP = 2.5; // 采样步长（秒）：±5s 窗 = 10s 宽 → 4x 重叠，密到不会漏掉短暂重叠
-// 默认 seed 集：含 P34 审阅 R2 命中的 `59`（当年默认集 `42 1 2 3 7` 全零，漏掉了它——
-// 那次残留的根因是「罚下球员幽灵」，已在 viewer 侧修复）。红牌 seed 取 `59`（2 张）+
-// `18` + `94`（各 1 张）——单点覆盖太脆（审阅 R3/R4 NIT），三个 seed 的幽灵路径互为兜底。
-// 1..200 内共 12 个含红牌 seed：18 33 59 78 85 94 95 113 121 145 186 190。
-const seeds = process.argv.slice(2).length
-  ? process.argv.slice(2).map(Number)
-  : [42, 1, 2, 3, 7, 59, 18, 94];
-
-const { instance } = await WebAssembly.instantiate(wasmBytes, {});
-const wasm = instance.exports;
-const encoder = new TextEncoder();
-const decoder = new TextDecoder();
-const SCRATCH = 1024;
-
-let totalFindings = 0;
-for (const seed of seeds) {
-  const cfgBytes = encoder.encode(JSON.stringify({ match_duration_seconds: DUR }));
-  new Uint8Array(wasm.memory.buffer, SCRATCH, cfgBytes.length).set(cfgBytes);
-  wasm.simulate(BigInt(seed), SCRATCH, cfgBytes.length);
-  const raw = JSON.parse(
-    decoder.decode(new Uint8Array(wasm.memory.buffer, wasm.get_json_ptr(), wasm.get_json_length()))
-  );
-  wasm.free_json();
-  const { events, lineup } = parseEventStream(raw);
-
-  let findings = 0;
-  let worst = Infinity;
-  let windows = 0;
-  for (let t = 5; t <= DUR - 5; t += STEP) {
-    const game = new Game(events, lineup, 'continuous');
-    game.seekTo(t);
-    const bundle = captureObservation({
-      game,
-      statement: '',
-      selectedEntities: [],
-      window: { before: 5, after: 5 },
-      seed,
-      config: { match_duration_seconds: DUR },
-      sourceRevision: '<spacing-sweep>',
-      opts: { idFactory: () => 'sweep', now: 1 },
-    });
-    const f = detectPlayerOverlap(bundle.audit_input.players, DEFAULT_AUDIT_PROFILE);
-    windows += 1;
-    for (const x of f) {
-      findings += 1;
-      if (x.features.min_distance < worst) worst = x.features.min_distance;
-    }
-  }
-  totalFindings += findings;
-  const tail = findings ? ` worst=${worst.toFixed(3)}m` : '';
-  console.log(`seed ${seed}: ${windows} windows, player_overlap findings=${findings}${tail}`);
-}
-
-if (totalFindings > 0) {
-  console.error(`\nFAIL: ${totalFindings} player_overlap finding(s) over the swept windows`);
-  process.exit(1);
-}
-console.log('\nOK: no player_overlap findings over the swept windows');
+process.exit(await runSweep({ seeds, concurrency, wasmPath: WASM_PATH }));
