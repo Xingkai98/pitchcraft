@@ -75,7 +75,7 @@
 - [x] 6.3 push → PR [#155](https://github.com/Xingkai98/pitchcraft/pull/155)（base `main`）→ **两次 run 都 success**；
       **CI 读数**（机型波动大，用 step 1 `cargo test` 当代理）：
       #150（改前）7m12s / **17m45s（串行）** / 26m52s；#153 9m31s / 12m01s / 24m03s 与 5m30s / 9m06s / 16m12s；
-      本 PR 7m58s / **36.2 s** / **10m47s** 与 9m39s / **43.1 s** / **13m34s**。
-      ⇒ **step 5 提速 ≈17×–20×**，job 离 30 分钟上限 **16–19 分钟余量**；目标（~1.5–2 分钟）达成并超出
+      本 PR 7m58s / **36.2 s** / **10m47s**、9m39s / **43.1 s** / **13m34s**、5m22s / **28.6 s** / **7m45s**（最终 HEAD）。
+      ⇒ **step 5 提速 ≈17×–25×**，job 离 30 分钟上限 **16–22 分钟余量**；目标（~1.5–2 分钟）达成并超出
 - [x] 6.4 `REPORT-to-main-session.md` 已落盘（含 profile / 守卫 / 两轮审阅 / CI 读数）；
       **未自行 merge** —— 按约定等主 session
