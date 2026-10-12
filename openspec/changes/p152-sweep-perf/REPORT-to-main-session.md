@@ -87,7 +87,7 @@ detector→`[]`（9、11 红）、`toFixed(2)`（9、11 红）、`runSweep` 失�
 - **未**降采样密度、**未**抬 `timeout-minutes`、**未**拆 job（design §D5 记了为何不采用这三条）。
 - `viewer/engine.wasm` 由**本 worktree 从源码**构建（非旧实验产物）。
 
-## 6. CI 实测（PR #153，两个 run 都 success、两个 HEAD 都绿）
+## 6. CI 实测（PR #153：**三个提交、6 个 run 全部 success**；另 1 个 run 被 `concurrency.cancel-in-progress` 取消，那是 `ci.yml` 既有行为）
 
 **CI 机型波动很大**（用 step 1 `cargo test` 当机型快慢的代理），故把三次读数并列：
 
@@ -96,8 +96,9 @@ detector→`[]`（9、11 红）、`toFixed(2)`（9、11 红）、`runSweep` 失�
 | 改动前 #150（`38211181679`） | 7m12s | **17m45s**（串行） | 26m52s | success |
 | 本 PR `38239967460` | 9m31s（偏慢） | 12m01s | 24m03s | success |
 | 本 PR `38243256544` | 5m30s（偏快） | **9m06s** | **16m12s** | success |
+| 本 PR `38245569101`（最终 HEAD） | 6m33s | 9m27s | 19m04s | success |
 
-- **sweep 提速 1.48×–1.95×**，job **省 2m49s–10m40s**。
+- **sweep：17m45s（串行）→ 9m06s / 9m27s / 12m01s ⇒ 常见机型 ≈9.5 min（≈1.87×）**；job **省 2m49s–10m40s**。
 - **正常机型上 job = 16m12s，离 30 分钟上限余 ~14 分钟 ⇒ 目标（回到安全区）达成**；偏慢机型 24m03s，
   余 ~6 分钟。两次都全绿。
 - **为什么没到核数（4×）**：同本机原因（每 worker 各持一份内存 ⇒ GC/带宽竞争 + 收尾负载不均），
