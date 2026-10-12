@@ -77,4 +77,5 @@
       #150（改前）7m12s / **17m45s（串行）** / 26m52s；#153 9m31s / 12m01s / 24m03s 与 5m30s / 9m06s / 16m12s；
       本 PR 7m58s / **36.2 s** / **10m47s** 与 9m39s / **43.1 s** / **13m34s**。
       ⇒ **step 5 提速 ≈17×–20×**，job 离 30 分钟上限 **16–19 分钟余量**；目标（~1.5–2 分钟）达成并超出
-- [ ] 6.4 `REPORT-to-main-session.md`（**不自行 merge**，等主 session）
+- [x] 6.4 `REPORT-to-main-session.md` 已落盘（含 profile / 守卫 / 两轮审阅 / CI 读数）；
+      **未自行 merge** —— 按约定等主 session
