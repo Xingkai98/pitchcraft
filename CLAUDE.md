@@ -49,6 +49,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
   ——图能发现，数值能守护。
 - 渲染不依赖浏览器：用 `viewer/soft-canvas.js` + `renderFrame` 光栅到 PNG
   （参考 `openspec/changes/p38-formation-realism/notes/probes-main/render-trajectories.mjs`）。
+- **改机制 / 找新杠杆前，走 `adversarial-explore` skill**（`.claude/skills/adversarial-explore/SKILL.md`）：
+  `先看（渲轨迹图）→ 候选（一轴一 subagent，含预注册）→ 对抗（**盲测看图** + **判据/因果试证伪**）→ 综合`。
+  候选与「数字/画面」的复核**必须由不同镜头的零上下文 agent 独立做**，不能单线「实现→看数字→结结论」
+  ——本仓三类错（结论对但机制错 / 数字绿画面没变 / 没试最简解）都由此漏网。
+  ⚠️ **`like-football` 的「距离」不是优化目标**：纯块配置距离 0.365（全场最低）但画面是两队叠在球上
+  ——标量有**退化方向**，必须配盲测图 + 结构量。
 
 关键约束：坐标映射必须纯函数；viewer 必须暴露 `renderFrame` 测试钩子；viewer 必须输出调试日志。
 
