@@ -1,0 +1,1 @@
+c=0.7 variant=C lib.rs sha16=a8031bfc5995cba7

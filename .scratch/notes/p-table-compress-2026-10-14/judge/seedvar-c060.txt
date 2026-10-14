@@ -1,0 +1,9 @@
+seed=  42 gap=9.78✘ hd=22.66✔ ad=19.19✔ width=49.69
+seed=   1 gap=9.68✘ hd=22.46✔ ad=19.42✔ width=49.31
+seed=   7 gap=9.94✘ hd=22.82✔ ad=19.26✔ width=49.92
+seed=  99 gap=9.95✘ hd=23.00✔ ad=19.32✔ width=49.76
+seed= 123 gap=9.89✘ hd=22.80✔ ad=19.32✔ width=49.60
+MEAN gap=9.849 sd=0.103 min=9.68 max=9.95 band=[5.24,8.32] inBand=0/5
+MEAN hd=22.747 sd=0.181 min=22.46 max=23.00 band=[18.31,25.94] inBand=5/5
+MEAN ad=19.301 sd=0.079 min=19.19 max=19.42 band=[18.45,26.79] inBand=5/5
+三条同时带内(逐 seed): 0/5

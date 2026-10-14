@@ -1,0 +1,75 @@
+   Compiling fm-engine v0.1.0 (/tmp/l1-C070/engine)
+warning: constant `FORM_CENTER_HOME` is never used
+    --> src/lib.rs:3425:7
+     |
+3425 | const FORM_CENTER_HOME: f64 = 0.358;
+     |       ^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `FORM_CENTER_AWAY` is never used
+    --> src/lib.rs:3426:7
+     |
+3426 | const FORM_CENTER_AWAY: f64 = 0.642;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: `fm-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 34.71s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+[fouls] 每场: foul=24.95 yellow=3.35 red=0.07 free_kick=24.95
+
+thread 'l1_shot_result_distributions' (3464979) panicked at tests/realism.rs:694:5:
+禁区内射门占比 0.389 ∉ [0.45,0.65]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test l1_pass_completion_rate ... ok
+test l1_fouls_and_cards ... ok
+test l1_shot_result_distributions ... FAILED
+[L3] shots=3299 regular=2965 header=334 goals=361 saved=798 box_goals=229 禁区占比=0.634 sot=0.351 conv=0.109
+
+thread 'l3_shot_ratios' (3470950) panicked at tests/realism.rs:1071:5:
+禁区内进球占比 0.634 ∉ [0.72,0.92]
+
+thread 'l1_tackle_dilution_and_slot_mix' (3470948) panicked at tests/realism.rs:759:5:
+抢断/场 56.74 ∉ [24,50]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）
+test l3_shot_ratios ... FAILED
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主0.97/客0.83 (H/A 1.175) pass_evt=873.9 shot=14.82(+header 1.67) tackle=56.74(succ 26.16) corner=5.17 throw_in=23.92 goal_kick=18.30 foul=24.95(yellow 3.35/red 0.07)
+test p13_side_effect_snapshot ... ok
+[BAND] shots_regular/场 = 14.825
+[BAND] n_box/n_arc/n_far = 1154/1376/435  禁区内射门占比 = 0.3892  (带 [0.45,0.65])
+[BAND] box   g/sv/off = 0.1473/0.3007/0.5520  (带 [.10,.20]/[.24,.36]/[.48,.60])
+[BAND] arc   g/sv/off = 0.0727/0.2209/0.7064  (带 [.03,.12]/[.14,.30]/[.61,.75])
+[BAND] far   g/sv/off = 0.0736/0.1149/0.8115  (带 [0,.08]/[.04,.18]/[.78,.92])
+[BAND] shot_far45 = 0 (==0)  header n=334 chi2=1.86 (<13.82) g/sv/off=0.177/0.290/0.533
+[BAND] sot = 0.3513 (带 [0.28,0.39])  conv = 0.1094 ([0.08,0.14])  禁区内进球占比 = 0.6343 ([0.72,0.92])
+[BAND] 抢断/场 = 56.740 ([24,50])  success = 0.4611 ([0.42,0.58])  close_succ = 0.4611  far = 0 (==0)  shot/tackle = 0.2613 ([0.5,1.5])
+[BAND] 角球/场 = 5.165 ([1,7])  单场max = 14 (<=15)  界外球/场 = 23.920 ([15,60])
+[BAND] 传球成功率 = 0.8574 ([0.82,0.90])  拦截占失败 = 0.7509 ([0.55,0.90])  pass/场 = 873.9
+[BAND] 犯规/场 = 24.950 ([16,30])  黄 = 3.350 ([2,5])  红 = 0.0700 (<=0.8)
+[P31 5min cohort n=1000] 射门/场=0.82 出界重开/场=2.44（其中角球+界外球 1.51）犯规/场=1.75 进球/场=0.11
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+test zz_band_report has been running for over 60 seconds
+[BAND] 主队进球/场 = 1.0433 ([0.85,1.60])  客 = 0.8500 (>=0.30)  H/A = 1.2275  (600 seed)
+[home-adv calibration] matches=600 home_goals=626 away_goals=510 H/A=1.227 log(H/A)=0.205 95% CI=[1.092, 1.380]
+[home-adv] 主 1.043/场 客 0.850/场 合计 1.893 H/A=1.227
+test zz_band_report ... ok
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... ok
+
+failures:
+
+failures:
+    l1_shot_result_distributions
+    l1_tackle_dilution_and_slot_mix
+    l3_shot_ratios
+
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 4 filtered out; finished in 454.43s
+
+error: test failed, to rerun pass `--test realism`

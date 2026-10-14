@@ -1,0 +1,12 @@
+L1 tag=base lib16=75190e51f5b28876
+L1-base-DONE
+c=0.7 variant=C lib.rs sha16=a8031bfc5995cba7
+L1 tag=c070 lib16=a8031bfc5995cba7
+L1-c070-DONE
+c=0.55 variant=C lib.rs sha16=9e0390788cb80661
+L1 tag=c055 lib16=9e0390788cb80661
+L1-c055-DONE
+c=0.6 variant=A lib.rs sha16=bf4b0c519dc8a40e
+L1 tag=a060 lib16=bf4b0c519dc8a40e
+L1-a060-DONE
+ALL-L1-DONE

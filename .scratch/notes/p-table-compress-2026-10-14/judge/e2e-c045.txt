@@ -1,0 +1,9 @@
+file:///tmp/judge-table-axis/viewer/e2e-v2.mjs:143
+  if (maxPlayerJump > 0.1) throw new Error(`seed${seed} 球员事件边界跳变过大 maxPlayerJump=${maxPlayerJump}`);
+                                 ^
+
+Error: seed1 球员事件边界跳变过大 maxPlayerJump=0.10003929226795547
+    at checkNoSnap (file:///tmp/judge-table-axis/viewer/e2e-v2.mjs:143:34)
+    at file:///tmp/judge-table-axis/viewer/e2e-v2.mjs:148:53
+
+Node.js v22.22.2

@@ -1,0 +1,9 @@
+1.0 lib=e03feee9fb264ccb wasm=393f6e06497a121f
+0.70 lib=89653f5703b61e09 wasm=aad0488268d3c4bb
+0.55 lib=701d8d03db9ddf6b wasm=3dcb8653d69e8b06
+0.45 lib=98fff8f307269c39 wasm=a14f0f2d765220dc
+0.30 lib=af70a2d87e8817dc wasm=fe456e6ef657fd16
+0.60 lib=d432e2bade09b8f6 wasm=617928456305e3e9
+0.50 lib=0bf2ce7f9d30a2e2 wasm=b4e81f461cd0f563
+A c=0.55 lib=39f0ba1b25708ec2 wasm=d52540469f5c40cc
+A c=0.60 lib=eaf724ba0916821f wasm=b581ffa292ecec9d

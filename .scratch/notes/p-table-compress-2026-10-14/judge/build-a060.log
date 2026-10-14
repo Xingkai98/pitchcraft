@@ -1,0 +1,22 @@
+   Compiling fm-engine v0.1.0 (/tmp/judge-table-axis/engine)
+warning: creating a shared reference to mutable static
+  --> src/wasm.rs:65:14
+   |
+65 |     unsafe { RESULT_BUFFER.as_ptr() }
+   |              ^^^^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+   = note: `#[warn(static_mut_refs)]` (part of `#[warn(rust_2024_compatibility)]`) on by default
+
+warning: creating a shared reference to mutable static
+  --> src/wasm.rs:70:14
+   |
+70 |     unsafe { RESULT_BUFFER.len() }
+   |              ^^^^^^^^^^^^^^^^^^^ shared reference to mutable static
+   |
+   = note: shared references to mutable statics are dangerous; it's undefined behavior if the static is mutated or if a mutable reference is created for it while the shared reference lives
+   = note: for more information, see <https://doc.rust-lang.org/edition-guide/rust-2024/static-mut-references.html>
+
+warning: `fm-engine` (lib) generated 2 warnings
+    Finished `release` profile [optimized] target(s) in 3.94s

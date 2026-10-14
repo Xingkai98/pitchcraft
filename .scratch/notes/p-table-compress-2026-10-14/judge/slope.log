@@ -1,0 +1,73 @@
+engine:base	n=135015	home slope=0.388 r=0.908	away slope=0.340 r=0.930
+    bin 0-21m	n=4553	home=31.2m	away=57.0m
+    bin 21-42m	n=44878	home=35.2m	away=61.7m
+    bin 42-63m	n=29616	home=42.3m	away=68.2m
+    bin 63-84m	n=50830	home=50.9m	away=76.0m
+    bin 84-105m	n=3854	home=57.7m	away=79.9m
+real:game1	n=29002	home slope=0.576 r=0.858	away slope=0.575 r=0.866
+    bin 0-21m	n=3438	home=27.1m	away=33.4m
+    bin 21-42m	n=5903	home=35.5m	away=41.8m
+    bin 42-63m	n=8135	home=47.2m	away=53.9m
+    bin 63-84m	n=5806	home=60.7m	away=67.5m
+    bin 84-105m	n=4812	home=76.3m	away=82.3m
+real:game2	n=28222	home slope=0.617 r=0.870	away slope=0.601 r=0.859
+    bin 0-21m	n=4872	home=22.9m	away=29.3m
+    bin 21-42m	n=5196	home=34.4m	away=41.7m
+    bin 42-63m	n=6869	home=48.0m	away=55.3m
+    bin 63-84m	n=6374	home=62.9m	away=70.2m
+    bin 84-105m	n=4528	home=74.7m	away=79.5m
+engine:c070	n=135005	home slope=0.390 r=0.826	away slope=0.376 r=0.813
+    bin 0-21m	n=3363	home=29.9m	away=41.4m
+    bin 21-42m	n=35244	home=41.7m	away=58.6m
+    bin 42-63m	n=58781	home=47.0m	away=62.9m
+    bin 63-84m	n=34356	home=53.7m	away=70.5m
+    bin 84-105m	n=1961	home=65.5m	away=77.3m
+real:game1	n=29002	home slope=0.576 r=0.858	away slope=0.575 r=0.866
+    bin 0-21m	n=3438	home=27.1m	away=33.4m
+    bin 21-42m	n=5903	home=35.5m	away=41.8m
+    bin 42-63m	n=8135	home=47.2m	away=53.9m
+    bin 63-84m	n=5806	home=60.7m	away=67.5m
+    bin 84-105m	n=4812	home=76.3m	away=82.3m
+real:game2	n=28222	home slope=0.617 r=0.870	away slope=0.601 r=0.859
+    bin 0-21m	n=4872	home=22.9m	away=29.3m
+    bin 21-42m	n=5196	home=34.4m	away=41.7m
+    bin 42-63m	n=6869	home=48.0m	away=55.3m
+    bin 63-84m	n=6374	home=62.9m	away=70.2m
+    bin 84-105m	n=4528	home=74.7m	away=79.5m
+engine:c055	n=135005	home slope=0.395 r=0.830	away slope=0.384 r=0.811
+    bin 0-21m	n=4664	home=28.9m	away=39.8m
+    bin 21-42m	n=27630	home=42.5m	away=57.9m
+    bin 42-63m	n=81873	home=47.9m	away=62.7m
+    bin 63-84m	n=18050	home=54.3m	away=68.6m
+    bin 84-105m	n=1931	home=63.7m	away=75.0m
+real:game1	n=29002	home slope=0.576 r=0.858	away slope=0.575 r=0.866
+    bin 0-21m	n=3438	home=27.1m	away=33.4m
+    bin 21-42m	n=5903	home=35.5m	away=41.8m
+    bin 42-63m	n=8135	home=47.2m	away=53.9m
+    bin 63-84m	n=5806	home=60.7m	away=67.5m
+    bin 84-105m	n=4812	home=76.3m	away=82.3m
+real:game2	n=28222	home slope=0.617 r=0.870	away slope=0.601 r=0.859
+    bin 0-21m	n=4872	home=22.9m	away=29.3m
+    bin 21-42m	n=5196	home=34.4m	away=41.7m
+    bin 42-63m	n=6869	home=48.0m	away=55.3m
+    bin 63-84m	n=6374	home=62.9m	away=70.2m
+    bin 84-105m	n=4528	home=74.7m	away=79.5m
+engine:a060	n=135010	home slope=0.402 r=0.870	away slope=0.367 r=0.853
+    bin 0-21m	n=3416	home=30.7m	away=42.6m
+    bin 21-42m	n=34583	home=42.0m	away=56.5m
+    bin 42-63m	n=62958	home=48.8m	away=62.5m
+    bin 63-84m	n=31057	home=55.2m	away=68.3m
+    bin 84-105m	n=2179	home=64.2m	away=74.6m
+real:game1	n=29002	home slope=0.576 r=0.858	away slope=0.575 r=0.866
+    bin 0-21m	n=3438	home=27.1m	away=33.4m
+    bin 21-42m	n=5903	home=35.5m	away=41.8m
+    bin 42-63m	n=8135	home=47.2m	away=53.9m
+    bin 63-84m	n=5806	home=60.7m	away=67.5m
+    bin 84-105m	n=4812	home=76.3m	away=82.3m
+real:game2	n=28222	home slope=0.617 r=0.870	away slope=0.601 r=0.859
+    bin 0-21m	n=4872	home=22.9m	away=29.3m
+    bin 21-42m	n=5196	home=34.4m	away=41.7m
+    bin 42-63m	n=6869	home=48.0m	away=55.3m
+    bin 63-84m	n=6374	home=62.9m	away=70.2m
+    bin 84-105m	n=4528	home=74.7m	away=79.5m
+SLOPE-DONE

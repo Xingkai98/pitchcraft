@@ -1,0 +1,22 @@
+base.wasm seed=42 整场同队最小间距（无阈值）:
+  pair 15,18  min=2.137m @t=2191.5
+  pair 18,19  min=2.138m @t=3845.5
+  pair 17,19  min=2.140m @t=307.5
+  pair 19,20  min=2.140m @t=5215.5
+  pair 14,15  min=2.141m @t=4057.5
+  pair 12,15  min=2.141m @t=782.5
+c070.wasm seed=42 整场同队最小间距（无阈值）:
+  pair 2,4    min=0.525m @t=4049.5
+  pair 17,19  min=2.136m @t=204.5
+  pair 4,6    min=2.139m @t=1697.5
+  pair 1,9    min=2.140m @t=3000.5
+  pair 11,19  min=2.140m @t=3002.5
+  pair 14,18  min=2.141m @t=2991.5
+a060.wasm seed=42 整场同队最小间距（无阈值）:
+  pair 7,10   min=1.355m @t=423.5
+  pair 1,9    min=2.134m @t=1790.5
+  pair 2,4    min=2.134m @t=1593.5
+  pair 11,14  min=2.137m @t=1795.5
+  pair 17,19  min=2.137m @t=287.5
+  pair 3,5    min=2.138m @t=5270.5
+MINDIST-DONE

@@ -1,0 +1,50 @@
+   Compiling fm-engine v0.1.0 (/home/happy/.paseo/worktrees/1g1x3st4/table-c2-center-adversary-2026-10-13/engine)
+    Finished `release` profile [optimized] target(s) in 6.72s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+[fouls] 每场: foul=21.14 yellow=2.69 red=0.07 free_kick=21.14
+[ADV] 普通射门/场      22.085   band [14,29]
+[ADV] 禁区内占比        0.5221   band [0.45,0.65]
+[ADV] box g/s/o          0.1613/0.2949/0.5438
+[ADV] arc g/s/o          0.0868/0.2285/0.6848
+[ADV] far g/s/o          0.0393/0.1375/0.8232
+[ADV] far45              0   band ==0
+[ADV] header g/s/o       0.1403/0.2806/0.5791
+[ADV] 抢断/场           41.500   band [24,50]
+[ADV] 抢断成功率        0.4570   band [0.42,0.58]
+[ADV] shot/tackle       0.5322   band [0.5,1.5]
+[ADV] 射正率 sot        0.3757   band [0.28,0.39]
+[ADV] 转化 conv         0.1214   band [0.08,0.14]
+[ADV] 禁区内进球占比    0.7211   band [0.72,0.92]
+[ADV] 角球/场           4.830   band [1,7] (guard)
+[ADV] 角球单场 max      14   band <=15
+[ADV] 界外球/场         20.695   band [15,60] (guard)
+[ADV] 传球成功率        0.8424   band [0.82,0.90]
+[ADV] 犯规/场           21.135   band [16,30]
+[ADV] 黄牌/场           2.685   band [2,5]
+[ADV] 红牌/场           0.075   band <=0.8
+test l1_fouls_and_cards ... ok
+test l1_pass_completion_rate ... ok
+test l1_shot_result_distributions ... ok
+test l1_tackle_dilution_and_slot_mix ... ok
+[L3] shots=4695 regular=4417 header=278 goals=570 saved=1194 box_goals=411 禁区占比=0.721 sot=0.376 conv=0.121
+test l3_shot_ratios ... ok
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.43/客1.42 (H/A 1.007) pass_evt=848.9 shot=22.09(+header 1.39) tackle=41.50(succ 18.96) corner=4.83 throw_in=20.70 goal_kick=27.32 foul=21.14(yellow 2.69/red 0.07)
+test p13_side_effect_snapshot ... ok
+test adv_probe_all_bands has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+[P31 5min cohort n=1000] 射门/场=1.24 出界重开/场=2.84（其中角球+界外球 1.35）犯规/场=1.51 进球/场=0.16
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+[home-adv] 主 1.485/场 客 1.458/场 合计 2.943 H/A=1.018
+[ADV] 主队进球/场       1.4850   band [0.85,1.60]
+[ADV] 客队进球/场       1.4583   band >=0.30
+[home-adv calibration] matches=600 home_goals=891 away_goals=875 H/A=1.018 log(H/A)=0.018 95% CI=[0.928, 1.118]
+[ADV] H/A=1.0183  方向断言 gh>ga: true
+test l1_home_away_goal_asymmetry ... ok
+test l3_home_away_goal_calibration ... ok
+test adv_probe_all_bands ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 154.89s
+

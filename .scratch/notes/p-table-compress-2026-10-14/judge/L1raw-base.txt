@@ -1,0 +1,35 @@
+   Compiling fm-engine v0.1.0 (/tmp/judge-table-axis/engine)
+    Finished `release` profile [optimized] target(s) in 6.13s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+[fouls] 每场: foul=21.14 yellow=2.69 red=0.07 free_kick=21.14
+test l1_shot_result_distributions ... ok
+test l1_pass_completion_rate ... ok
+test l1_fouls_and_cards ... ok
+test l1_tackle_dilution_and_slot_mix ... ok
+[L3] shots=4695 regular=4417 header=278 goals=570 saved=1194 box_goals=411 禁区占比=0.721 sot=0.376 conv=0.121
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.43/客1.42 (H/A 1.007) pass_evt=848.9 shot=22.09(+header 1.39) tackle=41.50(succ 18.96) corner=4.83 throw_in=20.70 goal_kick=27.32 foul=21.14(yellow 2.69/red 0.07)
+test l3_shot_ratios ... ok
+test p13_side_effect_snapshot ... ok
+[JUDGE-BANDS] box_share=0.5221 shots/场=22.085 sot=0.3757 conv=0.1214 inside=0.7211
+[JUDGE-BANDS] box g/sv/off=0.1613/0.2949/0.5438 arc=0.0868/0.2285/0.6848 far=0.0393/0.1375/0.8232
+[JUDGE-BANDS] shot_far45=0 header_chi2=0.954
+[JUDGE-BANDS] tackle/场=41.500 tackle_succ=0.4570 close_succ=0.4570 far=0 shot/tackle=0.5322
+[JUDGE-BANDS] corner/场=4.830 corner_max=14 throw_in/场=20.695
+[JUDGE-BANDS] pass_rate=0.8424 int_share=0.7626
+[JUDGE-BANDS] foul/场=21.135 yellow/场=2.685 red/场=0.0750
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+[P31 5min cohort n=1000] 射门/场=1.24 出界重开/场=2.84（其中角球+界外球 1.35）犯规/场=1.51 进球/场=0.16
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+test zz_judge_band_probe has been running for over 60 seconds
+[home-adv] 主 1.485/场 客 1.458/场 合计 2.943 H/A=1.018
+[JUDGE-BANDS] HA home/场=1.4850 away/场=1.4583 H/A=1.0183
+[home-adv calibration] matches=600 home_goals=891 away_goals=875 H/A=1.018 log(H/A)=0.018 95% CI=[0.928, 1.118]
+test l1_home_away_goal_asymmetry ... ok
+test zz_judge_band_probe ... ok
+test l3_home_away_goal_calibration ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 149.16s
+

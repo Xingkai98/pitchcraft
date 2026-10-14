@@ -1,0 +1,64 @@
+   Compiling fm-engine v0.1.0 (/home/happy/.paseo/worktrees/1g1x3st4/table-c2-center-adversary-2026-10-13/engine)
+    Finished `release` profile [optimized] target(s) in 6.12s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+[ADV] 普通射门/场      18.015   band [14,29]
+[ADV] 禁区内占比        0.5029   band [0.45,0.65]
+[fouls] 每场: foul=17.52 yellow=2.27 red=0.04 free_kick=17.52
+[ADV] box g/s/o          0.1490/0.3245/0.5265
+[ADV] arc g/s/o          0.0823/0.2133/0.7043
+[ADV] far g/s/o          0.0681/0.0813/0.8505
+[ADV] far45              0   band ==0
+[ADV] header g/s/o       0.1480/0.3120/0.5400
+[ADV] 抢断/场           41.925   band [24,50]
+[ADV] 抢断成功率        0.4589   band [0.42,0.58]
+[ADV] shot/tackle       0.4297   band [0.5,1.5]
+[ADV] 射正率 sot        0.3727   band [0.28,0.39]
+[ADV] 转化 conv         0.1163   band [0.08,0.14]
+[ADV] 禁区内进球占比    0.6853   band [0.72,0.92]
+test l1_pass_completion_rate ... ok
+[ADV] 角球/场           4.275   band [1,7] (guard)
+[ADV] 角球单场 max      14   band <=15
+[ADV] 界外球/场         25.190   band [15,60] (guard)
+[ADV] 传球成功率        0.8529   band [0.82,0.90]
+[ADV] 犯规/场           17.515   band [16,30]
+[ADV] 黄牌/场           2.275   band [2,5]
+[ADV] 红牌/场           0.040   band <=0.8
+test l1_fouls_and_cards ... ok
+test l1_shot_result_distributions ... ok
+
+thread 'l1_tackle_dilution_and_slot_mix' (3406349) panicked at tests/realism.rs:834:5:
+shot/tackle 比值 0.430 ∉ [0.5,1.5]（P31 D6 重标定：实测 0.855；#104 一起抬后 0.563；真实比赛 ~0.52）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[L3] shots=3853 regular=3603 header=250 goals=448 saved=988 box_goals=307 禁区占比=0.685 sot=0.373 conv=0.116
+
+thread 'l3_shot_ratios' (3406351) panicked at tests/realism.rs:1071:5:
+禁区内进球占比 0.685 ∉ [0.72,0.92]
+test l3_shot_ratios ... FAILED
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.35/客0.89 (H/A 1.517) pass_evt=860.8 shot=18.02(+header 1.25) tackle=41.92(succ 19.24) corner=4.28 throw_in=25.19 goal_kick=21.59 foul=17.52(yellow 2.27/red 0.04)
+test p13_side_effect_snapshot ... ok
+test adv_probe_all_bands has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+[P31 5min cohort n=1000] 射门/场=1.04 出界重开/场=2.76（其中角球+界外球 1.56）犯规/场=1.39 进球/场=0.13
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+[home-adv] 主 1.395/场 客 0.945/场 合计 2.340 H/A=1.476
+[ADV] 主队进球/场       1.3950   band [0.85,1.60]
+[ADV] 客队进球/场       0.9450   band >=0.30
+[ADV] H/A=1.4762  方向断言 gh>ga: true
+[home-adv calibration] matches=600 home_goals=837 away_goals=567 H/A=1.476 log(H/A)=0.389 95% CI=[1.327, 1.642]
+test l1_home_away_goal_asymmetry ... ok
+test adv_probe_all_bands ... ok
+test l3_home_away_goal_calibration ... ok
+
+failures:
+
+failures:
+    l1_tackle_dilution_and_slot_mix
+    l3_shot_ratios
+
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 4 filtered out; finished in 147.17s
+
+error: test failed, to rerun pass `--test realism`

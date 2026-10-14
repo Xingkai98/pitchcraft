@@ -1,0 +1,352 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+   Compiling fm-engine v0.1.0 (/tmp/ct-C030/engine)
+warning: constant `FORM_CENTER_HOME` is never used
+    --> src/lib.rs:3425:7
+     |
+3425 | const FORM_CENTER_HOME: f64 = 0.358;
+     |       ^^^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `FORM_CENTER_AWAY` is never used
+    --> src/lib.rs:3426:7
+     |
+3426 | const FORM_CENTER_AWAY: f64 = 0.642;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: value assigned to `saw_corner_after_saved` is never read
+    --> src/lib.rs:9511:21
+     |
+9511 |                     saw_corner_after_saved = true;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `carry_plan`
+     --> src/lib.rs:10274:13
+      |
+10274 |         let carry_plan = CarrierPlan {
+      |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_carry_plan`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `count_detail` is never used
+    --> src/lib.rs:9614:8
+     |
+9614 |     fn count_detail(s: &str, detail: &str) -> usize {
+     |        ^^^^^^^^^^^^
+
+warning: function `count_goals` is never used
+    --> src/lib.rs:9621:8
+     |
+9621 |     fn count_goals(s: &str) -> usize {
+     |        ^^^^^^^^^^^
+
+warning: `fm-engine` (lib) generated 2 warnings
+warning: unused import: `std::collections::BTreeMap`
+  --> tests/p16/reference.rs:22:5
+   |
+22 | use std::collections::BTreeMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `calibers_of` is never used
+   --> tests/p16/caliber.rs:252:8
+    |
+252 | pub fn calibers_of(dm: &DiagnosticMatch) -> Vec<EpisodeCaliber> {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `merge` is never used
+   --> tests/p16/caliber.rs:358:12
+    |
+313 | impl CaliberCoverage {
+    | -------------------- method in this implementation
+...
+358 |     pub fn merge(&mut self, other: &CaliberCoverage) {
+    |            ^^^^^
+
+warning: function `band_share` is never used
+   --> tests/p16/caliber.rs:384:8
+    |
+384 | pub fn band_share(bands: &BTreeMap<&'static str, usize>, band: &str, total: usize) -> Option<f64> {
+    |        ^^^^^^^^^^
+
+warning: methods `len` and `is_empty` are never used
+  --> tests/p16/features.rs:51:12
+   |
+50 | impl Window {
+   | ----------- methods in this implementation
+51 |     pub fn len(&self) -> f64 {
+   |            ^^^
+...
+55 |     pub fn is_empty(&self) -> bool {
+   |            ^^^^^^^^
+
+warning: `fm-engine` (lib test) generated 6 warnings (2 duplicates) (run `cargo fix --lib -p fm-engine --tests` to apply 1 suggestion)
+warning: `fm-engine` (test "p16_spatial_features") generated 5 warnings (run `cargo fix --test "p16_spatial_features" -p fm-engine` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 5m 14s
+     Running unittests src/lib.rs (target/release/deps/fm_engine-554ee5758120d8c0)
+
+running 202 tests
+test observation::tests::closed_set_string_names_are_unique_and_snake_case ... ok
+test observation::tests::consecutive_rejects_do_not_accumulate_false_violations ... ok
+test observation::tests::contradictory_input_records_gap_and_does_not_guess ... ok
+test observation::tests::dead_ball_lifecycle_requires_preparation_then_taken ... ok
+test observation::tests::deferred_violations_are_never_cleared ... ok
+test observation::tests::detail_must_pair_with_its_fact_kind ... ok
+test observation::tests::disabled_recorder_is_a_no_op ... ok
+test observation::tests::demo_mode_sequences_carry_no_facts ... ok
+test observation::tests::episode_and_restart_event_indexes_go_through_the_same_guard ... ok
+test observation::tests::event_index_binding_is_guarded_against_tail_compaction ... ok
+test observation::tests::every_bound_fact_event_index_is_not_after_the_fact ... ok
+test observation::tests::every_closed_set_enum_lists_all_members ... ok
+test observation::tests::action_facts_never_bind_to_a_beat ... ok
+test observation::tests::first_kickoff_has_no_flight_while_a_goal_restart_kickoff_waits_for_the_flight_to_end ... ok
+test observation::tests::drain_period_bindings_are_suspended_not_gap_reported ... ok
+test observation::tests::foul_opens_a_free_kick_with_explicit_preparation_then_delivery_restores_open_play ... ok
+test observation::tests::full_time_closes_every_open_object_including_unfinished_flight ... ok
+test observation::tests::full_time_time_comes_from_the_formal_whistle_not_config ... ok
+test observation::tests::gap_does_not_mask_a_later_state_downgrade ... ok
+test observation::tests::gap_reason_counts_aggregate_by_reason_not_just_total ... ok
+test observation::tests::goal_kick_has_no_preparation_phase_and_binds_taken_at_delivery ... ok
+test observation::tests::fixed_seed_sidecar_binds_event_indexes_and_leaves_no_gaps ... ok
+test observation::tests::half_time_closes_contest_and_terminates_restart_without_sequencing ... ok
+test observation::tests::interception_starts_a_loose_contest_then_same_tick_pickup_opens_the_new_episode ... ok
+test observation::tests::invariant_checker_catches_each_state_record_mismatch ... ok
+test observation::tests::invariant_checker_catches_overlapping_open_objects ... ok
+test observation::tests::invariant_checker_catches_state_downgraded_below_records ... ok
+test observation::tests::invariant_checker_rejects_corrupted_recorders ... ok
+test observation::tests::invariant_checker_rejects_non_finite_restart_times ... ok
+test observation::tests::invariant_checker_rejects_open_objects_after_match_ended ... ok
+test observation::tests::kickoff_flight_action_is_named_not_unknown ... ok
+test observation::tests::lost_pass_closes_episode_and_enters_contest ... ok
+test observation::tests::match_started_time_basis_is_event_emit_at_zero ... ok
+test observation::tests::minimal_path_closes_kickoff_sequence_and_opens_episode ... ok
+test observation::tests::note_gap_before_match_started_is_not_a_violation ... ok
+test observation::tests::note_gap_records_fact_without_touching_objects ... ok
+test observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception ... FAILED
+test observation::tests::control_facts_never_contradict_their_own_player ... ok
+test observation::tests::open_play_control_keeps_its_declared_start_reason ... ok
+test observation::tests::opt_in_sidecar_carries_invariant_violations_and_terminal_state ... ok
+test observation::tests::out_of_play_restarts_carry_their_own_team_kind_and_lifecycle_shape ... ok
+test observation::tests::observation_sidecar_is_deterministic_and_has_no_gaps_on_a_full_match ... ok
+test observation::tests::rebinding_a_fact_event_index_must_not_move_it_backwards ... ok
+test observation::tests::reject_does_not_exempt_ill_formed_state ... ok
+test observation::tests::rejected_input_leaves_no_false_positive_violation ... ok
+test observation::tests::restart_delivery_control_start_reason_is_decided_by_the_open_restart ... ok
+test observation::tests::real_match_sidecar_has_control_facts_and_closes_all_objects ... ok
+test observation::tests::restart_preparation_without_a_scheduled_restart_is_rejected_not_invented ... ok
+test observation::tests::rng_draw_helper_is_seed_dependent_and_skip_sensitive ... ok
+test observation::tests::same_team_receive_continues_episode_without_new_boundary ... ok
+test observation::tests::shot_off_target_ends_the_episode_as_out_and_takes_a_goal_kick_without_preparation ... ok
+test observation::tests::shot_outcome_closes_episode_with_its_own_reason ... ok
+test observation::tests::shot_saved_rebound_closes_episode_and_opens_a_rebound_contest_with_matching_reason ... ok
+test observation::tests::goal_kick_sequence_team_is_the_taking_side ... ok
+test observation::tests::stream_end_boundary_takes_the_last_whistle_and_full_time_uses_it ... ok
+test observation::tests::superseding_an_unfinished_restart_is_normal_and_records_no_gap ... ok
+test observation::tests::suspended_binding_is_a_silent_no_op_not_a_gap ... ok
+test observation::tests::tackle_success_opens_a_loose_contest_before_anyone_has_control ... ok
+test observation::tests::truncated_stream_produces_a_full_time_gap_by_design ... FAILED
+test observation::tests::unattributed_facts_watermark_binds_exactly_the_new_facts ... ok
+test observation::tests::unknown_basis_allows_non_finite_fact_time ... ok
+test observation::tests::unknown_kind_never_downgrades_known_restart_kind ... ok
+test observation::tests::unknown_restart_kind_and_team_are_refinable_not_rejected ... ok
+test observation::tests::whistle_interrupt_is_a_gap_only_when_the_ball_was_in_flight ... ok
+test rng::tests::different_seed_different_sequence ... ok
+test rng::tests::never_zero_state ... ok
+test rng::tests::same_seed_same_sequence ... ok
+test tests::beat_movers_id_unique_on_tackle_push ... ok
+test observation::tests::restart_delivery_start_reason_matches_the_restart_kind_on_real_matches ... ok
+test tests::demo_has_foul_and_free_kick ... ok
+test tests::demo_tackle_has_carrier_from_and_loose ... ok
+test tests::coordinates_in_range ... ok
+test tests::home_advantage_channel_semantics ... ok
+test tests::lineup_has_22_players ... ok
+test tests::foul_deterministic ... ok
+test tests::p15_compaction_boundary_is_actually_registered ... ok
+test tests::p15_full_time_source_is_the_stream_not_the_config_duration ... ok
+test tests::p15_observation_overhead_caliber ... ignored, 口径测量，不是门（见 A9-9）
+test tests::p15_recorder_stays_out_of_the_decision_path ... ok
+test tests::p23_all_outfield_sent_off_is_total_and_never_returns_sent_off ... ok
+test tests::p23_kickoff_pick_skips_sent_off ... ok
+test tests::p23_kickoff_receiver_never_equals_kicker ... ok
+test tests::p23_sent_off_keeper_produces_no_keeper_return ... ok
+test tests::p23_sent_off_not_picked_as_close_down ... ok
+test tests::p23_sent_off_not_picked_as_tackler ... FAILED
+test tests::p23_sent_off_produces_no_mover ... ok
+test tests::p25_forward_pass_degenerate_returns_keeper_not_panic ... ok
+test tests::non_demo_produces_fouls_with_valid_shape ... ok
+test observation::tests::observation_api_leaves_formal_events_byte_identical ... ok
+test observation::tests::superseded_by_dead_ball_is_a_recorder_level_contract_not_engine_reachable ... ok
+test tests::p28_action_deadline_formula ... ok
+test tests::p27_out_pass_fields_all_paths ... ok
+test tests::p28_deadline_bounds_over_full_match ... ok
+test tests::p28_deadline_geometry_directions ... ok
+test tests::p28_resolution_consistent_with_candidates ... ok
+test tests::p28_resolution_priority ... ok
+test tests::p29_back_to_goal_forbids_shoot_candidate ... ok
+test tests::p29_commit_produces_shot_and_clears_setup ... ok
+test tests::p29_committed_is_irreversible ... ok
+test tests::p29_cooldown_feature_is_live ... ok
+test tests::p27_contested_preserved_for_restart_passes ... ok
+test tests::p29_cooldown_penalty_shape ... ok
+test tests::p29_distance_quality_reuses_shot_bucket_bands ... ok
+test tests::p29_hazard_factor_directions ... ok
+test tests::p29_hazard_probability_shape ... ok
+test tests::p27_clearance_normal_still_contested ... ok
+test tests::p29_window_arrival_enters_window_without_shooting ... ok
+test tests::p28_action_opportunity_is_live ... ok
+test tests::p29_window_not_shot_on_arrival ... ok
+test tests::p29_window_tackle_cancels_without_shot ... ok
+test tests::p30_contain_jockey_state_only ... ok
+test tests::p30_cooldown_is_score_only_not_eligibility ... ok
+test tests::p30_cooldown_write_read_closed_loop ... ok
+test tests::p30_foul_cooldown_decays_every_tick ... ok
+test tests::p30_foul_qualifications ... ok
+test tests::p30_foul_yellow_deterrence ... ok
+test tests::p29_shot_window_is_live_and_only_shot_path ... ok
+test tests::p30_pair_cooldown_direction_and_expiry ... ok
+test tests::p30_select_is_exclusive ... ok
+test tests::p30_tackle_cooldowns_lower_score ... ok
+test tests::p30_tackle_result_only_two_states ... ok
+test tests::p30_tackle_score_directions ... ok
+test tests::p30_never_both_tackle_and_foul ... ok
+test tests::p30_window_foul_cancels_without_shot ... ok
+test tests::p31_all_four_liveness_hooks_are_live ... ok
+test tests::p31_deadline_bounds_with_liveness ... ok
+test tests::p31_landing_error_grows_with_risk_and_length ... ok
+test tests::p31_landing_error_only_in_open_play_passes ... ok
+test tests::p31_landing_is_deterministic ... ok
+test tests::p31_landing_out_side_classification ... ok
+test tests::p31_liveness_consumed_in_three_places ... ok
+test tests::p31_liveness_profile_three_stages_monotone ... ok
+test tests::p31_liveness_section_never_emits_events ... ok
+test tests::p30_three_layer_cooldown_live ... ok
+test tests::p31_meaningful_action_resets_counter ... ok
+test tests::p31_natural_deadline_is_deterministic ... ok
+test tests::p31_no_fixed_evaluation_beat ... ok
+test tests::p31_open_play_carrier_decision_is_geometric ... ok
+test tests::p31_out_of_play_emerges_from_pass_risk_channel ... ok
+test tests::p29_cooldown_is_local_not_match_wide has been running for over 60 seconds
+test tests::p31_liveness_stages_reachable_and_pulls_back ... ok
+test tests::p31_out_restart_mapping ... ok
+test tests::p31_out_side_direction_is_geometric ... ok
+test tests::p31_pass_risk_bonus_reads_pre_reset_ticks ... ok
+test tests::p31_slot_layer_is_gone ... ok
+test tests::p32_interception_roll_width_quantizes_by_ceil ... ok
+test tests::p29_window_commit_rate_falls_with_pressure has been running for over 60 seconds
+test tests::p31_out_rate_is_sane ... ok
+test tests::p53_cross_team_not_constrained ... ok
+test tests::p53_highlight_landing_enters_solver_on_breach ... ok
+test tests::p53_same_team_frozen_participant_separates_mover ... ok
+test tests::p53_same_team_spacing_ge_2m ... FAILED
+test tests::p53_same_team_spacing_holds_between_anchors ... FAILED
+test tests::p53_sent_off_not_separated ... ok
+test tests::p53_separate_pair_clamps_to_pitch ... ok
+test tests::p53_separate_pair_coincident_degenerates_along_x ... ok
+test tests::p53_separate_pair_uses_metric_direction_not_normalized ... ok
+test tests::p53_separate_pair_x_axis_2m1_not_separated ... ok
+test tests::p53_separate_pair_y_axis_1m36_separated_to_min ... ok
+test tests::p5_approach_cap ... ok
+test tests::p5_ball_side_shift ... ok
+test tests::p5_formation_and_transition ... ok
+test tests::p5_press_up_and_gk_exempt ... ok
+test tests::p5_repulsion_separates_overlap ... ok
+test tests::p6_battle_attack_win_branches ... ok
+test tests::p29_cooldown_is_local_not_match_wide ... ok
+test tests::p6_clearance_structure ... ok
+test tests::p6_clearance_restart_team_attribution ... ok
+test tests::p6_corner_battle_double_chase ... ok
+test tests::p6_corner_kick_structure ... ok
+test tests::p6_corner_award_saved_rebound_path ... ok
+test tests::p6_goal_kick_produced_on_off_target ... ok
+test tests::p6_goal_direct_center_spot ... ok
+test tests::p6_goal_kick_then_loose_ball ... ok
+test tests::p6_h_field_serialization ... ok
+test tests::p6_pass_h_classification ... ok
+test tests::p32_interception_self_consistency has been running for over 60 seconds
+test tests::p6_header_shot_h_zero ... ok
+test tests::p6_pass_out_sideline_throw_in ... ok
+test tests::p6_restart_prep_ball_anchor ... ok
+test tests::p6_shot_off_target_no_detail ... ok
+test tests::p6_throw_in_h_zero_non_gk ... ok
+test tests::simulate_config_duration_respected ... ok
+test tests::simulate_different_seed_differs ... ok
+test tests::simulate_produces_minimal_match ... ok
+test tests::simulate_same_seed_deterministic ... ok
+test tests::tackle_deterministic_with_new_fields ... ok
+test tests::tackle_events_carry_loose_and_carrier_from ... ok
+test tests::p29_window_commit_rate_falls_with_pressure ... ok
+test tests::tackle_settle_endpoints_separated ... ok
+test tests::tackle_new_fields_coordinates_in_range ... ok
+test tests::tackle_success_and_fail_both_reachable ... ok
+test tests::v2_ball_ownership_exclusive ... ok
+test tests::v2_beat_has_no_top_level_subject ... ok
+test tests::v2_beat_stream_structure ... ok
+test tests::v2_carrier_not_in_movers ... ok
+test tests::tackle_stream_participants_not_overlapping ... ok
+test tests::v2_highlight_participants_excluded ... ok
+test tests::v2_highlight_gate_frequency ... ok
+test tests::v2_loose_ball_produced ... ok
+test tests::p6_pass_out_goal_line_goal_kick has been running for over 60 seconds
+test tests::v2_tackle_fail_resumes_main_from_contact ... ok
+test tests::v2_tick_monotonic ... ok
+test tests::v2_tackle_frequency_in_target_range ... FAILED
+test tests::p6_pass_out_goal_line_goal_kick ... ok
+test tests::p32_interception_self_consistency ... ok
+
+failures:
+
+---- observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception stdout ----
+
+thread 'observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception' (3490999) panicked at src/observation.rs:5620:9:
+seed 集合没有覆盖全部三种截断形态（episode 0 / restart 未 taken 0 / restart 已 taken 0）——豁免条款有分支是空转的；请在 SEEDS 里补命中该形态的 seed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- observation::tests::truncated_stream_produces_a_full_time_gap_by_design stdout ----
+
+thread 'observation::tests::truncated_stream_produces_a_full_time_gap_by_design' (3491302) panicked at src/observation.rs:5349:9:
+assertion `left == right` failed: 该样本必须在终场哨上截断一条未决飞行；实际 gaps = 0
+  left: 0
+ right: 1
+
+---- tests::p23_sent_off_not_picked_as_tackler stdout ----
+
+thread 'tests::p23_sent_off_not_picked_as_tackler' (3491490) panicked at src/lib.rs:8878:9:
+assertion `left == right` failed: 罚下球员 id 4 被选为抢断者
+  left: 6
+ right: 5
+
+---- tests::p53_same_team_spacing_ge_2m stdout ----
+
+thread 'tests::p53_same_team_spacing_ge_2m' (3493836) panicked at src/lib.rs:8503:25:
+同队发射位置间距不足: seed=1 t=0 id=2/4 d=1.890000m (< 2.2)
+
+---- tests::p53_same_team_spacing_holds_between_anchors stdout ----
+
+thread 'tests::p53_same_team_spacing_holds_between_anchors' (3493895) panicked at src/lib.rs:8578:25:
+同队轨迹（含拍内中点）间距不足: seed=1 t=1 id=2/4 d=1.890000m
+
+---- tests::v2_tackle_frequency_in_target_range stdout ----
+
+thread 'tests::v2_tackle_frequency_in_target_range' (3495956) panicked at src/lib.rs:8197:9:
+tackle 频率过高（平均 115.5/场），应在真实量级（#104 体量带上界 50）
+
+
+failures:
+    observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception
+    observation::tests::truncated_stream_produces_a_full_time_gap_by_design
+    tests::p23_sent_off_not_picked_as_tackler
+    tests::p53_same_team_spacing_ge_2m
+    tests::p53_same_team_spacing_holds_between_anchors
+    tests::v2_tackle_frequency_in_target_range
+
+test result: FAILED. 195 passed; 6 failed; 1 ignored; 0 measured; 0 filtered out; finished in 234.31s
+
+error: test failed, to rerun pass `--lib`
