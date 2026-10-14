@@ -31,11 +31,27 @@ test('loss：完全等于真实 → 距离 0、无缺口', () => {
   assert.ok(worst.gap < 1e-9, '全等真实时最大缺口应为 0');
 });
 
-test('loss：单量 4× → 距离 = ln4/9（对数比，不是线性差）', () => {
-  // 9 个幅度量（6 shape + 3 motion）里 1 个 4×、其余 1× → mean|ln| = ln4/9
+test('loss：单量 4× → 距离 = ln4/8（对数比，不是线性差）', () => {
+  // 8 个**计分**幅度量（5 shape + 3 motion；width 是报告行、不进距离）里 1 个 4×、其余 1× → mean|ln| = ln4/8
   const { loss, worst } = lossTable(engineWith({ gap: 4 }), prof());
-  assert.ok(Math.abs(loss - Math.log(4) / 9) < 1e-9, `应为 ln4/9，实得 ${loss}`);
+  assert.ok(Math.abs(loss - Math.log(4) / 8) < 1e-9, `应为 ln4/8，实得 ${loss}`);
   assert.strictEqual(worst.key, 'gap', '最大缺口应是 gap');
+});
+
+test('★ width 是报告行：单改 width **不动距离**，但表里仍算出并打印它', () => {
+  // 2026-10-14：width 是 `max−min` 极值统计量（引擎近常数、真实 sd≈9m），拿它拟合均值无意义
+  // ⇒ 降级为报告行。本测试同时夹死两件事：① 它**不许**进距离 ② 它**不许**被悄悄删掉。
+  const base = lossTable(engineWith({}), prof());
+  const wide = lossTable(engineWith({ width: 5 }), prof());
+  assert.ok(Math.abs(base.loss - wide.loss) < 1e-12,
+    `width 不该进距离（实得 ${base.loss} vs ${wide.loss}）`);
+  const row = wide.rows.find(r => r.key === 'width');
+  assert.ok(row && row.report === true, 'width 行必须存在且带 report:true');
+  assert.ok(Math.abs(row.gap - Math.log(5)) < 1e-9, `width 仍必须被算出（5× ⇒ ln5），实得 ${row.gap}`);
+  // **反证条**（防空转）：同样 5× 的**计分行**（ballDist）必须改距离——否则上一条「不动」是恒真的。
+  const scoreMove = lossTable(engineWith({ ballDist: 5 }), prof());
+  assert.ok(Math.abs(scoreMove.loss - base.loss) > 1e-6,
+    '同样 5× 的计分行（ballDist）必须改距离——证明「width 不动距离」不是空转');
 });
 
 test('loss：|ln| 对称——0.5× 与 2× 的缺口相同（不奖励过冲）', () => {
@@ -101,10 +117,10 @@ test('★ coverage：两侧都缺的行才剔除，且 coverage 如实下降（�
   // P2c：本地无运动帧时 3 个 motion 行该 n/a、coverage 该 6/9；有帧时 9/9。距离**必须带 coverage 读**。
   const noMotion = { shape: prof().shape, motion: { disp: null, dir: null, still: null, lat: null, mix: null } };
   const t = lossTable(engineWith({}), noMotion);
-  assert.strictEqual(t.coverage.used, 6, `无运动帧时覆盖率应为 6，实得 ${t.coverage.used}`);
-  assert.strictEqual(t.coverage.total, 9);
+  assert.strictEqual(t.coverage.used, 5, `无运动帧时覆盖率应为 5（计分行：hd/ad/spread/gap/ballDist），实得 ${t.coverage.used}`);
+  assert.strictEqual(t.coverage.total, 8, '计分行总数应为 8（width 是报告行、不计）');
   const t2 = lossTable(engineWith({}), prof());
-  assert.strictEqual(t2.coverage.used, 9, '有运动帧时应满覆盖 9');
+  assert.strictEqual(t2.coverage.used, 8, '有运动帧时应满覆盖 8');
 });
 
 test('flag：dir 接近真实判 OK，偏离判不 OK；dispRatio 正确', () => {

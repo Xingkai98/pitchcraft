@@ -38,18 +38,26 @@ const IS_ENTRY = process.argv[1] && fileURLToPath(import.meta.url) === resolve(p
 const mean = a => a.reduce((u, v) => u + v, 0) / a.length;
 const median = a => { const s = [...a].sort((x, y) => x - y); return s.length ? s[Math.floor(s.length / 2)] : null; };
 
-// 幅度量：{key, label, from}。from='shape' → windowMetrics 键；from='motion' → windowStats 的 disp。
+// 幅度量：{key, label, from, report?}。from='shape' → windowMetrics 键；from='motion' → windowStats 的 disp。
+// `report: true` = **报告行：照常算出并打印，但不进距离均值**（理由见该行注释）。
 export const LOSS_METRICS = [
   { key: 'hd', label: '纵深(主)', from: 'shape' },
   { key: 'ad', label: '纵深(客)', from: 'shape' },
   { key: 'spread', label: '紧凑度', from: 'shape' },
   { key: 'gap', label: '分边★', from: 'shape' },
-  { key: 'width', label: '宽度', from: 'shape' },
+  // width：**报告行，不进距离**（2026-10-14，口径变更——引用本工具的历史「距离」数字前先看这里）。
+  // 它是 `max−min`（未裁剪极值统计量，`match-metrics.js:234`），而 hd/ad 早已是 q10–q90 ⇒ 两个估计量不对称。
+  // 实测引擎 width 逐 90s 窗近**常数**（sd≈0.5；极值恒由固定两名边路球员撑起），真实 width 窗间跳
+  // 13.9–53.6（sd≈9m）⇒ **拿近常数去拟合 sd 9m 的量**没有意义；且它会奖励「把两名边路球员往中间挪」
+  // 这类不改变形态的改动（y 轴实测：width 进带的同时，「有人贴边」从真实的 11.7% 掉到 0.03%）。
+  // 详见 `.scratch/notes/gate-landmines-2026-10-14.md` §1。
+  { key: 'width', label: '宽度', from: 'shape', report: true },
   { key: 'ballDist', label: '球距', from: 'shape' },
   { key: 'disp', label: '位移/窗★', from: 'motion' },
   { key: 'lat', label: '横向占比★', from: 'motion' },   // 「铁轨」信号：main 0.12 vs 真实 0.43
   { key: 'mix', label: '混队度★', from: 'motion' },     // 「两队是否混」：main 0.65 vs 真实 0.80（FB4 没改善、反降）
 ];
+export const SCORED_METRICS = LOSS_METRICS.filter(m => !m.report);   // 进距离的行
 export const SHAPE_KEYS = LOSS_METRICS.filter(m => m.from === 'shape').map(m => m.key);
 
 // ── 帧 → 结构量（与基线同口径：cutWindows 300s → windowMetrics.primary → 跨窗均值）──
@@ -128,16 +136,17 @@ export function lossTable(eng, real) {
     const gap = present ? Math.min(Math.abs(e > 0 ? Math.log(ratio) : Infinity), CAP_LN) : null;
     return { ...m, engine: e, real: r, ratio, gap };
   });
-  const withGap = rows.filter(r => r.gap != null);
-  const loss = withGap.length ? withGap.reduce((a, r) => a + r.gap, 0) / withGap.length : null;
-  const worst = withGap.slice().sort((a, b) => b.gap - a.gap)[0] || null;
+  // 距离只由**计分行**构成（`report: true` 的行照算照印，但不进均值/不作为 worst）。
+  const scored = rows.filter(r => !r.report && r.gap != null);
+  const loss = scored.length ? scored.reduce((a, r) => a + r.gap, 0) / scored.length : null;
+  const worst = scored.slice().sort((a, b) => b.gap - a.gap)[0] || null;
   const flags = {
     dirEngine: eng.motion.dir, dirReal: real.motion.dir,
     stillEngine: eng.motion.still, stillReal: real.motion.still,
     // real-anchored 静止：位移相对真实的比（0.5m 魔法阈值已废）
     dispRatio: eng.motion.disp != null && real.motion.disp ? eng.motion.disp / real.motion.disp : null,
   };
-  return { rows, loss, flags, worst, coverage: { used: withGap.length, total: LOSS_METRICS.length } };
+  return { rows, loss, flags, worst, coverage: { used: scored.length, total: SCORED_METRICS.length } };
 }
 
 const fmt = v => v == null ? '  n/a ' : (typeof v === 'number' ? v.toFixed(2) : String(v));
@@ -156,8 +165,10 @@ export function formatLossTable(eng, real, { wasmPath, sha, seeds, winSec, realL
     const rr = r.ratio != null ? r.ratio.toFixed(2) : '  n/a';
     const gg = r.gap != null ? r.gap.toFixed(2) : ' n/a';
     const bar = r.gap != null ? '█'.repeat(Math.min(20, Math.round(r.gap * 12))) : '';
-    L.push(`${cls.padEnd(6)}  ${r.label.padEnd(9)} ${fmt(r.engine)} ${fmt(r.real)}  ${rr.padStart(6)}  ${gg.padStart(6)}    ${bar}`);
+    const mark = r.report ? '※' : ' ';
+    L.push(`${mark}${cls.padEnd(6)} ${r.label.padEnd(9)} ${fmt(r.engine)} ${fmt(r.real)}  ${rr.padStart(6)}  ${gg.padStart(6)}    ${bar}`);
   }
+  L.push(`※ = 报告行（照算照印、**不进距离**）：${LOSS_METRICS.filter(m => m.report).map(m => m.label).join('、')}`);
   L.push('');
   L.push(`★ = 「机械分边」「动没动」「铁轨」「两队是否混」——过去飞轮没优化的量`);
   L.push(`  ⚠ 「横向占比 lat」单独能被"抖动"刷分（FB4 lat 0.35 逼近真实，但画面仍不对）——**必须与「混队度 mix」一起看**：`);
