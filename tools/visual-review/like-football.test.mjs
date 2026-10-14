@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-const { lossTable, LOSS_METRICS, SHAPE_KEYS, CAP_LN, shapeFromFrames } = await import('./like-football.mjs');
+const { lossTable, formatLossTable, LOSS_METRICS, SHAPE_KEYS, CAP_LN, shapeFromFrames } = await import('./like-football.mjs');
 const mm = await import(join(ROOT, 'viewer/match-metrics.js'));
 const bb = await import(join(ROOT, 'tools/benchmark-baseline.mjs'));
 
@@ -31,11 +31,62 @@ test('loss：完全等于真实 → 距离 0、无缺口', () => {
   assert.ok(worst.gap < 1e-9, '全等真实时最大缺口应为 0');
 });
 
-test('loss：单量 4× → 距离 = ln4/9（对数比，不是线性差）', () => {
-  // 9 个幅度量（6 shape + 3 motion）里 1 个 4×、其余 1× → mean|ln| = ln4/9
+test('loss：单量 4× → 距离 = ln4/8（对数比，不是线性差）', () => {
+  // 8 个**计分**幅度量（5 shape + 3 motion；width 是报告行、不进距离）里 1 个 4×、其余 1× → mean|ln| = ln4/8
   const { loss, worst } = lossTable(engineWith({ gap: 4 }), prof());
-  assert.ok(Math.abs(loss - Math.log(4) / 9) < 1e-9, `应为 ln4/9，实得 ${loss}`);
+  assert.ok(Math.abs(loss - Math.log(4) / 8) < 1e-9, `应为 ln4/8，实得 ${loss}`);
   assert.strictEqual(worst.key, 'gap', '最大缺口应是 gap');
+});
+
+test('★ 打印路径：报告行必须**真的被打印出来**（独立审阅的变异 f：让打印跳过 report 行 → 12 条测试全绿漏过）', () => {
+  // `formatLossTable` 是这套工具对外的唯一输出面；此前全仓零测试 ⇒ 「照印」只写在注释里、没人守。
+  const txt = formatLossTable(engineWith({}), prof(), {
+    wasmPath: 'x.wasm', sha: '0'.repeat(16), seeds: 5, winSec: 12, realLabel: 'r', motionLabel: 'm',
+  });
+  assert.match(txt, /※结构\s+宽度/, '宽度行必须以 ※ 打印出来（不许被打印路径跳过）');
+  assert.ok(txt.includes('报告行（照算照印、**不进距离**）：宽度'), '表下必须有「哪些是报告行」的脚注');
+});
+
+test('★ 三条声明须有守卫（二阶审阅的变异 g/h/i 曾全部存活）：印出来的旧口径数 / worst 不收报告行 / 只有 width 带 ※', () => {
+  // g：打印的「旧口径」必须**真的是旧口径值**（把新口径的数套上旧口径的标签 → 读者被骗）
+  const t = lossTable(engineWith({ width: 5 }), prof());
+  const txt = formatLossTable(engineWith({ width: 5 }), prof(), {});
+  assert.ok(txt.includes(t.lossLegacy.toFixed(3)), `打印的旧口径数必须 = lossLegacy(${t.lossLegacy.toFixed(3)})`);
+  assert.ok(!txt.includes(`= ${t.loss.toFixed(3)}——`), '旧口径行不得把新口径的值当成旧口径印出来');
+  // h：报告行**不得**进 `worst`（width 做成最大缺口时，worst 仍必须落在计分行上）
+  const w = lossTable(engineWith({ width: 0.2 }), prof());   // width 比值 0.2 ⇒ |ln|≈1.61，比任何计分行都大
+  assert.notStrictEqual(w.worst.key, 'width', `worst 不得是报告行（实得 ${w.worst.key}）`);
+  assert.ok(w.rows.find(r => r.key === 'width').gap > w.worst.gap, '本用例前提：width 的缺口确实最大');
+  // i：**只有** width 是报告行（防止后来者顺手把别的行也标成 report 而悄悄移出距离）
+  assert.deepStrictEqual(LOSS_METRICS.filter(m => m.report).map(m => m.key), ['width'],
+    '报告行只能是 width；新增报告行必须改本条并说明原因');
+});
+
+test('★ 双口径：旧口径（含报告行）距离必须同时给出——口径变更留可追溯性', () => {
+  // 2026-10-14 起 width 不进距离 ⇒ 同一条命令在新旧版本给出不同的数。旧口径必须一并打印，
+  // 否则历史 note 里的「距离 0.520」与今天的读数无从对照（读者只会以为数字漂了）。
+  const t = lossTable(engineWith({ width: 5 }), prof());
+  assert.ok(Math.abs(t.loss - t.lossLegacy) > 1e-9, 'width=5× 时新旧口径必须不同（旧口径把它算进去）');
+  assert.ok(Math.abs(t.lossLegacy - (t.loss * 8 + Math.log(5)) / 9) < 1e-12,
+    `旧口径应为 (8·新口径 + ln5)/9，实得 ${t.lossLegacy}`);
+  const txt = formatLossTable(engineWith({ width: 5 }), prof(), {});
+  assert.ok(txt.includes('旧口径对照'), '表里必须打印旧口径对照行');
+});
+
+test('★ width 是报告行：单改 width **不动距离**，但表里仍算出并打印它', () => {
+  // 2026-10-14：width 是 `max−min` 极值统计量（引擎近常数、真实 sd≈9m），拿它拟合均值无意义
+  // ⇒ 降级为报告行。本测试同时夹死两件事：① 它**不许**进距离 ② 它**不许**被悄悄删掉。
+  const base = lossTable(engineWith({}), prof());
+  const wide = lossTable(engineWith({ width: 5 }), prof());
+  assert.ok(Math.abs(base.loss - wide.loss) < 1e-12,
+    `width 不该进距离（实得 ${base.loss} vs ${wide.loss}）`);
+  const row = wide.rows.find(r => r.key === 'width');
+  assert.ok(row && row.report === true, 'width 行必须存在且带 report:true');
+  assert.ok(Math.abs(row.gap - Math.log(5)) < 1e-9, `width 仍必须被算出（5× ⇒ ln5），实得 ${row.gap}`);
+  // **反证条**（防空转）：同样 5× 的**计分行**（ballDist）必须改距离——否则上一条「不动」是恒真的。
+  const scoreMove = lossTable(engineWith({ ballDist: 5 }), prof());
+  assert.ok(Math.abs(scoreMove.loss - base.loss) > 1e-6,
+    '同样 5× 的计分行（ballDist）必须改距离——证明「width 不动距离」不是空转');
 });
 
 test('loss：|ln| 对称——0.5× 与 2× 的缺口相同（不奖励过冲）', () => {
@@ -97,14 +148,15 @@ test('★ 退化引擎（某量为 0）不被静默剔除——记 CAP_LN 罚、
   assert.strictEqual(worst.key, 'disp', '完全静止的引擎，最坏缺口必须是 disp（不能被隐藏）');
 });
 
-test('★ coverage：两侧都缺的行才剔除，且 coverage 如实下降（防「9 行均值 vs 6 行均值」盲比）', () => {
-  // P2c：本地无运动帧时 3 个 motion 行该 n/a、coverage 该 6/9；有帧时 9/9。距离**必须带 coverage 读**。
+test('★ coverage：两侧都缺的行才剔除，且 coverage 如实下降（防「8 行均值 vs 5 行均值」盲比）', () => {
+  // P2c：本地无运动帧时 3 个 motion 行该 n/a、coverage 该 5/8；有帧时 8/8。距离**必须带 coverage 读**。
+  // （计分行 = 8：hd/ad/spread/gap/ballDist + disp/lat/mix；`width` 自 2026-10-14 起是报告行、不计。）
   const noMotion = { shape: prof().shape, motion: { disp: null, dir: null, still: null, lat: null, mix: null } };
   const t = lossTable(engineWith({}), noMotion);
-  assert.strictEqual(t.coverage.used, 6, `无运动帧时覆盖率应为 6，实得 ${t.coverage.used}`);
-  assert.strictEqual(t.coverage.total, 9);
+  assert.strictEqual(t.coverage.used, 5, `无运动帧时覆盖率应为 5（计分行：hd/ad/spread/gap/ballDist），实得 ${t.coverage.used}`);
+  assert.strictEqual(t.coverage.total, 8, '计分行总数应为 8（width 是报告行、不计）');
   const t2 = lossTable(engineWith({}), prof());
-  assert.strictEqual(t2.coverage.used, 9, '有运动帧时应满覆盖 9');
+  assert.strictEqual(t2.coverage.used, 8, '有运动帧时应满覆盖 8');
 });
 
 test('flag：dir 接近真实判 OK，偏离判不 OK；dispRatio 正确', () => {
