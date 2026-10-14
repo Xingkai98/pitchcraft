@@ -47,6 +47,21 @@ test('★ 打印路径：报告行必须**真的被打印出来**（独立审阅
   assert.ok(txt.includes('报告行（照算照印、**不进距离**）：宽度'), '表下必须有「哪些是报告行」的脚注');
 });
 
+test('★ 三条声明须有守卫（二阶审阅的变异 g/h/i 曾全部存活）：印出来的旧口径数 / worst 不收报告行 / 只有 width 带 ※', () => {
+  // g：打印的「旧口径」必须**真的是旧口径值**（把新口径的数套上旧口径的标签 → 读者被骗）
+  const t = lossTable(engineWith({ width: 5 }), prof());
+  const txt = formatLossTable(engineWith({ width: 5 }), prof(), {});
+  assert.ok(txt.includes(t.lossLegacy.toFixed(3)), `打印的旧口径数必须 = lossLegacy(${t.lossLegacy.toFixed(3)})`);
+  assert.ok(!txt.includes(`= ${t.loss.toFixed(3)}——`), '旧口径行不得把新口径的值当成旧口径印出来');
+  // h：报告行**不得**进 `worst`（width 做成最大缺口时，worst 仍必须落在计分行上）
+  const w = lossTable(engineWith({ width: 0.2 }), prof());   // width 比值 0.2 ⇒ |ln|≈1.61，比任何计分行都大
+  assert.notStrictEqual(w.worst.key, 'width', `worst 不得是报告行（实得 ${w.worst.key}）`);
+  assert.ok(w.rows.find(r => r.key === 'width').gap > w.worst.gap, '本用例前提：width 的缺口确实最大');
+  // i：**只有** width 是报告行（防止后来者顺手把别的行也标成 report 而悄悄移出距离）
+  assert.deepStrictEqual(LOSS_METRICS.filter(m => m.report).map(m => m.key), ['width'],
+    '报告行只能是 width；新增报告行必须改本条并说明原因');
+});
+
 test('★ 双口径：旧口径（含报告行）距离必须同时给出——口径变更留可追溯性', () => {
   // 2026-10-14 起 width 不进距离 ⇒ 同一条命令在新旧版本给出不同的数。旧口径必须一并打印，
   // 否则历史 note 里的「距离 0.520」与今天的读数无从对照（读者只会以为数字漂了）。
@@ -133,8 +148,9 @@ test('★ 退化引擎（某量为 0）不被静默剔除——记 CAP_LN 罚、
   assert.strictEqual(worst.key, 'disp', '完全静止的引擎，最坏缺口必须是 disp（不能被隐藏）');
 });
 
-test('★ coverage：两侧都缺的行才剔除，且 coverage 如实下降（防「9 行均值 vs 6 行均值」盲比）', () => {
-  // P2c：本地无运动帧时 3 个 motion 行该 n/a、coverage 该 6/9；有帧时 9/9。距离**必须带 coverage 读**。
+test('★ coverage：两侧都缺的行才剔除，且 coverage 如实下降（防「8 行均值 vs 5 行均值」盲比）', () => {
+  // P2c：本地无运动帧时 3 个 motion 行该 n/a、coverage 该 5/8；有帧时 8/8。距离**必须带 coverage 读**。
+  // （计分行 = 8：hd/ad/spread/gap/ballDist + disp/lat/mix；`width` 自 2026-10-14 起是报告行、不计。）
   const noMotion = { shape: prof().shape, motion: { disp: null, dir: null, still: null, lat: null, mix: null } };
   const t = lossTable(engineWith({}), noMotion);
   assert.strictEqual(t.coverage.used, 5, `无运动帧时覆盖率应为 5（计分行：hd/ad/spread/gap/ballDist），实得 ${t.coverage.used}`);

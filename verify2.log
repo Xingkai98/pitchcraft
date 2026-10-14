@@ -1,12 +1,12 @@
 === 1/9 Rust 引擎测试（cargo test）===
 test p13_side_effect_snapshot ... ignored
 test p31_frequency_5min_directional ... ignored
-test gm_legacy_baselines_preserved_and_differs ... ok
 test gm_canary_seeds ... ok
+test gm_legacy_baselines_preserved_and_differs ... ok
 test l2_cross_event_invariants has been running for over 60 seconds
 test l2_cross_event_invariants ... ok
 
-test result: ok. 4 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 705.62s
+test result: ok. 4 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 350.45s
 
    Doc-tests fm_engine
 
