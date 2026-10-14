@@ -8,7 +8,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-const { lossTable, LOSS_METRICS, SHAPE_KEYS, CAP_LN, shapeFromFrames } = await import('./like-football.mjs');
+const { lossTable, formatLossTable, LOSS_METRICS, SHAPE_KEYS, CAP_LN, shapeFromFrames } = await import('./like-football.mjs');
 const mm = await import(join(ROOT, 'viewer/match-metrics.js'));
 const bb = await import(join(ROOT, 'tools/benchmark-baseline.mjs'));
 
@@ -36,6 +36,26 @@ test('loss：单量 4× → 距离 = ln4/8（对数比，不是线性差）', ()
   const { loss, worst } = lossTable(engineWith({ gap: 4 }), prof());
   assert.ok(Math.abs(loss - Math.log(4) / 8) < 1e-9, `应为 ln4/8，实得 ${loss}`);
   assert.strictEqual(worst.key, 'gap', '最大缺口应是 gap');
+});
+
+test('★ 打印路径：报告行必须**真的被打印出来**（独立审阅的变异 f：让打印跳过 report 行 → 12 条测试全绿漏过）', () => {
+  // `formatLossTable` 是这套工具对外的唯一输出面；此前全仓零测试 ⇒ 「照印」只写在注释里、没人守。
+  const txt = formatLossTable(engineWith({}), prof(), {
+    wasmPath: 'x.wasm', sha: '0'.repeat(16), seeds: 5, winSec: 12, realLabel: 'r', motionLabel: 'm',
+  });
+  assert.match(txt, /※结构\s+宽度/, '宽度行必须以 ※ 打印出来（不许被打印路径跳过）');
+  assert.ok(txt.includes('报告行（照算照印、**不进距离**）：宽度'), '表下必须有「哪些是报告行」的脚注');
+});
+
+test('★ 双口径：旧口径（含报告行）距离必须同时给出——口径变更留可追溯性', () => {
+  // 2026-10-14 起 width 不进距离 ⇒ 同一条命令在新旧版本给出不同的数。旧口径必须一并打印，
+  // 否则历史 note 里的「距离 0.520」与今天的读数无从对照（读者只会以为数字漂了）。
+  const t = lossTable(engineWith({ width: 5 }), prof());
+  assert.ok(Math.abs(t.loss - t.lossLegacy) > 1e-9, 'width=5× 时新旧口径必须不同（旧口径把它算进去）');
+  assert.ok(Math.abs(t.lossLegacy - (t.loss * 8 + Math.log(5)) / 9) < 1e-12,
+    `旧口径应为 (8·新口径 + ln5)/9，实得 ${t.lossLegacy}`);
+  const txt = formatLossTable(engineWith({ width: 5 }), prof(), {});
+  assert.ok(txt.includes('旧口径对照'), '表里必须打印旧口径对照行');
 });
 
 test('★ width 是报告行：单改 width **不动距离**，但表里仍算出并打印它', () => {

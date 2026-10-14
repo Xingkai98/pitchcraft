@@ -93,7 +93,7 @@ P143r 三版（v1 / v2g-g3 / FB4）都是「指标变好、用户看不出」。
 - **结构锚（hd/ad/spread/gap/width/ballDist）= committed 基线 `viewer/data/benchmark-baseline.json`
   的 `datasets.skillcorner`**（**入库、CI 可读**，非 gitignore）——`like-football` 的结构量只依赖它。
 - **运动锚（disp/dir/still）= `viewer/data/real-game-*.json`**（P35 Metrica 通路；⚠ **gitignore、CI 不产**，
-  本地缺则这些行 `n/a`、距离降为 6/7 行覆盖——工具会显式标 `[覆盖 N/7]`，**勿与满覆盖盲比**）。
+  本地缺则这些行 `n/a`、覆盖率下降——工具会显式标 `[覆盖 N/8]`（**缺运动帧时 5/8**；`width` 自 2026-10-14 起是报告行、不计入分母），**勿与满覆盖盲比**）。
   生成：`node tools/fetch-tracking-data.mjs && node tools/convert-tracking-to-frames.mjs`；`VISUAL_REVIEW_REAL` 可覆盖。
 
 ⇒ **`render.mjs` / `contact-sheet.mjs` / `like-football.mjs` 在 CI 上跑不了**（三者都要 `engine.wasm`，gitignored）；
@@ -137,7 +137,8 @@ P143r 三版（v1 / v2g-g3 / FB4）都是「指标变好、用户看不出」。
 **先看（轨迹图，一句话）**：引擎球员是**水平短线、红蓝各占半场、横向几乎冻结**；真实是
 **一团纠缠的弧线、红蓝混在中路**。⇒ **核心结构缺陷 = 球员沿「车道」滑动、不跑向球、不聚拢。**
 
-**后量（`like-football` 距离 **0.83**，main，锚=基线 skillcorner 20 场；含 lat/mix 共 9 行）**。逐量（引擎/真实）：
+**后量（`like-football` 距离 **0.83**，main，锚=基线 skillcorner 20 场；**口径：2026-10-14 之前的 9 行、含 `width`**——
+该日起 `width` 降为报告行、距离按 8 行算，工具会同时打印旧口径对照，见 `gate-landmines-2026-10-14.md` §1）**。逐量（引擎/真实）：
 - **位移/窗 0.13×**（1.77m vs 13.46m）——**动没动**，最大缺口。**根在移动层结构**。
 - **分边 gap 4.42×**（23.16m vs 5.24m）——**机械分边**。红队钉左/蓝队钉右。**用户一号抱怨。**
 - 纵深 hd/ad 2.19×（40.1m vs 18.3m）——**队形太散**（也被 gap 带动）。

@@ -47,9 +47,10 @@ export const LOSS_METRICS = [
   { key: 'gap', label: '分边★', from: 'shape' },
   // width：**报告行，不进距离**（2026-10-14，口径变更——引用本工具的历史「距离」数字前先看这里）。
   // 它是 `max−min`（未裁剪极值统计量，`match-metrics.js:234`），而 hd/ad 早已是 q10–q90 ⇒ 两个估计量不对称。
-  // 实测引擎 width 逐 90s 窗近**常数**（sd≈0.5；极值恒由固定两名边路球员撑起），真实 width 窗间跳
-  // 13.9–53.6（sd≈9m）⇒ **拿近常数去拟合 sd 9m 的量**没有意义；且它会奖励「把两名边路球员往中间挪」
-  // 这类不改变形态的改动（y 轴实测：width 进带的同时，「有人贴边」从真实的 11.7% 掉到 0.03%）。
+  // 实测引擎 width 逐 90s 窗近**常数**（48.9–50.1），而真实 width 逐窗 **13.9–53.6**（跨窗极差；
+  // 判据镜在 `p-table-compress` 轮的实测，其 sd 估计随口径在 6–9 m 间浮动）⇒ **拿近常数去拟合一个
+  // 跨窗极差 40 m 的量**没有意义；且它会奖励「把两名边路球员往中间挪」这类不改变形态的改动
+  // （y 轴实测：width 进带的同时，「距边线 <8 m 的球员帧占比」从真实 11.7% 掉到 0.03%）。
   // 详见 `.scratch/notes/gate-landmines-2026-10-14.md` §1。
   { key: 'width', label: '宽度', from: 'shape', report: true },
   { key: 'ballDist', label: '球距', from: 'shape' },
@@ -140,20 +141,24 @@ export function lossTable(eng, real) {
   const scored = rows.filter(r => !r.report && r.gap != null);
   const loss = scored.length ? scored.reduce((a, r) => a + r.gap, 0) / scored.length : null;
   const worst = scored.slice().sort((a, b) => b.gap - a.gap)[0] || null;
+  // **旧口径对照**（含报告行的全量均值）：口径变更后历史 note 里的「距离 0.520」仍可对照，
+  // 否则同一条命令在新旧版本下给出不同的数而读者无从察觉（口径变更必须留可追溯性）。
+  const allGap = rows.filter(r => r.gap != null);
+  const lossLegacy = allGap.length ? allGap.reduce((a, r) => a + r.gap, 0) / allGap.length : null;
   const flags = {
     dirEngine: eng.motion.dir, dirReal: real.motion.dir,
     stillEngine: eng.motion.still, stillReal: real.motion.still,
     // real-anchored 静止：位移相对真实的比（0.5m 魔法阈值已废）
     dispRatio: eng.motion.disp != null && real.motion.disp ? eng.motion.disp / real.motion.disp : null,
   };
-  return { rows, loss, flags, worst, coverage: { used: scored.length, total: SCORED_METRICS.length } };
+  return { rows, loss, lossLegacy, flags, worst, coverage: { used: scored.length, total: SCORED_METRICS.length } };
 }
 
 const fmt = v => v == null ? '  n/a ' : (typeof v === 'number' ? v.toFixed(2) : String(v));
 const near = (a, b, tol) => a != null && b != null && Math.abs(a - b) <= tol;
 
 export function formatLossTable(eng, real, { wasmPath, sha, seeds, winSec, realLabel, motionLabel } = {}) {
-  const { rows, loss, flags, worst, coverage } = lossTable(eng, real);
+  const { rows, loss, lossLegacy, flags, worst, coverage } = lossTable(eng, real);
   const L = [];
   L.push(`═══ 像不像足球 · 引擎 vs 真实（real-anchored 损失表）═══`);
   L.push(`wasm=${wasmPath} sha8=${sha}  seeds=${seeds}  win=${winSec}s`);
@@ -176,6 +181,11 @@ export function formatLossTable(eng, real, { wasmPath, sha, seeds, winSec, realL
   L.push('');
   L.push(`**距离（幅度量 mean|ln(E/R)|，越小越像真实） = ${loss != null ? loss.toFixed(3) : 'n/a'}**`
     + `  [覆盖 ${coverage.used}/${coverage.total} 行${coverage.used < coverage.total ? '——⚠ 未满覆盖，勿与满覆盖的距离盲比' : ''}]`);
+  if (lossLegacy != null && loss != null && Math.abs(lossLegacy - loss) > 1e-12) {
+    const nAll = coverage.total + LOSS_METRICS.filter(m => m.report).length;
+    L.push(`  （**旧口径对照**：含报告行的 ${nAll} 行均值 = ${lossLegacy.toFixed(3)}——`
+      + `2026-10-14 起 width 降为报告行；历史 note 里的距离按旧口径记，引用前先看这里）`);
+  }
   if (worst) L.push(`  最大缺口：${worst.label} —— 引擎 ${fmt(worst.engine)} vs 真实 ${fmt(worst.real)}（${worst.ratio != null ? worst.ratio.toFixed(2) + '×' : '退化(0)'}）`);
   L.push('');
   L.push(`性质旗标（不进距离，须在带内）：`);

@@ -1,0 +1,19 @@
+=== 1/9 Rust 引擎测试（cargo test）===
+test p13_side_effect_snapshot ... ignored
+test p31_frequency_5min_directional ... ignored
+test gm_legacy_baselines_preserved_and_differs ... ok
+test gm_canary_seeds ... ok
+test l2_cross_event_invariants has been running for over 60 seconds
+test l2_cross_event_invariants ... ok
+
+test result: ok. 4 passed; 0 failed; 9 ignored; 0 measured; 0 filtered out; finished in 705.62s
+
+   Doc-tests fm_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+=== 2/9 Viewer 单测（node --test，含 app.test.js DOM 测试 + match-metrics 口径守护）===
+缺少 node_modules/jsdom —— 先在仓库根运行: npm install
