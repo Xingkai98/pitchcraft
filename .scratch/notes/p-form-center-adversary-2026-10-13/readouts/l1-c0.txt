@@ -1,0 +1,75 @@
+   Compiling fm-engine v0.1.0 (/home/happy/.paseo/worktrees/1g1x3st4/table-c2-center-adversary-2026-10-13/engine)
+    Finished `release` profile [optimized] target(s) in 8.26s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+[ADV] 普通射门/场      32.135   band [14,29]
+
+thread 'l1_pass_completion_rate' (3409166) panicked at tests/realism.rs:908:5:
+整体传球成功率 0.8141 ∉ [0.82,0.90]（目标中心 0.86-0.88，L3 口径同 95.9%→~87%）
+[ADV] 禁区内占比        0.7112   band [0.45,0.65]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[ADV] box g/s/o          0.1682/0.2975/0.5342
+[fouls] 每场: foul=18.68 yellow=2.38 red=0.07 free_kick=18.68
+[ADV] arc g/s/o          0.0846/0.2063/0.7092
+[ADV] far g/s/o          0.0441/0.1051/0.8508
+[ADV] far45              0   band ==0
+[ADV] header g/s/o       0.1517/0.2836/0.5647
+[ADV] 抢断/场           25.185   band [24,50]
+[ADV] 抢断成功率        0.4612   band [0.42,0.58]
+[ADV] shot/tackle       1.2760   band [0.5,1.5]
+[ADV] 射正率 sot        0.4103   band [0.28,0.39]
+[ADV] 转化 conv         0.1428   band [0.08,0.14]
+[ADV] 禁区内进球占比    0.8513   band [0.72,0.92]
+[ADV] 角球/场           6.645   band [1,7] (guard)
+[ADV] 角球单场 max      17   band <=15
+[ADV] 界外球/场         17.190   band [15,60] (guard)
+[ADV] 传球成功率        0.8141   band [0.82,0.90]
+[ADV] 犯规/场           18.685   band [16,30]
+[ADV] 黄牌/场           2.385   band [2,5]
+[ADV] 红牌/场           0.065   band <=0.8
+test l1_fouls_and_cards ... ok
+test l1_pass_completion_rate ... FAILED
+
+thread 'l1_shot_result_distributions' (3409247) panicked at tests/realism.rs:694:5:
+禁区内射门占比 0.711 ∉ [0.45,0.65]
+
+thread 'l1_tackle_dilution_and_slot_mix' (3409248) panicked at tests/realism.rs:864:5:
+单场角球 17 超硬上界 15（数量级漂移）
+test l1_shot_result_distributions ... FAILED
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[L3] shots=6829 regular=6427 header=402 goals=975 saved=1827 box_goals=830 禁区占比=0.851 sot=0.410 conv=0.143
+
+thread 'l3_shot_ratios' (3409250) panicked at tests/realism.rs:1069:5:
+射正率 0.410 ∉ [0.28,0.39]
+test l3_shot_ratios ... FAILED
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主2.73/客2.14 (H/A 1.278) pass_evt=831.4 shot=32.13(+header 2.01) tackle=25.18(succ 11.62) corner=6.64 throw_in=17.19 goal_kick=36.11 foul=18.68(yellow 2.38/red 0.07)
+test p13_side_effect_snapshot ... ok
+test adv_probe_all_bands has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+[P31 5min cohort n=1000] 射门/场=1.81 出界重开/场=3.20（其中角球+界外球 1.27）犯规/场=1.20 进球/场=0.24
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+[ADV] 主队进球/场       2.5483   band [0.85,1.60]
+
+thread 'l1_home_away_goal_asymmetry' (3409165) panicked at tests/realism.rs:955:5:
+主队进球/场 2.548 ∉ [0.85,1.60]（#104 重标定：体积已抬到真实量级，原带 [0.38,0.75] 是按压缩态标定的）
+[ADV] 客队进球/场       2.1850   band >=0.30
+[home-adv calibration] matches=600 home_goals=1529 away_goals=1311 H/A=1.166 log(H/A)=0.154 95% CI=[1.083, 1.256]
+[ADV] H/A=1.1663  方向断言 gh>ga: true
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... FAILED
+test adv_probe_all_bands ... ok
+
+failures:
+
+failures:
+    l1_home_away_goal_asymmetry
+    l1_pass_completion_rate
+    l1_shot_result_distributions
+    l1_tackle_dilution_and_slot_mix
+    l3_shot_ratios
+
+test result: FAILED. 5 passed; 5 failed; 0 ignored; 0 measured; 4 filtered out; finished in 154.81s
+
+error: test failed, to rerun pass `--test realism`

@@ -1,0 +1,3 @@
+c=0.70 variant=C lib16=a8031bfc5995cba7 wasm16=fac11ea197195b25
+c=0.55 variant=C lib16=9e0390788cb80661 wasm16=9684686d838c43f9
+c=0.60 variant=A lib16=bf4b0c519dc8a40e wasm16=a274fb76139a0c4a

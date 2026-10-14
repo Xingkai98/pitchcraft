@@ -1,0 +1,57 @@
+
+// ===== [table-compress 探索探针] 只 println，不改任何判据。用完即删。 =====
+#[test]
+#[ignore]
+fn zz_band_report() {
+    let stats = l1_stats();
+    let n = SEEDS_L1 as f64;
+    let s = |f: fn(&MatchStats) -> usize| stats.iter().map(f).sum::<usize>();
+    let (b, bg, bsv, bof) = (s(|x| x.n_box), s(|x| x.n_box_goal), s(|x| x.n_box_saved), s(|x| x.n_box_off));
+    let (a, ag, asv, aof) = (s(|x| x.n_arc), s(|x| x.n_arc_goal), s(|x| x.n_arc_saved), s(|x| x.n_arc_off));
+    let (f, fg, fsv, fof) = (s(|x| x.n_far), s(|x| x.n_far_goal), s(|x| x.n_far_saved), s(|x| x.n_far_off));
+    let regular = b + a + f;
+    let (hg, hsv, hoff) = (s(|x| x.n_header_goal), s(|x| x.n_header_saved), s(|x| x.n_header_off));
+    let header = hg + hsv + hoff;
+    let hd = [hg as f64, hsv as f64, hoff as f64];
+    let hn = header as f64;
+    let chi: f64 = [0.15, 0.30, 0.55].iter().zip(hd.iter())
+        .map(|(p, o)| { let e = hn * p; (o - e) * (o - e) / e }).sum();
+    println!("[BAND] shots_regular/场 = {:.3}", regular as f64 / n);
+    println!("[BAND] n_box/n_arc/n_far = {}/{}/{}  禁区内射门占比 = {:.4}  (带 [0.45,0.65])", b, a, f, b as f64 / regular as f64);
+    println!("[BAND] box   g/sv/off = {:.4}/{:.4}/{:.4}  (带 [.10,.20]/[.24,.36]/[.48,.60])", bg as f64 / b as f64, bsv as f64 / b as f64, bof as f64 / b as f64);
+    println!("[BAND] arc   g/sv/off = {:.4}/{:.4}/{:.4}  (带 [.03,.12]/[.14,.30]/[.61,.75])", ag as f64 / a as f64, asv as f64 / a as f64, aof as f64 / a as f64);
+    println!("[BAND] far   g/sv/off = {:.4}/{:.4}/{:.4}  (带 [0,.08]/[.04,.18]/[.78,.92])", fg as f64 / f as f64, fsv as f64 / f as f64, fof as f64 / f as f64);
+    println!("[BAND] shot_far45 = {} (==0)  header n={} chi2={:.2} (<13.82) g/sv/off={:.3}/{:.3}/{:.3}", s(|x| x.n_shot_far45), header, chi, hd[0] / hn, hd[1] / hn, hd[2] / hn);
+    let (sh, sv, so) = (s(|x| x.n_shot_goal), s(|x| x.n_shot_saved), s(|x| x.n_shot_off));
+    let shots = regular + header;
+    let goals = s(|x| x.n_shot_goal + x.n_header_goal);
+    let saved = s(|x| x.n_shot_saved + x.n_header_saved);
+    let box_goals = s(|x| x.n_box_goal + x.n_header_goal);
+    println!("[BAND] sot = {:.4} (带 [0.28,0.39])  conv = {:.4} ([0.08,0.14])  禁区内进球占比 = {:.4} ([0.72,0.92])",
+        (goals + saved) as f64 / shots as f64, goals as f64 / shots as f64, box_goals as f64 / goals.max(1) as f64);
+    let (sh1, sv1, so1) = (sh as f64 / n, sv as f64 / n, so as f64 / n);
+    let _ = (sh1, sv1, so1);
+    let tackles = s(|x| x.n_tackle);
+    let tsucc = s(|x| x.n_tackle_success);
+    println!("[BAND] 抢断/场 = {:.3} ([24,50])  success = {:.4} ([0.42,0.58])  close_succ = {:.4}  far = {} (==0)  shot/tackle = {:.4} ([0.5,1.5])",
+        tackles as f64 / n, tsucc as f64 / tackles as f64,
+        s(|x| x.n_tackle_close_success) as f64 / s(|x| x.n_tackle_close).max(1) as f64,
+        s(|x| x.n_tackle_far), regular as f64 / tackles as f64);
+    let corners = s(|x| x.n_corner_kick);
+    println!("[BAND] 角球/场 = {:.3} ([1,7])  单场max = {} (<=15)  界外球/场 = {:.3} ([15,60])",
+        corners as f64 / n, stats.iter().map(|x| x.n_corner_kick).max().unwrap_or(0), s(|x| x.n_out_sideline) as f64 / n);
+    let success = s(|x| x.n_pass_success);
+    let intercepted = s(|x| x.n_pass_intercepted);
+    let lost = s(|x| x.n_pass_lost);
+    let total = s(|x| x.n_pass);
+    println!("[BAND] 传球成功率 = {:.4} ([0.82,0.90])  拦截占失败 = {:.4} ([0.55,0.90])  pass/场 = {:.1}",
+        success as f64 / total as f64, intercepted as f64 / (intercepted + lost).max(1) as f64, total as f64 / n);
+    println!("[BAND] 犯规/场 = {:.3} ([16,30])  黄 = {:.3} ([2,5])  红 = {:.4} (<=0.8)",
+        s(|x| x.n_foul) as f64 / n, s(|x| x.n_foul_yellow) as f64 / n, s(|x| x.n_foul_red) as f64 / n);
+    let ha = ha_stats();
+    let hn2 = SEEDS_HA as f64;
+    let gh: usize = ha.iter().map(|x| x.n_goal_home).sum();
+    let ga: usize = ha.iter().map(|x| x.n_goal_away).sum();
+    println!("[BAND] 主队进球/场 = {:.4} ([0.85,1.60])  客 = {:.4} (>=0.30)  H/A = {:.4}  (600 seed)",
+        gh as f64 / hn2, ga as f64 / hn2, gh as f64 / ga.max(1) as f64);
+}

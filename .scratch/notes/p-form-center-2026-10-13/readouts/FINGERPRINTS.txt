@@ -1,0 +1,5 @@
+base  FORM_CENTER=0.358/0.642  lib.rs=75190e51f5b28876  wasm=b0bc479678af53aa
+c40  FORM_CENTER=0.40/0.60  lib.rs=aff80776758921c3  wasm=2266021e693d01fe
+c45  FORM_CENTER=0.45/0.55  lib.rs=0e4fbd1f1a013b2a  wasm=a6c9f8897a7f0bf2
+c50  FORM_CENTER=0.50/0.50  lib.rs=7132aa0b267c14fa  wasm=bcf5b6665d4baaf9
+c30  FORM_CENTER=0.30/0.70  lib.rs=09e65fee4f63cd7c  wasm=a6b59e4b99be9f9a

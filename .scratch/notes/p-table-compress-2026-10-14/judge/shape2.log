@@ -1,0 +1,18 @@
+== base win1800 ==
+engine : n=451 平均球距=29.3m 20m内占比=27% 队形sd(x)=20.3 sd(y)=15.6 union_x=91.5m union_y=66.1m
+real(g1): n=450 平均球距=22.1m 20m内占比=49% 队形sd(x)=12.0 sd(y)=13.5 union_x=73.5m union_y=62.4m
+== base win3600 ==
+engine : n=451 平均球距=26.9m 20m内占比=30% 队形sd(x)=20.2 sd(y)=15.5 union_x=94.3m union_y=59.0m
+real(g1): n=450 平均球距=20.5m 20m内占比=49% 队形sd(x)=12.0 sd(y)=13.7 union_x=75.8m union_y=61.0m
+== c055 win1800 ==
+engine : n=451 平均球距=26.3m 20m内占比=37% 队形sd(x)=14.5 sd(y)=15.1 union_x=102.9m union_y=65.8m
+real(g1): n=450 平均球距=22.1m 20m内占比=49% 队形sd(x)=12.0 sd(y)=13.5 union_x=73.5m union_y=62.4m
+== c055 win3600 ==
+engine : n=451 平均球距=21.9m 20m内占比=48% 队形sd(x)=14.5 sd(y)=15.6 union_x=78.9m union_y=56.6m
+real(g1): n=450 平均球距=20.5m 20m内占比=49% 队形sd(x)=12.0 sd(y)=13.7 union_x=75.8m union_y=61.0m
+== a060 win1800 ==
+engine : n=451 平均球距=21.2m 20m内占比=49% 队形sd(x)=14.6 sd(y)=15.5 union_x=78.8m union_y=56.6m
+real(g1): n=450 平均球距=22.1m 20m内占比=49% 队形sd(x)=12.0 sd(y)=13.5 union_x=73.5m union_y=62.4m
+== a060 win3600 ==
+engine : n=451 平均球距=21.8m 20m内占比=46% 队形sd(x)=15.2 sd(y)=15.5 union_x=79.2m union_y=56.8m
+real(g1): n=450 平均球距=20.5m 20m内占比=49% 队形sd(x)=12.0 sd(y)=13.7 union_x=75.8m union_y=61.0m

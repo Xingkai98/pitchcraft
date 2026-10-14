@@ -1,0 +1,61 @@
+
+// ==== [C2 临时探针] 只 println，不改任何判据；跑完 `git checkout engine/tests/realism.rs` 还原 ====
+// 用法：追加到 engine/tests/realism.rs 末尾，
+//   cargo test --test realism --release -- --ignored --nocapture c2_probe_all_bands
+#[test]
+#[ignore]
+fn c2_probe_all_bands() {
+    let stats = l1_stats();
+    let n = SEEDS_L1 as f64;
+    let s = |f: fn(&MatchStats) -> usize| stats.iter().map(f).sum::<usize>();
+    let sf = |f: fn(&MatchStats) -> usize| stats.iter().map(f).sum::<usize>() as f64;
+    let (b, bg, bsv, bof) = (s(|x| x.n_box), s(|x| x.n_box_goal), s(|x| x.n_box_saved), s(|x| x.n_box_off));
+    let (a, ag, asv, aof) = (s(|x| x.n_arc), s(|x| x.n_arc_goal), s(|x| x.n_arc_saved), s(|x| x.n_arc_off));
+    let (f, fg, fsv, fof) = (s(|x| x.n_far), s(|x| x.n_far_goal), s(|x| x.n_far_saved), s(|x| x.n_far_off));
+    let regular = b + a + f;
+    println!("[C2] == L1 逐带（n={} 场, seed {}..{}）==", SEEDS_L1, SEEDS_L1_START, SEEDS_L1_START + SEEDS_L1 as u64 - 1);
+    println!("[C2] 普通射门/场      {:.3}   band [14,29]", regular as f64 / n);
+    println!("[C2] 禁区内占比        {:.4}   band [0.45,0.65]", b as f64 / regular as f64);
+    println!("[C2] 禁区内 g/s/o      {:.4}/{:.4}/{:.4}   band [.10,.20]/[.24,.36]/[.48,.60]", bg as f64 / b as f64, bsv as f64 / b as f64, bof as f64 / b as f64);
+    println!("[C2] 禁区弧 g/s/o      {:.4}/{:.4}/{:.4}   band [.03,.12]/[.14,.30]/[.61,.75]", ag as f64 / a as f64, asv as f64 / a as f64, aof as f64 / a as f64);
+    println!("[C2] 远射   g/s/o      {:.4}/{:.4}/{:.4}   band [0,.08]/[.04,.18]/[.78,.92]", fg as f64 / f as f64, fsv as f64 / f as f64, fof as f64 / f as f64);
+    println!("[C2] 距门>45m 射门数   {}      band ==0", s(|x| x.n_shot_far45));
+    let (hg, hsv, hoff) = (s(|x| x.n_header_goal), s(|x| x.n_header_saved), s(|x| x.n_header_off));
+    println!("[C2] 头球 g/s/o         {:.4}/{:.4}/{:.4}  (chi-sq 15/30/55)", hg as f64 / (hg + hsv + hoff) as f64, hsv as f64 / (hg + hsv + hoff) as f64, hoff as f64 / (hg + hsv + hoff) as f64);
+    let tackles = s(|x| x.n_tackle);
+    println!("[C2] 抢断/场           {:.3}   band [24,50]", tackles as f64 / n);
+    println!("[C2] 抢断成功率        {:.4}   band [0.42,0.58]", sf(|x| x.n_tackle_success) / tackles as f64);
+    let close = s(|x| x.n_tackle_close);
+    println!("[C2] close 成功率      {:.4}   band [0.42,0.58]  (close n={})", sf(|x| x.n_tackle_close_success) / close as f64, close);
+    println!("[C2] far 抢断(d>12.05)  {}      band ==0", s(|x| x.n_tackle_far));
+    println!("[C2] shot/tackle       {:.4}   band [0.5,1.5]", regular as f64 / tackles as f64);
+    let shots_all = regular + hg + hsv + hoff;
+    let goals = s(|x| x.n_shot_goal) + hg;
+    let saved = s(|x| x.n_shot_saved) + hsv;
+    println!("[C2] 射正率 sot        {:.4}   band [0.28,0.39]", (goals + saved) as f64 / shots_all as f64);
+    println!("[C2] 转化 conv         {:.4}   band [0.08,0.14]", goals as f64 / shots_all as f64);
+    println!("[C2] 禁区内进球占比    {:.4}   band [0.72,0.92]", (s(|x| x.n_box_goal) + hg) as f64 / goals as f64);
+    let corners = s(|x| x.n_corner_kick);
+    println!("[C2] 角球/场           {:.3}   band [1,7]（★guard band，真实≈10.27）", corners as f64 / n);
+    println!("[C2] 角球单场 max      {}      band <=15", stats.iter().map(|x| x.n_corner_kick).max().unwrap_or(0));
+    println!("[C2] 界外球/场         {:.3}   band [15,60]（★guard band，真实~33-43）", s(|x| x.n_out_sideline) as f64 / n);
+    let total_pass = s(|x| x.n_pass);
+    let intercepted = s(|x| x.n_pass_intercepted);
+    let lost = s(|x| x.n_pass_lost);
+    println!("[C2] 传球成功率        {:.4}   band [0.82,0.90]", s(|x| x.n_pass_success) as f64 / total_pass as f64);
+    println!("[C2] 拦截占失败比      {:.4}   band [0.55,0.90]", intercepted as f64 / (intercepted + lost) as f64);
+    println!("[C2] 传球事件/场       {:.1}  (=pass 总数，非带)", total_pass as f64 / n);
+    println!("[C2] 犯规/场           {:.3}   band [16,30]", s(|x| x.n_foul) as f64 / n);
+    println!("[C2] 黄牌/场           {:.3}   band [2,5]", s(|x| x.n_foul_yellow) as f64 / n);
+    println!("[C2] 红牌/场           {:.3}   band <=0.8", s(|x| x.n_foul_red) as f64 / n);
+    println!("[C2] free_kick 短差    {}      (允许 <=0.5% foul)", s(|x| x.n_foul).saturating_sub(s(|x| x.n_free_kick)));
+
+    let ha = ha_stats();
+    let hn = SEEDS_HA as f64;
+    let gh = ha.iter().map(|x| x.n_goal_home).sum::<usize>();
+    let ga = ha.iter().map(|x| x.n_goal_away).sum::<usize>();
+    println!("[C2] == 主客（n={} 场, seed {}..{}）==", SEEDS_HA, SEEDS_HA_START, SEEDS_HA_START + SEEDS_HA as u64 - 1);
+    println!("[C2] 主队进球/场       {:.4}   band [0.85,1.60]", gh as f64 / hn);
+    println!("[C2] 客队进球/场       {:.4}   band >=0.30", ga as f64 / hn);
+    println!("[C2] 合计进球/场       {:.4}   H/A={:.4}  方向断言 gh>ga: {}", (gh + ga) as f64 / hn, gh as f64 / ga.max(1) as f64, gh > ga);
+}

@@ -1,0 +1,10 @@
+seed 42: 2157 windows, player_overlap findings=6 worst=1.539m
+seed 1: 2157 windows, player_overlap findings=6 worst=1.520m
+seed 2: 2157 windows, player_overlap findings=15 worst=1.383m
+seed 3: 2157 windows, player_overlap findings=2 worst=1.577m
+seed 7: 2157 windows, player_overlap findings=12 worst=1.561m
+seed 59: 2157 windows, player_overlap findings=6 worst=1.571m
+seed 18: 2157 windows, player_overlap findings=10 worst=1.602m
+seed 94: 2157 windows, player_overlap findings=22 worst=1.402m
+
+FAIL: 79 player_overlap finding(s) over the swept windows

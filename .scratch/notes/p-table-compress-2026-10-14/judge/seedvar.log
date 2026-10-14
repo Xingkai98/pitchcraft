@@ -1,0 +1,51 @@
+### base 5 seeds (复现默认)
+seed=  42 gap=19.14✘ hd=38.76✘ ad=36.57✘ width=49.72
+seed=   1 gap=19.05✘ hd=39.19✘ ad=36.49✘ width=49.56
+seed=   7 gap=19.30✘ hd=39.44✘ ad=36.93✘ width=49.63
+seed=  99 gap=19.38✘ hd=38.84✘ ad=37.03✘ width=49.83
+seed= 123 gap=19.16✘ hd=39.26✘ ad=36.33✘ width=49.90
+MEAN gap=19.204 sd=0.117 min=19.05 max=19.38 band=[5.24,8.32] inBand=0/5
+MEAN hd=39.099 sd=0.259 min=38.76 max=39.44 band=[18.31,25.94] inBand=0/5
+MEAN ad=36.671 sd=0.268 min=36.33 max=37.03 band=[18.45,26.79] inBand=0/5
+三条同时带内(逐 seed): 0/5
+### a060 5 seeds (复现默认)
+seed=  42 gap=8.35✘ hd=22.96✔ ad=19.42✔ width=49.72
+seed=   1 gap=8.38✘ hd=23.28✔ ad=19.93✔ width=49.61
+seed=   7 gap=8.01✔ hd=23.45✔ ad=19.76✔ width=49.67
+seed=  99 gap=8.24✔ hd=22.51✔ ad=19.27✔ width=49.46
+seed= 123 gap=8.29✔ hd=22.77✔ ad=19.42✔ width=49.60
+MEAN gap=8.256 sd=0.131 min=8.01 max=8.38 band=[5.24,8.32] inBand=3/5
+MEAN hd=22.994 sd=0.340 min=22.51 max=23.45 band=[18.31,25.94] inBand=5/5
+MEAN ad=19.560 sd=0.245 min=19.27 max=19.93 band=[18.45,26.79] inBand=5/5
+三条同时带内(逐 seed): 3/5
+### a060 扩样本 15 seeds
+seed=  42 gap=8.35✘ hd=22.96✔ ad=19.42✔ width=49.72
+seed=   1 gap=8.38✘ hd=23.28✔ ad=19.93✔ width=49.61
+seed=   7 gap=8.01✔ hd=23.45✔ ad=19.76✔ width=49.67
+seed=  99 gap=8.24✔ hd=22.51✔ ad=19.27✔ width=49.46
+seed= 123 gap=8.29✔ hd=22.77✔ ad=19.42✔ width=49.60
+seed=   2 gap=8.37✘ hd=23.32✔ ad=19.31✔ width=49.83
+seed=   3 gap=8.32✔ hd=23.12✔ ad=19.13✔ width=49.51
+seed=   5 gap=8.35✘ hd=22.88✔ ad=19.44✔ width=49.71
+seed=  11 gap=8.43✘ hd=22.91✔ ad=19.11✔ width=49.75
+seed=  13 gap=8.37✘ hd=22.96✔ ad=19.22✔ width=49.36
+seed=  17 gap=8.19✔ hd=23.01✔ ad=19.36✔ width=49.37
+seed=  23 gap=8.46✘ hd=23.36✔ ad=19.31✔ width=49.70
+seed=  29 gap=8.41✘ hd=23.02✔ ad=19.34✔ width=49.62
+seed=  31 gap=8.24✔ hd=22.76✔ ad=19.16✔ width=49.42
+seed=  37 gap=8.21✔ hd=23.08✔ ad=19.49✔ width=49.53
+MEAN gap=8.308 sd=0.111 min=8.01 max=8.46 band=[5.24,8.32] inBand=7/15
+MEAN hd=23.026 sd=0.246 min=22.51 max=23.45 band=[18.31,25.94] inBand=15/15
+MEAN ad=19.379 sd=0.216 min=19.11 max=19.93 band=[18.45,26.79] inBand=15/15
+三条同时带内(逐 seed): 7/15
+### c055 5 seeds
+seed=  42 gap=8.88✘ hd=21.19✔ ad=17.16✘ width=49.34
+seed=   1 gap=8.66✘ hd=20.82✔ ad=17.42✘ width=49.43
+seed=   7 gap=8.85✘ hd=21.03✔ ad=17.07✘ width=49.64
+seed=  99 gap=8.68✘ hd=20.50✔ ad=17.20✘ width=49.30
+seed= 123 gap=8.89✘ hd=20.74✔ ad=17.32✘ width=49.70
+MEAN gap=8.791 sd=0.100 min=8.66 max=8.89 band=[5.24,8.32] inBand=0/5
+MEAN hd=20.858 sd=0.237 min=20.50 max=21.19 band=[18.31,25.94] inBand=5/5
+MEAN ad=17.235 sd=0.122 min=17.07 max=17.42 band=[18.45,26.79] inBand=0/5
+三条同时带内(逐 seed): 0/5
+SEEDVAR-DONE

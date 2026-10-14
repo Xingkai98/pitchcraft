@@ -1,0 +1,53 @@
+   Compiling fm-engine v0.1.0 (/tmp/judge-table-axis/engine)
+    Finished `release` profile [optimized] target(s) in 6.05s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+[fouls] 每场: foul=24.95 yellow=3.35 red=0.07 free_kick=24.95
+
+thread 'l1_shot_result_distributions' (3510605) panicked at tests/realism.rs:694:5:
+禁区内射门占比 0.389 ∉ [0.45,0.65]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test l1_pass_completion_rate ... ok
+test l1_fouls_and_cards ... ok
+test l1_shot_result_distributions ... FAILED
+[L3] shots=3299 regular=2965 header=334 goals=361 saved=798 box_goals=229 禁区占比=0.634 sot=0.351 conv=0.109
+
+thread 'l1_tackle_dilution_and_slot_mix' (3510638) panicked at tests/realism.rs:759:5:
+抢断/场 56.74 ∉ [24,50]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）
+
+thread 'l3_shot_ratios' (3510640) panicked at tests/realism.rs:1071:5:
+禁区内进球占比 0.634 ∉ [0.72,0.92]
+test l1_tackle_dilution_and_slot_mix ... FAILED
+test l3_shot_ratios ... FAILED
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主0.97/客0.83 (H/A 1.175) pass_evt=873.9 shot=14.82(+header 1.67) tackle=56.74(succ 26.16) corner=5.17 throw_in=23.92 goal_kick=18.30 foul=24.95(yellow 3.35/red 0.07)
+test p13_side_effect_snapshot ... ok
+[JUDGE-BANDS] box_share=0.3892 shots/场=14.825 sot=0.3513 conv=0.1094 inside=0.6343
+[JUDGE-BANDS] box g/sv/off=0.1473/0.3007/0.5520 arc=0.0727/0.2209/0.7064 far=0.0736/0.1149/0.8115
+[JUDGE-BANDS] shot_far45=0 header_chi2=1.860
+[JUDGE-BANDS] tackle/场=56.740 tackle_succ=0.4611 close_succ=0.4611 far=0 shot/tackle=0.2613
+[JUDGE-BANDS] corner/场=5.165 corner_max=14 throw_in/场=23.920
+[JUDGE-BANDS] pass_rate=0.8574 int_share=0.7509
+[JUDGE-BANDS] foul/场=24.950 yellow/场=3.350 red/场=0.0700
+[P31 5min cohort n=1000] 射门/场=0.82 出界重开/场=2.44（其中角球+界外球 1.51）犯规/场=1.75 进球/场=0.11
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+test zz_judge_band_probe has been running for over 60 seconds
+[home-adv calibration] matches=600 home_goals=626 away_goals=510 H/A=1.227 log(H/A)=0.205 95% CI=[1.092, 1.380]
+[home-adv] 主 1.043/场 客 0.850/场 合计 1.893 H/A=1.227
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... ok
+[JUDGE-BANDS] HA home/场=1.0433 away/场=0.8500 H/A=1.2275
+test zz_judge_band_probe ... ok
+
+failures:
+
+failures:
+    l1_shot_result_distributions
+    l1_tackle_dilution_and_slot_mix
+    l3_shot_ratios
+
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 4 filtered out; finished in 144.18s
+
+error: test failed, to rerun pass `--test realism`
