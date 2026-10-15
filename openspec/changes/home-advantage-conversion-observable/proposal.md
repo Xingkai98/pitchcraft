@@ -34,6 +34,13 @@
 实测最大事件内距离仅 **1.8849 m**（距阈值 10.12 m），与同文件 #104 自记的「干净 main 3000 场 0 越界」
 一致。⇒ **断言与 ε 保留**（仍守「资格在打分阶段判定」），**只订正注释**。
 
+## ⚠️ 与未归档 change 的冲突（归档顺序）
+
+`openspec/changes/p104-volume-recalibration/`（**尚未归档**）携带**同一条 requirement** 的旧 delta
+（其 `specs/match-engine/spec.md` 里含「主队进球 SHALL > 客队进球」）。**谁后归档谁生效**——
+若它在本 change 之后归档，会把本改动**整块回退**。⇒ 归档前须二选一：**先归档它、再归档本 change**
+（本 delta 已按主 spec 最新文本全量复制），或把它那份 delta 里的该 requirement 段落同步更新。
+
 ## 不做
 
 - 不改任何**绝对量带**、不改 `SEEDS_HA`/窗、不动机制（`CLINICAL_GOAL_PP_HOME` 等常量一字不改）。

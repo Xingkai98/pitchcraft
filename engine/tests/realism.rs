@@ -56,7 +56,8 @@ const GOLDEN_SEEDS: std::ops::RangeInclusive<u64> = 1..=10;
 /// 因此这条 L1 门的定位是**「主场优势消失 / 反向」的粗粒度回归护栏**，不是「证明 ratio ≥ 1.08」：
 /// 机制若整体失效（ratio → 1.0 或 < 1.0，对应 `CLINICAL_GOAL_PP_HOME` 失效 / 符号错），
 /// 任一 ±200 场窗口都会立刻报警。精确效应校准与「机制测试 / 统计门」分层重构已由 issue #63
-/// 落地为三层：机制层 `home_advantage_channel_semantics`（系数方向）+ 本短窗口方向门（`gh > ga`）
+/// 落地为三层：机制层 `home_advantage_channel_semantics`（系数方向）+ 本短窗口方向门
+/// （2026-10-15 起为 **主客转化率方向** `home_conv > away_conv`；此前为 `gh > ga`）
 /// + 长期报告 `l3_home_away_goal_calibration`（H/A 点估计 + CI）。
 ///
 /// **预注册纪律**：`SEEDS_HA_START`/`SEEDS_HA` 一经冻结即不得因「当前跑不过」而调整——那样
@@ -950,7 +951,7 @@ fn l1_pass_completion_rate() {
 /// （n_goal_home/n_goal_away，= shot[result=goal] 射手队归属，与比分同源）。
 /// 真实参考（research/l3-gap-analysis.md §五，Kopacak）：主 1.53 / 客 1.22，主客比 ~1.25。
 /// 断言设计（#63 三层重构后 = 短窗口方向 sanity，非精细 ratio 下界）：
-///   - **主队转化率 > 客队转化率**（2026-10-15 换观测量：原为踢球数方向 `gh > ga`，但进球是
+///   - **主队转化率 > 客队转化率**（2026-10-15 换观测量：原为进球数方向 `gh > ga`，但进球是
 ///     「射门量 × 把握率」的复合量、被"客队射门多 12.6%"稀释，在冻结窗上靠运气；
 ///     转化率是主场优势通道的直接观测量。详见函数内注释与
 ///     `.scratch/notes/p-landmine-check-2026-10-15/REPORT.md`）；
@@ -969,8 +970,10 @@ fn l1_pass_completion_rate() {
 /// `[0.80, 1.58]`。取整并沿用用户第 1 轮 Q3 拍板值 **`[0.85, 1.60]`**
 /// （与 1.188 的相对容差为下 −28.5% / 上 +34.7%，与 ±32.74% 有 ≤0.05 的取整偏差）。
 /// 带值安全性：引擎读数 1.188 距下界 0.338、距上界 0.412，余量充足。
-/// ⚠️ **方向语义完全不变**：`gh > ga` 与 `ga_pm >= 0.30` 两条断言**不动**——
-/// 只有那条**绝对量带**随体积重标（#104 任务书明令）。
+/// ⚠️ **#104 时**方向语义不变：`gh > ga` 与 `ga_pm >= 0.30` 两条断言当时**不动**，
+/// 只有那条**绝对量带**随体积重标。
+/// 🆕 **2026-10-15 起方向断言换了观测量**（`gh > ga` → `home_conv > away_conv`，见函数内注释与
+/// `openspec/changes/home-advantage-conversion-observable/`）；`ga_pm >= 0.30` 与绝对量带**仍未动**。
 #[test]
 #[ignore]
 fn l1_home_away_goal_asymmetry() {
@@ -998,9 +1001,21 @@ fn l1_home_away_goal_asymmetry() {
     // （见 `SEEDS_HA` 常量注释与 issue #63）。口径：**含头球**（头球同走 +2pp 窗口，与 `n_goal_home/away`
     // 同口径）；**窗不变**（预注册 401..1000，不因跑不过而调整）。跨窗体检证据：
     // `.scratch/notes/p-landmine-check-2026-10-15/REPORT.md`。
+    // **探测下限（如实记）**：本门抓的是「通道关闭 / 反向」。独立审阅的引擎侧变异显示
+    // **通道砍半**（`CLINICAL_GOAL_PP_HOME` 2→1，方向完好）时差只有 +0.418pp、**z≈0.76 ⇒ 仍绿**
+    // （而旧门在同一次砍半上会红——但那次红打印的是 `ch=0.12216 > ca=0.11798` 为真，说明它是**余量太小**而非敏感）。
+    // 若要抓「减半」，需要更大窗（数倍）或换配对口径——那是另一次 change。
     let sh: usize = stats.iter().map(|s| s.n_shot_home).sum();
     let sa: usize = stats.iter().map(|s| s.n_shot_away).sum();
     assert!(sh >= 3000 && sa >= 3000, "主客射门样本不足：{} / {}", sh, sa);
+    // 分派完整性守卫（也替「含头球」这个口径声明把关）：按队计数之和必须等于**总射门数**
+    // （`n_shot` 含头球）——若哪天头球被漏出某一边、或分派写反/漏计，这里先红。
+    let shot_all: usize = stats.iter().map(|s| s.n_shot).sum();
+    assert_eq!(
+        sh + sa, shot_all,
+        "按队射门计数之和 {} ≠ 总射门数 {}（分派不全 或 头球未按队计入）",
+        sh + sa, shot_all
+    );
     let ch = gh as f64 / sh as f64;
     let ca = ga as f64 / sa as f64;
     assert!(
