@@ -3430,6 +3430,53 @@ const FORM_PHASE_PERIOD_S: f64 = 90.0;
 /// 个体抖动相位的 id 步长（弧度）——不同 id 相位错开。
 const FORM_PHASE_ID_STEP: f64 = 37.0;
 
+// ---- [p-ball-anchor] 球锚块（原型）----
+//
+// 把「每个球员钉在站位表的**绝对坐标**」换成「一个**围着球、整块随球平移**的块，表只提供块内
+// 相对形状」。**只扫 `FORM_BALL_ANCHOR` 一个旋钮**；下列其余常量在第 0 步从**真实数据**反解后
+// **冻结**（`.scratch/notes/p-ball-anchor-2026-10-14/REAL-ANCHORS.md`），全程不再调——
+// 尤其**不许拿引擎读数回头拟合**它们。
+/// **主扫变量**：0 = 现状（静态表锚；走原表达式的显式分支），1 = 完全球锚块。扫 0/0.25/0.5/0.75/1.0。
+const FORM_BALL_ANCHOR: f64 = 0.0;
+/// 攻方块心相对球的纵向偏移（米，沿**本队自己的进攻方向**）。真实实测（Metrica 两场、
+/// 原始球帧 n=34307）**+2.444**。
+const FORM_BALL_PHASE_ATT_M: f64 = 2.444;
+/// 守方块心相对球的纵向偏移（米，沿本队自己的进攻方向）。真实实测 **−9.246**（= 守方在球后）。
+const FORM_BALL_PHASE_DEF_M: f64 = -9.246;
+/// 块内相对形状的缩放：**按纵深反解**——真实纵深带（skillcorner 18.307 / metrica 25.939 的几何中点
+/// 21.791；ad 同法 22.233；取 22.012 m）÷ base 外场 x 的 q10–q90（46.620 m）= **0.472**。
+/// ⚠️ 单标量**不可能同时**让纵深进带、又不让宽度塌陷（base 与真实块长宽比不同，见 REAL-ANCHORS §3.1）；
+/// 本常量按任务书字面取「纵深反解」值，宽度代价由判据 G 显式承担。
+const FORM_BALL_BLOCK_SCALE: f64 = 0.472;
+/// 块内相对形状的**横向**缩放（对照面板 A 用；主面板 U 与 x 同值 = 单标量字面执行）。
+/// 真实 y 纵深（q10–q90）30.248 m ÷ base 28.560 m = **1.059**（同口径；不用不对称的 max−min）。
+const FORM_BALL_BLOCK_SCALE_Y: f64 = 0.472;
+/// 跟球强度相对离球距离的**实测节点**（米 → 系数）：Metrica 两场、0.2 s 抽样、原始球帧、剔门将、
+/// 客队镜像后箱内 OLS `x_player ~ ball_x` 的斜率（见 REAL-ANCHORS §4）。单调 0.955 → 0.326。
+/// 用**实测节点线性插值**而非拟合式（拟合式两端各差 ~0.08）；两端平延。
+const FORM_COMMIT_KNODES: [(f64, f64); 8] = [
+    (2.5, 0.955), (7.5, 0.882), (12.5, 0.803), (17.5, 0.702),
+    (22.5, 0.586), (27.5, 0.496), (35.0, 0.383), (50.0, 0.326),
+];
+/// 近球端系数（用于把个体差异**归一化**到 [0.345, 1]：ANCHOR 管全局强度、形状管个体差异）。
+const FORM_COMMIT_W0: f64 = 0.955;
+
+/// 实测跟球梯度：离球 `d_m` 米处的球员「球动 1 m 他跟着动几 m」（分段线性 + 两端平延）。
+fn ball_commit_weight(d_m: f64) -> f64 {
+    let k = &FORM_COMMIT_KNODES;
+    if d_m <= k[0].0 {
+        return k[0].1;
+    }
+    for i in 1..k.len() {
+        if d_m <= k[i].0 {
+            let (d0, w0) = k[i - 1];
+            let (d1, w1) = k[i];
+            return w0 + (w1 - w0) * (d_m - d0) / (d1 - d0);
+        }
+    }
+    k[k.len() - 1].1
+}
+
 /// 是否防线球员（静态身份，default_lineup 基准）
 fn is_defender(st: &MatchState, id: i32) -> bool {
     if id <= 10 { st.home_defenders.contains(&id) } else { st.away_defenders.contains(&id) }
@@ -3483,8 +3530,26 @@ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
     let block_ty = 0.5 + (ball.1 - 0.5) * FORM_TRACK_Y + (base.1 - 0.5) * FORM_SPREAD_Y + iy;
     let tx2 = tx * (1.0 - FORM_MIX_X) + block_tx * FORM_MIX_X;
     ty = ty * (1.0 - FORM_MIX_Y) + block_ty * FORM_MIX_Y;
+    // ── [p-ball-anchor] 球锚块：目标 = (1−a)·现状目标 + a·(块 + 表内相对形状 × 冻结缩放) ──
+    // ANCHOR=0 **走原表达式的显式分支**（不是「乘以 0 再相加」）——本仓有过「表达式重排级联到
+    // tick 演化」的教训（浮点结合律变化会让事件流漂）；等价性由事件流哈希守（同 seed 同流）。
+    if FORM_BALL_ANCHOR == 0.0 {
+        // P7 观感：目标不进小禁区/不顶门线（前锋最多压到禁区边缘 x=0.9，避免顶在球门线来回摆动）
+        return (clamp01(tx2).clamp(0.04, 0.9), clamp01(ty));
+    }
+    // 块心 = 球（+ 攻/守沿本队进攻方向的纵向相位错开）；块内 = 表相对块心的形状 × 冻结缩放。
+    let phase_m = if my_attack { FORM_BALL_PHASE_ATT_M } else { FORM_BALL_PHASE_DEF_M };
+    let anchor_x = ball.0 + (phase_m / PITCH_LENGTH_M) * attack_dir
+        + (base.0 - center0) * FORM_BALL_BLOCK_SCALE + ix;
+    let anchor_y = ball.1 + (base.1 - 0.5) * FORM_BALL_BLOCK_SCALE_Y + iy;
+    // 个体 commit 系数：**实测跟球梯度**（近球者贴球、远球者守形）。全队共用一路信号必然同步
+    // ——这是 p38 的教训；`d_i` 随时间变（球靠近谁，谁的 commit 上升），故也是逐人逐时的。
+    let a = (FORM_BALL_ANCHOR * (ball_commit_weight(distance_meters(st.pos[id as usize], ball)) / FORM_COMMIT_W0))
+        .clamp(0.0, 1.0);
+    let out_x = tx2 * (1.0 - a) + anchor_x * a;
+    let out_y = ty * (1.0 - a) + anchor_y * a;
     // P7 观感：目标不进小禁区/不顶门线（前锋最多压到禁区边缘 x=0.9，避免顶在球门线来回摆动）
-    (clamp01(tx2).clamp(0.04, 0.9), clamp01(ty))
+    (clamp01(out_x).clamp(0.04, 0.9), clamp01(out_y))
 }
 
 /// 角球准备期站位目标：攻方禁区包抄（贴近门线、y 分散）、防方回防（禁区前沿到门线之间）。
