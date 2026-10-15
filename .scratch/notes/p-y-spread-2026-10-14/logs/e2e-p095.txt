@@ -1,0 +1,1 @@
+E2E v2 OK：6325 事件 | {"beat":5367,"main":3636,"movers":5367,"loose":263,"pass":861,"shot":18,"tackle":53,"goal":4} | 无顶层 dribble | config 生效 | 无 snap(4 seed: 球 0.0078, 球员 0.0382)

@@ -1,0 +1,38 @@
+variant=P val=0.95 lib.rs sha16=f42d37777d1fea20
+p095 variant=P val=0.95 lib16=f42d37777d1fea20 wasm16=2b4a98bc1065d99a
+lf-p095 done
+sp-p095 done
+e2e-p095 done
+traj-p095 done
+POINT-p095-DONE
+variant=P val=0.9 lib.rs sha16=d2575afe66cb54b1
+p090 variant=P val=0.9 lib16=d2575afe66cb54b1 wasm16=7180aaf627e35619
+lf-p090 done
+sp-p090 done
+e2e-p090 done
+traj-p090 done
+POINT-p090-DONE
+variant=P val=0.85 lib.rs sha16=9f50a7456d0e2be2
+p085 variant=P val=0.85 lib16=9f50a7456d0e2be2 wasm16=e7fa1b6f91174d8e
+lf-p085 done
+sp-p085 done
+e2e-p085 done
+traj-p085 done
+POINT-p085-DONE
+variant=P val=0.6 lib.rs sha16=727943c43012884c
+p060 variant=P val=0.6 lib16=727943c43012884c wasm16=a799c77aacfdad90
+lf-p060 done
+sp-p060 done
+e2e-p060 done
+traj-p060 done
+POINT-p060-DONE
+variant=Q val=0.77 lib.rs sha16=92ca7cc2cf05e1e7
+q077 variant=Q val=0.77 lib16=92ca7cc2cf05e1e7 wasm16=cafcc6d2d7b7c8fc
+lf-q077 done
+sp-q077 done
+e2e-q077 done
+traj-q077 done
+POINT-q077-DONE
+SWEEP-DONE
+L1-ALL-DONE
+CT-ALL-DONE

@@ -1,0 +1,7 @@
+[MINDIST] seed=42 step=0.5s dur=5400s  整场同队最小间距 = 2.1372 m  pair=(18,15)  t=2191.5s
+[MINDIST] seed=42 step=0.5s dur=5400s  整场同队最小间距 = 2.1383 m  pair=(2,4)  t=931.5s
+[MINDIST] seed=42 step=0.5s dur=5400s  整场同队最小间距 = 2.1393 m  pair=(19,17)  t=2340.5s
+[MINDIST] seed=42 step=0.5s dur=5400s  整场同队最小间距 = 2.1377 m  pair=(3,4)  t=2681.5s
+[MINDIST] seed=42 step=0.5s dur=5400s  整场同队最小间距 = 2.1365 m  pair=(15,12)  t=2060.5s
+[MINDIST] seed=42 step=0.5s dur=5400s  整场同队最小间距 = 2.0616 m  pair=(14,13)  t=1685.5s
+[MINDIST] seed=42 step=0.5s dur=5400s  整场同队最小间距 = 2.1393 m  pair=(1,4)  t=678.5s

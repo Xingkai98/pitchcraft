@@ -1,0 +1,22 @@
+   Compiling fm-engine v0.1.0 (/tmp/judge-y-axis/engine)
+    Finished `release` profile [optimized] target(s) in 29.51s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 9 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+test l1_pass_completion_rate ... ok
+test l1_shot_result_distributions ... ok
+test l1_tackle_dilution_and_slot_mix ... ok
+test l1_fouls_and_cards ... ok
+test l3_shot_ratios ... ok
+test p13_side_effect_snapshot ... ok
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 215.11s
+

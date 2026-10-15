@@ -1,0 +1,55 @@
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/tmp/judge-y-axis/.scratch/tools/benchmark-engine.mjs' imported from /tmp/judge-y-axis/.scratch/notes/p-y-judge-2026-10-14/probe/myspacing.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:985:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:731:20)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:310:38)
+    at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:664:36)
+    at TracingChannel.tracePromise (node:diagnostics_channel:350:14)
+    at ModuleLoader.import (node:internal/modules/esm/loader:663:21)
+    at defaultImportModuleDynamicallyForModule (node:internal/modules/esm/utils:222:31) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///tmp/judge-y-axis/.scratch/tools/benchmark-engine.mjs'
+}
+
+Node.js v22.22.2
+node:internal/modules/esm/resolve:275
+    throw new ERR_MODULE_NOT_FOUND(
+          ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/tmp/judge-y-axis/.scratch/tools/benchmark-engine.mjs' imported from /tmp/judge-y-axis/.scratch/notes/p-y-judge-2026-10-14/probe/myspacing.mjs
+    at finalizeResolution (node:internal/modules/esm/resolve:275:11)
+    at moduleResolve (node:internal/modules/esm/resolve:861:10)
+    at defaultResolve (node:internal/modules/esm/resolve:985:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:731:20)
+    at ModuleLoader.resolve (node:internal/modules/esm/loader:708:38)
+    at ModuleLoader.getModuleJobForImport (node:internal/modules/esm/loader:310:38)
+    at onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:664:36)
+    at TracingChannel.tracePromise (node:diagnostics_channel:350:14)
+    at ModuleLoader.import (node:internal/modules/esm/loader:663:21)
+    at defaultImportModuleDynamicallyForModule (node:internal/modules/esm/utils:222:31) {
+  code: 'ERR_MODULE_NOT_FOUND',
+  url: 'file:///tmp/judge-y-axis/.scratch/tools/benchmark-engine.mjs'
+}
+
+Node.js v22.22.2
+[MYSP] base.wasm seed=42 step=0.5s 整场同队最小间距=2.1372m pair=(18,15) t=2191.5s
+[MYSP]   <2.2m 的 pair 数=32  <2.5m=40
+[MYSP]   最小的 8 对: 18,15=2.1372@2191.5s  19,18=2.1380@3845.5s  19,17=2.1394@307.5s  15,12=2.1401@782.5s  15,14=2.1404@4057.5s  20,19=2.1407@5215.5s  20,16=2.1412@224.5s  14,13=2.1421@2194.5s
+[MYSP] p110.wasm seed=42 step=0.5s 整场同队最小间距=2.1383m pair=(2,4) t=931.5s
+[MYSP]   <2.2m 的 pair 数=26  <2.5m=33
+[MYSP]   最小的 8 对: 2,4=2.1383@931.5s  3,4=2.1409@4033.5s  13,11=2.1419@204.5s  19,17=2.1420@4580.5s  5,9=2.1428@3167.5s  4,5=2.1431@430.5s  14,11=2.1441@660.5s  15,14=2.1456@196.5s
+[MYSP] p085.wasm seed=42 step=0.5s 整场同队最小间距=2.1365m pair=(15,12) t=2060.5s
+[MYSP]   <2.2m 的 pair 数=25  <2.5m=34
+[MYSP]   最小的 8 对: 15,12=2.1365@2060.5s  19,17=2.1392@2777.5s  0,4=2.1408@4337.5s  20,19=2.1426@2679.5s  20,18=2.1432@2680.5s  15,11=2.1445@2683.5s  15,14=2.1461@2765.5s  1,9=2.1476@2679.5s
+[MYSP] q077.wasm seed=42 step=0.5s 整场同队最小间距=2.1393m pair=(1,4) t=678.5s
+[MYSP]   <2.2m 的 pair 数=25  <2.5m=37
+[MYSP]   最小的 8 对: 1,4=2.1393@678.5s  16,13=2.1405@5268.5s  15,13=2.1410@2467.5s  20,11=2.1426@1510.5s  20,16=2.1426@2994.5s  12,11=2.1431@5051.5s  1,6=2.1433@1527.5s  3,4=2.1435@4030.5s
+[MYSP] p060.wasm seed=42 step=0.5s 整场同队最小间距=2.0616m pair=(14,13) t=1685.5s
+[MYSP]   <2.2m 的 pair 数=27  <2.5m=39
+[MYSP]   最小的 8 对: 14,13=2.0616@1685.5s  3,7=2.1381@152.5s  19,17=2.1403@1409.5s  18,17=2.1409@1338.5s  2,6=2.1422@1509.5s  1,5=2.1422@1363.5s  15,14=2.1425@1902.5s  1,4=2.1431@4861.5s
