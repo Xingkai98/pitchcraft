@@ -1,0 +1,491 @@
+{
+ "wasmPath": "/tmp/ball-anchor/.scratch/notes/p-ball-anchor-2026-10-14/wasm/u100.wasm",
+ "engine": {
+  "seeds": [
+   42,
+   1,
+   7,
+   99,
+   123
+  ],
+  "A1_ball12": {
+   "mean": 7.580873544327683,
+   "perSeed": [
+    7.601421906243057,
+    7.525424984259843,
+    7.471538091181808,
+    7.6320077019921495,
+    7.673975037961557
+   ]
+  },
+  "A2_contact5": {
+   "mean": 0.5035720267016714,
+   "perSeed": [
+    0.4872065466933342,
+    0.5000759231139503,
+    0.5035980148883401,
+    0.5145004813745084,
+    0.5124791674382241
+   ]
+  },
+  "A3_slopeX": {
+   "mean": 0.7215465472890384,
+   "perSeed": [
+    0.7371790933337076,
+    0.7196468135431071,
+    0.7191316772983953,
+    0.6949055073273187,
+    0.7368696449426639
+   ]
+  },
+  "A3_slopeY": {
+   "mean": 0.6175684362746567
+  },
+  "disp": {
+   "mean": 11.525728672093672
+  },
+  "lat": {
+   "mean": 0.31116208271550905
+  },
+  "mix": {
+   "mean": 0.71
+  },
+  "dir": {
+   "mean": 0.8188566769899485
+  },
+  "still": {
+   "mean": 0
+  },
+  "binned": [
+   {
+    "ballXQuintile": 0,
+    "meanHomeX": 18.576599999999743,
+    "n": 1
+   },
+   {
+    "ballXQuintile": 1,
+    "meanHomeX": 14.98150137764154,
+    "n": 4521
+   },
+   {
+    "ballXQuintile": 2,
+    "meanHomeX": 33.687207779075436,
+    "n": 3333
+   },
+   {
+    "ballXQuintile": 3,
+    "meanHomeX": 47.098689721142485,
+    "n": 3600
+   },
+   {
+    "ballXQuintile": 4,
+    "meanHomeX": 65.13131284261067,
+    "n": 7475
+   },
+   {
+    "ballXQuintile": 5,
+    "meanHomeX": 76.5611066376995,
+    "n": 8076
+   }
+  ],
+  "mechAll": [
+   {
+    "seed": 42,
+    "nFrames": 27006,
+    "A1": 7.601421906243057,
+    "A2": 0.4872065466933342,
+    "slopeX": 0.7371790933337076,
+    "slopeY": 0.5813840951793539,
+    "binnedMeanXByBallXQuintile": [
+     {
+      "ballXQuintile": 0,
+      "meanHomeX": 18.576599999999743,
+      "n": 1
+     },
+     {
+      "ballXQuintile": 1,
+      "meanHomeX": 14.98150137764154,
+      "n": 4521
+     },
+     {
+      "ballXQuintile": 2,
+      "meanHomeX": 33.687207779075436,
+      "n": 3333
+     },
+     {
+      "ballXQuintile": 3,
+      "meanHomeX": 47.098689721142485,
+      "n": 3600
+     },
+     {
+      "ballXQuintile": 4,
+      "meanHomeX": 65.13131284261067,
+      "n": 7475
+     },
+     {
+      "ballXQuintile": 5,
+      "meanHomeX": 76.5611066376995,
+      "n": 8076
+     }
+    ],
+    "nSlope": 54012,
+    "disp": 11.800436636345868,
+    "lat": 0.31255182467668313,
+    "mix": 0.7,
+    "dir": 0.8125332522271677,
+    "still": 0
+   },
+   {
+    "seed": 1,
+    "nFrames": 27001,
+    "A1": 7.525424984259843,
+    "A2": 0.5000759231139503,
+    "slopeX": 0.7196468135431071,
+    "slopeY": 0.6232785227134978,
+    "binnedMeanXByBallXQuintile": [
+     {
+      "ballXQuintile": 0,
+      "meanHomeX": 16.032544499999972,
+      "n": 20
+     },
+     {
+      "ballXQuintile": 1,
+      "meanHomeX": 16.054830899919317,
+      "n": 2728
+     },
+     {
+      "ballXQuintile": 2,
+      "meanHomeX": 34.12067093892382,
+      "n": 2607
+     },
+     {
+      "ballXQuintile": 3,
+      "meanHomeX": 46.35997793879862,
+      "n": 3103
+     },
+     {
+      "ballXQuintile": 4,
+      "meanHomeX": 66.4722599729455,
+      "n": 8327
+     },
+     {
+      "ballXQuintile": 5,
+      "meanHomeX": 75.80811087259777,
+      "n": 10216
+     }
+    ],
+    "nSlope": 54002,
+    "disp": 11.577427171880844,
+    "lat": 0.30710445012931803,
+    "mix": 0.7,
+    "dir": 0.838055814182662,
+    "still": 0
+   },
+   {
+    "seed": 7,
+    "nFrames": 27001,
+    "A1": 7.471538091181808,
+    "A2": 0.5035980148883401,
+    "slopeX": 0.7191316772983953,
+    "slopeY": 0.632712675662868,
+    "binnedMeanXByBallXQuintile": [
+     {
+      "ballXQuintile": 0,
+      "meanHomeX": 40.60234499999984,
+      "n": 2
+     },
+     {
+      "ballXQuintile": 1,
+      "meanHomeX": 15.139721253233143,
+      "n": 2843
+     },
+     {
+      "ballXQuintile": 2,
+      "meanHomeX": 34.79829539492658,
+      "n": 2714
+     },
+     {
+      "ballXQuintile": 3,
+      "meanHomeX": 48.436420837828955,
+      "n": 3616
+     },
+     {
+      "ballXQuintile": 4,
+      "meanHomeX": 66.65383965883537,
+      "n": 8180
+     },
+     {
+      "ballXQuintile": 5,
+      "meanHomeX": 76.76306964247817,
+      "n": 9646
+     }
+    ],
+    "nSlope": 54002,
+    "disp": 11.833265396954214,
+    "lat": 0.302707146133413,
+    "mix": 0.7,
+    "dir": 0.8351348134276486,
+    "still": 0
+   },
+   {
+    "seed": 99,
+    "nFrames": 27006,
+    "A1": 7.6320077019921495,
+    "A2": 0.5145004813745084,
+    "slopeX": 0.6949055073273187,
+    "slopeY": 0.6403226724353789,
+    "binnedMeanXByBallXQuintile": [
+     {
+      "ballXQuintile": 0,
+      "meanHomeX": 15.818039999999922,
+      "n": 1
+     },
+     {
+      "ballXQuintile": 1,
+      "meanHomeX": 18.4967232118204,
+      "n": 1315
+     },
+     {
+      "ballXQuintile": 2,
+      "meanHomeX": 36.864819607662874,
+      "n": 1796
+     },
+     {
+      "ballXQuintile": 3,
+      "meanHomeX": 48.656642217621126,
+      "n": 2932
+     },
+     {
+      "ballXQuintile": 4,
+      "meanHomeX": 66.07787925506446,
+      "n": 10051
+     },
+     {
+      "ballXQuintile": 5,
+      "meanHomeX": 76.7303750852446,
+      "n": 10911
+     }
+    ],
+    "nSlope": 54012,
+    "disp": 11.41099160911831,
+    "lat": 0.3132236783892208,
+    "mix": 0.7,
+    "dir": 0.8309202064779265,
+    "still": 0
+   },
+   {
+    "seed": 123,
+    "nFrames": 27001,
+    "A1": 7.673975037961557,
+    "A2": 0.5124791674382241,
+    "slopeX": 0.7368696449426639,
+    "slopeY": 0.610144215382185,
+    "binnedMeanXByBallXQuintile": [
+     {
+      "ballXQuintile": 0,
+      "meanHomeX": 13.392284347826092,
+      "n": 23
+     },
+     {
+      "ballXQuintile": 1,
+      "meanHomeX": 14.657870354492399,
+      "n": 2269
+     },
+     {
+      "ballXQuintile": 2,
+      "meanHomeX": 31.982646421412714,
+      "n": 2141
+     },
+     {
+      "ballXQuintile": 3,
+      "meanHomeX": 47.93190637173044,
+      "n": 3256
+     },
+     {
+      "ballXQuintile": 4,
+      "meanHomeX": 67.21524142202985,
+      "n": 8733
+     },
+     {
+      "ballXQuintile": 5,
+      "meanHomeX": 76.81361567171946,
+      "n": 10579
+     }
+    ],
+    "nSlope": 54002,
+    "disp": 11.006522546169126,
+    "lat": 0.32022331424891026,
+    "mix": 0.75,
+    "dir": 0.7776392986343367,
+    "still": 0
+   }
+  ]
+ },
+ "real": {
+  "A1_ball12": {
+   "mean": 4.9370635984235935,
+   "perGame": [
+    4.6061023961385965,
+    5.2680248007085915
+   ]
+  },
+  "A2_contact5": {
+   "mean": 0.4138698559806665,
+   "perGame": [
+    0.4122392690915371,
+    0.41550044286979587
+   ]
+  },
+  "A3_slopeX": {
+   "mean": 0.5923880354273244,
+   "perGame": [
+    0.5757744528728163,
+    0.6090016179818326
+   ]
+  },
+  "A3_slopeY": {
+   "mean": 0.32355813169208103
+  },
+  "disp": {
+   "mean": 13.564242133410147
+  },
+  "lat": {
+   "mean": 0.42699264258530617
+  },
+  "mix": {
+   "mean": 0.775
+  },
+  "dir": {
+   "mean": 0.701405840735517
+  },
+  "still": {
+   "mean": 0
+  },
+  "binned": [
+   {
+    "ballXQuintile": 0,
+    "meanHomeX": 33.560172449999996,
+    "n": 100
+   },
+   {
+    "ballXQuintile": 1,
+    "meanHomeX": 27.074890116788335,
+    "n": 685
+   },
+   {
+    "ballXQuintile": 2,
+    "meanHomeX": 35.569935291878146,
+    "n": 1182
+   },
+   {
+    "ballXQuintile": 3,
+    "meanHomeX": 47.23385143911438,
+    "n": 1626
+   },
+   {
+    "ballXQuintile": 4,
+    "meanHomeX": 60.58673473113615,
+    "n": 1153
+   },
+   {
+    "ballXQuintile": 5,
+    "meanHomeX": 76.60981615165886,
+    "n": 1055
+   }
+  ],
+  "mechAll": [
+   {
+    "game": "viewer/data/real-game-1.json",
+    "nFrames": 5801,
+    "A1": 4.6061023961385965,
+    "A2": 0.4122392690915371,
+    "slopeX": 0.5757744528728163,
+    "slopeY": 0.3259832425857051,
+    "binnedMeanXByBallXQuintile": [
+     {
+      "ballXQuintile": 0,
+      "meanHomeX": 33.560172449999996,
+      "n": 100
+     },
+     {
+      "ballXQuintile": 1,
+      "meanHomeX": 27.074890116788335,
+      "n": 685
+     },
+     {
+      "ballXQuintile": 2,
+      "meanHomeX": 35.569935291878146,
+      "n": 1182
+     },
+     {
+      "ballXQuintile": 3,
+      "meanHomeX": 47.23385143911438,
+      "n": 1626
+     },
+     {
+      "ballXQuintile": 4,
+      "meanHomeX": 60.58673473113615,
+      "n": 1153
+     },
+     {
+      "ballXQuintile": 5,
+      "meanHomeX": 76.60981615165886,
+      "n": 1055
+     }
+    ],
+    "nSlope": 11602,
+    "disp": 13.325506014955653,
+    "lat": 0.4232402024911193,
+    "mix": 0.8,
+    "dir": 0.6659067732192872,
+    "still": 0
+   },
+   {
+    "game": "viewer/data/real-game-2.json",
+    "nFrames": 5645,
+    "A1": 5.2680248007085915,
+    "A2": 0.41550044286979587,
+    "slopeX": 0.6090016179818326,
+    "slopeY": 0.321133020798457,
+    "binnedMeanXByBallXQuintile": [
+     {
+      "ballXQuintile": 0,
+      "meanHomeX": 19.970330000000008,
+      "n": 63
+     },
+     {
+      "ballXQuintile": 1,
+      "meanHomeX": 23.017686380020564,
+      "n": 971
+     },
+     {
+      "ballXQuintile": 2,
+      "meanHomeX": 34.324896867816044,
+      "n": 1044
+     },
+     {
+      "ballXQuintile": 3,
+      "meanHomeX": 47.9825584623813,
+      "n": 1369
+     },
+     {
+      "ballXQuintile": 4,
+      "meanHomeX": 62.93731361089492,
+      "n": 1285
+     },
+     {
+      "ballXQuintile": 5,
+      "meanHomeX": 74.62895677984669,
+      "n": 913
+     }
+    ],
+    "nSlope": 11290,
+    "disp": 13.802978251864639,
+    "lat": 0.430745082679493,
+    "mix": 0.75,
+    "dir": 0.736904908251747,
+    "still": 0
+   }
+  ]
+ }
+}

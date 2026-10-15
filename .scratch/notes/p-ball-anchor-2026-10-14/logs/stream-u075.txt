@@ -1,0 +1,1 @@
+STREAM_HASH 57fc45c2ea695e868789aa82e943f5ee  seeds=1..12 dur=5400

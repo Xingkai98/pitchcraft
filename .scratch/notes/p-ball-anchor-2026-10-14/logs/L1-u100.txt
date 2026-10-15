@@ -1,0 +1,49 @@
+   Compiling fm-engine v0.1.0 (/tmp/l1ba-u100/engine)
+    Finished `release` profile [optimized] target(s) in 28.15s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 9 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+
+thread 'l1_shot_result_distributions' (624699) panicked at tests/realism.rs:673:9:
+远射桶样本不足：146
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[fouls] 每场: foul=28.39 yellow=3.71 red=0.08 free_kick=28.39
+test l1_fouls_and_cards ... ok
+test l1_pass_completion_rate ... ok
+
+thread 'l1_tackle_dilution_and_slot_mix' (624885) panicked at tests/realism.rs:759:5:
+抢断/场 321.01 ∉ [24,50]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）
+test l1_shot_result_distributions ... FAILED
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[L3] shots=1246 regular=1132 header=114 goals=163 saved=324 box_goals=126 禁区占比=0.773 sot=0.391 conv=0.131
+
+thread 'l3_shot_ratios' (624887) panicked at tests/realism.rs:1082:5:
+射正率 0.391 ∉ [0.28,0.39]
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主0.69/客0.12 (H/A 5.792) pass_evt=667.0 shot=5.66(+header 0.57) tackle=321.01(succ 156.40) corner=2.00 throw_in=15.61 goal_kick=14.73 foul=28.39(yellow 3.71/red 0.08)
+test l3_shot_ratios ... FAILED
+test p13_side_effect_snapshot ... ok
+[P31 5min cohort n=1000] 射门/场=0.34 出界重开/场=1.70（其中角球+界外球 0.87）犯规/场=2.44 进球/场=0.05
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+
+thread 'l1_home_away_goal_asymmetry' (624697) panicked at tests/realism.rs:968:5:
+主队进球/场 0.665 ∉ [0.85,1.60]（#104 重标定：体积已抬到真实量级，原带 [0.38,0.75] 是按压缩态标定的）
+[home-adv calibration] matches=600 home_goals=399 away_goals=105 H/A=3.800 log(H/A)=1.335 95% CI=[3.065, 4.711]
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... FAILED
+
+failures:
+
+failures:
+    l1_home_away_goal_asymmetry
+    l1_shot_result_distributions
+    l1_tackle_dilution_and_slot_mix
+    l3_shot_ratios
+
+test result: FAILED. 5 passed; 4 failed; 0 ignored; 0 measured; 4 filtered out; finished in 367.13s
+
+error: test failed, to rerun pass `--test realism`

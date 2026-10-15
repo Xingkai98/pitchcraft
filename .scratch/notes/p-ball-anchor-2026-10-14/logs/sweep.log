@@ -1,0 +1,40 @@
+patched anchor= 0.0 yscale= None sha16= 30b5da4598e39035
+u000 anchor=0.0 yscale=same lib16=30b5da4598e39035 wasm16=3e7c172f85e356c6
+mech-u000 done
+lf-u000 done
+sp-u000 done
+e2e-u000 done
+traj-u000 done
+POINT-u000-DONE
+patched anchor= 0.25 yscale= None sha16= 9866a3ac62e9cff3
+u025 anchor=0.25 yscale=same lib16=9866a3ac62e9cff3 wasm16=cf0c2e8f5440a7b8
+mech-u025 done
+lf-u025 done
+sp-u025 done
+e2e-u025 done
+traj-u025 done
+POINT-u025-DONE
+patched anchor= 0.5 yscale= None sha16= d251c62a46f30cd5
+u050 anchor=0.5 yscale=same lib16=d251c62a46f30cd5 wasm16=a67030cffb706ce3
+mech-u050 done
+lf-u050 done
+sp-u050 done
+e2e-u050 done
+traj-u050 done
+POINT-u050-DONE
+patched anchor= 0.75 yscale= None sha16= 3fa47562ad8e7cef
+u075 anchor=0.75 yscale=same lib16=3fa47562ad8e7cef wasm16=cb7529b9e088fee5
+mech-u075 done
+lf-u075 done
+sp-u075 done
+e2e-u075 done
+traj-u075 done
+POINT-u075-DONE
+patched anchor= 1.0 yscale= 1.059 sha16= 304d34cc6c07cab3
+a100 anchor=1.0 yscale=1.059 lib16=304d34cc6c07cab3 wasm16=fcbd9b1b1f0ee7f0
+mech-a100 done
+lf-a100 done
+sp-a100 done
+e2e-a100 done
+traj-a100 done
+POINT-a100-DONE
