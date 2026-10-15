@@ -1,0 +1,51 @@
+   Compiling fm-engine v0.1.0 (/tmp/judge-l1-p110/engine)
+    Finished `release` profile [optimized] target(s) in 19.41s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+[fouls] 每场: foul=22.16 yellow=2.93 red=0.05 free_kick=22.16
+test l1_pass_completion_rate ... ok
+test l1_fouls_and_cards ... ok
+
+thread 'l1_tackle_dilution_and_slot_mix' (3769091) panicked at tests/realism.rs:834:5:
+shot/tackle 比值 0.500 ∉ [0.5,1.5]（P31 D6 重标定：实测 0.855；#104 一起抬后 0.563；真实比赛 ~0.52）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test l1_shot_result_distributions ... ok
+[L3] shots=4817 regular=4559 header=258 goals=634 saved=1184 box_goals=445 禁区占比=0.702 sot=0.377 conv=0.132
+
+thread 'l3_shot_ratios' (3769093) panicked at tests/realism.rs:1071:5:
+禁区内进球占比 0.702 ∉ [0.72,0.92]
+test l3_shot_ratios ... FAILED
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.66/客1.51 (H/A 1.099) pass_evt=853.3 shot=22.80(+header 1.29) tackle=45.59(succ 20.95) corner=4.62 throw_in=16.19 goal_kick=29.59 foul=22.16(yellow 2.93/red 0.05)
+test p13_side_effect_snapshot ... ok
+[JB] 射门/场=24.0850 [14,29] | 禁区内射门占比=0.5141 [0.45,0.65] | 抢断/场=45.5950 [24,50] | 抢断成功率=0.4595 [0.42,0.58]
+[JB] shot/tackle=0.4999 [0.5,1.5] | sot=0.3774 [0.28,0.39] | conv=0.1316 [0.08,0.14] | 禁区内进球占比=0.7019 [0.72,0.92]
+[JB] 传球成功率=0.8451 [0.82,0.90] | 界外球/场=16.1900 [15,60] | 犯规/场=22.1650 [16,30] | 角球/场=4.6250 [1,7] | 角球max=14 (<=15) | 黄/场=2.930 [2,5]
+[P31 5min cohort n=1000] 射门/场=1.27 出界重开/场=2.60（其中角球+界外球 1.09）犯规/场=1.74 进球/场=0.19
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+test zz_judge_bands has been running for over 60 seconds
+
+thread 'l1_home_away_goal_asymmetry' (3765797) panicked at tests/realism.rs:955:5:
+主队进球/场 1.612 ∉ [0.85,1.60]（#104 重标定：体积已抬到真实量级，原带 [0.38,0.75] 是按压缩态标定的）
+[JB] HA(600 seed) 主队进球/场=1.6117 [0.85,1.60] | 客队进球/场=1.4533 (>=0.30) | goals=634 shots=4817
+test zz_judge_bands ... ok
+[home-adv calibration] matches=600 home_goals=967 away_goals=872 H/A=1.109 log(H/A)=0.103 95% CI=[1.012, 1.215]
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... FAILED
+
+failures:
+
+failures:
+    l1_home_away_goal_asymmetry
+    l1_tackle_dilution_and_slot_mix
+    l3_shot_ratios
+
+test result: FAILED. 7 passed; 3 failed; 0 ignored; 0 measured; 4 filtered out; finished in 280.04s
+
+error: test failed, to rerun pass `--test realism`

@@ -1,0 +1,47 @@
+   Compiling fm-engine v0.1.0 (/tmp/judge-l1-p090243/engine)
+    Finished `release` profile [optimized] target(s) in 13.06s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 10 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+test l1_shot_result_distributions ... ok
+test l1_pass_completion_rate ... ok
+
+thread 'l1_tackle_dilution_and_slot_mix' (3783773) panicked at tests/realism.rs:834:5:
+shot/tackle 比值 0.454 ∉ [0.5,1.5]（P31 D6 重标定：实测 0.855；#104 一起抬后 0.563；真实比赛 ~0.52）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+[fouls] 每场: foul=24.59 yellow=3.18 red=0.06 free_kick=24.58
+test l1_fouls_and_cards ... ok
+[L3] shots=4615 regular=4345 header=270 goals=585 saved=1150 box_goals=439 禁区占比=0.750 sot=0.376 conv=0.127
+test l3_shot_ratios ... ok
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.69/客1.24 (H/A 1.368) pass_evt=858.1 shot=21.73(+header 1.35) tackle=47.86(succ 22.23) corner=4.43 throw_in=15.49 goal_kick=29.75 foul=24.59(yellow 3.18/red 0.06)
+test p13_side_effect_snapshot ... ok
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[JB] 射门/场=23.0750 [14,29] | 禁区内射门占比=0.5402 [0.45,0.65] | 抢断/场=47.8600 [24,50] | 抢断成功率=0.4646 [0.42,0.58]
+[JB] shot/tackle=0.4539 [0.5,1.5] | sot=0.3759 [0.28,0.39] | conv=0.1268 [0.08,0.14] | 禁区内进球占比=0.7504 [0.72,0.92]
+[JB] 传球成功率=0.8457 [0.82,0.90] | 界外球/场=15.4900 [15,60] | 犯规/场=24.5850 [16,30] | 角球/场=4.4350 [1,7] | 角球max=10 (<=15) | 黄/场=3.180 [2,5]
+[P31 5min cohort n=1000] 射门/场=1.23 出界重开/场=2.63（其中角球+界外球 1.02）犯规/场=1.97 进球/场=0.17
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+test zz_judge_bands has been running for over 60 seconds
+[home-adv calibration] matches=600 home_goals=1000 away_goals=731 H/A=1.368 log(H/A)=0.313 95% CI=[1.244, 1.505]
+
+thread 'l1_home_away_goal_asymmetry' (3776768) panicked at tests/realism.rs:955:5:
+主队进球/场 1.667 ∉ [0.85,1.60]（#104 重标定：体积已抬到真实量级，原带 [0.38,0.75] 是按压缩态标定的）
+[JB] HA(600 seed) 主队进球/场=1.6667 [0.85,1.60] | 客队进球/场=1.2183 (>=0.30) | goals=585 shots=4615
+test l3_home_away_goal_calibration ... ok
+test zz_judge_bands ... ok
+test l1_home_away_goal_asymmetry ... FAILED
+
+failures:
+
+failures:
+    l1_home_away_goal_asymmetry
+    l1_tackle_dilution_and_slot_mix
+
+test result: FAILED. 8 passed; 2 failed; 0 ignored; 0 measured; 4 filtered out; finished in 353.43s
+
+error: test failed, to rerun pass `--test realism`

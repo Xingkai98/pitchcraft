@@ -1,0 +1,44 @@
+// ===== [y 轴探索探针 · 重掷零分布] 只 println，不改任何判据。**只在基线跑**。 =====
+//
+// 目的：把「本轴造成的破带」与「任何 RNG 重掷都会破的带」分开。
+// 手段：对**与门禁种子 401..600 不相交**的两组种子（601..800 / 801..1000）跑同一 `aggregate`，
+// 得到每个带统计量在「同引擎、不同样本」下的分布。**这不是门禁读数**（门禁用 401..600，未改）。
+#[test]
+#[ignore]
+fn zz_null_reroll() {
+    let stats = l1_stats();
+    let n = SEEDS_L1 as f64;
+    let s = |f: fn(&MatchStats) -> usize| stats.iter().map(f).sum::<usize>();
+    let print_row = |tag: &str, st: &[MatchStats]| {
+        let n = st.len() as f64;
+        let s = |f: fn(&MatchStats) -> usize| st.iter().map(f).sum::<usize>();
+        let regular = s(|x| x.n_box) + s(|x| x.n_arc) + s(|x| x.n_far);
+        let goals = s(|x| x.n_shot_goal + x.n_header_goal);
+        let saved = s(|x| x.n_shot_saved + x.n_header_saved);
+        let shots = regular + s(|x| x.n_header_goal) + s(|x| x.n_header_saved) + s(|x| x.n_header_off);
+        let box_goals = s(|x| x.n_box_goal + x.n_header_goal);
+        let tackles = s(|x| x.n_tackle);
+        let success = s(|x| x.n_pass_success);
+        let total = s(|x| x.n_pass);
+        let intercepted = s(|x| x.n_pass_intercepted);
+        let lost = s(|x| x.n_pass_lost);
+        println!("[NULL] {} n={} | 禁区内进球占比 {:.4} | sot {:.4} | conv {:.4} | shot/tackle {:.4} | 抢断/场 {:.3} | 传球成功率 {:.4} | 界外球/场 {:.3} | 角球/场 {:.3} | 角球max {} | 犯规/场 {:.3}",
+            tag, st.len(),
+            box_goals as f64 / goals.max(1) as f64,
+            (goals + saved) as f64 / shots.max(1) as f64,
+            goals as f64 / shots.max(1) as f64,
+            regular as f64 / tackles.max(1) as f64,
+            tackles as f64 / n,
+            success as f64 / total.max(1) as f64,
+            s(|x| x.n_out_sideline) as f64 / n,
+            s(|x| x.n_corner_kick) as f64 / n,
+            st.iter().map(|x| x.n_corner_kick).max().unwrap_or(0),
+            s(|x| x.n_foul) as f64 / n);
+    };
+    print_row("门禁种子 401..600", &stats);
+    let _ = (n, s);
+    for start in [601u64, 801u64] {
+        let v: Vec<MatchStats> = (start..start + 200).map(aggregate).collect();
+        print_row(&format!("重掷种子 {}..{}", start, start + 199), &v);
+    }
+}
