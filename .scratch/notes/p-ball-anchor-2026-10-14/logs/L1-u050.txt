@@ -1,0 +1,41 @@
+   Compiling fm-engine v0.1.0 (/tmp/l1ba-u050/engine)
+    Finished `release` profile [optimized] target(s) in 21.43s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 9 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+[fouls] 每场: foul=18.25 yellow=2.37 red=0.07 free_kick=18.25
+test l1_shot_result_distributions ... ok
+
+thread 'l1_tackle_dilution_and_slot_mix' (647788) panicked at tests/realism.rs:759:5:
+抢断/场 67.40 ∉ [24,50]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test l1_fouls_and_cards ... ok
+test l1_pass_completion_rate ... ok
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[L3] shots=4609 regular=4299 header=310 goals=547 saved=1148 box_goals=421 禁区占比=0.770 sot=0.368 conv=0.119
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主0.98/客1.75 (H/A 0.563) pass_evt=880.5 shot=21.50(+header 1.55) tackle=67.40(succ 30.88) corner=5.08 throw_in=14.15 goal_kick=31.36 foul=18.25(yellow 2.37/red 0.07)
+test l3_shot_ratios ... ok
+test p13_side_effect_snapshot ... ok
+[P31 5min cohort n=1000] 射门/场=1.22 出界重开/场=2.69（其中角球+界外球 1.03）犯规/场=1.44 进球/场=0.16
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+[home-adv calibration] matches=600 home_goals=633 away_goals=1041 H/A=0.608 log(H/A)=-0.497 95% CI=[0.551, 0.671]
+
+thread 'l1_home_away_goal_asymmetry' (636715) panicked at tests/realism.rs:977:5:
+主客进球方向反向：主 1.05/场 ≤ 客 1.74/场（主场优势应使主队进球系统性多于客队）
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... FAILED
+
+failures:
+
+failures:
+    l1_home_away_goal_asymmetry
+    l1_tackle_dilution_and_slot_mix
+
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 4 filtered out; finished in 270.68s
+
+error: test failed, to rerun pass `--test realism`

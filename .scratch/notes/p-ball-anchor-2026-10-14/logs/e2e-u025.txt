@@ -1,0 +1,9 @@
+file:///tmp/ball-anchor/viewer/e2e-v2.mjs:141
+  if (maxBallJump > 0.05) throw new Error(`seed${seed} 球事件边界跳变过大 maxBallJump=${maxBallJump} at t=${maxBallJumpT.toFixed(1)}`);
+                                ^
+
+Error: seed42 球事件边界跳变过大 maxBallJump=0.4504 at t=5396.0
+    at checkNoSnap (file:///tmp/ball-anchor/viewer/e2e-v2.mjs:141:33)
+    at file:///tmp/ball-anchor/viewer/e2e-v2.mjs:148:53
+
+Node.js v22.22.2

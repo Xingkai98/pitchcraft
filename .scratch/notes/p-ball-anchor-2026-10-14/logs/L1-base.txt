@@ -1,0 +1,30 @@
+    Blocking waiting for file lock on package cache
+   Compiling fm-engine v0.1.0 (/tmp/l1ba-base/engine)
+    Finished `release` profile [optimized] target(s) in 28.66s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 9 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+[fouls] 每场: foul=21.14 yellow=2.69 red=0.07 free_kick=21.14
+test l1_pass_completion_rate ... ok
+test l1_shot_result_distributions ... ok
+test l1_fouls_and_cards ... ok
+[L3] shots=4695 regular=4417 header=278 goals=570 saved=1194 box_goals=411 禁区占比=0.721 sot=0.376 conv=0.121
+test l3_shot_ratios ... ok
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.43/客1.42 (H/A 1.007) pass_evt=848.9 shot=22.09(+header 1.39) tackle=41.50(succ 18.96) corner=4.83 throw_in=20.70 goal_kick=27.32 foul=21.14(yellow 2.69/red 0.07)
+test p13_side_effect_snapshot ... ok
+[corners] 单场峰值 max=14（界 15，余量 1）均值=4.83/场
+test l1_tackle_dilution_and_slot_mix ... ok
+[P31 5min cohort n=1000] 射门/场=1.24 出界重开/场=2.84（其中角球+界外球 1.35）犯规/场=1.51 进球/场=0.16
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+[home-adv calibration] matches=600 home_goals=891 away_goals=875 H/A=1.018 log(H/A)=0.018 95% CI=[0.928, 1.118]
+[home-adv] 主 1.485/场 客 1.458/场 合计 2.943 H/A=1.018
+test l3_home_away_goal_calibration ... ok
+test l1_home_away_goal_asymmetry ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 269.36s
+

@@ -1,0 +1,6 @@
+u100 anchor=1.0 yscale=same lib16=09886bead877b797 wasm16=4d609f579aa35923
+u000 anchor=0.0 yscale=same lib16=30b5da4598e39035 wasm16=3e7c172f85e356c6
+u025 anchor=0.25 yscale=same lib16=9866a3ac62e9cff3 wasm16=cf0c2e8f5440a7b8
+u050 anchor=0.5 yscale=same lib16=d251c62a46f30cd5 wasm16=a67030cffb706ce3
+u075 anchor=0.75 yscale=same lib16=3fa47562ad8e7cef wasm16=cb7529b9e088fee5
+a100 anchor=1.0 yscale=1.059 lib16=304d34cc6c07cab3 wasm16=fcbd9b1b1f0ee7f0

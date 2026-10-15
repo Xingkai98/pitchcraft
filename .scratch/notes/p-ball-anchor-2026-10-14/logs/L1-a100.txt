@@ -1,0 +1,44 @@
+   Compiling fm-engine v0.1.0 (/tmp/l1ba-a100/engine)
+    Finished `release` profile [optimized] target(s) in 24.76s
+     Running tests/realism.rs (target/release/deps/realism-6b19456a4dd23551)
+
+running 9 tests
+test l1_fouls_and_cards has been running for over 60 seconds
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l1_pass_completion_rate has been running for over 60 seconds
+test l1_shot_result_distributions has been running for over 60 seconds
+[fouls] 每场: foul=18.43 yellow=2.52 red=0.06 free_kick=18.43
+
+thread 'l1_shot_result_distributions' (665986) panicked at tests/realism.rs:696:5:
+assertion `left == right` failed: 存在距门 >45m 射门（15），应已消除
+  left: 15
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test l1_pass_completion_rate ... ok
+test l1_fouls_and_cards ... ok
+
+thread 'l1_tackle_dilution_and_slot_mix' (666196) panicked at tests/realism.rs:759:5:
+抢断/场 112.36 ∉ [24,50]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）
+test l1_shot_result_distributions ... FAILED
+test l1_tackle_dilution_and_slot_mix ... FAILED
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.00/客0.65 (H/A 1.550) pass_evt=841.2 shot=12.53(+header 1.01) tackle=112.36(succ 52.05) corner=3.75 throw_in=38.51 goal_kick=21.57 foul=18.43(yellow 2.52/red 0.06)
+[L3] shots=2707 regular=2505 header=202 goals=329 saved=697 box_goals=271 禁区占比=0.824 sot=0.379 conv=0.122
+test p13_side_effect_snapshot ... ok
+test l3_shot_ratios ... ok
+[P31 5min cohort n=1000] 射门/场=0.73 出界重开/场=3.22（其中角球+界外球 2.05）犯规/场=1.15 进球/场=0.09
+test p31_frequency_5min_directional ... ok
+test l3_home_away_goal_calibration has been running for over 60 seconds
+[home-adv] 主 0.985/场 客 0.750/场 合计 1.735 H/A=1.313
+[home-adv calibration] matches=600 home_goals=591 away_goals=450 H/A=1.313 log(H/A)=0.273 95% CI=[1.162, 1.485]
+test l1_home_away_goal_asymmetry ... ok
+test l3_home_away_goal_calibration ... ok
+
+failures:
+
+failures:
+    l1_shot_result_distributions
+    l1_tackle_dilution_and_slot_mix
+
+test result: FAILED. 7 passed; 2 failed; 0 ignored; 0 measured; 4 filtered out; finished in 367.49s
+
+error: test failed, to rerun pass `--test realism`
