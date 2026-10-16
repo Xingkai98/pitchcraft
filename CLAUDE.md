@@ -37,6 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 | Canvas 渲染 | `renderFrame(t) → getImageData()` 像素断言（位置/移动） | 门槛 |
 | 日志核对 | viewer 输出渲染坐标，文本比对 | 门槛 |
 | **轨迹/画面形态** | **渲染 PNG 由模型读图**（单帧、轨迹图、并排对比） | **探索 + 验收** |
+| **像不像（判别分 + 面板）** | **双盲判别测试**（同一渲染器 → 中性名 → 顺序与来源统计独立 → 3 个零上下文裁判，报准确率）+ `tools/visual-review/panel.mjs`（5 行判别量 × 真实 **22 场** vs 引擎，双口径）。口径与踩过的坑见 `.claude/skills/visual-review/SKILL.md`「像不像的验收」 | **探索 + 验收**（`like-football` 距离自 2026-10-16 起**降为报告**） |
 | 最终观感 | 用户视觉验收（对应 FM 数据校准的人眼环节） | 验收 |
 
 **为什么用图**（2026-09-19 起）：此前的约束是"不得依赖模型视觉能力"，
