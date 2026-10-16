@@ -708,12 +708,12 @@ fn l1_shot_result_distributions() {
     assert!((0.10..=0.20).contains(&bg_r), "禁区内 goal 比例 {:.3} ∉ [0.10,0.20]", bg_r);
     assert!((0.24..=0.36).contains(&bsv_r), "禁区内 saved 比例 {:.3} ∉ [0.24,0.36]", bsv_r);
     assert!((0.48..=0.60).contains(&bof_r), "禁区内 off 比例 {:.3} ∉ [0.48,0.60]", bof_r);
-    // 禁区弧声明 7/22/71
+    // 禁区弧声明 3/22/75（M5 由 7/22/71 重标定；**判定区间是校准带、不随重标定改**）
     let (ag_r, asv_r, aof_r) = (ag as f64 / a as f64, asv as f64 / a as f64, aof as f64 / a as f64);
     assert!((0.03..=0.12).contains(&ag_r), "禁区弧 goal 比例 {:.3} ∉ [0.03,0.12]", ag_r);
     assert!((0.14..=0.30).contains(&asv_r), "禁区弧 saved 比例 {:.3} ∉ [0.14,0.30]", asv_r);
     assert!((0.61..=0.75).contains(&aof_r), "禁区弧 off 比例 {:.3} ∉ [0.61,0.75]", aof_r);
-    // 远射声明 4/11/85
+    // 远射声明 2/11/87（M5 由 4/11/85 重标定；**判定区间是校准带、不随重标定改**）
     let (fg_r, fsv_r, fof_r) = (fg as f64 / f as f64, fsv as f64 / f as f64, fof as f64 / f as f64);
     assert!((0.0..=0.08).contains(&fg_r), "远射 goal 比例 {:.3} ∉ [0.0,0.08]", fg_r);
     assert!((0.04..=0.18).contains(&fsv_r), "远射 saved 比例 {:.3} ∉ [0.04,0.18]", fsv_r);

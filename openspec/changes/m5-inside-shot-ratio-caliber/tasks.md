@@ -37,19 +37,30 @@
 ## 第 2 步：验收
 
 - [x] L1 全套（`--ignored`）：**12 passed / 0 failed**
+      ⚠️ **口径**：`12` 取自**设计期工作树**（含临时 `zz_*` 探针）；落地树（无探针）的 L1 门 =
+      `cargo test --release --test realism -- --ignored` ⇒ **9 passed / 0 failed**（见 `REPORT.md` §3）。
+      两个数**不可直接比**，引用时须带「哪棵树 / 哪个 target」。
 - [x] 逐带实测值 + 余量落盘（`M5-READINGS.md`）
 - [x] 三桶声明带判定（`l1_shot_result_distributions` 全过；最小余量 0.019 —— 判定**不需重标**）
 - [x] 跨窗块扫描（多 200 场窗的矩形占比，验余量不是单窗运气）
 - [x] `cargo test --release` 全量：**基线全绿 → M5 8 条红**（6 条定点样本/golden，2 条统计断言临界；逐条分类见 `M5-REPORT.md` §2.1）
-- [ ] **落地必做**：golden 重基线（`ACCEPT_GOLDEN=1`）+ 重扫 4 个定点 seed 列表（`l2_sent_off_kickoff_seeds` / `observation.rs` 三形态 / p15 三形态 / p15 gap 样本）——**换样本不换判据**
-- [ ] **落地必做**：两条统计门（`p32_interception_self_consistency` 越界 0.16%；`p16::phaseability` AUC 差 0.003）**逐条分类**为流重掷型或真语义破
+- [x] **落地必做**：golden 重基线（`ACCEPT_GOLDEN=1`，**新建 `golden-v9`、`golden-v8` 不覆写**）+ 重扫 4 个定点 seed 列表（`l2_sent_off_kickoff_seeds` `21→189` / `observation.rs` 三形态 / p15 `TRUNCATION_FORM_SEEDS` 三形态 / p15 gap 样本 `347@300 → 441@700`）——**换样本不换判据**，四处都写了旧值为何失效
+- [x] **落地必做**：两条统计门**逐条分类**（结论：**都不是本 change 的语义破**，但两条的分类**不同**，不可笼统叫「既存债」）：
+      (a) `p32_interception_self_consistency`（越界 0.16%）= **门过度离散**：同一条断言在 pristine base 上**只换 seed 窗**就红（801..1200 窗），
+      且 M5/M1b **都不触碰拦截路径** ⇒ 门既有债、独立 follow-up；
+      (b) `p16::phaseability`（AUC 0.747 vs `>0.75`）= **窗抽签门**：同代码只换 `GATE_SEEDS (1,30)→(31,60)` 余量就从 +0.005 掉到 +0.0004、
+      另一条自称「不是判据」的 `auc_raw > 0.60` 直接红。⚠️ **但 M5 是这条的触发器**——`auc_final > 0.75` 在 base 的四个窗上**从没红过**（0.762–0.768），
+      M5 把它系统性压低 **−0.017** 才撞上余量 0.012 的薄门 ⇒ **不得**记成「与本 change 无关的既存债」。
+      ⇒ **两条门的窗依赖性登记为 follow-up**（窗内聚合 / 把自称「不是判据」的 `auc_raw > 0.60` 降为记录）
 - [x] `spacing-sweep` **0 findings**（8 seed × 2157 窗）/ `e2e-v2` **OK**（6293 事件、无 snap）
 - [x] 面板（PR #168 那份；收工途中已合入 main `9f5fa5d`，合入版与所跑那份 sha256 逐位相同）——引擎侧**只有流重掷级漂移**
 - [x] 出图（`png/M5-trajectory-seed42-t1800.png` / `png/M5-contact-sheet.png`；**已注明对事件层改动是盲的**）
 - [x] 反证 R1–R4：**R1 ✅ / R4 ✅ / R2 半证伪 / R3 证伪** ⇒ 机制叙述已订正（进球从禁区外搬进禁区内，总进球几乎没变）
 - [x] **M1 叠加**：`/tmp/m5-m1` = M1 patch + M5 patch，L1 **12/0 全绿**，矩形 **0.8163 ∈ [0.80,0.91]** ⇒ **这条带不破了**
 
-- [ ] **落地必做**：`MODEL_VERSION` 8 → 9 + `golden_dir()` 加 `9 => "tests/golden-v9"` + 新建 `tests/golden-v9/`（仓惯例；**不覆写 `golden-v8`**）
+- [x] **落地必做**：`MODEL_VERSION` 8 → 9 + `golden_dir()` 加 `9 => "tests/golden-v9"` + 新建 `tests/golden-v9/`（仓惯例；**不覆写 `golden-v8`**）
+      ⚠️ 与同 PR 的 M1b 共用一次 bump（M1b 是同一轮落地，见 `m1b-…/design.md` D5）⇒「版本 9」在**本 PR 内**先后对应
+      M5-only 与 M5+M1b 两条流，**两个 commit 各自自洽、可单独 revert**；单独 revert M5 保留 M1b 时 v9 语义含混，属已登记的残余项
 
 ## 第 3 步：规格
 
@@ -62,6 +73,18 @@
 - [x] 未改任何**现有测试的断言**（`realism.rs` 的 L3 断言只按 (a) 换**口径**，已在正文逐字说明）
 - [x] 未 push / 未 merge / 未开 PR；未派 subagent；未当裁判
 - [x] 仓库只留 notes 与 spec delta（引擎改动落在 `M5-lib.rs.patch`）
-- [ ] **落地必做**：文档债 A 档（`lib.rs` 的 `BASE_DEF_TACKLE` 依据链 / `SWEPT_LIGHT_SHARE` 的旧口径读数 / `.p31-progress.md` 的旧带）
-- [ ] **落地必做**：`openspec/specs/match-engine/spec.md` 与 delta 逐字对齐（防 archive 漂移）
-- [ ] **落地必做**：`openspec validate m5-inside-shot-ratio-caliber --strict` 通过
+- [x] **落地必做**：文档债 A 档——① `lib.rs` 的 `BASE_DEF_TACKLE` 依据链**整段重写**（删掉已被 9 块配对检验证伪的因果）；
+      ② `shot_bucket` 上方「禁区内进球 ~82%」旧读数**删除**；③ `.p31-progress.md` 旧带**加迁移注记**。
+      ⚠️ **部分完成（如实记）**：`SWEPT_LIGHT_SHARE` 的旧口径读数**只加了迁移注记、未换口径重测**（注记自称「未换口径重测」）
+- [x] **落地必做**：`openspec/specs/match-engine/spec.md` 与 delta 逐字对齐（防 archive 漂移）——两条 MODIFIED requirement 逐字 SAME；
+      ⚠️ **对齐面超出计划一行**：除 L3 带外，同一条 `引擎统计分布符合声明概率` 的两个 Scenario（禁区弧 / 远射的声明值）也一并灌入，
+      否则主 spec 会留下「声明 7/22/71」「声明 4/11/85」这种**与引擎相反**的假陈述
+- [x] **落地必做**：`openspec validate m5-inside-shot-ratio-caliber --strict` 通过
+- [x] **落地必做（审阅修复轮补登）**：`sample_shot_target` 的「兑现率 ~0.89」叙述订正为**仿射关系**（`兑现 ≈ 0.092 + 0.759 × 声明`）——
+      三个数据点数值不变，只是原叙述把有截距的仿射式当成了过原点的常数比率（`conclusion-right-mechanism-wrong`）
+- [x] **落地必做（审阅修复轮补登）**：把「(c) 是**补偿性标定**」记为**跟踪项**（`M5-JUDGE §9.1-7` 点名）：
+      `sample_shot_target` 取 **70** 不是锚本身要求 70，而是按「**兑现值**对齐锚中点 0.624」反推的
+      ⇒ **漏损（推进相被抢断/步数耗尽）一旦修好，这个 70 必须重新定标**
+      （当前 70 是补偿性取值，见 `lib.rs` 该函数上方注释）。
+      ⚠️ 判据原文附带的「修好后回落 **58%**」这个数字在**本仓内没有出处**（`lib.rs` 同段只有「备选（未采用）」一句）
+      ⇒ 本条只登记**方向**，**不引**该数字。
