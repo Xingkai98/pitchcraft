@@ -82,6 +82,9 @@ export const FROZEN = {
 // ── 小样本下限 + 基线指纹（2026-10-16 独立审阅后加；**只告警/标红，不静默剔除**）──────────
 // 审阅实测：造一场 3000 帧里只有 3 帧有效的比赛，该窗照样以 n=1 进入统计，分离度表还会判「保留」。
 export const MIN_SEP_N = 20;         // 分离度表：任一侧 n < 此值 ⇒ class='insufficient'
+// 分离度等级 → 人话标签。**必须覆盖 `separationOf` 能返回的全部 class**（2026-10-17 修：
+// 原先漏了 `insufficient` ⇒ `--dataset all` 在 Metrica（13 窗 < MIN_SEP_N）上直接崩）。
+export const SEP_VERDICT = { both: '保留', extreme: '降级(只报数)', overlap: '删/降级', insufficient: '样本不足(不判)' };
 export const MIN_VALID_FRAMES = 30;  // 逐帧类判据：窗内有效帧 < 此值 ⇒ 计入告警行（不剔除）
 // ⚠️ 陈旧 wasm 能静默改数：审阅实测**仓里那份旧 `viewer/engine.wasm`（c8e77188…）**算出来 P1 中位是 **0**，
 // 而 main 现构建（b0bc4796…）是 **0.980** —— 同一个工具、只差"用哪份 wasm"就完全不同的读数。
@@ -1168,7 +1171,9 @@ if (IS_ENTRY) {
     }
   }
   // 分离度表（核心产出：逐条判 保留 / 降级 / 删）
-  const VERDICT = { both: '保留', extreme: '降级(只报数)', overlap: '删/降级' };
+  // ⚠️ 标签表在模块级 `SEP_VERDICT`（可导出 ⇒ 有守护测试保证它覆盖全部 class）；
+  //    取值再兜一层 `?? s.class`：以后新增等级也不会崩，只会显示等级原名。
+  const VERDICT = SEP_VERDICT;
   for (const [cal, table] of Object.entries(sepTable)) {
     outLines.push('');
     outLines.push(`═══ 分离度 · ${cal} 口径（q10/q90 不相交=保留；仅 min/max 不相交=降级；重叠=删）═══`);
@@ -1177,7 +1182,7 @@ if (IS_ENTRY) {
       for (const [rk, s] of Object.entries(row.perReal)) {
         if (!s) continue;
         const tag = rk.replace('real:', '').replace(`:${cal}`, '');
-        outLines.push(`  ${(row.label + ' [' + tag + ']').padEnd(30)} ${s.dir.padEnd(11)} ${VERDICT[s.class].padEnd(12)} `
+        outLines.push(`  ${(row.label + ' [' + tag + ']').padEnd(30)} ${s.dir.padEnd(11)} ${(VERDICT[s.class] ?? s.class).padEnd(12)} `
           + `${f2(s.sepQ, 3).padStart(7)}   ${f2(s.realQ10, 2).padStart(7)}/${f2(s.realMedian, 2).padStart(7)}/${f2(s.realQ90, 2).padStart(7)}`
           + `   ${f2(s.engineQ10, 2).padStart(7)}/${f2(s.engineMedian, 2).padStart(7)}/${f2(s.engineQ90, 2).padStart(7)}`);
       }

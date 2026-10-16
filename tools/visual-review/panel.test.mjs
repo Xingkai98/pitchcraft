@@ -150,6 +150,24 @@ test('★ 有效帧的边界是 `>=7` 名外场（口径 7）——恰好 7 人*
   assert.strictEqual(mm.MIN_OUTFIELD_PLAYERS, 7, '本测试依赖仓内口径 7');
 });
 
+test('★ 分离度等级的标签表必须覆盖 `separationOf` 能返回的**全部** class（回归：漏了 `insufficient` ⇒ `--dataset all` 崩）', () => {
+  const big = (lo) => [...Array(40)].map((_, i) => lo + i * 0.1);
+  const produced = new Set();
+  // 三类大样本（n≥MIN_SEP_N）：不相交 / 仅端点不相交 / 重叠
+  produced.add(P.separationOf(big(10), big(0)).class);
+  produced.add(P.separationOf(big(10), big(-5)).class);
+  produced.add(P.separationOf(big(10), big(10.05)).class);
+  // 小样本（n < MIN_SEP_N）⇒ insufficient，且 `classRaw` 仍是"若不管样本量会判什么"
+  const small = P.separationOf([1, 2, 3], [4, 5, 6]);
+  produced.add(small.class);
+  assert.strictEqual(small.class, 'insufficient', `小样本必须判 insufficient（实得 ${small.class}）`);
+  assert.ok(['both', 'extreme', 'overlap'].includes(small.classRaw), 'classRaw 应保留"若不管样本量"的判定');
+  assert.ok(small.nMin < P.MIN_SEP_N);
+  for (const c of produced) {
+    assert.ok(P.SEP_VERDICT[c], `等级 "${c}" 在 SEP_VERDICT 里没有标签 ⇒ 打印器会崩（这正是 2026-10-17 那个 bug）`);
+  }
+});
+
 test('★ 分布摘要走仓内分位口径（与基线同源，R type-7）', () => {
   const s = P.distSummary([...Array(10)].map((_, i) => i + 1));
   assert.strictEqual(s.n, 10);
