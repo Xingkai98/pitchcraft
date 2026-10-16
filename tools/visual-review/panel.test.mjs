@@ -118,6 +118,38 @@ test('★ 队形残差必须先**去重心**（口径 R7）——含反证：整
   assert.ok(P.p2Residual(P.center(A, L, W), P.center(C, L, W)) > 1e-6, '改形态后残差必须为正');
 });
 
+test('★ 残差必须是**双向对称** NN（口径 R7）——单向变体会给出完全不同的数（反例：两侧点数不等）', () => {
+  // A = 10 点等距铺 0..9 m；C = 只有两端两点（0 与 9）⇒ 两侧点数不等、密度不对称：
+  //   单向 A→C：每个 A 点到最近端点的距离均值 ≈2.25；单向 C→A：两端点各自最近就是自己 ⇒ 0
+  //   双向 = (2.25+0)/2 ≈ 1.125 ⇒ **既不是 0 也不是 2.25**，单向实现必被抓住
+  const A = [...Array(10)].map((_, i) => [i, 0]);
+  const C = [[0, 0], [9, 0]];
+  const r = P.p2Residual(A, C);
+  const oneWayAC = A.reduce((s, a) => s + Math.min(...C.map((c) => Math.hypot(a[0] - c[0], a[1] - c[1]))), 0) / A.length;
+  const oneWayCA = C.reduce((s, c) => s + Math.min(...A.map((a) => Math.hypot(a[0] - c[0], a[1] - c[1]))), 0) / C.length;
+  assert.ok(Math.abs(r - (oneWayAC + oneWayCA) / 2) < 1e-12, `应为双向均值（实得 ${r}）`);
+  assert.ok(Math.abs(r - oneWayAC) > 0.5, `不得等于单向 A→C（${oneWayAC}）`);
+  assert.ok(r > 0.5, `不得等于单向 C→A 的 0（实得 ${r}）`);
+});
+
+test('★ `center()` 用各自轴的真实尺寸（x×L、y×W）——含反证：把 y 也乘 L 会被抓住', () => {
+  const players = [{ id: 1, x: 0.5, y: 0.4 }, { id: 2, x: 0.5, y: 0.6 }];
+  const c = P.center(players, L, W);
+  assert.ok(Math.abs(c[0][1] + (0.1 * W)) < 1e-12, `去重心后 y 应为 ∓0.1·W=${0.1 * W} m（实得 ${c[0][1]}）`);
+  assert.ok(Math.abs(c[0][1] + 0.1 * W - (c[0][1] + 0.1 * L)) > 1, 'L≠W ⇒ 用错轴会给出不同的数（本夹具因此有区分度）');
+  assert.ok(L !== W, '夹具前提：球场长宽不等');
+});
+
+test('★ 有效帧的边界是 `>=7` 名外场（口径 7）——恰好 7 人**必须**算有效', () => {
+  const spec = {};
+  for (let i = 1; i <= 7; i += 1) spec[i] = [0.4, 0.4];          // home 恰 7 名外场
+  for (let i = 11; i <= 17; i += 1) spec[i] = [0.6, 0.6];        // away 恰 7 名外场
+  const players = Object.keys(spec).map((id) => ({ id: Number(id), x: spec[id][0], y: spec[id][1] }));
+  players.push({ id: 0, x: 0.02, y: 0.5 }, { id: 21, x: 0.98, y: 0.5 });
+  assert.strictEqual(P.frameValid(players, true), true, '恰好 7 名外场 ⇒ 有效（`>=7`，不是 `>7`）');
+  assert.strictEqual(mm.MIN_OUTFIELD_PLAYERS, 7, '本测试依赖仓内口径 7');
+});
+
 test('★ 分布摘要走仓内分位口径（与基线同源，R type-7）', () => {
   const s = P.distSummary([...Array(10)].map((_, i) => i + 1));
   assert.strictEqual(s.n, 10);

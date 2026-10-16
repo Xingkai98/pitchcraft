@@ -84,7 +84,7 @@ P143r 三版（v1 / v2g-g3 / FB4）都是「指标变好、用户看不出」。
 |---|---|---|
 | **`trajectory.mjs`** ★★ | **引擎 vs 真实 球员轨迹并排图——「先看」的第一步，看铁轨 vs 团** | `node tools/visual-review/trajectory.mjs <engine.wasm> <out.png> [seed=42] [t0=1800] [win=90]` |
 | **`like-football.mjs`** | real-anchored 损失表：单一「距离」+ 逐量缺口——**2026-10-16 起降为报告**（见「像不像的验收」） | `node tools/visual-review/like-football.mjs [engine.wasm] [seeds=5] [win=12]` |
-| **`panel.mjs`** ★★ | **「像不像」主面板：判别量 5 行 × 真实 22 场 vs 引擎，双口径（primary/allPoints）** | `node tools/visual-review/panel.mjs --dataset all`（`--selftest` 走合成数据、不读盘） |
+| **`panel.mjs`** ★★ | **「像不像」主面板：判别量 5 行 × 真实 22 场 vs 引擎，双口径（primary/allPoints）** | `node tools/visual-review/panel.mjs --dataset all --wasm <engine.wasm> --lib engine/src/lib.rs`（**`--wasm` 必给**，否则 exit 2；`--selftest` 走合成数据、不读盘）。⚠️ **wasm 必须现构建**——与 committed 基线不一致时工具会告警（同一个工具、只差"用哪份 wasm"就能给出完全不同的数） |
 | **`contact-sheet.mjs`** | **多窗网格（N 窗 × 6 帧，引擎/真实逐窗并列）——看形态是否每窗都在** | `node tools/visual-review/contact-sheet.mjs <engine.wasm> <out.png> [seed] [win] [n] [t0csv]` |
 | `render.mjs` | 单张短窗对比图（上引擎 6 帧 / 下真实 6 帧，亮黄球） | `node tools/visual-review/render.mjs <engine.wasm> <out.png> [seed=42] [t0=600] [win=12] [n=6]` |
 | `ask-vision.mjs` | 把 PNG 交视觉模型判读（修了 vision.py 的 max_tokens 陷阱） | `node tools/visual-review/ask-vision.mjs <png> "<问题>"` |

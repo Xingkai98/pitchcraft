@@ -408,7 +408,9 @@ P4 两个尺度都出了（12 s 的"较慢门将位移" + 300 s 的"距门线/�
 - **判别测试重跑**（FROZEN §6 第 4 条：用含 SkillCorner 的新刺激集）——不在本任务范围。
 - **"落在真实分布外的条目数"汇总**——本次给的是逐条分离度表（§5），没有合成单一标量（FROZEN §5 也要求不合成）。
 - **N1b 的 R4 复核**、**P6 的共同球 y 区间重估**——已在 §5.4 标为前置条件。
-- 本面板**没有进 `verify.sh` / CI**（纪律要求）：`panel.mjs` 自带 `--selftest`，由人来跑。
+- 本面板**的运行面没有进 `verify.sh` / CI**（它要 wasm + 真实帧，CI 上都没有）：跑 panel 的人来负责调 `--selftest`。
+  ⚠️ 但**口径守护测试进了 CI**——`tools/visual-review/panel.test.mjs` 被 `verify.sh` 第 3 步的
+  `tools/visual-review/*.test.mjs` glob 覆盖（不依赖 wasm/真实数据）。两句别混读：「运行面没进」≠「没进 CI」。
 
 **(g) 本任务零引擎改动。** `git status` 里唯一被改的 tracked 文件是进任务前就存在的
 `M engine/src/lib.rs`（未提交，本任务未碰）；新增只有 `tools/visual-review/panel.mjs` 与本文件、

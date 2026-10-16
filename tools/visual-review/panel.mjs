@@ -79,6 +79,19 @@ export const FROZEN = {
   N1_NEAR_BALL_M: 40,   // N1(i)：离球 40 m 内占比
 };
 
+// ── 小样本下限 + 基线指纹（2026-10-16 独立审阅后加；**只告警/标红，不静默剔除**）──────────
+// 审阅实测：造一场 3000 帧里只有 3 帧有效的比赛，该窗照样以 n=1 进入统计，分离度表还会判「保留」。
+export const MIN_SEP_N = 20;         // 分离度表：任一侧 n < 此值 ⇒ class='insufficient'
+export const MIN_VALID_FRAMES = 30;  // 逐帧类判据：窗内有效帧 < 此值 ⇒ 计入告警行（不剔除）
+// ⚠️ 陈旧 wasm 能静默改数：审阅实测**仓里那份旧 `viewer/engine.wasm`（c8e77188…）**算出来 P1 中位是 **0**，
+// 而 main 现构建（b0bc4796…）是 **0.980** —— 同一个工具、只差"用哪份 wasm"就完全不同的读数。
+export const BASELINE_WASM_SHA256 = (() => {
+  try {
+    const b = JSON.parse(readFileSync(join(ROOT, 'viewer/data/benchmark-baseline.json'), 'utf8'));
+    return b?.engineFingerprint?.wasmSha256 || null;
+  } catch { return null; }
+})();
+
 // 两个尺度（FROZEN §4 规则 8）
 export const COARSE = { sizeSec: mm.WINDOW_SIZE_SEC, stepSec: mm.WINDOW_STEP_SEC }; // 300 s / 900 s（仓内既有口径）
 export const FINE = { windowSec: 12, stepSec: 2.4, columns: 6 };                     // 12 s 横排 / 2.4 s 一栏
@@ -538,8 +551,12 @@ export function separationOf(realVals, engVals) {
   ].sort((a, b) => b.sep - a.sep);
   const best = cand[0];
   const cls = best.sep > 0 ? 'both' : (best.sepExt > 0 ? 'extreme' : 'overlap');
+  // ⚠️ 小样本不判「保留」（审阅 P2）：n 太小时"分离"没有统计意义 —— 标 `insufficient`，
+  //    与 `classRaw` 并列报出，让人看得见"如果不管样本量会判什么"。
+  const nMin = Math.min(r.n, e.n);
   return {
-    dir: best.dir, class: cls,
+    dir: best.dir, class: nMin < MIN_SEP_N ? 'insufficient' : cls, classRaw: cls,
+    realN: r.n, engineN: e.n, nMin,
     sepQ: best.sep, sepExtreme: best.sepExt,
     realQ10: r.q10, realMedian: r.median, realQ90: r.q90,
     engineQ10: e.q10, engineMedian: e.median, engineQ90: e.q90,
@@ -787,6 +804,10 @@ export function toMerged(games) {
 export function sha16(path) {
   try { return createHash('sha256').update(readFileSync(path)).digest('hex').slice(0, 16); } catch { return null; }
 }
+// 完整 sha256：用于**与基线记录的 wasm 指纹比对**（见 `BASELINE_WASM_SHA256`）。
+export function sha256(path) {
+  try { return createHash('sha256').update(readFileSync(path)).digest('hex'); } catch { return null; }
+}
 
 // ══ 最小自证（合成数据；`--selftest`）═════════════════════════════════════════
 // 只证三件**口径**，不证"引擎像真实"：① 跨场不拼接 ② 剔门将 ③ 逐帧→比率。
@@ -915,10 +936,17 @@ function distLine(label, s, d = 3) {
     + `  q10 ${f2(s.q10, d)}  q90 ${f2(s.q90, d)}  [${f2(s.min, d)} … ${f2(s.max, d)}]`;
 }
 
-export function formatReport({ thresholds, datasets, recalib, fp }) {
+export function formatReport({ thresholds, datasets, recalib, fp, baselineWasmSha256 = BASELINE_WASM_SHA256 }) {
   const L = [];
   L.push('═══ 「像不像足球」面板 v1 · 两侧分布 ═══');
   L.push(`引擎指纹：lib.rs ${fp.libSha16 || 'n/a'}  wasm ${fp.wasmSha16 || 'n/a'}  seeds=${fp.seeds}`);
+  // ⚠️ 与 committed 基线的 wasm 比对（审阅 P1）：不阻断，但**必须显式告警**——
+  //    实测仓里那份旧 wasm 能让 P1 中位从 0.980 变成 0，而面板只会照常打印数字。
+  if (baselineWasmSha256 && fp.wasmSha256 && baselineWasmSha256 !== fp.wasmSha256) {
+    L.push(`⚠️ **本读数的 wasm 与 committed 基线不一致**：`);
+    L.push(`   本读数 ${fp.wasmSha256.slice(0, 16)}…  基线记录 ${baselineWasmSha256.slice(0, 16)}…`);
+    L.push(`   ⇒ **不要与基线/其它指纹的读数比较**（同一个工具、只差"用哪份 wasm"就能给出完全不同的数）。`);
+  }
   L.push(`口径：coarse=${COARSE.sizeSec}s/${COARSE.stepSec}s（仓内既有）  fine=${FINE.windowSec}s/${FINE.stepSec}s×${FINE.columns}栏`);
   L.push(`阈值（本轮读数用值）：P1 T=${thresholds.P1_T} m  P3a ${thresholds.P3A_FREEZE_M} m  P3b ${thresholds.P3B_STILL_M} m`);
   L.push(`                    P5 <${thresholds.P5_NEAR_M} m / ${thresholds.P5_PAIR_D_M} m·${thresholds.P5_PAIR_K}对`);
@@ -933,6 +961,10 @@ export function formatReport({ thresholds, datasets, recalib, fp }) {
       + ` (${fPct(c.framesInWindows ? c.framesValid / c.framesInWindows : null)}%)`
       + `  coarse 窗 ${c.coarseWindowsValid}/${c.coarseWindows}`
       + `  fine 窗可用 ${c.fineWindowsUsable}/${c.fineWindowsTotal} (${fPct(c.fineWindowsTotal ? c.fineWindowsUsable / c.fineWindowsTotal : null)}%)`);
+    // ⚠️ 有效帧过少的窗（**未剔除，仅告警**）：逐帧类判据在这些窗上噪声极大（审阅 P2）。
+    const cwAll = datasets[ds].coarse || [];
+    const below = cwAll.filter((w) => (w.nValid || 0) < MIN_VALID_FRAMES).length;
+    if (below) L.push(`      ⚠️ 其中 coarse 窗内有效帧 < ${MIN_VALID_FRAMES} 的有 **${below}/${cwAll.length}** 个（逐帧类读数在此噪声极大；未剔除）`);
   }
   return L.join('\n');
 }
@@ -991,7 +1023,12 @@ if (IS_ENTRY) {
   }
   const t0 = Date.now();
   const seeds = args.seeds ? mm.BENCHMARK_SEEDS.slice(0, args.seeds) : mm.BENCHMARK_SEEDS;
-  const fp = { wasmSha16: args.wasm ? sha16(args.wasm) : null, libSha16: args.lib ? sha16(args.lib) : null, seeds };
+  const fp = {
+    wasmSha16: args.wasm ? sha16(args.wasm) : null,
+    libSha16: args.lib ? sha16(args.lib) : null,
+    wasmSha256: args.wasm ? sha256(args.wasm) : null,   // 与基线比对用（见 BASELINE_WASM_SHA256）
+    seeds,
+  };
   const datasets = {};
   const raw = {};
 
