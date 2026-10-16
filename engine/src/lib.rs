@@ -616,6 +616,52 @@ pub const CARRIER_SPEED_MS: f64 = 5.0;
 pub const RUN_SPEED_MS: f64 = 4.0;
 /// 门将回位速度（m/s）
 pub const GK_SPEED_MS: f64 = 3.0;
+
+// ---- M1b 门将随球出/退（p-looks-like-football）----
+//
+// 判别测试（零上下文裁判 3/3 全判对）的**头号判据**是「引擎两名门将 12 s 内一毫米不动」。
+// 原实现把门将目标钉成常数 `(0.02 | 0.98, 0.5)` ⇒ 门将距门线恒 2.10 m、12 s 位移恒 0.0 m。
+// 本机制只换**门将的目标表达式**：纵向按真实实测的「球距本方门线 → 门将距本方门线」
+// 关系出/退，横向按固定系数跟球 y。**速度、dead_zone、其它任何常量都不动。**
+//
+// 纵向用**单斜率直线**（M1 那一版用过 8 节点查表，被独立判据镜判为过度设计：在同一批
+// 观测分箱中位数上做最小二乘，直线在 P4 头条项上比节点表**更贴真实**、四项判据里三项无差别
+// ⇒ 少 6 个常量、少一段查表代码。见 `.scratch/notes/p-looks-like-football-2026-10-16/M1b-REPORT.md` §2）。
+
+/// 门将出/退直线**斜率**（无量纲）：门将距本方门线 = 截距 + 斜率 × 球距本方门线。
+///
+/// **真实锚**：22 场真实语料（`viewer/data/real-game-{1,2}.json` 的 Metrica 两场 +
+/// `skillcorner-*.json` 的 20 场；门将槽位 = id 0/21、逐场球场尺寸、原始球帧）上把
+/// 「球距本方门线」按 `[0,10) [10,20) [20,30) [30,40) [40,55) [55,70) [70,85) [85,106)`
+/// 分箱、取门将距本方门线的**中位数**，两数据集各取一份再平均，然后对这 8 个
+/// `(分箱中点, 中位)` 点做**最小二乘**。两数据集在整条曲线上相差 ≤2.5 m ⇒ 是结构不是噪声。
+const GK_COME_OUT_SLOPE: f64 = 0.2440;
+
+/// 门将出/退直线**截距**（米）。为负 ⇒ 球贴门线时直线低于地板，由 `GK_COME_OUT_FLOOR_M` 托住。
+const GK_COME_OUT_INTERCEPT_M: f64 = -0.4632;
+
+/// 门将距本方门线的**地板**（米）：真实没有「球距门线 → 0」的观测，q10 是 2.22（Metrica）/
+/// 2.92（SkillCorner），取 2.0（略低于两者，保守）。同时保证门将不贴到门线上。
+const GK_COME_OUT_FLOOR_M: f64 = 2.0;
+
+/// 门将横向跟随系数：门将 y 偏移 = 球 y 偏移 × 此值（归一化坐标，x/y 各自尺度内同比）。
+///
+/// **真实锚**：Metrica 两场逐帧 OLS **0.09**（2 场，门将点 100% 实测，可信侧）；
+/// SkillCorner 20 场 allPoints 0.14（86% 的门将点是外推值、疑被平滑放大）。
+/// ⇒ 取 **0.10**（靠可信侧上沿，不采信 SkillCorner 高值）。
+const GK_TRACK_Y: f64 = 0.10;
+
+/// 门将距本方门线的目标距离（米）：**单斜率直线 + 地板**，`d=0` 处钳在 `GK_COME_OUT_FLOOR_M`。
+///
+/// 逐点对照（观测分箱中位 → 本式）：d=5 → 2.00（观测 2.18）/ d=15 → 3.20（2.93）/
+/// d=25 → 5.64（4.38）/ d=35 → 8.08（7.12）/ d=47.5 → 11.13（10.95）/ d=62.5 → 14.79（15.48）/
+/// d=77.5 → 18.45（19.84）/ d=95 → 22.72（21.86）。最大残差 ~1.4 m（d=77.5 处）——
+/// 但**残差不转化为 P4 落地差**（判据镜实测：头条项上直线还更贴真实），故不为此加回曲线。
+fn keeper_line_dist_m(ball_line_dist_m: f64) -> f64 {
+    (GK_COME_OUT_INTERCEPT_M + GK_COME_OUT_SLOPE * ball_line_dist_m.max(0.0))
+        .max(GK_COME_OUT_FLOOR_M)
+}
+
 /// 持球 hold 门控下限/上限（tick）
 pub const HOLD_MIN_TICKS: u32 = 8;
 pub const HOLD_MAX_TICKS: u32 = 15;
@@ -3478,7 +3524,8 @@ fn is_defender(st: &MatchState, id: i32) -> bool {
 }
 
 /// 队形目标（P5 S1）：目标 = 角色基准 + 队形偏移(球位置, 控球阶段, 球侧)。
-/// 门将恒回门线；防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
+/// 防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
+/// **门将不走本函数**（调用方 `compute_mover_candidates` 跳过 id 0/21，门将目标单独算，见常量 `GK_COME_OUT_SLOPE`）。
 fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
     let base = st.lineup[id as usize];
     let ball = st.ball_pos;
@@ -3749,8 +3796,15 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
         if st.sent_off[id as usize] { continue; } // 罚下门将也不产 keeper_return
         let from = st.pos[id as usize];
         let (target, action, speed) = if id == 0 || id == 21 {
-            let tx = if id == 0 { 0.02 } else { 0.98 };
-            ((tx, 0.5), "keeper_return".to_string(), GK_SPEED_MS)
+            // M1b：门将不再恒回门线，改为**随球出/退**——纵向走 `keeper_line_dist_m`
+            // （球距本方门线的实测直线），横向按 `GK_TRACK_Y` 跟球 y。
+            // action 名沿用 `keeper_return`（改名会牵动既有测试的断言；语义已变为「门将移动」）。
+            let own_goal_x = if id == 0 { 0.0 } else { 1.0 };
+            let ball_line_m = (st.ball_pos.0 - own_goal_x).abs() * PITCH_LENGTH_M;
+            let out_norm = keeper_line_dist_m(ball_line_m) / PITCH_LENGTH_M;
+            let tx = if id == 0 { out_norm } else { 1.0 - out_norm };
+            let ty = 0.5 + (st.ball_pos.1 - 0.5) * GK_TRACK_Y;
+            ((tx, ty), "keeper_return".to_string(), GK_SPEED_MS)
         } else if let Some(ta) = targets[id as usize] {
             (ta, actions[id as usize].clone(), RUN_SPEED_MS)
         } else {
@@ -8426,25 +8480,38 @@ mod tests {
 
     #[test]
     fn p5_press_up_and_gk_exempt() {
-        // 控球阶段压上：home 持球 vs away 持球时 home 中场目标 x 前压；门将不受平移/压上影响
+        // 控球阶段压上：home 持球 vs away 持球时 home 中场目标 x 前压；门将不走 `formation_target`
         let (home_x, home_n) = sample_player_x(42, 5, Some(true));
         let (away_x, away_n) = sample_player_x(42, 5, Some(false));
         assert!(home_n > 0 && away_n > 0, "应采到两方样本（home_n={} away_n={}）", home_n, away_n);
         assert!(home_x > away_x + 0.01, "己方持球时前压（home {:.3} vs away {:.3}）", home_x, away_x);
-        // 门将豁免（P7 槽位下门将 mover 极少，直接测 compute_movers 的 keeper_return 分支）：
-        // 门将离门线时产 mover 回门线（x≈0.02），不受球位置影响
-        let lineup = default_lineup();
-        let mut st = MatchState::new(&lineup);
-        st.pos[0] = (0.2, 0.5); // 门将离门
-        st.ball_pos = (0.8, 0.5); // 球远
-        st.possession = 0;
-        let mut rng = SeededRng::new(1);
-        let movers = compute_mover_candidates(&mut st, &mut rng, 0.0, &[]);
-        let gk_mover = movers.iter().find(|m| m.id == 0);
-        assert!(gk_mover.is_some(), "门将离门应产 keeper_return mover");
-        let gk = gk_mover.unwrap();
-        assert_eq!(gk.action, "keeper_return", "门将 mover action 应为 keeper_return");
-        assert!(gk.to_x < gk.from_x, "门将应向门线移动（from {:.3} → to {:.3}）", gk.from_x, gk.to_x);
+        // 门将豁免：门将**不走** `formation_target` 的平移/压上——这一条仍然成立。
+        // ⚠️ **2026-10-17（M1b）本条判据换过**：旧断言写的是「门将**不受球位置影响**、恒回门线
+        // x≈0.02」，而那正是 M1b 删掉的不变量。现按**新**语义断言：门将目标由**球距本方门线**决定——
+        // 同一个门将起点上，球贴本方门线时目标在身后（回退）、球在对面半场时目标在身前（出击）。
+        // （不能再断言「恒回门线」：那会让 `dead_zone` 把 mover 吃掉，断言变成空转。）
+        let gk_step = |ball_x: f64| -> f64 {
+            let lineup = default_lineup();
+            let mut st = MatchState::new(&lineup);
+            // 门将出到门前 10.5m：离「球贴门线」与「球在对面半场」两种目标**都**超出
+            // `DEAD_ZONE_METERS`（2m），保证两种情况都真的产 mover。
+            st.pos[0] = (0.10, 0.5);
+            st.ball_pos = (ball_x, 0.5);
+            st.possession = 0;
+            st.carrier = 9; // 门将不能是 carrier（carrier 不产 mover）
+            let mut rng = SeededRng::new(1);
+            let movers = compute_mover_candidates(&mut st, &mut rng, 0.0, &[]);
+            let gk = movers.iter().find(|m| m.id == 0).expect("门将应产 keeper_return mover");
+            assert_eq!(gk.action, "keeper_return", "门将 mover action 应为 keeper_return");
+            gk.to_x - gk.from_x
+        };
+        // 球贴本方门线（x=0.02 ⇒ 球距门线 2.1m）：目标 ≈ 地板 2.0m，门将在 10.5m 处 ⇒ **回退**
+        let step_near = gk_step(0.02);
+        // 球在对面半场（x=0.80 ⇒ 球距门线 84m）：目标 ≈ 20m，门将在 10.5m 处 ⇒ **出击**
+        let step_far = gk_step(0.80);
+        assert!(step_near < 0.0, "球贴本方门线时门将应回退（步进 {step_near:.4}）");
+        assert!(step_far > 0.0, "球在对面半场时门将应出击（步进 {step_far:.4}）");
+        assert!(step_far > step_near, "门将目标应随球距本方门线单调变远（near {step_near:.4} far {step_far:.4}）");
     }
 
     #[test]
@@ -8882,9 +8949,13 @@ mod tests {
     #[test]
     fn p23_sent_off_keeper_produces_no_keeper_return() {
         // 对照组：门将离门 → 产 keeper_return
+        // ⚠️ **2026-10-17（M1b）对照组起点由 0.2 改为 0.10**：M1b 后门将目标随球距出/退
+        // （球在 x=0.8 ⇒ 目标 ≈ 0.19），起点 0.2 离目标只有 0.0092 < `DEAD_ZONE_METERS`（2m）
+        // ⇒ 静区把 mover 吃掉、对照组会**空转**。0.10 离目标超出静区，mover 真的产出。
+        // **本条的判据（罚下门将零 mover）本身未动。**
         let lineup = default_lineup();
         let mut st = MatchState::new(&lineup);
-        st.pos[0] = (0.2, 0.5);
+        st.pos[0] = (0.10, 0.5);
         st.ball_pos = (0.8, 0.5);
         st.possession = 0;
         st.carrier = 9;

@@ -121,7 +121,13 @@ const CANARY_SEEDS: [u64; 13] = [1, 5, 9, 15, 24, 33, 36, 86, 97, 100, 120, 157,
 /// `BASE_DEF_FOUL` −0.19→−0.22 又改一次事件流，**7 不再产 `match_end` 收束**（防空转断言红）。
 /// 按同一判据重扫 seed 1..=400（`observed` @ DUR，扫 `ContestEnd(match_end)`：9/14/18/24/…），
 /// **追加 9**（同时保留 7，样本只增不减）。**换的是样本，不是判据。**
-const CONTEST_SEEDS: [u64; 17] = [1, 5, 15, 33, 86, 97, 100, 120, 157, 317, 37, 41, 66, 106, 107, 7, 9];
+///
+/// **M5 + M1b（2026-10-17：射门分桶/体量/尺子口径 + 门将出/退目标）**又改一次事件流，
+/// 7 与 9 **双双不再产 `match_end` 收束**（防空转断言红：`{"pickup": 2030}`）。
+/// 按同一判据重扫 seed 1..=600（扫 `ContestEnd(match_end)`：18/38/40/54/77/… 共 53 个），
+/// **追加 18、38**（同时保留 7、9，样本只增不减）。**换的是样本，不是判据。**
+const CONTEST_SEEDS: [u64; 19] =
+    [1, 5, 15, 33, 86, 97, 100, 120, 157, 317, 37, 41, 66, 106, 107, 7, 9, 18, 38];
 
 /// 与 `tests/realism.rs::GOLDEN_SEEDS` **必须一致**的 canary seed 集；对应哪个 golden 目录由
 /// `MODEL_VERSION` 决定（main 上为 `golden-v7`）。
@@ -1074,7 +1080,10 @@ fn event_indexes_are_non_empty_monotonic_and_in_range() {
     // M5（2026-10-17）再改事件流：[51,103,244] **一种形态都不命中**。按同一判据在 5400 下重扫
     // seed 1..=600：形态① [74,89,100,124,198,…]、形态② [43,61,174,177,321,395]、形态③
     // [13,188,246,251,359,442,547]，取 [74,43,13]（计数 1/1/1）。仍换样本、不换判据。
-    const TRUNCATION_FORM_SEEDS: [u64; 3] = [74, 43, 13]; // ① episode / ② restart 未 taken / ③ restart 已 taken
+    // M1b（2026-10-17，门将出/退目标）又改一次事件流：[74,43,13] 不再命中。按同一判据再扫
+    // seed 1..=600：形态① [61,68,73,91,108,…]、形态② [79,401,462]、形态③ [102,337,404,437,440]，
+    // 取 [61,79,102]（计数 1/1/1）。仍换样本、不换判据。
+    const TRUNCATION_FORM_SEEDS: [u64; 3] = [61, 79, 102]; // ① episode / ② restart 未 taken / ③ restart 已 taken
     for seed in CANARY_SEEDS.iter().chain(TRUNCATION_FORM_SEEDS.iter()).copied() {
         let dm = observed(seed);
         let whistle_t = tail_whistle_t(&dm);
@@ -1220,6 +1229,8 @@ fn gap_is_a_classified_outcome_not_a_failure() {
     //    M5（2026-10-17）再改事件流：**347@300 不再产 gap**。按同一判据复扫 seed 1..=800 ×
     //    dur ∈ {120,300,400,700}：只剩 **139@700 / 441@700 / 562@120** 三个命中，取 441@700
     //    换掉 347@300。仍是**换样本，不换判据**。
+    //    M1b（2026-10-17，门将出/退目标）再改一次事件流：复扫 seed 1..=800 × dur∈{120,300,400,700}
+    //    仍只剩同样三个命中（139@700 / 441@700 / 562@120）⇒ **本条样本无需再换**。
     let mut classified = 0usize;
     for (seed, dur) in [(562u64, 120.0), (441u64, 700.0)] {
         let dm = simulate_with_behavior_observations(seed, cfg(dur));
@@ -1638,4 +1649,6 @@ fn l3_300_seed_90min_calibration_lands_evidence_on_disk() {
     );
     eprintln!("  证据落盘：{}", out_path.display());
 }
+
+
 

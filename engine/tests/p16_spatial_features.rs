@@ -87,6 +87,12 @@ const DUR: f64 = 5400.0;
 /// 默认快速门用的 seed 数（覆盖 90 分钟整场，含各种收束路径）。
 const QUICK_SEEDS: (u64, u64) = (1, 10);
 
+/// 门球放大器那条**记录**门的 seed 窗：**必须 ≥100**（2026-10-17 由 `QUICK_SEEDS`（10）扩来）。
+/// 理由：10-seed 窗的块间跨度（≈0.042）与 ±5pp 带同宽 ⇒ 判别力不成立（详见该条测试的文档注释）；
+/// 100 seed 把估计抖动压到 ≈0.004。**只影响这一条记录门**，`QUICK_SEEDS` 的其它用途不变
+/// （`caliber_coverage_on_a_real_seed` 仍按它的 10 seed 跑，免得整体变慢）。
+const AMPLIFIER_SEEDS: (u64, u64) = (1, 100);
+
 fn cfg() -> MatchConfig {
     MatchConfig {
         match_duration_seconds: DUR,
@@ -2505,11 +2511,22 @@ fn progress_normalizes_direction_per_team() {
 /// 这不是「判据」，是**记录**（design §2.2）：门球落点恒过半场是「用首个决策动作当位置」
 /// 时把后场开局记成中场开局的主要放大源。引擎改变重开分布时本门会红，
 /// 那时须复核放大器还成不成立并更新常量与文档。
+///
+/// ⚠️ **2026-10-17 重写本条想抓什么**（原口径写 10 seed（`QUICK_SEEDS`），判别力**本就不成立**）：
+/// - **旧口径的病**：10-seed 窗自身的块间离散（把 1..=100 切 10 块，占比范围 **0.334–0.376**、
+///   跨度 ≈0.042）**与 ±5pp 带同宽** ⇒ 任何块都可能因抽样噪声越带，而这与「放大器结论是否
+///   仍成立」无关；同时旧常量 `0.317` 是旧引擎读数，**未改的基线自己就有 4/10 个块会红**。
+/// - **现口径**：窗 **1..=100**（`AMPLIFIER_SEEDS`）⇒ 估计的抖动 ≈ 块 sd/√10 ≈ **0.004**，
+///   ±5pp 带 ≈ 12× 抖动 ⇒ 它对**小漂移**不敏感（这是**设计如此**：本条是记录、不是判据），
+///   只在**重开构成发生量级变化**时响。
+/// - **本条真正承重的还是下面两条结构断言**：门球落点**恒过半场**（≥0.5，放大器机制的
+///   直接证据）与落点**落在 `goal_kick_land` 钉死的区间内**——这两条对 `fn goal_kick_land`
+///   的任何改动敏感，与 seed 集无关。
 #[test]
 fn goal_kick_amplifier_matches_the_pinned_share() {
     let mut restarts: std::collections::BTreeMap<&'static str, usize> = Default::default();
     let mut goal_kick_lands: Vec<f64> = Vec::new();
-    let (first, last) = QUICK_SEEDS;
+    let (first, last) = AMPLIFIER_SEEDS;
     for seed in first..=last {
         let dm = observe(seed);
         for r in &dm.restart_sequences {
@@ -2518,7 +2535,7 @@ fn goal_kick_amplifier_matches_the_pinned_share() {
         goal_kick_lands.extend(observe_goal_kick_lands(&dm));
     }
     let total: usize = restarts.values().sum();
-    assert!(total > 0, "10 seed 内一条重开都没有？样本或口径有问题");
+    assert!(total > 0, "{}..={} 内一条重开都没有？样本或口径有问题", first, last);
     let gk = *restarts.get("goal_kick").unwrap_or(&0);
     let share = gk as f64 / total as f64;
     assert!(
@@ -2592,3 +2609,4 @@ fn caliber_coverage_on_a_real_seed() {
         cov.band_comparable
     );
 }
+

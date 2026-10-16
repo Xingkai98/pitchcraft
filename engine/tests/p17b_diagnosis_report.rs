@@ -568,7 +568,10 @@ fn restart_window_falls_back_explicitly_when_taken_t_is_missing() {
     // P143r-v4：四层改流后 canary（1..=30）里**不再有** `taken_t` 缺失的 fallback 窗口
     // （原实测 2 例），防空转断言变红。按同一判据重扫（`rescan trunc`：restart 未 taken 的
     // seed 225/278）补入**定点** seed，让 fallback 分支**仍被真实执行**——换的是样本，不是判据。
-    const FALLBACK_WINDOW_SEEDS: [u64; 2] = [225, 278];
+    // M5 + M1b（2026-10-17）又改一次事件流：225/278 **不再产** fallback 窗口。按同一判据重扫
+    // seed 1..=400（`restart_windows` 的 `end_source != taken_t`：79/84/93/131/136/141/172/258/
+    // 275/307/340，**全部是 `stream_end` 档**）换用 79 / 84。**换的是样本，不是判据。**
+    const FALLBACK_WINDOW_SEEDS: [u64; 2] = [79, 84];
     for seed in (CANARY_SEEDS.0..=CANARY_SEEDS.1).chain(FALLBACK_WINDOW_SEEDS) {
         let dm = observe(seed);
         for w in restart_windows(&dm) {
@@ -2249,3 +2252,4 @@ fn identifier_words(text: &str) -> Vec<String> {
     }
     out
 }
+
