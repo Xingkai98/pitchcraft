@@ -1071,7 +1071,10 @@ fn event_indexes_are_non_empty_monotonic_and_in_range() {
     // `BASE_DEF_FOUL` −0.19→−0.22 又改一次事件流，[11,223,42] **一种形态都不命中**。按同一判据在
     // 5400 下重扫 seed 1..=400：形态① 命中 [51,65,112,114,145,160,189,266,276,318]、形态②
     // [103,179]、形态③ [244,378]，取 [51,103,244]（计数 1/1/1）。仍换样本、不换判据。
-    const TRUNCATION_FORM_SEEDS: [u64; 3] = [51, 103, 244]; // ① episode / ② restart 未 taken / ③ restart 已 taken
+    // M5（2026-10-17）再改事件流：[51,103,244] **一种形态都不命中**。按同一判据在 5400 下重扫
+    // seed 1..=600：形态① [74,89,100,124,198,…]、形态② [43,61,174,177,321,395]、形态③
+    // [13,188,246,251,359,442,547]，取 [74,43,13]（计数 1/1/1）。仍换样本、不换判据。
+    const TRUNCATION_FORM_SEEDS: [u64; 3] = [74, 43, 13]; // ① episode / ② restart 未 taken / ③ restart 已 taken
     for seed in CANARY_SEEDS.iter().chain(TRUNCATION_FORM_SEEDS.iter()).copied() {
         let dm = observed(seed);
         let whistle_t = tail_whistle_t(&dm);
@@ -1214,8 +1217,11 @@ fn gap_is_a_classified_outcome_not_a_failure() {
     //    TACKLE/FOUL 重标定后 348@400 不再产 gap，按同一判据复扫（seed 1..=800 × dur ∈
     //    {120,300,400,700}：139@700 / 343@400 / 347@300 / 441@700 / 562@120），取 **347@300**
     //    换掉 348@400。仍是**换样本，不换判据**。
+    //    M5（2026-10-17）再改事件流：**347@300 不再产 gap**。按同一判据复扫 seed 1..=800 ×
+    //    dur ∈ {120,300,400,700}：只剩 **139@700 / 441@700 / 562@120** 三个命中，取 441@700
+    //    换掉 347@300。仍是**换样本，不换判据**。
     let mut classified = 0usize;
-    for (seed, dur) in [(562u64, 120.0), (347u64, 300.0)] {
+    for (seed, dur) in [(562u64, 120.0), (441u64, 700.0)] {
         let dm = simulate_with_behavior_observations(seed, cfg(dur));
         assert!(
             dm.gap_count() >= 1,
@@ -1632,3 +1638,4 @@ fn l3_300_seed_90min_calibration_lands_evidence_on_disk() {
     );
     eprintln!("  证据落盘：{}", out_path.display());
 }
+

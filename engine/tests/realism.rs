@@ -22,6 +22,11 @@ use fm_engine::{
 
 /// L1/L2/golden 统一比赛时长（90 分钟，default_() 同值）。
 const DUR: f64 = 5400.0;
+/// **M5 尺子口径**：罚球区几何。深度 16.5 m（= `fm_engine::BOX_DIST_M`，此处独立写死——尺子的
+/// 口径要在这里一眼可见，不跟着引擎常量漂）；半宽 20.16 m = IFAB 罚球区标线宽 40.32 m 的一半。
+/// 真实足球的「禁区内」是**这个矩形**，不是「到门线轴向距离 ≤ 16.5m、不看 y」的板条。
+const PENALTY_AREA_DEPTH_M: f64 = 16.5;
+const PENALTY_AREA_HALF_W_M: f64 = 20.16;
 /// L1 统计聚合场数。200 场：普通射门 n≈1200、头球 n≈240。
 /// 头球样本量决定此值——100 场时 n≈124 的 chi-sq 距 13.82 阈值仅 0.88（固定 seed 1..=100 是 2.9σ 偏样本），
 /// 200 场实测 chi-sq=6.32（余量 >7），不再贴边。
@@ -269,6 +274,13 @@ struct MatchStats {
     n_far_off: usize,
     // 起脚位置守卫
     n_shot_far45: usize, // 距门 >45m 射门（应消除）
+    // 进球起脚点的**几何**分区（M5，含头球；按 shot 事件自身的 x/y 判，不看它是不是头球）：
+    //   slab = 到对方门线的**轴向**距离 ≤ 16.5m（**不看 y**，= 门事件流以来的旧口径）
+    //   rect = slab ∩ `|y−0.5|·68 ≤ 20.16`（真实罚球区矩形，深 16.5m × 宽 40.32m）
+    // 旧口径「常规射门按 slab + **全部**头球都算禁区内」（`n_box_goal + n_header_goal`）作为
+    // 第三列保留（`n_shot_goal` 侧不参与），三列并列打印，证据不删。
+    n_goal_in_slab: usize,
+    n_goal_in_rect: usize,
     // header shot（detail=header，角球争抢派生，全部在禁区）
     n_header: usize,
     n_header_goal: usize,
@@ -426,6 +438,18 @@ fn aggregate(seed: u64) -> MatchStats {
                 }
                 st.n_shot += 1;
                 if subject <= 10 { st.n_shot_home += 1; } else { st.n_shot_away += 1; }
+                // M5 尺子：进球起脚点的几何分区（含头球，用 shot 自身的 x/y）。
+                // 半宽 20.16 m = 罚球区宽 40.32 m 的一半（IFAB 场地标线），归一化到 y ∈ [0,1]。
+                if result == "goal" {
+                    let sy = field_num(e, "y").unwrap_or(0.5);
+                    let in_slab = dist_m <= PENALTY_AREA_DEPTH_M;
+                    if in_slab {
+                        st.n_goal_in_slab += 1;
+                        if (sy - 0.5).abs() * PITCH_WIDTH_M <= PENALTY_AREA_HALF_W_M {
+                            st.n_goal_in_rect += 1;
+                        }
+                    }
+                }
                 if is_header {
                     st.n_header += 1;
                     match result.as_str() {
@@ -1109,27 +1133,54 @@ fn l3_shot_ratios() {
     let shots = regular + header;
     let goals: usize = stats.iter().map(|s| s.n_shot_goal + s.n_header_goal).sum();
     let saved: usize = stats.iter().map(|s| s.n_shot_saved + s.n_header_saved).sum();
-    let box_goals: usize = stats.iter().map(|s| s.n_box_goal + s.n_header_goal).sum();
+    // 旧口径（**保留为并列读数，不删证据**）：常规射门按 slab 分桶 + **全部**头球进球都算禁区内。
+    let box_goals_legacy: usize = stats.iter().map(|s| s.n_box_goal + s.n_header_goal).sum();
+    // M5 尺子：**几何**分区的两列（含头球，按 shot 事件自身 x/y）。
+    let slab_goals: usize = stats.iter().map(|s| s.n_goal_in_slab).sum();
+    let rect_goals: usize = stats.iter().map(|s| s.n_goal_in_rect).sum();
     assert!(shots >= 1000, "射门样本不足：{}", shots);
-    println!("[L3] shots={} regular={} header={} goals={} saved={} box_goals={} 禁区占比={:.3} sot={:.3} conv={:.3}",
-        shots, regular, header, goals, saved, box_goals, box_goals as f64 / goals.max(1) as f64,
+    println!(
+        "[L3] shots={} regular={} header={} goals={} saved={} \
+         box_goals_legacy={} 禁区占比_legacy={:.4} | \
+         box_goals_slab={} 禁区占比_slab={:.4} | \
+         box_goals_rect={} 禁区占比_rect={:.4} | sot={:.4} conv={:.4}",
+        shots, regular, header, goals, saved,
+        box_goals_legacy, box_goals_legacy as f64 / goals.max(1) as f64,
+        slab_goals, slab_goals as f64 / goals.max(1) as f64,
+        rect_goals, rect_goals as f64 / goals.max(1) as f64,
         (goals + saved) as f64 / shots as f64, goals as f64 / shots as f64);
     let sot_r = (goals + saved) as f64 / shots as f64;
     let conv_r = goals as f64 / shots as f64;
-    let inside_r = box_goals as f64 / goals as f64;
+    let inside_r = rect_goals as f64 / goals as f64;
     // 真实参考带（report.md §五）：射正率 ~33%、转化 ~10%、禁区内进球 ~85%。
     // 实测（200 场，干净 main）：38.3% / 13.1% / 86.9%，带留余量。
     //
     // **#104：三条带都不需要重标（实测确认）。** #104 把射门抬到真实量级后实测
     // sot 0.369 / conv 0.126 / inside 0.753 —— **三条全过**。
     // ⚠️ **这是比率带，与体积无关**：转化率是 `shot_bucket` 的固定桶常数
-    // （15/30、7/22、4/11，见 `shot_bucket` 注释），不随射门数量变化——#104 不动它。
+    // （15/30、3/22、2/11，见 `shot_bucket` 注释；禁区外两档 M5 重标定），不随射门数量变化。
     // （#104 任务书把这三条列为「需与射门带一起重标」，那是在 #102 的**质量自适应变体**
     //  上下文里说的——那个变体改坏了 `shot_bucket` 的取值使 inside 破带（0.705），
     //  是它自己的参数取值问题；P38 `conversion-adaptive.md` §5.3 已撤回「互斥」判定。）
+    //
+    // **M5（2026-10-17）口径订正：`inside_r` 从「slab + 全头球」换成「罚球区矩形」。**
+    // 为什么：真实锚的「禁区内」是罚球区矩形（深 16.5m × 宽 40.32m，`|y−0.5|·68 ≤ 20.16`），
+    // 而本测试此前判的是「到门线**轴向**距离 ≤ 16.5m、**完全不看 y**」的**无限宽板条**——
+    // 板条 ⊋ 矩形，而 v4 落地后引擎大量产出「轴向已在禁区深度内、横向离中线 >20.16m」的
+    // 边路极窄角度起脚（200 场 75 射 / 18 球；v4 前只有 4–6 射 / 0–1 球），**把口径差放大了 15 倍**。
+    // 板条口径**偏高**，是它让门今天还绿。
+    // **这不是为了过关**：换口径后本窗读数**立刻变差**（`0.7211 → 0.6825`，见 M5-READINGS）。
+    // 板条口径与旧口径（含「全头球算禁区内」规则）都**保留在同一行 println 里**，证据不删。
     assert!((0.28..=0.39).contains(&sot_r), "射正率 {:.3} ∉ [0.28,0.39]", sot_r);
     assert!((0.08..=0.14).contains(&conv_r), "射门转化率 {:.3} ∉ [0.08,0.14]", conv_r);
-    assert!((0.72..=0.92).contains(&inside_r), "禁区内进球占比 {:.3} ∉ [0.72,0.92]", inside_r);
+    // **带 `[0.80, 0.91]` 的取法（对称规则）**：一条带的两端必须由**同一类**真实读数定。
+    // 真实侧直接读数：① PL 官方 2024-25 禁区内进球 **88.3%**；② 报告自取的取整区间 **~85–88%**。
+    // 派生读数（由**已证明互斥**的锚联立而来，弱证据）：③ 同口径扩张 ≈90.1%；④ 联立 82.0–82.9%。
+    // ⇒ 只留**直接**读数：下沿 = 直接最低 0.85 − 5 pp = **0.80**；上沿 = 直接最高 0.883 + 3 pp = **0.91**。
+    // （备选 `[0.77,0.93]` 把派生读数也算进去；不取是因为它的下沿离引擎在**最坏块**上的点估计
+    //   只剩 0.0075，等于没余量。`[0.80,0.93]` 混用两类读数 ⇒ 规则不自洽，不用。）
+    // ⚠️ 相对旧带 `[0.72,0.92]` 这是**收紧**（旧下沿离真实点估计 16.3 pp，新下沿离真实最低读数 5 pp）。
+    assert!((0.80..=0.91).contains(&inside_r), "禁区内进球占比 {:.4} ∉ [0.80,0.91]", inside_r);
 }
 
 /// P13 fix + pilot3 副作用量化（report 用，非门禁）：失败传球 + 主场优势对控球权/重开数量的
@@ -1251,10 +1302,15 @@ fn l2_cross_event_invariants() {
 /// 全部失效（64/121/168 已零红牌，203 红牌在进球之后）。按**同一判据**（红牌先于进球）重扫
 /// （seed 1..=400：21/33/187/239/269/330/337/357）取 **21 / 33 / 187 / 239**。**换的是样本，
 /// 不是判据**。
+///
+/// M5（2026-10-17，射门分桶 + `sample_shot_target` 体量 + 尺子口径）又改一次事件流，
+/// **seed 21 已零红牌**（前置断言红）。按**同一判据**（红牌先于进球）重扫 seed 1..=1600
+/// （命中 27 个：33/187/189/239/251/…）取 **33 / 187 / 189 / 239**——**只换掉失效的 21**。
+/// **换的是样本，不是判据**。
 /// 引擎确定性 → 永不 flaky；`n_foul_red > 0` 的前置断言保证将来引擎改动让它们再次空跑时会红。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [21u64, 33, 187, 239] {
+    for seed in [33u64, 187, 189, 239] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1288,7 +1344,7 @@ fn l2_sent_off_kickoff_seeds() {
 // 与部分事件字段（接球点/门将扑救点/开球落点等）按 `SAME_TEAM_MIN_DIST_M` 米制分离 →
 // 事件流再变，v6 与 v1..v5 逐 seed 都不同。v1..v5 保留不覆盖，作历史对照。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 8）落 v8；需要对比旧版本时读旧目录。
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 9）落 v9；需要对比旧版本时读旧目录。
 // p143r-v4：四层机制（球导向跑位/开放局逼抢/事件密度/传球选择+对抗几何）改变可观测行为 → MODEL_VERSION 7→8。
 
 /// 模型版本 → golden 基线目录名。
@@ -1302,6 +1358,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         6 => "tests/golden-v6",
         7 => "tests/golden-v7",
         8 => "tests/golden-v8",
+        9 => "tests/golden-v9",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1642,3 +1699,4 @@ fn p31_frequency_5min_directional() {
         per(0), per90
     );
 }
+

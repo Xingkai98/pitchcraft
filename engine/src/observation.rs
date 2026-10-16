@@ -5555,7 +5555,13 @@ mod tests {
     fn every_episode_and_restart_object_has_event_indexes_or_a_documented_exception() {
         // 选种依据（实测）：5400 默认时长下命中三种形态的最小集合。
         // 形态 ①②③ 分别由 truncated_* 三个计数器证明覆盖。
-        const SEEDS: [u64; 9] = [51, 65, 103, 112, 145, 179, 244, 266, 378];
+        // M5（2026-10-17，射门分桶 + `sample_shot_target` 体量 + 尺子口径）又改一次事件流：
+        // 旧 [51,65,103,112,145,179,244,266,378] **一种形态都不命中**（防空转断言红：0/0/0）。
+        // 按同一判据在 5400 下重扫 seed 1..=600：形态① [74,89,100,124,198,209,…]、形态②
+        // [43,61,174,177,321,395]、形态③ [13,188,246,251,359,…]，取
+        // `[74,89,100,124,43,61,174,13,188]`（计数 ①②③ = 4/3/2）。**换样本，不是换判据**——
+        // 谓词、豁免条款、防空转断言均未动。（与 p15 的 `TRUNCATION_FORM_SEEDS` 同一次扫描。）
+        const SEEDS: [u64; 9] = [74, 89, 100, 124, 43, 61, 174, 13, 188];
         let mut truncated_episode = 0usize;
         let mut truncated_restart_untaken = 0usize;
         let mut truncated_restart_taken = 0usize;
