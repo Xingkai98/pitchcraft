@@ -48,10 +48,10 @@ export async function loadEngineWasm(wasmPath = WASM_PATH) {
 }
 
 // 跑一个种子 → 事件流对象（engine.simulate 的 JSON 输出）
-export function simulateStream(wasm, seed, durationSec = ENGINE_DURATION_SEC) {
+export function simulateStream(wasm, seed, durationSec = ENGINE_DURATION_SEC, realism = ENGINE_CONFIG.realism) {
   const enc = new TextEncoder();
   const dec = new TextDecoder();
-  const cfg = enc.encode(JSON.stringify({ ...ENGINE_CONFIG, match_duration_seconds: durationSec }));
+  const cfg = enc.encode(JSON.stringify({ ...ENGINE_CONFIG, match_duration_seconds: durationSec, realism }));
   const SCRATCH = 1024;
   new Uint8Array(wasm.memory.buffer, SCRATCH, cfg.length).set(cfg);
   wasm.simulate(BigInt(seed), SCRATCH, cfg.length);

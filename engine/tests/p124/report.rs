@@ -90,6 +90,7 @@ fn probe_has_intent_snapshots() -> bool {
         match_duration_seconds: 5.0,
         demo_mode: false,
         model_version: MODEL_VERSION,
+            realism: fm_engine::RealismFlags::default(),
     };
     let dm = fm_engine::simulate_with_behavior_observations(1, cfg);
     !dm.intent_snapshots.is_empty()

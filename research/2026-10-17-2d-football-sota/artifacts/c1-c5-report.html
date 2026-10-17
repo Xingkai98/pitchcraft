@@ -1,0 +1,108 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>Pitchcraft C1–C5 比赛效果对比</title>
+<style>
+  body { background:#111; color:#e8e8e8; font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; max-width:1200px; margin:40px auto; padding:0 24px; }
+  h1 { font-size:26px; margin-bottom:4px; }
+  .sub { color:#888; margin-bottom:28px; }
+  h2 { font-size:19px; margin-top:36px; border-left:4px solid #4ecdc4; padding-left:10px; }
+  table { border-collapse:collapse; width:100%; margin:16px 0; font-size:15px; }
+  th,td { border-bottom:1px solid #2a2a2a; padding:8px 10px; text-align:right; }
+  th:first-child, td:first-child { text-align:left; }
+  th { color:#999; font-weight:600; }
+  .good { color:#4ecdc4; } .bad { color:#ff6b6b; } .meh { color:#ffd93d; }
+  .legend span { display:inline-block; margin-right:22px; }
+  .dot { display:inline-block; width:10px; height:10px; border-radius:2px; margin-right:6px; vertical-align:middle; }
+  img { width:100%; border:1px solid #2a2a2a; border-radius:6px; margin-top:10px; }
+  code { background:#1d1d1d; padding:2px 6px; border-radius:4px; font-size:14px; }
+  .note { background:#1a1a1a; border-left:4px solid #ffd93d; padding:12px 16px; margin:20px 0; border-radius:4px; }
+  .note strong { color:#ffd93d; }
+</style>
+</head>
+<body>
+
+<h1>Pitchcraft · C1–C5 比赛效果</h1>
+<div class="sub">分支 <code>feat/c1-c5-match-realism</code> · 2026-10-18 · 5 个 commit，一个 issue 一个</div>
+
+<h2>看什么</h2>
+<div class="legend">
+  <span><i class="dot" style="background:#ff6b6b"></i>OLD — 改造前的引擎</span>
+  <span><i class="dot" style="background:#4ecdc4"></i>NEW — C1–C4 全开</span>
+  <span><i class="dot" style="background:#ffd93d"></i>REAL — Metrica 真实跟踪</span>
+</div>
+<p>每三行一组，同一个 12 秒时间窗、同一采样口径（0.2s 一帧）。三个窗口：t=200s、1500s、3000s。</p>
+<img src="c1-c5-match-effect.png" alt="C1-C5 三源对比">
+
+<div class="note">
+<strong>最直观的差别</strong>：红色行（OLD）球员像散开的点阵——每个人都往自己的基准点跑，
+彼此没有关系；青色行（NEW）是一块紧凑的对抗体，两队挤在球周围互相盯防；黄色行（REAL）
+也是这种「围绕球的块」形态。
+</div>
+
+<h2>量化</h2>
+<table>
+  <tr><th>指标</th><th>OLD</th><th>NEW</th><th>真实</th><th>NEW/真实</th></tr>
+  <tr><td>综合距离（越小越像）</td><td class="bad">0.542</td><td class="good">0.124</td><td>0</td><td class="good">↓ 4.4×</td></tr>
+  <tr><td>纵深 hd（米）</td><td class="bad">38.7</td><td class="good">20.8</td><td>18.3</td><td>1.14×</td></tr>
+  <tr><td>客队纵深 ad（米）</td><td class="bad">36.4</td><td class="good">19.1</td><td>18.5</td><td>1.03×</td></tr>
+  <tr><td>紧凑度 spread（米）</td><td class="bad">20.7</td><td class="good">12.3</td><td>12.8</td><td class="good">0.96×</td></tr>
+  <tr><td>重心间距 gap（米）</td><td class="bad">18.9</td><td class="good">5.3</td><td>5.2</td><td class="good">1.01×</td></tr>
+  <tr><td>位移/窗 disp（米）</td><td class="bad">6.27</td><td class="meh">15.8</td><td>13.5</td><td class="meh">1.17×</td></tr>
+  <tr><td>横向占比 lat</td><td class="meh">0.37</td><td class="meh">0.33</td><td>0.43</td><td class="meh">0.78×</td></tr>
+  <tr><td>混队度 mix</td><td class="good">0.80</td><td class="meh">0.68</td><td>0.80</td><td class="meh">0.86×</td></tr>
+</table>
+
+<h2>五个 commit</h2>
+<table>
+  <tr><th>Commit</th><th>Issue</th><th>做了什么</th><th>效果</th></tr>
+  <tr><td><code>29f027c</code></td><td>#170 C1</td><td>运动学：速度/加速度/转弯半径，拍内 10 子步，去掉到点冻结</td><td>disp 6.27 → 8.99</td></tr>
+  <tr><td><code>9706cb7</code></td><td>#171 C2</td><td>队形：5 个关键帧 + 按球位插值，替换 16 常量解析公式</td><td>hd 38.7 → 21.3，spread 20.7 → 11.6</td></tr>
+  <tr><td><code>6afeced</code></td><td>#172 C3</td><td>盯人：时间-拦截代价 + 换人惩罚的最小代价匹配</td><td>gap 9.5 → 5.3，mix 0.45 → 0.65，<b>综合距离 0.542 → 0.155</b></td></tr>
+  <tr><td><code>699452c</code></td><td>#173 C4</td><td>压迫场：控制值选压迫点 + 弱侧向球收；横向调整周期 120s → 18s</td><td><b>综合距离 → 0.124</b>，lat 0.27 → 0.33</td></tr>
+  <tr><td><code>118754f</code></td><td>#174 C5</td><td>持球者选项评估：确定性前向模型选传球目标</td><td class="meh">距离 0.124 → 0.143（<b>负结果</b>，见下）</td></tr>
+</table>
+
+<h2>三条要说清楚的</h2>
+
+<div class="note">
+<strong>1. 全部都在开关后面，默认关闭。</strong>
+<code>MatchConfig.realism</code>（<code>motion / formation / marking / press / carrier</code>），
+默认全关 ⇒ 旧路径与既有 golden 逐位不变。<br>
+打开方式：<code>REALISM=motion+formation+marking+press node tools/visual-review/like-football.mjs viewer/engine.wasm</code>
+</div>
+
+<div class="note">
+<strong>2. C5 是负结果，我没有粉饰。</strong>
+深度 1 的模型评分打不过原来的启发式：综合距离从 0.124 退到 0.143
+（模型偏好向前传球，全队跑动变多，disp 从 15.8 涨到 17.0）。
+票据要的是 Agent2D 式深度 4、500 节点的链搜索——那需要引擎里的动作结果预测，现在没有。
+试过加传球距离惩罚压制，反而更差（0.198，退化成「只传脚下」），故默认 0。
+</div>
+
+<div class="note">
+<strong>3. 还有两项没修好。</strong>
+<code>lat</code> 0.33 vs 真实 0.43（横向移动仍然偏少），<code>mix</code> 0.68 vs 0.80。
+这两项都需要「进攻方也围绕防守者移动」——目前只做了防守方盯人。
+另外 <code>disp</code> 偏大 17%：跑动总量比真实多。
+</div>
+
+<h2>怎么自己验</h2>
+<pre style="background:#1a1a1a;padding:14px;border-radius:6px;overflow:auto"><code>git checkout feat/c1-c5-match-realism
+
+# 重建 wasm（改了引擎就要重建，否则量的还是旧产物）
+cd engine &amp;&amp; cargo build --target wasm32-unknown-unknown --release
+cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm
+cd ..
+
+# 旧 vs 新
+REALISM= node tools/visual-review/like-football.mjs viewer/engine.wasm 5 12
+REALISM=motion+formation+marking+press node tools/visual-review/like-football.mjs viewer/engine.wasm 5 12
+
+# 重新生成这张对比图
+node tools/make-c1c5-report.mjs viewer/engine.wasm out.png 42 12 6 "200,1500,3000"
+</code></pre>
+
+</body>
+</html>

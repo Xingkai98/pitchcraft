@@ -7948,8 +7948,7 @@ mod tests {
     fn p15_observation_overhead_caliber() {
         let config = MatchConfig {
             match_duration_seconds: 5400.0,
-            ..MatchConfig::default_()
-        };
+            ..MatchConfig::default_() };
         let seeds: Vec<u64> = (1..=20).collect();
         // 预热
         for &s in seeds.iter().take(2) {

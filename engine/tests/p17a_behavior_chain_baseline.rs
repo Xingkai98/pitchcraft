@@ -79,6 +79,7 @@ fn cfg(dur: f64) -> MatchConfig {
         match_duration_seconds: dur,
         demo_mode: false,
         model_version: MODEL_VERSION,
+            realism: fm_engine::RealismFlags::default(),
     }
 }
 
