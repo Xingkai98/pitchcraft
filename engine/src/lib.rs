@@ -250,6 +250,7 @@ pub const MODEL_VERSION: u32 = 9;
 /// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v5 `tests/golden-v5/`、
 /// v6 `tests/golden-v6/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
+pub mod carrier;
 pub mod formation;
 pub mod marking;
 pub mod space;
@@ -2078,7 +2079,47 @@ fn choose_pass_target(st: &MatchState) -> Option<i32> {
 
 /// 持球者的传球目标 id。`PASS_SELECTION_ENABLED` 时走价值函数，否则逐字退化为
 /// 「最近队友」（与 `emit_pass_highlight_inner` 同规则，零 RNG）。
+/// C5：用 `carrier` 模块的评分从前场队友里选传球目标。
+///
+/// 只在持球者不是门将、且存在候选时返回 `Some`；否则返回 `None` 让旧逻辑接手。
+fn model_pass_target(st: &MatchState) -> Option<i32> {
+    let carrier = st.carrier;
+    if carrier < 0 || carrier > 21 || carrier == 0 || carrier == 21 {
+        return None;
+    }
+    let home = carrier <= 10;
+    let dir = if home { 1.0 } else { -1.0 };
+    let from = st.pos[carrier as usize];
+    let mates: Vec<i32> = (0..22i32)
+        .filter(|&id| {
+            (id <= 10) == home
+                && id != carrier
+                && id != 0 && id != 21
+                && !st.sent_off[id as usize]
+        })
+        .collect();
+    if mates.is_empty() {
+        return None;
+    }
+    let mate_pos: Vec<(f64, f64)> = mates.iter().map(|&id| st.pos[id as usize]).collect();
+    let opp_pos: Vec<(f64, f64)> = (0..22i32)
+        .filter(|&id| {
+            let h = id <= 10;
+            h != home && !st.sent_off[id as usize]
+        })
+        .map(|id| st.pos[id as usize])
+        .collect();
+    let (idx, _score) = carrier::best_pass(from, &mate_pos, &opp_pos, dir)?;
+    Some(mates[idx])
+}
+
 fn carrier_pass_target(st: &MatchState) -> Option<i32> {
+    // C5（`realism.carrier`）：用确定性前向模型选传球目标，而不是「最近的队友」。
+    if st.realism.carrier {
+        if let Some(t) = model_pass_target(st) {
+            return Some(t);
+        }
+    }
     if PASS_SELECTION_ENABLED {
         if let Some(t) = choose_pass_target(st) {
             return Some(t);
