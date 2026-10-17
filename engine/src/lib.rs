@@ -250,6 +250,7 @@ pub const MODEL_VERSION: u32 = 9;
 /// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v5 `tests/golden-v5/`、
 /// v6 `tests/golden-v6/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
+pub mod formation;
 pub mod motion;
 
 #[derive(Debug, Clone, Copy)]
@@ -3596,6 +3597,12 @@ fn is_defender(st: &MatchState, id: i32) -> bool {
 /// 防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
 /// **门将不走本函数**（调用方 `compute_mover_candidates` 跳过 id 0/21，门将目标单独算，见常量 `GK_COME_OUT_SLOPE`）。
 fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
+    // C2：站位表 + 插值（`realism.formation`）。关闭时走旧解析公式。
+    if st.realism.formation {
+        let home = id <= 10;
+        let my_attack = (home && st.possession == 0) || (!home && st.possession == 1);
+        return formation::target(id, st.ball_pos, home, my_attack, st.ticks_since_meaningful_action as f64);
+    }
     let base = st.lineup[id as usize];
     let ball = st.ball_pos;
     let home = id <= 10;
