@@ -72,9 +72,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 **跑「全量 `--ignored`」的两条硬前提**（2026-10-17 实测，PR #169 审阅修复）：
 
 `p124_canary` / `p16_canary` / `p17b_canary` / `p17b_baseline` 这类**产物门**要求调用方
-**显式声明产物出自哪个 commit**，否则 `assert_ne!(source_commit, "unknown")` 必红；
-它们**不在 `verify.sh` 的任何一步里**（第 7/9 步只跑 `--test realism -- --ignored`）
-⇒ **CI 绿 ≠ 全量 `--ignored` 绿**。
+**显式声明产物出自哪个 commit**，否则 `assert_ne!(source_commit, "unknown")` 必红。
+
+**它们不在 `verify.sh` 的任何一步里**：`verify.sh` 里的 `cargo test` 只有三处——
+第 1/9 步（**默认**套件）、第 7/9 步（`--test realism -- --ignored`）、以及 `8/9` 之后一个
+**未编号**的 P18 步（`--ignored --nocapture p18_canary`，只跑 `p18_canary` 一个 test）；
+这三处**都不跑**上面那四个产物门 ⇒ **CI 绿 ≠ 全量 `--ignored` 绿**。
 
 ```bash
 export PATH="$HOME/.cargo/bin:$PATH"
@@ -100,6 +103,18 @@ H=$(git rev-parse HEAD)          # 必须是**已提交**的树，理由见下
 (cd engine && cargo build --target wasm32-unknown-unknown --release \
   && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)
 ```
+
+**记录数字的硬规则（2026-10-17 立，PR #169 五轮审阅的产物）**：写进**规范正文 / 注释 / 文档**的
+**每一个数** SHALL 满足二选一 ——
+
+1. **有仓内出处指针**：仓内文件 + 章节，或**落盘 note**（`.scratch/notes/**` 的入库文件）的章节，
+   或**同段可复算的算式**（操作数也在仓内）；
+2. **显式标注「本仓内不可自证」**并给出外部来源（未入库的审阅文件 / 判据镜文件 / 上游材料）。
+
+⚠️ **同一段里 SHALL NOT 两种标准并存**（`REVIEW-E` E1 抓到的形态就是「一句话里三个数标了不可自证、第四个没标」）。
+⚠️ **自扫必须用 token 边界搜索，不能用子串匹配**——子串会把「恰好嵌在别的数里」的命中当成有出处
+（实测：`0.8177` 命中过 p104 一个无关的 `farRate`；`0.8055` 命中过一个巨型 fixture 的偶然子串）。
+扫完把结论写成一行：「还剩 N 个无出处的数」+ 逐条列出（0 就写 0）。
 
 ### 4. 浏览器缓存强制刷新（JS 修改后必须更新版本号）
 
