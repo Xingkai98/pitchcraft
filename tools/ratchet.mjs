@@ -57,7 +57,7 @@ export const METRICS = [
   // ── check-behavior-gates.mjs（canary 30 seed；真实锚 = A-League 20 场）──
   { id: 'p18.a1', label: 'A1 链时长(s)', source: 'p18', dir: 'lower', caliber: 'p18 行为门 · canary 30 seed · 真实 A-League', re: /\[A1\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)\s+倍数\s+([\d.]+)×/m },
   { id: 'p18.a2', label: 'A2 动作间隔(s)', source: 'p18', dir: 'lower', caliber: 'p18 行为门 · canary 30 seed · 真实 A-League', re: /\[A2\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)\s+倍数\s+([\d.]+)×/m },
-  { id: 'p18.b4', label: 'B4 压迫覆盖', source: 'p18', dir: 'higher', caliber: 'p18 行为门 · canary 30 seed · 真实 A-League', re: /\[B4\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)\s+倍数\s+([\d.]+)×/m },
+  { id: 'p18.b4', label: 'B4 压迫覆盖', source: 'p18', dir: 'lower', caliber: 'p18 行为门 · canary 30 seed · 真实 A-League', re: /\[B4\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)\s+倍数\s+([\d.]+)×/m },
   // A3/C1 是护栏（tool 恒判过），这里只存「引擎值」供对照，不进退化判定
   { id: 'p18.a3', label: 'A3 链内动作数', source: 'p18', dir: 'report', caliber: 'p18 行为门 · canary 30 seed · 护栏（工具恒判过）· 仅对照', re: /\[A3\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)/m },
   { id: 'p18.c1', label: 'C1 射门收尾链占比', source: 'p18', dir: 'report', caliber: 'p18 行为门 · canary 30 seed · 护栏（分母不可比）· 仅对照', re: /\[C1\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)/m },
