@@ -79,7 +79,8 @@ node tools/convert-tracking-to-frames.mjs --in .scratch/tracking-data/sample-dat
 node tools/fetch-tracking-data.mjs --dataset skillcorner-opendata
 ```
 
-⚠️ **目前会失败**（[#164](https://github.com/Xingkai98/pitchcraft/issues/164)：骨架步骤的 `curl` 缺 `await`）。
+**骨架步骤已修**（[#164](https://github.com/Xingkai98/pitchcraft/issues/164)，PR #178 给 `curl` 补了 `await`）：
+25.7MB 骨架实测可下载解包。**20 场实体（1.8GB）未做完整验证**——只确认脚本会正常进入该阶段。
 C1–C4 的验收**不依赖**它（结构锚用的是入库的 `viewer/data/benchmark-baseline.json`）。
 
 ---
@@ -116,6 +117,8 @@ node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs >>
 - **纵深 / 紧凑度 = q10–q90 跨度**，**剔门将**（id `0` / `21`）
 - **两个口径都报**：`primary` 跳过外推点（`is_detected=false`），`allPoints` 采信外推点。
   同一个靶子两个数（例：主队纵深 18.31 vs 25.82）——**引用任何数字必须标口径**
+- **真实运动锚用 2 场 Metrica**（`real-game-1.json` + `real-game-2.json`）：`disp` **13.46**、`lat` **0.43**、
+  距离 **0.542**。只生成 1 场时 `disp` 是 13.33——**数字会变，别混用**
 - P38 判据是**报告期**：红了不会让 CI 红
 - `lat` 只打印 2 位小数（`0.37`），判不了「不低于 0.370」这种阈值；要么改工具位数，要么阈值写 2 位
 
@@ -137,8 +140,14 @@ node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs >>
    这条必须显式改成取自 spec 的常量，或同步改 spec。
 
 3. **`*_TICKS` 常量按 tick 计**：`TRANSITION_TICKS`、`SHOT_COOLDOWN_TICKS`、`MAX_ACTION_DEADLINE_TICKS`、
-   `HOLD_MIN/MAX_TICKS`、`LOOSE_MAX_TICKS`、`LIVENESS_*_TICKS` 等（共 16 个）——tick 变 0.1 s 后
-   **它们的真实秒数全部变 1/10**。改 tick 必须交一份「换算表 + 是否重标定」的说明。
+   `HOLD_MIN/MAX_TICKS`、`LOOSE_MAX_TICKS`、`LIVENESS_*_TICKS` 等——**实测共 19 个**
+   （`grep -cE '^\s*(pub )?const [A-Z0-9_]+_TICKS\b' engine/src/lib.rs`）：
+   `TACKLE_COOLDOWN` / `CONTACT_PAIR_COOLDOWN` / `PRESSURE_STATE_HOLD` / `LOOSE_MAX` /
+   `HOLD_MIN` / `HOLD_MAX` / `SHOT_DRIVE_MAX` / `SHOT_WINDOW` / `SHOT_COOLDOWN` / `CORNER_SETUP_MIN` /
+   `TRANSITION` / `LIVENESS_STAGE_1/2/3` / `BASE_ACTION_DEADLINE` / `MIN_ACTION_DEADLINE` /
+   `MAX_ACTION_DEADLINE` / `GK_DEADLINE_BONUS` / `FOUL_MIN_GAP`。
+   **若按 #170 的已定口径 2「决策仍 1 Hz」，它们按「决策拍」计，数值不用改**；
+   只有把决策也提到 10 Hz 时才需要换算表——那是一条不同的路线。
 
 4. **golden 会变红**：`MODEL_VERSION`（`engine/src/lib.rs:243`，当前 `9`）bump 后要新建
    `engine/tests/golden-v10/`，并用 `ACCEPT_GOLDEN=1` 重基线。
