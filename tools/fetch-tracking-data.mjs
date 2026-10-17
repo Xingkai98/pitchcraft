@@ -141,7 +141,9 @@ export async function fetchSkillcorner(ds, { ids = null } = {}) {
   if (!existsSync(join(srcDir, 'data', 'matches.json'))) {
     console.log(`⬇ ${ds.key} 骨架（codeload tar.gz，~25.7MB）`);
     try {
-      curl(SKILLCORNER_TARBALL, tarPath);
+      // `curl` 返回 Promise：漏掉 await 会让下面的同步 `tar` 去读一个还没写完的文件，
+      // 干净机器上骨架步骤 100% 失败（GH #164）。第 2 步的实体下载一直有 await，只这一步坏。
+      await curl(SKILLCORNER_TARBALL, tarPath);
       console.log('  解包中…');
       sh('tar', ['xzf', tarPath, '-C', ds.dir]);
       rmSync(tarPath, { force: true });
