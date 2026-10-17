@@ -105,6 +105,14 @@
 
 ## 关联
 
+- ⚠️ **归档本 change 时须同步修订其 `## Unchanged` 节**（2026-10-17 M5 落地时登记）：
+  `specs/match-engine/spec.md` 的 `## Unchanged（明确不动的门）` 把
+  `l3_shot_ratios` 的 `inside [0.72,0.92]` 与 `l1_shot_result_distributions` 的九条桶带列为「不动」，
+  而 **M5（`openspec/changes/m5-inside-shot-ratio-caliber/`）已把这两条全部重标**——
+  `inside` → `[0.80,0.91]` 且改按罚球区矩形判定；禁区弧 `7/22/71 → 3/22/75`、远射 `4/11/85 → 2/11/87`。
+  ✅ 已核：该 `## Unchanged` 节是**非标准节**，且本 delta 的 `MODIFIED Requirements` 里**没有**
+  `l3_shot_ratios` / `l1_shot_result_distributions` ⇒ **归档本 change 不会回退规格**，
+  风险是**那段散文变假**。**先归档 M5，再归档本 change，并同步改写该节。**
 - 跟踪 issue #104
 - 上游依据：`openspec/changes/p38-formation-realism/notes/`（`conversion-adaptive.md` §6、
   `volume-compensation.md` §2.4、`criteria/README.md`）
