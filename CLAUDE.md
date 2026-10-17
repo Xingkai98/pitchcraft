@@ -94,9 +94,10 @@ H=$(git rev-parse HEAD)          # 必须是**已提交**的树，理由见下
    cargo test --release --no-fail-fast -- --ignored)
 ```
 
-- ⚠️ **工作树必须干净**：这几条产物门带「脏树拒绝落盘」守卫，任何未提交改动都会让它们 panic
-  （**包括 `npm ci` 造成的 `D node_modules`** —— 本仓 `node_modules` 是入库的自指 symlink）。
+- ⚠️ **工作树必须干净**：这几条产物门带「脏树拒绝落盘」守卫，任何未提交改动都会让它们 panic。
   跑前 `git status --porcelain` 须为空。
+  （历史提示：本仓曾把 `node_modules` 作为一个自指 symlink 提交进库，`npm ci` 会让它变成 `D node_modules`
+  从而弄脏工作树；该 symlink 已于 PR #177 移除，`node_modules` 现在是普通忽略项。）
 - ⚠️ 产物落在 gitignored 的 `engine/target/p*-*/`。**跑完 `--ignored` 后再跑默认套件前先删掉这些目录**
   （`rm -rf engine/target/p124-intent engine/target/p15-calibration engine/target/p16-baseline
   engine/target/p17b-diagnosis engine/target/p17a-baseline engine/target/p18-gates`），
