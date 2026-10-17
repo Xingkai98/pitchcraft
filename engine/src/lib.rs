@@ -252,6 +252,7 @@ pub const MODEL_VERSION: u32 = 9;
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
 pub mod formation;
 pub mod marking;
+pub mod space;
 pub mod motion;
 
 #[derive(Debug, Clone, Copy)]
@@ -3765,6 +3766,58 @@ fn attacking_forward(st: &MatchState, attacking: u32) -> (f64, f64) {
 ///
 /// 只有**非持球方**的外场球员参与；门将、罚下、已被特殊分支指派的人不参与
 /// （特殊分支的 action 不是 `run`，直接跳过——避免和 close_down/chase/角球抢点打架）。
+/// C4：用控制场选一个压迫点，由离球最近的自由防守者去；其余防守者按「弱侧向球收」微调。
+///
+/// 只在**非持球方**、球在本方半场（沿用 `OPEN_PRESS_GATE` 的门控语义）时生效。
+fn apply_pressure(st: &mut MatchState, targets: &mut [Option<(f64, f64)>], actions: &mut [String]) {
+    let def_home = st.possession == 1;
+    let own_goal_x = if def_home { 0.0 } else { 1.0 };
+    // 门控：球在防守方本方半场
+    let ball_in_own_half = if def_home { st.ball_pos.0 < 0.5 } else { st.ball_pos.0 > 0.5 };
+    if !ball_in_own_half {
+        return;
+    }
+    let is_def = |id: i32| (id <= 10) == def_home && id != 0 && id != 21 && !st.sent_off[id as usize];
+    let ours: Vec<(f64, f64)> = (0..22i32).filter(|&id| is_def(id)).map(|id| st.pos[id as usize]).collect();
+    let theirs: Vec<(f64, f64)> = (0..22i32)
+        .filter(|&id| {
+            let home = id <= 10;
+            home != def_home && id != 0 && id != 21 && !st.sent_off[id as usize]
+        })
+        .map(|id| st.pos[id as usize])
+        .collect();
+    if ours.is_empty() || theirs.is_empty() {
+        return;
+    }
+    let pp = space::press_point(st.ball_pos, &ours, &theirs);
+    // 选一个离球最近、且没被盯人占用的防守者（`mark` 的人不动，避免拆掉盯人）
+    let mut best: Option<(f64, i32)> = None;
+    for id in 0..22i32 {
+        if !is_def(id) || actions[id as usize] != "run" {
+            continue;
+        }
+        let d = dist_norm(st.pos[id as usize], st.ball_pos);
+        if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+            best = Some((d, id));
+        }
+    }
+    if let Some((_, id)) = best {
+        targets[id as usize] = Some(pp);
+        actions[id as usize] = "close_down".to_string();
+    }
+    // 其余防守者：弱侧向球收（制造横向移动，而不是全队平移）
+    for id in 0..22i32 {
+        if !is_def(id) || actions[id as usize] == "close_down" {
+            continue;
+        }
+        if let Some(t) = targets[id as usize] {
+            let c = space::control_at(t, &ours, &theirs).clamp(-1.0, 1.0);
+            targets[id as usize] = Some((t.0, (t.1 + space::compress_dy(t.1, st.ball_pos.1, c)).clamp(0.06, 0.94)));
+        }
+    }
+    let _ = own_goal_x;
+}
+
 fn apply_marking(
     st: &mut MatchState,
     targets: &mut [Option<(f64, f64)>],
@@ -3902,6 +3955,10 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
     // repulsion 仍然生效（spec 要求所有 mover 目标先过同队分离），但停距量到分离后的点。
     if st.realism.marking {
         apply_marking(st, &mut targets, &mut actions);
+    }
+    // C4（`realism.press`）：压迫场。在盯人之后——一个人去压迫点，其余人保住盯人。
+    if st.realism.press {
+        apply_pressure(st, &mut targets, &mut actions);
     }
     // 第二遍：repulsion（同队目标间距修正，迭代 ≤3；carrier 不参与）。
     // P34（#53）起判定与推开都走**米制**（`same_team_dist_m` + `separate_pair_m`），

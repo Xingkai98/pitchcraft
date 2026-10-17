@@ -131,7 +131,7 @@ pub fn target(id: i32, ball: (f64, f64), is_home: bool, my_attack: bool, phase_s
     let phase_w = if my_attack { 1.15 } else { 0.82 };
     // 个体横向微调：球员在块内持续调整站位（盯人/补位/接应），不是站死。
     // 周期 ~120s、幅度 ±6.3m，确定性（相位由 id 决定），零 RNG。
-    let wiggle = 0.11 * (6.28318 * phase_s / 120.0 + id as f64 * 1.7).sin();
+    let wiggle = 0.11 * (6.28318 * phase_s / 18.0 + id as f64 * 1.7).sin();
     let y = (0.5 + lateral * kf.half_w * width_scale * phase_w
         + (by - 0.5) * kf.shift_k
         + wiggle)
