@@ -1,22 +1,28 @@
 ---
 title: C1–C5 已知问题清单（两轮盲审汇总，冻结存档）
 date: 2026-10-17
-status: frozen
+status: closed
 ---
 
-# C1–C5 已知问题清单
+# C1–C5 已知问题清单（证据索引）
 
-> **状态：冻结。** 五张票据（#170–#174）与地图（#175）停在「design brief」粒度：
-> 硬约束、前置、已知坑齐了；**剩下的都是 design 阶段该决定的**。
-> 下次开工时：先读 `START-HERE.md`，再读这张清单，然后写 design。
+> **状态：已闭环。** 两轮盲审（6 个零上下文审查员）的每一条发现，都已在对应票据的
+> **「审查闭环」**段里给出处置（已修 / 已裁决 / 实现时执行）：
+> [#170](https://github.com/Xingkai98/pitchcraft/issues/170) ·
+> [#171](https://github.com/Xingkai98/pitchcraft/issues/171) ·
+> [#172](https://github.com/Xingkai98/pitchcraft/issues/172) ·
+> [#173](https://github.com/Xingkai98/pitchcraft/issues/173) ·
+> [#174](https://github.com/Xingkai98/pitchcraft/issues/174) ·
+> [#175](https://github.com/Xingkai98/pitchcraft/issues/175)
 >
-> 本清单只记**尚未修**的问题。已修的在 PR #178–#183 与票据正文里。
+> 本文件保留为**证据索引**：每条发现对应的 `文件:行号` 与实测值在这里，
+> 处置结论在票据里（一事实一出处，避免两处维护）。
 
 ## 怎么用
 
-- 每条都带证据（`文件:行号` / 实测值）。**别信转述，去核。**
+- 写 design 时，先看票据的「审查闭环」段（结论），需要核证据时回这里查 `文件:行号`。
 - `[票]` = 票据/文档已有的约束；`[坑]` = 会在实现时反噬的具体位置。
-- 写 design 时逐条回答；答不了的标 `TBD` 并说缺什么。
+- 下面各条**都已处置**，不是待办。
 
 ---
 
