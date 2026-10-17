@@ -251,6 +251,7 @@ pub const MODEL_VERSION: u32 = 9;
 /// v6 `tests/golden-v6/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
 pub mod formation;
+pub mod marking;
 pub mod motion;
 
 #[derive(Debug, Clone, Copy)]
@@ -2556,6 +2557,8 @@ struct MatchState {
     vel: [(f64, f64); 22],
     /// C1–C5 开关（从 `MatchConfig` 拷入，`MatchState::new` 后由 `match_events` 设置）。
     realism: RealismFlags,
+    /// C3：上一拍的盯人分配（防守者下标 → 进攻者下标），用于换人惩罚。
+    mark_prev: Vec<Option<usize>>,
     ball_pos: (f64, f64), // 当前球位置（每 tick 按状态维护，供队形目标）
     possession: u32, // 0=home, 1=away
     carrier: i32,
@@ -2730,6 +2733,7 @@ impl MatchState {
             pos,
             vel: [(0.0, 0.0); 22],
             realism: RealismFlags::default(),
+            mark_prev: Vec::new(),
             ball_pos: (0.55, 0.5),
             possession: 0,
             carrier: 10,
@@ -3757,6 +3761,54 @@ fn attacking_forward(st: &MatchState, attacking: u32) -> (f64, f64) {
 ///
 /// P34（#53 D2）：本函数**只产候选、不写 `st.pos`**——最终位置分离与写回由 `commit_beat_positions`
 /// 统一负责（「候选计算之后、写入 st.pos / 构造 mover 事件之前」这一顺序是 codex 的硬约束）。
+/// C3：给防守方分配盯人对象并覆盖其目标。
+///
+/// 只有**非持球方**的外场球员参与；门将、罚下、已被特殊分支指派的人不参与
+/// （特殊分支的 action 不是 `run`，直接跳过——避免和 close_down/chase/角球抢点打架）。
+fn apply_marking(
+    st: &mut MatchState,
+    targets: &mut [Option<(f64, f64)>],
+    actions: &mut [String],
+) {
+    let def_team_home = st.possession == 1;
+    let def_ids: Vec<i32> = (0..22i32)
+        .filter(|&id| {
+            let home = id <= 10;
+            home == def_team_home
+                && id != 0 && id != 21
+                && !st.sent_off[id as usize]
+                && actions[id as usize] == "run"
+        })
+        .collect();
+    let att_ids: Vec<i32> = (0..22i32)
+        .filter(|&id| {
+            let home = id <= 10;
+            home != def_team_home
+                && id != 0 && id != 21
+                && !st.sent_off[id as usize]
+                && Some(id) != if st.carrier >= 0 { Some(st.carrier) } else { None }
+        })
+        .collect();
+    if def_ids.is_empty() || att_ids.is_empty() {
+        st.mark_prev.clear();
+        return;
+    }
+    let def_pos: Vec<(f64, f64)> = def_ids.iter().map(|&id| st.pos[id as usize]).collect();
+    let att_pos: Vec<(f64, f64)> = att_ids.iter().map(|&id| st.pos[id as usize]).collect();
+    let prev = if st.mark_prev.len() == def_ids.len() { st.mark_prev.clone() } else { vec![None; def_ids.len()] };
+    let out = marking::assign(&def_pos, &att_pos, &prev);
+    let own_goal_x = if def_team_home { 0.0 } else { 1.0 };
+    for (k, &id) in def_ids.iter().enumerate() {
+        if let Some(j) = out[k] {
+            let aim = att_pos[j];
+            targets[id as usize] = Some(marking::mark_point(aim, own_goal_x));
+            actions[id as usize] = "mark".to_string();
+        }
+        // 未匹配者保留队形目标（`run`）
+    }
+    st.mark_prev = out;
+}
+
 fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[i32]) -> Vec<Mover> {
     let _ = rng;
     let _ = t;
@@ -3845,6 +3897,11 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
         } else {
             targets[id as usize] = Some(formation_target(st, id));
         }
+    }
+    // C3（`realism.marking`）：防守方盯人覆盖。在队形目标之后、repulsion 之前——
+    // repulsion 仍然生效（spec 要求所有 mover 目标先过同队分离），但停距量到分离后的点。
+    if st.realism.marking {
+        apply_marking(st, &mut targets, &mut actions);
     }
     // 第二遍：repulsion（同队目标间距修正，迭代 ≤3；carrier 不参与）。
     // P34（#53）起判定与推开都走**米制**（`same_team_dist_m` + `separate_pair_m`），
