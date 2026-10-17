@@ -69,6 +69,38 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 
 审阅不通过 = 开发未完成。
 
+**跑「全量 `--ignored`」的两条硬前提**（2026-10-17 实测，PR #169 审阅修复）：
+
+`p124_canary` / `p16_canary` / `p17b_canary` / `p17b_baseline` 这类**产物门**要求调用方
+**显式声明产物出自哪个 commit**，否则 `assert_ne!(source_commit, "unknown")` 必红；
+它们**不在 `verify.sh` 的任何一步里**（第 7/9 步只跑 `--test realism -- --ignored`）
+⇒ **CI 绿 ≠ 全量 `--ignored` 绿**。
+
+```bash
+export PATH="$HOME/.cargo/bin:$PATH"
+H=$(git rev-parse HEAD)          # 必须是**已提交**的树，理由见下
+(cd engine && P124_SOURCE_COMMIT=$H P16_SOURCE_COMMIT=$H P17B_SOURCE_COMMIT=$H \
+   cargo test --release --no-fail-fast -- --ignored)
+```
+
+- ⚠️ **工作树必须干净**：这几条产物门带「脏树拒绝落盘」守卫，任何未提交改动都会让它们 panic
+  （**包括 `npm ci` 造成的 `D node_modules`** —— 本仓 `node_modules` 是入库的自指 symlink）。
+  跑前 `git status --porcelain` 须为空。
+- ⚠️ 产物落在 gitignored 的 `engine/target/p*-*/`。**跑完 `--ignored` 后再跑默认套件前先删掉这些目录**
+  （`rm -rf engine/target/p124-intent engine/target/p15-calibration engine/target/p16-baseline
+  engine/target/p17b-diagnosis engine/target/p17a-baseline engine/target/p18-gates`），
+  否则 `on_disk_artifacts_*` 会因产物记录的脏状态 / `source_commit` 与当前不符而红。
+
+**改了 `engine/src/lib.rs`（哪怕只改注释）之后**：基线指纹哨兵（`tools/benchmark-baseline.test.mjs`）
+会走「源码变了 → 用 wasm 重算指标」的慢路径，**必须有 `viewer/engine.wasm`**（gitignored）；
+缺它时裸跑 `node --test tools/benchmark-baseline.test.mjs` **会红**（CI 不受影响——它在跑
+`verify.sh` 前先构建 wasm）。⇒ 裸跑 tools 单测前先构建：
+
+```bash
+(cd engine && cargo build --target wasm32-unknown-unknown --release \
+  && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm)
+```
+
 ### 4. 浏览器缓存强制刷新（JS 修改后必须更新版本号）
 
 **每次修改 `viewer/` 下的 JS 代码（app.js / interpretation.js / renderer.js 等）或 HTML 后，必须更新相关的 `?v=` 版本号**（`index.html` 的 `<script>` 标签 **以及** 模块间 import 串，见下），否则浏览器会缓存旧 JS，用户看不到改动。

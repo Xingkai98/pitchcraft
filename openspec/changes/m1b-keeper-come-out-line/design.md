@@ -67,6 +67,7 @@
 | 7 | `p16::goal_kick_amplifier_matches_the_pinned_share` | 更新 `GOAL_KICK_RESTART_SHARE` + 守护口径 10 → ≥100 seed + 重写「它想抓什么」 | 现口径下**未改的基线**就有 4/10 个 10-seed 块会红 ⇒ 判别力本就不成立 |
 | 11 | 流程 | 全量红必须 `--no-fail-fast` | M1 那轮被 fail-fast 少报一半 |
 | **补** | `p15::contest_reasons_...` 的 `CONTEST_SEEDS`、`p17b::restart_window_falls_back_...` 的 `FALLBACK_WINDOW_SEEDS` | **补 seed 集**（**本 commit 实测新暴露**的两条同族空转） | 判据镜给的 8 条里没有它们——那是在 **M1b-only** 树上取的；**M5 叠上来**后这两条的覆盖种子同样失效。⇒ 说明「全量红的名单**依赖树**」，不能跨树搬运 |
+| **补（2026-10-17 审阅修复轮）** | 主 spec `#### Scenario: 门将贴门线`（L2）的**理由子句** | 订正括号理由（**判据本体未动**） | 原括号写「门将不离开门线区域」——那是 M1b **之前**的实情，改后是假话（门将整场可达距门线约 25 m）。该 Scenario 的 WHEN 限定在 shot 事件 ⇒ **SHALL 本身仍成立**（实测射门瞬间 max 9.55 m < 15.75 m）。⚠️ 这条 requirement **不在本 delta 的 MODIFIED 覆盖内**（本 change 只 MODIFY `球相关队形目标`）⇒ 属「主 spec 的陈旧理由子句」订正，**不改任何判据** |
 
 **golden 版本**：按仓惯例（P29→3 / P30→4 / P31→5 / #104→7 / p143r-v4→8），行为改动 **bump `MODEL_VERSION`**
 并新建 `tests/golden-v{新}/`，旧目录**保留不覆盖**作历史对照。M5 与 M1b 同属一次落地 ⇒
