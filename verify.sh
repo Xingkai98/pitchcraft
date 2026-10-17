@@ -21,7 +21,7 @@ if [ ! -d node_modules/jsdom ]; then
   echo "缺少 node_modules/jsdom —— 先在仓库根运行: npm install"
   exit 1
 fi
-(cd viewer && node --test *.test.js 2>&1 | grep -E "^(# (tests|pass|fail))")
+(cd viewer && node --test *.test.js 2>&1 | grep -E "^((#|ℹ) (tests|pass|fail))")
 
 echo ""
 echo "=== 3/9 Tools 单测（node --test tools/*.test.mjs：runner/service/queue-cli/detectors 等）==="
@@ -33,18 +33,18 @@ echo "=== 3/9 Tools 单测（node --test tools/*.test.mjs：runner/service/queue
 TOOLS_LOG=$(mktemp)
 (cd tools && node --test *.test.mjs) > "$TOOLS_LOG" 2>&1 || {
   echo "── tools 测试失败详情 ──"
-  grep -A12 "^not ok" "$TOOLS_LOG" | head -60
+  grep -A12 -E "^(not ok|✖)" "$TOOLS_LOG" | head -60
   rm -f "$TOOLS_LOG"
   exit 1
 }
-grep -E "^(# (tests|pass|fail))" "$TOOLS_LOG"
+grep -E "^((#|ℹ) (tests|pass|fail))" "$TOOLS_LOG"
 rm -f "$TOOLS_LOG"
 
 # visual-review 工具的守护测试（球必须画出来 + 跨全窗运动指标）。glob `tools/*.test.mjs`
 # 只扫顶层，子目录要显式跑——否则这套测试永远不执行（同 P20 的教训）。
 if [ -d tools/visual-review ]; then
   echo "--- tools/visual-review 单测 ---"
-  (cd tools/visual-review && node --test *.test.mjs 2>&1 | grep -E "^(# (tests|pass|fail|skipped))")
+  (cd tools/visual-review && node --test *.test.mjs 2>&1 | grep -E "^((#|ℹ) (tests|pass|fail|skipped))")
 fi
 
 echo ""
