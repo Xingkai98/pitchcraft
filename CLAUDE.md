@@ -20,8 +20,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working in this
 ### 1. OpenSpec 流程
 
 - 所有开发按 OpenSpec 流程：先建 change（proposal + design + specs + tasks），validate 通过后 `/opsx:apply` 实施。
+- **CLI 怎么调**：`npx openspec` **不可用**（npm 上的 `openspec` 是 0.0.0 空包，报
+  "could not determine executable"）。用 `npx --yes @fission-ai/openspec@1.14.3 <cmd>`。
+- ⚠️ **`validate --all --strict` 在 main 上本来就是 10 passed / 15 failed**（25 项，含
+  `p38-formation-realism` 的 "Change must have at least one delta" ERROR 与多条 Purpose 占位
+  WARNING）。**别把既有红当成自己弄坏的**；只看你新增 change 的那一项。
 - 用 wayfinder 决策地图（`.scratch/map.md` + `.scratch/issues/`）记录重大决策。
+  新的决策票据在 GitHub issues（`wayfinder:task` / `wayfinder:map` 等标签）。
 - 设计细节先用 batch-grill-me 敲定（reviews/grill-design.md），用户确认前不写实现代码。
+  ⚠️ `batch-grill-me` **skill 文件已不在 `.claude/skills/`**（只剩历史产物 `reviews/grill-design.md`）；
+  可参照 `adversarial-explore` 的做法，或直接在 change 的 `reviews/` 下留 grilled 记录。
 
 ### 2. 分层验证（自动化断言 + 视觉验证）
 
