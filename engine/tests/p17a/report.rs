@@ -37,6 +37,11 @@ pub const SCHEMA_TAG: &str = "p17a-behavior-chain-baseline/1";
 /// 守卫 `engine_source_fingerprint_covers_all_simulation_sources` 会核对本清单与源码一一对应。
 pub const ENGINE_SOURCES: &[(&str, &str)] = &[
     ("lib.rs", include_str!("../../src/lib.rs")),
+    ("motion.rs", include_str!("../../src/motion.rs")),
+    ("formation.rs", include_str!("../../src/formation.rs")),
+    ("marking.rs", include_str!("../../src/marking.rs")),
+    ("space.rs", include_str!("../../src/space.rs")),
+    ("carrier.rs", include_str!("../../src/carrier.rs")),
     ("observation.rs", include_str!("../../src/observation.rs")),
     ("rng.rs", include_str!("../../src/rng.rs")),
 ];

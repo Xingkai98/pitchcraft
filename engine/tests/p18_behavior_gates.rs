@@ -49,6 +49,11 @@ pub const CALIBER_VERSION: &str = "p18-engine-v1";
 /// 判据：**凡是能改变 `simulate_with_behavior_observations` 输出的 `engine/src/` 源码**。
 pub const ENGINE_SOURCES: &[(&str, &str)] = &[
     ("lib.rs", include_str!("../src/lib.rs")),
+    ("motion.rs", include_str!("../src/motion.rs")),
+    ("formation.rs", include_str!("../src/formation.rs")),
+    ("marking.rs", include_str!("../src/marking.rs")),
+    ("space.rs", include_str!("../src/space.rs")),
+    ("carrier.rs", include_str!("../src/carrier.rs")),
     ("observation.rs", include_str!("../src/observation.rs")),
     ("rng.rs", include_str!("../src/rng.rs")),
 ];
