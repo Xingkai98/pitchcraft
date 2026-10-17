@@ -14,7 +14,8 @@ viewer/engine-*.wasm
 .scratch/tasks/
 
 # Node 依赖（仅测试用 devDependency，如 jsdom；不进运行时/WASM/浏览器 bundle）
-node_modules/
+# 不带尾斜杠：带斜杠只匹配目录，而本仓曾被提交过一个 node_modules **软链接**（现已移除）
+node_modules
 
 # 真实比赛对照数据（由 tools/convert-tracking-to-frames.mjs 从公开数据集生成；
 # 源数据 60MB+/场、转换产物 18MB/场，不入库。生成方式见 .scratch/notes/real-match-reference.md）
