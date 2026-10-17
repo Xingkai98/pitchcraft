@@ -96,19 +96,22 @@ C1–C4 的验收**不依赖**它（结构锚用的是入库的 `viewer/data/ben
 | 轨迹图 | `node openspec/changes/p38-formation-realism/notes/probes-main/render-trajectories.mjs engine /tmp/t.png x 120` | 锯齿 vs 弧线 |
 | 单帧对比 | `node tools/visual-review/render.mjs viewer/engine.wasm /tmp/c.png 42 600 12 6` | 上引擎下真实 |
 
-### ratchet 约定（**必须自己做，没有工具兜底**）
-
-「现状 × factor」的门目前**没有工具实现**——`check-criteria.mjs` 只按绝对带打印、且恒 `exit 0`。
-所以每个 change 开工前：
+### ratchet 约定（**工具已存在**：`tools/ratchet.mjs`，PR #180）
 
 ```sh
-# 改之前，把现状落盘
-mkdir -p openspec/changes/<name>/notes
-node tools/visual-review/like-football.mjs viewer/engine.wasm 5 12 > openspec/changes/<name>/notes/ratchet-before.txt
-node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs >> openspec/changes/<name>/notes/ratchet-before.txt
+# 改动前（先构建 wasm、备好 real-game-1/2.json、生成 P18 canary）
+node tools/ratchet.mjs save openspec/changes/<name>/notes/ratchet-before.json
+# 改动后
+node tools/ratchet.mjs diff openspec/changes/<name>/notes/ratchet-before.json
 ```
 
-改完再跑一遍逐行对照，把对照表写进 PR。
+- **`diff` 只判「不比基线差」**（22 项，方向感知；有退化 `exit 1`，缺数据 `exit 2`）。
+  它**没有** `现状 × factor` 参数——「×0.8」是口头下限，机器用的是更严的「不许降」。
+- **专项目标（如 `disp ≥ 10.77`）不在 ratchet 里**，要单独看数并按票据写进 PR。
+- 防假绿：`diff` 会对比 `engine/src/lib.rs` 与 `viewer/engine.wasm` 的指纹，
+  **源码变了但 wasm 没重建**时直接 `exit 2`。
+- P18 的 canary 由 `verify.sh` 第 105-114 步生成；`P18_SOURCE_COMMIT=$(git rev-parse HEAD)`，
+  且生成时工作树要干净——**「改后」那次必须在 commit 之后再生成**。
 
 ---
 
@@ -150,7 +153,10 @@ node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs >>
    只有把决策也提到 10 Hz 时才需要换算表——那是一条不同的路线。
 
 4. **golden 会变红**：`MODEL_VERSION`（`engine/src/lib.rs:243`，当前 `9`）bump 后要新建
-   `engine/tests/golden-v10/`，并用 `ACCEPT_GOLDEN=1` 重基线。
+   `engine/tests/golden-vN/`，**补 `realism.rs:1355` 的版本分派分支**（`:1367` 是 `other => panic!`，
+   不加就连 `ACCEPT_GOLDEN=1` 自己都 panic），再用 `ACCEPT_GOLDEN=1` 重基线。
+   **版本号按落地顺序预约**：C1=10、C2=11、C3=12、C4=13、C5=14（各票已写死，别撞车）。
+   旧基线目录**保留不覆盖**。
 
 5. **`openspec` CLI**：`npx openspec` 不可用（包无 bin）。用
    `npx --yes @fission-ai/openspec@<version> ...`。注意 main 上 `validate --all` **本来就有一批失败**

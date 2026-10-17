@@ -79,8 +79,11 @@ function provenance() {
   let wasmSha = null;
   const wasm = join(ROOT, 'viewer/engine.wasm');
   if (existsSync(wasm)) wasmSha = createHash('sha256').update(readFileSync(wasm)).digest('hex').slice(0, 16);
+  // 引擎源码指纹：只看 lib.rs（引擎的全部生产逻辑都在里面；observation.rs 不产事件流位置）
+  const lib = join(ROOT, 'engine/src/lib.rs');
+  const libSha = existsSync(lib) ? createHash('sha256').update(readFileSync(lib)).digest('hex').slice(0, 16) : null;
   const games = ['real-game-1.json', 'real-game-2.json'].filter((f) => existsSync(join(ROOT, 'viewer/data', f))).length;
-  return { commit, wasmSha, node: process.version, realGames: games, at: new Date().toISOString() };
+  return { commit, wasmSha, libSha, node: process.version, realGames: games, at: new Date().toISOString() };
 }
 
 /** 采集所有指标。任一 source 失败或缺数据 → 抛错（调用方转 exit 2）。 */
@@ -147,8 +150,12 @@ function main() {
     writeFileSync(path, JSON.stringify({ version: 1, metrics: METRICS.map((m) => ({ id: m.id, label: m.label, dir: m.dir, band: m.band ?? null, caliber: m.caliber })), ...snap }, null, 2));
     console.log(`✓ 已落盘 ${path}`);
     const p = snap.provenance;
-    console.log(`  commit=${p.commit} wasm=${p.wasmSha ? p.wasmSha.slice(0, 8) : 'n/a'} realGames=${p.realGames} node=${p.node}`);
-    if (p.realGames < 2) console.log('  ⚠ 真实帧只有 1 场：like-football 的运动行会与「2 场口径」不可比（见 START-HERE §5）');
+    console.log(`  commit=${p.commit} wasm=${p.wasmSha ? p.wasmSha.slice(0, 8) : 'n/a'} lib=${p.libSha ? p.libSha.slice(0, 8) : 'n/a'} realGames=${p.realGames} node=${p.node}`);
+    if (p.realGames < 2) {
+      console.error(`✗ 真实帧只有 ${p.realGames} 场（需要 real-game-1/2.json 两场）。`);
+      console.error('  单场时 like-football 的运动行会静默变成 13.33/0.42 口径，与票据的 13.46/0.43 不可比——拒绝落盘。');
+      return 2;
+    }
     for (const m of METRICS) console.log(`  ${m.id.padEnd(14)} ${fmt(snap.metrics[m.id]?.value).padStart(10)}`);
     return 0;
   }
@@ -169,10 +176,18 @@ function main() {
     }
     const tag = { regress: '✗ 变差', improve: '✓ 改善', same: '· 持平', report: '· 对照' };
     console.log(`ratchet：${path}`);
-    console.log(`  before commit=${before.provenance.commit} wasm=${(before.provenance.wasmSha || 'n/a').slice(0, 8)} realGames=${before.provenance.realGames}`);
-    console.log(`  after  commit=${after.provenance.commit} wasm=${(after.provenance.wasmSha || 'n/a').slice(0, 8)} realGames=${after.provenance.realGames}`);
+    console.log(`  before commit=${before.provenance.commit} wasm=${(before.provenance.wasmSha || 'n/a').slice(0, 8)} lib=${(before.provenance.libSha || 'n/a').slice(0, 8)} realGames=${before.provenance.realGames}`);
+    console.log(`  after  commit=${after.provenance.commit} wasm=${(after.provenance.wasmSha || 'n/a').slice(0, 8)} lib=${(after.provenance.libSha || 'n/a').slice(0, 8)} realGames=${after.provenance.realGames}`);
     if (before.provenance.realGames !== after.provenance.realGames) {
       console.error('✗ 两次采集的真实数据场数不同，不可比（先补齐 viewer/data/real-game-2.json）');
+      return 2;
+    }
+    // 防假绿：引擎源码变了、但 wasm 没重建 ⇒ 两次量的是同一份旧产物，必然「全持平」
+    if (before.provenance.libSha && after.provenance.libSha
+        && before.provenance.libSha !== after.provenance.libSha
+        && before.provenance.wasmSha === after.provenance.wasmSha) {
+      console.error('✗ engine/src/lib.rs 已变化，但 viewer/engine.wasm 未重建（sha 相同）——两份快照量的是同一份旧产物。');
+      console.error('  先跑：cd engine && cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm');
       return 2;
     }
     console.log('');
