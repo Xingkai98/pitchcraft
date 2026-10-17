@@ -250,16 +250,58 @@ pub const MODEL_VERSION: u32 = 9;
 /// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v5 `tests/golden-v5/`、
 /// v6 `tests/golden-v6/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
+pub mod motion;
+
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
     pub match_duration_seconds: f64,
     pub demo_mode: bool,
     pub model_version: u32,
+    /// C1–C4 的真实度改造开关。**默认全关**——旧路径与既有 golden/直播测试保持原样。
+    /// 由 wasm config JSON 的 `"realism":"motion+formation+marking+press"` 打开。
+    pub realism: RealismFlags,
+}
+
+/// 真实度改造的逐项开关（C1–C5 各一）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct RealismFlags {
+    /// C1：速度/加速度/转弯半径积分（`motion` 模块）。关闭时走旧 `move_toward`。
+    pub motion: bool,
+    /// C2：队形目标改为站位表 + 插值（`formation` 模块）。
+    pub formation: bool,
+    /// C3：防守方盯人分配（`marking` 模块）。
+    pub marking: bool,
+    /// C4：pitch control 压迫场（`space` 模块）。
+    pub press: bool,
+    /// C5：持球者链搜索（`carrier` 模块）。
+    pub carrier: bool,
+}
+
+impl RealismFlags {
+    /// 解析 `"motion+formation"` 形式；未知项忽略（配置错误由调用方在启动时报告）。
+    pub fn parse(spec: &str) -> Self {
+        let mut f = RealismFlags::default();
+        for part in spec.split('+') {
+            match part.trim() {
+                "motion" => f.motion = true,
+                "formation" => f.formation = true,
+                "marking" => f.marking = true,
+                "press" => f.press = true,
+                "carrier" => f.carrier = true,
+                _ => {}
+            }
+        }
+        f
+    }
+    /// 是否全关（默认路径）。
+    pub fn is_off(&self) -> bool {
+        *self == RealismFlags::default()
+    }
 }
 
 impl MatchConfig {
     pub fn default_() -> Self {
-        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION }
+        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() }
     }
 }
 
@@ -614,6 +656,11 @@ pub const LOOSE_MAX_TICKS: u32 = 2;
 pub const CARRIER_SPEED_MS: f64 = 5.0;
 /// 无球跑位速度（m/s）
 pub const RUN_SPEED_MS: f64 = 4.0;
+/// C1（`realism.motion`）下的巡航速度上限（m/s）。旧 `RUN_SPEED_MS=4.0` 是恒速模型的产物，
+/// 相当于慢跑；真实比赛里无球跑动常在 6–7 m/s。仅在新路径使用，旧路径不变。
+pub const RUN_SPEED_MS_MOTION: f64 = 6.5;
+/// C1：每个决策拍内的积分子步数（10 × 0.1 s）。决策仍是 1 Hz，只有运动积分变细。
+pub const SIM_SUBSTEPS: u32 = 10;
 /// 门将回位速度（m/s）
 pub const GK_SPEED_MS: f64 = 3.0;
 
@@ -2504,6 +2551,10 @@ fn execute_action_resolution(
 struct MatchState {
     lineup: [(f64, f64); 22],
     pos: [(f64, f64); 22],
+    /// C1：米制速度（m/s）。仅 `realism.motion` 开启时被读写；关闭时恒为 0、不影响旧路径。
+    vel: [(f64, f64); 22],
+    /// C1–C5 开关（从 `MatchConfig` 拷入，`MatchState::new` 后由 `match_events` 设置）。
+    realism: RealismFlags,
     ball_pos: (f64, f64), // 当前球位置（每 tick 按状态维护，供队形目标）
     possession: u32, // 0=home, 1=away
     carrier: i32,
@@ -2676,6 +2727,8 @@ impl MatchState {
         MatchState {
             lineup: lp,
             pos,
+            vel: [(0.0, 0.0); 22],
+            realism: RealismFlags::default(),
             ball_pos: (0.55, 0.5),
             possession: 0,
             carrier: 10,
@@ -3139,6 +3192,7 @@ fn match_events(
     });
 
     let mut st = MatchState::new(&lineup);
+    st.realism = config.realism;
     st.pos[9] = (0.5, 0.5);
     st.pos[10] = (0.55, 0.5);
     st.carrier_from = (0.55, 0.5);
@@ -3819,16 +3873,28 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
             let out_norm = keeper_line_dist_m(ball_line_m) / PITCH_LENGTH_M;
             let tx = if id == 0 { out_norm } else { 1.0 - out_norm };
             let ty = 0.5 + (st.ball_pos.1 - 0.5) * GK_TRACK_Y;
-            ((tx, ty), "keeper_return".to_string(), GK_SPEED_MS)
+            let sp = if st.realism.motion { GK_SPEED_MS * 1.6 } else { GK_SPEED_MS };
+            ((tx, ty), "keeper_return".to_string(), sp)
         } else if let Some(ta) = targets[id as usize] {
-            (ta, actions[id as usize].clone(), RUN_SPEED_MS)
+            let sp = if st.realism.motion { RUN_SPEED_MS_MOTION } else { RUN_SPEED_MS };
+            (ta, actions[id as usize].clone(), sp)
         } else {
             continue;
         };
         let d = dist_norm(from, target);
-        if d < dead_zone { continue; }
-        let step = d.min(norm_step(speed * TICK_SECONDS));
-        let (tox, toy) = move_toward(from, target, step);
+        // C1（`realism.motion`）：去掉「到点冻结」，并改用速度/加速度/转弯半径积分。
+        // 关闭时保持旧行为（dead zone + 恒速直线），旧 golden 与本拍节奏不变。
+        let (tox, toy) = if st.realism.motion {
+            let (np, _) = motion::step_n(
+                from, st.vel[id as usize], target, speed, TICK_SECONDS, SIM_SUBSTEPS,
+            );
+            // 位置仍受球场边界约束（与旧路径一致：move_toward 的目标本身在界内）
+            (clamp01(np.0), clamp01(np.1))
+        } else {
+            if d < dead_zone { continue; }
+            let step = d.min(norm_step(speed * TICK_SECONDS));
+            move_toward(from, target, step)
+        };
         movers.push(Mover {
             id, from_x: from.0, from_y: from.1, to_x: tox, to_y: toy,
             speed, action,
@@ -6441,7 +6507,33 @@ fn beat_movers(
     let segs = highlight_frozen_segs(st, t, &movers);
     commit_beat_positions_ex(st, &mut movers, frozen, &[], &[], &segs);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    // C1：速度由**实际提交后的位移**反推（分离修正会改终点，用名义速度会失真）。
+    if st.realism.motion {
+        refresh_velocities(st, &movers, &[]);
+    }
     movers
+}
+
+/// C1：按本拍实际位移反推速度（m/s）。不在 `movers` 里的人视为静止（速度为 0）。
+///
+/// 用提交后的 `to_*` 而不是积分器给出的名义位置——`commit_beat_positions_ex` 的同队分离
+/// 会推开终点，若不反推，下一拍的积分会从「没走过的速度」继续，表现为滑步。
+fn refresh_velocities(st: &mut MatchState, movers: &[Mover], exclude: &[i32]) {
+    let mut seen = [false; 22];
+    for m in movers {
+        let id = m.id as usize;
+        if id >= 22 { continue; }
+        seen[id] = true;
+        st.vel[id] = (
+            (m.to_x - m.from_x) * PITCH_LENGTH_M / TICK_SECONDS,
+            (m.to_y - m.from_y) * PITCH_WIDTH_M / TICK_SECONDS,
+        );
+    }
+    for id in 0..22 {
+        if !seen[id] && !exclude.contains(&(id as i32)) {
+            st.vel[id] = (0.0, 0.0);
+        }
+    }
 }
 
 /// 高亮参与者的**拍内显示滑行线段**（#53 拍内扫掠的参与者侧）。
@@ -7845,7 +7937,7 @@ mod tests {
     fn simulate_produces_minimal_match() {
         // P31：seed 7 在 2700s 内不出射门（删槽位后射门由 hazard 涌现、机会数随 seed 波动，
         // 短比赛可能整场无射门）。改用 90 分钟默认时长——本测试只验事件流**类型齐全**，不验频率。
-        let cfg = MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s = simulate(7, cfg);
         let types: Vec<String> = json_events(&s).iter().map(|e| type_of(e)).collect();
         // v2：kickoff + beat 节拍流 + pass/shot 高亮 + whistle + lineup；无顶层 dribble
@@ -7860,8 +7952,8 @@ mod tests {
 
     #[test]
     fn simulate_config_duration_respected() {
-        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false, model_version: MODEL_VERSION };
-        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
+        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s_short = simulate(7, cfg_short);
         let s_long = simulate(7, cfg_long);
         // 短比赛事件少
@@ -7911,7 +8003,7 @@ mod tests {
         // 多 seed 扫：tackle 由防守动作竞争在几何满足时涌现（P30 起），不保证每个 seed 都有
         // tackle，故多 seed 扫描确保至少有一个带新字段。
         for seed in 1..30u64 {
-            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
+            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
             let s = simulate(seed, cfg);
             if has_tackle_with_new_fields(&s) {
                 return;
@@ -7972,7 +8064,7 @@ mod tests {
 
     #[test]
     fn demo_tackle_has_carrier_from_and_loose() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let tackle = events.iter().find(|e| e.contains("\"type\":\"tackle\"")).expect("demo 应有 tackle");
@@ -7989,7 +8081,7 @@ mod tests {
 
     #[test]
     fn demo_has_foul_and_free_kick() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let foul = events.iter().find(|e| e.contains("\"type\":\"foul\"")).expect("demo 应有 foul");

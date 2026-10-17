@@ -36,6 +36,18 @@ fn parse_config(json: &str) -> MatchConfig {
             }
         }
     }
+    // 查找 "realism":"motion+formation+marking+press+carrier"（C1–C5 开关）
+    if let Some(idx) = json.find("\"realism\"") {
+        if let Some(colon) = json[idx..].find(':') {
+            let rest = &json[idx + colon + 1..];
+            if let Some(q1) = rest.find('"') {
+                let after = &rest[q1 + 1..];
+                if let Some(q2) = after.find('"') {
+                    cfg.realism = crate::RealismFlags::parse(&after[..q2]);
+                }
+            }
+        }
+    }
     // 查找 "demo_mode": true/false
     if json.contains("\"demo_mode\":true") || json.contains("\"demo_mode\": true") {
         cfg.demo_mode = true;

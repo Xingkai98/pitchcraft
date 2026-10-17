@@ -26,6 +26,9 @@ export const ENGINE_CONFIG = {
   demo_mode: false,
   off_ball_movement_demo: true,
   match_duration_seconds: ENGINE_DURATION_SEC,
+  // C1–C5 真实度开关。**默认空**（与旧行为逐位一致）；
+  // 用 `REALISM=motion+formation node tools/visual-review/like-football.mjs` 打开。
+  realism: process.env.REALISM || '',
 };
 
 export const MISSING_WASM_HINT = `缺少 engine.wasm —— 先构建：\n`

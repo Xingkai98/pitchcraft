@@ -336,7 +336,7 @@ struct MatchStats {
 
 /// 跑一场 90 分钟比赛并聚合统计 + 收集 L2 违例。
 fn aggregate(seed: u64) -> MatchStats {
-    let cfg = MatchConfig { match_duration_seconds: DUR, demo_mode: false, model_version: MODEL_VERSION };
+    let cfg = MatchConfig { match_duration_seconds: DUR, demo_mode: false, model_version: MODEL_VERSION, realism: fm_engine::RealismFlags::default() };
     let json = simulate(seed, cfg);
     let events = split_events(&json);
     let mut st = MatchStats {
@@ -1615,7 +1615,7 @@ fn p31_frequency_5min_directional() {
     /// 5 分钟 cohort 的 seed 数（D4：≥1000 场聚合，低均值计数才有统计意义）。
     const L1_5MIN_SEEDS: u64 = 1000;
     let count = |seed: u64| -> [u64; 5] {
-        let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION, realism: fm_engine::RealismFlags::default() };
         let s = simulate(seed, cfg);
         let mut shot = 0;
         let mut restart = 0; // **出界重开**：角球 + 界外球 + 门球（spec scenario 口径）
@@ -1689,7 +1689,7 @@ fn p31_frequency_5min_directional() {
     let n90 = 20u64;
     let mut shots_90 = 0u64;
     for seed in 1..=n90 {
-        let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION });
+        let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION, realism: fm_engine::RealismFlags::default() });
         for e in split_events(&s) {
             if event_type(&e) == "shot" {
                 shots_90 += 1;
