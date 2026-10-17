@@ -164,8 +164,40 @@ cd /tmp/fix-m5only/engine && FIX_STARTS=201,3801 \
 
 上面 §1–§3 只覆盖**落地树的 20 块**与 **M5-only 的两块**。审阅指出：规范正文与 `lib.rs` 注释里
 还有几个数**在本仓内没有出处**（唯一来源是未入库的审阅文件）。本节把它们**补测并落盘**，
-使这些数**在本仓内可自证**。所有读数都用**与 §2 同一支探针的扩展版**（多打一列 `box_share`）跑出，
+使这些数**在本仓内可自证**。所有读数都用下面这支**扩展版探针**（在 §0 那支上多打一列 `box_share`）跑出，
 `--release`、`DUR = 5400 s`、每块 200 场。
+
+### 4.0 扩展版探针源码（逐字；跑完即从工作树删除）
+
+```rust
+/// 临时探针（**不入库**）：E1/E4 复核 —— 逐块打印 rect / sot / conv / box_share。
+#[test]
+#[ignore = "临时探针，不入库"]
+fn zz_fix3_blocks() {
+    let starts: Vec<u64> = std::env::var("FIX_STARTS").ok()
+        .map(|s| s.split(',').filter_map(|x| x.trim().parse().ok()).collect())
+        .unwrap_or_else(|| (1..=4000).step_by(200).map(|x| x as u64).collect());
+    for st in starts {
+        let stats: Vec<MatchStats> = (st..st + 200).map(aggregate).collect();
+        let regular: usize = stats.iter().map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off).sum();
+        let header: usize = stats.iter().map(|s| s.n_header_goal + s.n_header_saved + s.n_header_off).sum();
+        let shots = regular + header;
+        let goals: usize = stats.iter().map(|s| s.n_shot_goal + s.n_header_goal).sum();
+        let saved: usize = stats.iter().map(|s| s.n_shot_saved + s.n_header_saved).sum();
+        let rect_goals: usize = stats.iter().map(|s| s.n_goal_in_rect).sum();
+        let b: usize = stats.iter().map(|s| s.n_box).sum();
+        println!("[FIX3-BLOCK] {st}..{}  inside_rect={:.6}  sot={:.6}  conv={:.6}  box_share={:.6}  (shots={shots} goals={goals} regular={regular} n_box={b})",
+            st + 199,
+            rect_goals as f64 / goals.max(1) as f64,
+            (goals + saved) as f64 / shots as f64,
+            goals as f64 / shots as f64,
+            b as f64 / regular.max(1) as f64);
+    }
+}
+```
+
+`box_share` 的口径与 `l1_shot_result_distributions` 逐字相同：`Σn_box / Σ(n_shot_goal+n_shot_saved+n_shot_off)`
+（分母**不含**头球）。
 
 ### 4.1 M5-only（`/tmp/fix-m5only` = `--detach 5ccc4cb`）
 
@@ -203,9 +235,13 @@ cd /tmp/fix-m5only/engine && FIX_STARTS=401,801,2401 \
 ### 4.3 arc-only 的 `0.8055`（`lib.rs` 注释用）
 
 ```bash
-git -C /tmp/tackle-el worktree add -f --detach /tmp/fix-arc 5ccc4cb   # 再把远射档回退 (2,11)→(4,11)
+git -C /tmp/tackle-el worktree add -f --detach /tmp/fix-arc 5ccc4cb
+# 唯一改动（arc-only = 只动禁区弧档：把远射档回退到原值 (4,11)，弧档保持 M5 的 (3,22)）：
+#   engine/src/lib.rs  fn shot_bucket 里   } else { (2, 11) }   →   } else { (4, 11) }
 cd /tmp/fix-arc/engine && cargo test --release --test realism -- --ignored --nocapture l3_shot_ratios
 ```
+
+（探针/补丁都**只在临时树**里；`/tmp/fix-m5m1b` 的 tracked 源码**一行未改**。）
 
 ```
 [L3] shots=4768 regular=4473 header=295 goals=581 saved=1213
