@@ -663,6 +663,13 @@ pub const RUN_SPEED_MS: f64 = 4.0;
 /// C1（`realism.motion`）下的巡航速度上限（m/s）。旧 `RUN_SPEED_MS=4.0` 是恒速模型的产物，
 /// 相当于慢跑；真实比赛里无球跑动常在 6–7 m/s。仅在新路径使用，旧路径不变。
 pub const RUN_SPEED_MS_MOTION: f64 = 6.5;
+/// C3：盯人目标与队形目标的混合权重（0 = 完全队形，1 = 完全盯人）。
+/// 0.65 保留盯人的对抗性，同时让 C2 的队形约束仍然生效（否则全队被对手拉散）。
+pub const MARK_BLEND: f64 = 0.75;
+/// C3：盯人时允许压过中线的距离（归一化，0.10 ≈ 10.5m）。
+pub const MARK_FRONT_LIMIT: f64 = 0.10;
+/// C3：盯人目标相对队形目标的最大偏移（米）。
+pub const MARK_MAX_DRAG_M: f64 = 22.0;
 /// C1：每个决策拍内的积分子步数（10 × 0.1 s）。决策仍是 1 Hz，只有运动积分变细。
 pub const SIM_SUBSTEPS: u32 = 10;
 /// 门将回位速度（m/s）
@@ -3892,10 +3899,28 @@ fn apply_marking(
     let prev = if st.mark_prev.len() == def_ids.len() { st.mark_prev.clone() } else { vec![None; def_ids.len()] };
     let out = marking::assign(&def_pos, &att_pos, &prev);
     let own_goal_x = if def_team_home { 0.0 } else { 1.0 };
+    let ball = st.ball_pos;
     for (k, &id) in def_ids.iter().enumerate() {
         if let Some(j) = out[k] {
-            let aim = att_pos[j];
-            targets[id as usize] = Some(marking::mark_point(aim, own_goal_x));
+            let base = targets[id as usize]; // 盯人前 = C2 的队形目标
+            let mut t = marking::mark_point(att_pos[j], own_goal_x);
+            // ① 前压上限：最多压到对方半场 MARK_FRONT_LIMIT 处，不再往对方球门方向走。
+            //    没有这条时，盯的人退到对方禁区，防守者会一路跟到对面球门——整条防线被拉平。
+            //    （用固定线而不是「不许越过球」：后者会把防守者钉在球线上，两队被彻底拉开。）
+            let front = 0.5 + MARK_FRONT_LIMIT;
+            let back = 0.5 - MARK_FRONT_LIMIT;
+            t.0 = if def_team_home { t.0.min(front) } else { t.0.max(back) };
+            if let Some(b) = base {
+                // ② 与队形目标的最大偏离：盯人可以让防线移动，但不该把人拽到 30m 外。
+                let max_drag = MARK_MAX_DRAG_M / PITCH_LENGTH_M;
+                t.0 = b.0 + (t.0 - b.0).clamp(-max_drag, max_drag);
+            }
+            // ② 与队形目标混合：盯人是偏移，不是替换。纯盯人会让全队跟着对手跑散。
+            if let Some(b) = base {
+                t.0 = b.0 * (1.0 - MARK_BLEND) + t.0 * MARK_BLEND;
+                t.1 = b.1 * (1.0 - MARK_BLEND) + t.1 * MARK_BLEND;
+            }
+            targets[id as usize] = Some((t.0.clamp(0.03, 0.97), t.1.clamp(0.06, 0.94)));
             actions[id as usize] = "mark".to_string();
         }
         // 未匹配者保留队形目标（`run`）

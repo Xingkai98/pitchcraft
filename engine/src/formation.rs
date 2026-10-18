@@ -45,15 +45,15 @@ pub struct Keyframe {
 /// 关键帧表：球越靠近对方球门，进攻方压得越靠上、防守方收得越紧。
 pub const KEYFRAMES: [Keyframe; 5] = [
     // 球在己方禁区附近
-    Keyframe { ball_x: 0.12, atk_def: -0.14, atk_mid: -0.05, atk_fwd: 0.06, def_def: -0.09, def_mid: 0.02, def_fwd: 0.10, half_w: 0.20, shift_k: 0.32 },
+    Keyframe { ball_x: 0.12, atk_def: -0.20, atk_mid: -0.04, atk_fwd: 0.13, def_def: -0.09, def_mid: 0.02, def_fwd: 0.10, half_w: 0.20, shift_k: 0.32 },
     // 己方半场
-    Keyframe { ball_x: 0.32, atk_def: -0.16, atk_mid: -0.06, atk_fwd: 0.07, def_def: -0.10, def_mid: 0.02, def_fwd: 0.11, half_w: 0.21, shift_k: 0.36 },
+    Keyframe { ball_x: 0.32, atk_def: -0.21, atk_mid: -0.04, atk_fwd: 0.14, def_def: -0.10, def_mid: 0.02, def_fwd: 0.11, half_w: 0.21, shift_k: 0.36 },
     // 中圈
-    Keyframe { ball_x: 0.50, atk_def: -0.17, atk_mid: -0.07, atk_fwd: 0.07, def_def: -0.11, def_mid: 0.02, def_fwd: 0.12, half_w: 0.22, shift_k: 0.40 },
+    Keyframe { ball_x: 0.50, atk_def: -0.22, atk_mid: -0.05, atk_fwd: 0.15, def_def: -0.11, def_mid: 0.02, def_fwd: 0.12, half_w: 0.22, shift_k: 0.40 },
     // 对方半场
-    Keyframe { ball_x: 0.68, atk_def: -0.18, atk_mid: -0.08, atk_fwd: 0.08, def_def: -0.12, def_mid: 0.02, def_fwd: 0.13, half_w: 0.21, shift_k: 0.36 },
+    Keyframe { ball_x: 0.68, atk_def: -0.23, atk_mid: -0.05, atk_fwd: 0.16, def_def: -0.12, def_mid: 0.02, def_fwd: 0.13, half_w: 0.21, shift_k: 0.36 },
     // 对方禁区附近
-    Keyframe { ball_x: 0.88, atk_def: -0.20, atk_mid: -0.09, atk_fwd: 0.09, def_def: -0.13, def_mid: 0.02, def_fwd: 0.14, half_w: 0.19, shift_k: 0.30 },
+    Keyframe { ball_x: 0.88, atk_def: -0.24, atk_mid: -0.06, atk_fwd: 0.17, def_def: -0.13, def_mid: 0.02, def_fwd: 0.14, half_w: 0.19, shift_k: 0.30 },
 ];
 
 /// 按球 x 线性插值关键帧（范围外取端点）。
@@ -214,14 +214,20 @@ mod tests {
     }
 
     #[test]
-    fn team_vertical_extent_is_realistic() {
-        // 球在中圈时，11 人的纵向跨度应在 20–30m（真实 26m 上下）
+    fn attack_and_defence_have_realistic_vertical_extent() {
+        // 球在中圈：控球方要拉开纵深（锋线在球前 ~15m），无球方要压缩（20–30m）
         let ball = (0.5, 0.5);
-        let xs: Vec<f64> = (1..=10).map(|id| target(id, ball, true, true, 0.0).0).collect();
-        let lo = xs.iter().cloned().fold(f64::INFINITY, f64::min);
-        let hi = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
-        let hd_m = (hi - lo) * 105.0;
-        assert!((20.0..=30.0).contains(&hd_m), "纵深 {hd_m:.1}m 不在 20–30m");
+        let span = |attacking: bool| {
+            let xs: Vec<f64> = (1..=10).map(|id| target(id, ball, true, attacking, 0.0).0).collect();
+            let lo = xs.iter().cloned().fold(f64::INFINITY, f64::min);
+            let hi = xs.iter().cloned().fold(f64::NEG_INFINITY, f64::max);
+            (hi - lo) * 105.0
+        };
+        let atk = span(true);
+        let def = span(false);
+        assert!((30.0..=48.0).contains(&atk), "控球方纵深 {atk:.1}m 不在 30–48m");
+        assert!((18.0..=30.0).contains(&def), "无球方纵深 {def:.1}m 不在 18–30m");
+        assert!(atk > def, "控球方应当比无球方更拉开（{atk:.1} vs {def:.1}）");
     }
 
     #[test]
