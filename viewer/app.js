@@ -486,6 +486,12 @@ async function init() {
       streamStr = JSON.stringify(mockEventStream());
     }
     game = createGame(streamStr);
+    // 跳过模式：默认 `fast`（间隔 > 5 比赛秒就 5× 快进），看比赛效果时会「一会儿快一会儿慢」。
+    // 本分支默认**关掉**，用 `?skip=fast` / `?skip=skip` 打开。
+    {
+      const q = new URLSearchParams(location.search).get('skip');
+      game.skipMode = (q === 'fast' || q === 'skip') ? q : 'off';
+    }
     if (statusEl) {
       statusEl.textContent = REALISM ? `引擎：C1–C5（${REALISM}）` : '引擎：改造前（realism 全关）';
     }
