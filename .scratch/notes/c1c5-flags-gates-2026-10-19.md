@@ -133,7 +133,8 @@ P38 内部 4/8 未达标：纵深 20.802（带 [23.385, 28.385]）、紧凑度 1
 
 ## Provenance
 
-- 基线 commit：`1cc056b0e6330fce617d4c5c5b37f8e170ff9293`；工作树**脏**（本回路改动未提交）。
+- 基线 commit：`1cc056b0e6330fce617d4c5c5b37f8e170ff9293`；落地 commit **`2bcb082`**
+  （`feat/c1-c5-match-realism`）。
 - `sha256(engine/src/lib.rs)` = `a1584799cfc7dc7d03870929cb6d21cdea9ed3354212a0f9d4039cd14ff3bf00`
 - `sha256(viewer/engine.wasm)` = `6196ce3ed8c3939c9c5037344eb88b56d66c6cd97d56687b20c21953a780bd9d`
 - `sha256(git diff)` = `e41d171d43572c2d6d5a8bd55fbd5c17e25aba8af51a9cee12f8eaee8b4fed99`

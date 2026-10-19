@@ -113,7 +113,8 @@ B1 生效后 `gap` 反而从 9.109 升到 10.272；B2 修复 excluded 后纵深/
 
 ## Provenance
 
-- 基于 `1cc056b0e6330fce617d4c5c5b37f8e170ff9293` + 未提交改动（验收回路 + 本修复）。
+- 基线 `1cc056b0e6330fce617d4c5c5b37f8e170ff9293`；**落地 commit `2bcb082`**
+  （`feat/c1-c5-match-realism`）。下文 source/wasm/diff 哈希为提交前工作树快照。
 - 200 场 L1：`REALISM_GATES=1 REALISM_SEEDS=200 REALISM=motion+formation+marking+press`，
   窗口 401..600，release。
 - `sha256(engine/src/lib.rs)` = `b7305d0595636dc1687244afb33539597ee435c11d8eb4770e68ffd8fe511362`
