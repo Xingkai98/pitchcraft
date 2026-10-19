@@ -113,6 +113,30 @@ node tools/ratchet.mjs diff openspec/changes/<name>/notes/ratchet-before.json
 - P18 的 canary 由 `verify.sh` 第 105-114 步生成；`P18_SOURCE_COMMIT=$(git rev-parse HEAD)`，
   且生成时工作树要干净——**「改后」那次必须在 commit 之后再生成**。
 
+### C1–C4 开关打开的验收回路（2026-10-19 补）
+
+`verify.sh` 的 L1 只在 `realism` 全关下跑；C1–C4 打开后的读数要用下面三条回路看
+（`verify.sh` 7b/7c/7d 已接入：7b/7d 是**报告期**不阻塞，7c 是探针接线检查；
+修到带内后 `REALISM_GATES_STRICT=1 ./verify.sh` 把 7b 升为硬门）：
+
+```sh
+# L1 四条体量带（射门/抢断/犯规/传球成功率）。报告默认 60 场；严格门 200 场。
+REALISM_GATES=1 REALISM=motion+formation+marking+press \
+  cargo test --manifest-path engine/Cargo.toml --test realism --release \
+  -- --ignored l1_volume_bands_with_realism_flags --nocapture
+# 加 REALISM_GATES_STRICT=1 即硬门（当前会红，预期）
+
+# C3/C4 旁路探针：换盯人次数 / 未匹配防守者 / 压迫人数直方图
+cargo test --manifest-path engine/Cargo.toml --test realism --release \
+  -- --ignored realism_probes_report --nocapture
+
+# P38 八条判据（经 tools/benchmark-engine.mjs 读 REALISM）
+REALISM=motion+formation+marking+press \
+  node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs
+```
+
+读数与机制诊断见 `.scratch/notes/c1c5-flags-gates-2026-10-19.md`。
+
 ---
 
 ## 5. 口径（别踩）

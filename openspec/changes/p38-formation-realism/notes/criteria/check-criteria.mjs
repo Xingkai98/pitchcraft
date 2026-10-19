@@ -12,6 +12,14 @@
 // 与 drive-criteria.mjs 的分工：
 //   - 本脚本：轻量，只测**当前** wasm（CI 友好，几秒）
 //   - drive-criteria.mjs：重量，逐个应用 6 个补丁重建 wasm 做**变异自证**（开发期用）
+//
+// C1–C4 开关（#170–#174）：本脚本经 tools/benchmark-engine.mjs 读取 `REALISM` 环境变量，
+// 所以同一份判据可以直接在开关打开下评：
+//
+//   REALISM=motion+formation+marking+press \
+//     node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs
+//
+// 不设 `REALISM` = 旧路径（与主 spec 的当前公式一致）。verify.sh 的 7d 报告步已接这条。
 
 import { readFileSync, existsSync } from 'node:fs';
 import { spawnSync } from 'node:child_process';
@@ -31,12 +39,21 @@ if (!existsSync(join(ROOT, 'viewer/data/real-game-1.json'))) {
   console.log('跳过：缺真实侧数据（viewer/data/real-game-*.json）');
   process.exit(0);
 }
+// wasm 缺失是已知的「先构建」路径：跳过而非失败。
+if (!existsSync(join(ROOT, 'viewer/engine.wasm'))) {
+  console.log('跳过：缺 viewer/engine.wasm（先 cd engine && cargo build --target wasm32-unknown-unknown --release && cp target/wasm32-unknown-unknown/release/fm_engine.wasm ../viewer/engine.wasm）');
+  process.exit(0);
+}
 
 const spec = JSON.parse(readFileSync(SPEC, 'utf8'));
 const out = spawnSync('node', [join(HERE, 'eval-criteria.mjs'), 'current'], { encoding: 'utf8', cwd: ROOT });
-if (out.status !== 0) {
-  console.log('跳过：评测器未能运行（可能缺 engine.wasm）');
-  process.exit(0);
+if (out.error || out.status !== 0) {
+  // 已知缺产物已在上方分流；走到这里说明评测器**真的崩了**——
+  // 不能静默 exit 0，否则 verify.sh 的 7d 会把「没评成」当成「报告干净」。
+  console.error('评测器运行失败（不是已知缺产物）：', out.error?.message || `exit ${out.status}`);
+  if (out.stdout) console.error('--- stdout ---\n' + out.stdout);
+  if (out.stderr) console.error('--- stderr ---\n' + out.stderr);
+  process.exit(2);
 }
 const cur = JSON.parse(out.stdout.trim().split('\n').pop());
 

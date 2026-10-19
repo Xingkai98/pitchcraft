@@ -75,7 +75,39 @@ node tools/benchmark-compare.mjs
 
 echo ""
 echo "=== 7/9 真实性统计套件 L1（realism 统计分布，release 显式跑；L2/golden 已在第 1 步 cargo test 跑）==="
-(cd engine && cargo test --test realism --release -- --ignored 2>&1 | tail -8)
+# 开关打开的 flags-gate 与 C3/C4 探针单独在 7b/7c 跑；这里 --skip 掉，
+# 避免它们在没有 env（或探针机制断言变红）时污染第 7 步这个主门槛。
+(cd engine && cargo test --test realism --release -- --ignored \
+  --skip l1_volume_bands_with_realism_flags --skip realism_probes_report 2>&1 | tail -8)
+
+# ── C1–C4 开关打开的验收回路（#170–#174 落地后补，2026-10-19）──────────────────────
+# 为什么单列：第 7 步的 L1 只在 realism 全关下跑；开关打开时射门/抢断/犯规三条带会破，
+# 但旧回路看不见。本段是**报告期**（不阻塞），C2/C3 修到带内后把 REALISM_GATES_STRICT=1
+# 打开即升门。口径：与主 L1 同一个 seed 窗口（401..），报告默认 60 场（约 60s），
+# 严格门跑 200 场（约 157s）。可用 REALISM_FLAGS 指定开关组合。
+REALISM_FLAGS="${REALISM_FLAGS:-motion+formation+marking+press}"
+REALISM_GATES_STRICT="${REALISM_GATES_STRICT:-0}"
+echo ""
+echo "=== 7b/9 C1–C4 开关打开的 L1 体量报告（报告期：当前 3/4 条红；STRICT=1 升门）==="
+(cd engine && REALISM_GATES=1 REALISM_GATES_STRICT="$REALISM_GATES_STRICT" REALISM="$REALISM_FLAGS" \
+  cargo test --test realism --release -- --ignored l1_volume_bands_with_realism_flags --nocapture 2>&1 | tail -12)
+
+echo ""
+echo "=== 7c/9 C3/C4 旁路探针接线检查（换盯人 / 未匹配 / 压迫人数；断言的是探针不变量，不是引擎达标）==="
+(cd engine && REALISM="$REALISM_FLAGS" \
+  cargo test --test realism --release -- --ignored realism_probes_report --nocapture 2>&1 | tail -10)
+
+echo ""
+echo "=== 7d/9 C1–C4 开关打开的 P38 判据（报告期：只打印，不阻塞）==="
+# check-criteria.mjs 经 tools/benchmark-engine.mjs 读取 REALISM 环境变量。
+# 防混引擎：7b/7c 用刚从源码编译的 Rust 二进制，7d 用 viewer/engine.wasm。
+# mtime 只是弱哨兵（它分不清行为改动与注释/探针改动），所以同时打印两边的 sha，
+# 让读日志的人能判断 7d 的读数是否与源码同源；本项目 wasm 不随 verify.sh 自动构建。
+echo "7d provenance: src=$(sha256sum engine/src/lib.rs | cut -c1-12) wasm=$(sha256sum viewer/engine.wasm | cut -c1-12)"
+if [ engine/src/lib.rs -nt viewer/engine.wasm ]; then
+  echo "⚠️  viewer/engine.wasm 比 engine/src/lib.rs 旧：7d 的读数可能不对应 7b/7c。先重建 wasm。"
+fi
+REALISM="$REALISM_FLAGS" node openspec/changes/p38-formation-realism/notes/criteria/check-criteria.mjs
 
 echo ""
 echo "=== 8/9 交叉验证（P37：真实侧内部自洽性，**报告项、不是门**——不阻塞）==="
