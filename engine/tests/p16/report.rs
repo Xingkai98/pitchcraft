@@ -21,6 +21,11 @@ use fm_engine::MODEL_VERSION;
 /// 本 change 改了 `lib.rs` 与 `observation.rs`，故 P17A 己落盘产物须重生成才与源码同源。
 pub const ENGINE_SOURCES: &[(&str, &str)] = &[
     ("lib.rs", include_str!("../../src/lib.rs")),
+    ("motion.rs", include_str!("../../src/motion.rs")),
+    ("formation.rs", include_str!("../../src/formation.rs")),
+    ("marking.rs", include_str!("../../src/marking.rs")),
+    ("space.rs", include_str!("../../src/space.rs")),
+    ("carrier.rs", include_str!("../../src/carrier.rs")),
     ("observation.rs", include_str!("../../src/observation.rs")),
     ("rng.rs", include_str!("../../src/rng.rs")),
 ];
@@ -143,6 +148,7 @@ fn probe_has_state_snapshots() -> bool {
         match_duration_seconds: 5.0,
         demo_mode: false,
         model_version: MODEL_VERSION,
+            realism: fm_engine::RealismFlags::default(),
     };
     let dm = fm_engine::simulate_with_behavior_observations(1, cfg);
     !dm.state_snapshots.is_empty()

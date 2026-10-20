@@ -373,6 +373,11 @@ test('陈旧哨兵：产物的引擎源码指纹必须与当前源码一致（�
     return 'fnv1a64:' + h.toString(16).padStart(16, '0'); };
   const fp = (srcs) => fnv(srcs.map(([n, t]) => `${n}\n${t}\n`).join(''));
   const engSrc = [['lib.rs', readFileSync(join(ROOT, 'engine/src/lib.rs'), 'utf8')],
+    ['motion.rs', readFileSync(join(ROOT, 'engine/src/motion.rs'), 'utf8')],
+    ['formation.rs', readFileSync(join(ROOT, 'engine/src/formation.rs'), 'utf8')],
+    ['marking.rs', readFileSync(join(ROOT, 'engine/src/marking.rs'), 'utf8')],
+    ['space.rs', readFileSync(join(ROOT, 'engine/src/space.rs'), 'utf8')],
+    ['carrier.rs', readFileSync(join(ROOT, 'engine/src/carrier.rs'), 'utf8')],
     ['observation.rs', readFileSync(join(ROOT, 'engine/src/observation.rs'), 'utf8')],
     ['rng.rs', readFileSync(join(ROOT, 'engine/src/rng.rs'), 'utf8')]];
   assert.equal(engine.provenance.engine_source_fingerprint, fp(engSrc),

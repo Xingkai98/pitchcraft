@@ -23,6 +23,7 @@ pub fn cfg() -> fm_engine::MatchConfig {
         match_duration_seconds: DUR,
         demo_mode: false,
         model_version: fm_engine::MODEL_VERSION,
+            realism: fm_engine::RealismFlags::default(),
     }
 }
 

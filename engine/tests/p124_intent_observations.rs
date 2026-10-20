@@ -2002,7 +2002,10 @@ fn p124_fingerprint_covers_its_own_sources() {
     }
     // 引擎侧与 P16 同清单（改 `engine/src/*` 会同时反映在两处）。
     let eng: Vec<&str> = crate::report::ENGINE_SOURCES.iter().map(|(n, _)| *n).collect();
-    assert_eq!(eng, vec!["lib.rs", "observation.rs", "rng.rs"]);
+    assert_eq!(
+        eng,
+        vec!["lib.rs", "motion.rs", "formation.rs", "marking.rs", "space.rs", "carrier.rs", "observation.rs", "rng.rs"]
+    );
     let _ = p;
 }
 

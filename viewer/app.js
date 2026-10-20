@@ -133,7 +133,15 @@ function formatMatchClock(seconds) {
 // 固定种子（Q8：固定种子 + 刷新重播）
 const FIXED_SEED = 42;
 // config：连续比赛（demo_mode: false）产整场事件流；比赛时长读 config.playback.matchDuration（P19：单一参数，无 UI 切换）
-const MATCH_CONFIG = { demo_mode: false };
+// C1–C5 真实度开关：本分支**默认全开**（motion / formation / marking / press）。
+// 关掉用 `?realism=off`；只想试某几项用 `?realism=motion+formation`。
+const REALISM = (() => {
+  const q = new URLSearchParams(location.search).get('realism');
+  if (q === 'off' || q === '0') return '';
+  if (q) return q;
+  return 'motion+formation+marking+press';
+})();
+const MATCH_CONFIG = { demo_mode: false, realism: REALISM };
 
 let game = null;
 let renderer = null;
@@ -478,6 +486,15 @@ async function init() {
       streamStr = JSON.stringify(mockEventStream());
     }
     game = createGame(streamStr);
+    // 跳过模式：默认 `fast`（间隔 > 5 比赛秒就 5× 快进），看比赛效果时会「一会儿快一会儿慢」。
+    // 本分支默认**关掉**，用 `?skip=fast` / `?skip=skip` 打开。
+    {
+      const q = new URLSearchParams(location.search).get('skip');
+      game.skipMode = (q === 'fast' || q === 'skip') ? q : 'off';
+    }
+    if (statusEl) {
+      statusEl.textContent = REALISM ? `引擎：C1–C5（${REALISM}）` : '引擎：改造前（realism 全关）';
+    }
     renderer = createRenderer();
     lastFrameTime = null;
     statusEl.textContent = `事件数: ${game.events.length} | ${engine ? 'WASM 引擎' : 'mock 数据'}`;

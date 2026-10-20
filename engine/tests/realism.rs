@@ -16,8 +16,9 @@
 //! 风格对齐 lib.rs tests 内的 helper。
 
 use fm_engine::{
-    simulate, MatchConfig, TICK_SECONDS, CARRIER_SPEED_MS, PITCH_LENGTH_M, PITCH_WIDTH_M,
-    TACKLE_DISTANCE_THRESHOLD_METERS, MODEL_VERSION,
+    simulate, simulate_with_realism_probe, MatchConfig, RealismFlags, TICK_SECONDS,
+    CARRIER_SPEED_MS, PITCH_LENGTH_M, PITCH_WIDTH_M, TACKLE_DISTANCE_THRESHOLD_METERS,
+    MODEL_VERSION,
 };
 
 /// L1/L2/golden 统一比赛时长（90 分钟，default_() 同值）。
@@ -38,6 +39,19 @@ const PENALTY_AREA_HALF_W_M: f64 = 20.16;
 const SEEDS_L1: u32 = 200;
 /// L1 聚合 seed 起点（窗口错开，见 SEEDS_L1 注释：P13 fix 后 1..=200 是头球分布的高温伪样本）。
 const SEEDS_L1_START: u64 = 401;
+/// C1–C4 开关打开的 L1 严格门：与主 L1 相同的 200 场窗口（不另挑 seed，避免窗口购物）。
+/// 200 场全开实测 ~157s（release）；报告步默认只跑 60 场（~60s），严格门才用 200。
+const SEEDS_FLAGS_L1: u32 = 200;
+/// 报告步默认场数（够稳定地判 8 vs 14 这种量级缺口；严格门用 `SEEDS_FLAGS_L1`）。
+const SEEDS_FLAGS_L1_REPORT: u32 = 60;
+/// C1–C4 开关打开的默认配置（未显式设 `REALISM` 时使用；与 viewer 默认一致）。
+const FLAGS_L1_DEFAULT_SPEC: &str = "motion+formation+marking+press";
+/// L1 体量带（**唯一来源**）：主 L1 断言与 flags-on 报告器共用，防止两处带值漂移。
+/// 出处见各主测试的注释（#104：真实侧 StatsBomb 大五 n=170 的 mean ± 1.5·sd）。
+const L1_BAND_SHOTS: (f64, f64) = (14.0, 29.0);
+const L1_BAND_TACKLES: (f64, f64) = (24.0, 50.0);
+const L1_BAND_FOULS: (f64, f64) = (16.0, 30.0);
+const L1_BAND_PASS_RATE: (f64, f64) = (0.82, 0.90);
 /// L2 不变量循环 seed 数。
 ///
 /// P23 教训：`1..=15` 窗口里只有 seed 9 出红牌，而「罚下球员仍参与」的漏路径最早出现在 **seed 260**
@@ -334,9 +348,14 @@ struct MatchStats {
     stream_hash: u64,
 }
 
-/// 跑一场 90 分钟比赛并聚合统计 + 收集 L2 违例。
+/// 跑一场 90 分钟比赛并聚合统计 + 收集 L2 违例（默认路径：realism 全关）。
 fn aggregate(seed: u64) -> MatchStats {
-    let cfg = MatchConfig { match_duration_seconds: DUR, demo_mode: false, model_version: MODEL_VERSION };
+    aggregate_with(seed, RealismFlags::default())
+}
+
+/// `aggregate` 的开关参数化版本：只改 config 里的 `realism`，统计口径与默认路径逐项相同。
+fn aggregate_with(seed: u64, realism: RealismFlags) -> MatchStats {
+    let cfg = MatchConfig { match_duration_seconds: DUR, demo_mode: false, model_version: MODEL_VERSION, realism };
     let json = simulate(seed, cfg);
     let events = split_events(&json);
     let mut st = MatchStats {
@@ -640,10 +659,367 @@ fn run_many(n: u32) -> Vec<MatchStats> {
         .collect()
 }
 
+/// 开关参数化的批量聚合；seed 窗口与主 L1 相同。
+fn run_many_with(n: u32, realism: RealismFlags) -> Vec<MatchStats> {
+    (SEEDS_L1_START..SEEDS_L1_START + n as u64)
+        .map(|seed| aggregate_with(seed, realism))
+        .collect()
+}
+
+/// 从 `REALISM` 环境变量取开关（与 `tools/benchmark-engine.mjs` 同一语法）；空则用 viewer 默认。
+fn realism_flags_from_env() -> RealismFlags {
+    let spec = std::env::var("REALISM")
+        .ok()
+        .filter(|s| !s.trim().is_empty())
+        .unwrap_or_else(|| FLAGS_L1_DEFAULT_SPEC.to_string());
+    RealismFlags::parse(&spec)
+}
+
+/// 一条 L1 体量带的判定结果。抽成纯函数是为了能对**合成的坏样本**做反证（见
+/// `l1_volume_band_evaluator_rejects_bad_input`），避免报告器退化成空转。
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct BandResult {
+    name: &'static str,
+    value: f64,
+    lo: f64,
+    hi: f64,
+    pass: bool,
+}
+
+/// L1 四条体量带（与 `l1_shot_result_distributions` / `l1_tackle_dilution_and_slot_mix` /
+/// `l1_fouls_and_cards` / `l1_pass_completion_rate` 同口径、同带）：
+/// 普通射门/场、抢断/场、犯规/场、整体传球成功率。
+fn evaluate_l1_volume_bands(stats: &[MatchStats]) -> Vec<BandResult> {
+    let n = stats.len().max(1) as f64;
+    let regular: usize = stats
+        .iter()
+        .map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off)
+        .sum();
+    let tackles: usize = stats.iter().map(|s| s.n_tackle).sum();
+    let fouls: usize = stats.iter().map(|s| s.n_foul).sum();
+    let pass_total: usize = stats.iter().map(|s| s.n_pass).sum();
+    let pass_ok: usize = stats.iter().map(|s| s.n_pass_success).sum();
+    let shots_pm = regular as f64 / n;
+    let tackles_pm = tackles as f64 / n;
+    let fouls_pm = fouls as f64 / n;
+    let pass_rate = if pass_total == 0 { 0.0 } else { pass_ok as f64 / pass_total as f64 };
+    [
+        ("普通射门/场", shots_pm, L1_BAND_SHOTS.0, L1_BAND_SHOTS.1),
+        ("抢断/场", tackles_pm, L1_BAND_TACKLES.0, L1_BAND_TACKLES.1),
+        ("犯规/场", fouls_pm, L1_BAND_FOULS.0, L1_BAND_FOULS.1),
+        ("传球成功率", pass_rate, L1_BAND_PASS_RATE.0, L1_BAND_PASS_RATE.1),
+    ]
+    .into_iter()
+    .map(|(name, value, lo, hi)| BandResult { name, value, lo, hi, pass: (lo..=hi).contains(&value) })
+    .collect()
+}
+
 /// L1 两个测试共享同一批模拟（OnceLock 线程安全缓存），避免 run_many(200) 跑两次。
 fn l1_stats() -> &'static Vec<MatchStats> {
     static STATS: std::sync::OnceLock<Vec<MatchStats>> = std::sync::OnceLock::new();
     STATS.get_or_init(|| run_many(SEEDS_L1))
+}
+
+/// **C1–C4 开关打开的 L1 体量门（当前为报告期，严格模式手动开启）。**
+///
+/// 背景（2026-10-19 复测）：既有 `verify.sh` 只在 realism 全关下跑 L1；开关打开时
+/// 射门/抢断/犯规三条带会破，但没有任何测试能看见。本测试补上这条回路：
+///
+/// ```sh
+/// REALISM_GATES=1 REALISM=motion+formation+marking+press \
+///   cargo test --test realism --release -- --ignored l1_volume_bands_with_realism_flags --nocapture
+/// ```
+///
+/// - 默认 **报告期**：打印每条带的读数与 PASS/FAIL，不 panic（当前读数确实会红）。
+/// - `REALISM_GATES_STRICT=1`：变成硬门（C2/C3 修到带内后，在 verify.sh 里打开）。
+/// - 没有 `REALISM_GATES=1` 时直接跳过：`cargo test -- --ignored`（verify.sh 第 7 步）
+///   会扫到本测试，不能让它重复跑整场统计。
+#[test]
+#[ignore = "开关打开的 L1 报告/严格门；由 REALISM_GATES=1 显式启用"]
+fn l1_volume_bands_with_realism_flags() {
+    if std::env::var("REALISM_GATES").ok().as_deref() != Some("1") {
+        println!("[flags-gate] skip：设 REALISM_GATES=1 才运行（避免 --ignored 默认步重复跑整场统计）");
+        return;
+    }
+    let realism = realism_flags_from_env();
+    let strict = std::env::var("REALISM_GATES_STRICT").ok().as_deref() == Some("1");
+    // 严格门默认 200 场（与主 L1 同窗），报告步默认 60 场以控制 verify.sh 时长；
+    // 两者都可用 REALISM_SEEDS 显式覆盖。
+    let n_seeds = std::env::var("REALISM_SEEDS")
+        .ok()
+        .and_then(|s| s.parse::<u32>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or(if strict { SEEDS_FLAGS_L1 } else { SEEDS_FLAGS_L1_REPORT });
+    let stats = run_many_with(n_seeds, realism);
+    let n = n_seeds as f64;
+
+    // 样本量守卫按场数等比（主 L1 的 200 场下限：射门 800 / 抢断 400 / 犯规 2000 / pass 60000）。
+    let regular: usize = stats
+        .iter()
+        .map(|s| s.n_shot_goal + s.n_shot_saved + s.n_shot_off)
+        .sum();
+    let tackles: usize = stats.iter().map(|s| s.n_tackle).sum();
+    let fouls: usize = stats.iter().map(|s| s.n_foul).sum();
+    let passes: usize = stats.iter().map(|s| s.n_pass).sum();
+    let low_samples: Vec<(&str, f64, f64)> = [
+        ("普通射门", regular as f64, 4.0 * n),
+        ("抢断", tackles as f64, 2.0 * n),
+        ("犯规", fouls as f64, 10.0 * n),
+        ("pass", passes as f64, 300.0 * n),
+    ]
+    .into_iter()
+    .filter(|(_, value, min)| value < min)
+    .collect();
+    if strict {
+        assert!(
+            low_samples.is_empty(),
+            "[flags-gate] 严格门样本不足（场数 {}）：{:?}",
+            n_seeds,
+            low_samples
+        );
+    } else if !low_samples.is_empty() {
+        // 报告期不阻塞：体量塌缩本身正是要看的信号，不能让它把报告步变成硬红。
+        println!("[flags-gate] WARN 样本低于严格门下限（report 模式继续打印）：{:?}", low_samples);
+    }
+
+    let checks = evaluate_l1_volume_bands(&stats);
+    let failed: Vec<&BandResult> = checks.iter().filter(|c| !c.pass).collect();
+    println!(
+        "[flags-gate] REALISM={:?} seeds={} matches（窗口 {}..{}）",
+        realism,
+        n_seeds,
+        SEEDS_L1_START,
+        SEEDS_L1_START + n_seeds as u64 - 1
+    );
+    for c in &checks {
+        println!(
+            "[flags-gate] {:<12} {:>8.4}  带 [{}, {}]  {}",
+            c.name,
+            c.value,
+            c.lo,
+            c.hi,
+            if c.pass { "PASS" } else { "FAIL" }
+        );
+    }
+    println!(
+        "[flags-gate] {}/{} 通过；样本 shots={} tackles={} fouls={} passes={}",
+        checks.len() - failed.len(),
+        checks.len(),
+        regular,
+        tackles,
+        fouls,
+        passes
+    );
+    if strict {
+        assert!(
+            failed.is_empty(),
+            "[flags-gate] L1 体量带未通过（strict）：{:?}",
+            failed
+        );
+    } else {
+        println!("[flags-gate] REPORT-ONLY：未通过 {} 条；C2/C3 修到带内后设 REALISM_GATES_STRICT=1 升门", failed.len());
+    }
+}
+
+/// 反证条：证明 `evaluate_l1_volume_bands` 不是空转——空输入必须全判 FAIL，
+/// 带内合成输入必须全判 PASS。没有这条，"报告全绿"可能只是比较写错了。
+#[test]
+fn l1_volume_band_evaluator_rejects_bad_input() {
+    let empty: Vec<MatchStats> = (0..SEEDS_FLAGS_L1).map(|_| MatchStats::default()).collect();
+    let bad = evaluate_l1_volume_bands(&empty);
+    assert_eq!(bad.len(), 4);
+    assert!(
+        bad.iter().all(|c| !c.pass),
+        "空输入应全部 FAIL（防空转）：{:?}",
+        bad
+    );
+    let good: Vec<MatchStats> = (0..SEEDS_FLAGS_L1)
+        .map(|_| {
+            let mut s = MatchStats::default();
+            s.n_shot_goal = 20; // 普通射门/场 = 20
+            s.n_tackle = 40; // 抢断/场 = 40
+            s.n_foul = 20; // 犯规/场 = 20
+            s.n_pass = 500;
+            s.n_pass_success = 430; // 传球成功率 = 0.86
+            s
+        })
+        .collect();
+    let ok = evaluate_l1_volume_bands(&good);
+    assert!(ok.iter().all(|c| c.pass), "带内输入应全部 PASS：{:?}", ok);
+}
+
+/// **C3/C4 旁路探针**：输出换盯人次数 / 未匹配防守者数 / 压迫人数直方图。
+///
+/// 跑法：
+/// ```sh
+/// cargo test --test realism --release -- --ignored realism_probes_report --nocapture
+/// ```
+#[test]
+#[ignore = "报告探针；运行加 --nocapture 看输出"]
+fn realism_probes_report() {
+    // 跟随 REALISM（默认 C1–C4 全开）；关掉的项对应的探针必须恒为 0，
+    // 反过来也证明探针只在开关打开时接线。
+    let realism = realism_flags_from_env();
+    let mut total = fm_engine::RealismProbeReport::default();
+    for seed in [401u64, 402, 403] {
+        let cfg = MatchConfig {
+            match_duration_seconds: DUR,
+            demo_mode: false,
+            model_version: MODEL_VERSION,
+            realism,
+        };
+        let (json, probe) = simulate_with_realism_probe(seed, cfg);
+        let events = split_events(&json);
+        println!(
+            "[probe] REALISM={:?} seed={} events={} | marking calls={} assign={} switches={} unmatched={} \
+             prev_idx_mismatch={} (switches/call={:.3}) | press calls={} gate_passed={} \
+             assigned_calls={} pressers={} (call/gate={:.3}) mean={:.3} hist={:?}",
+            realism,
+            seed,
+            events.len(),
+            probe.marking_calls,
+            probe.marking_assignments,
+            probe.marking_switches,
+            probe.marking_unmatched,
+            probe.marking_prev_index_mismatches,
+            probe.marking_switches as f64 / probe.marking_calls.max(1) as f64,
+            probe.press_calls,
+            probe.press_gate_passed,
+            probe.press_calls - probe.press_players_hist[0],
+            probe.pressers_total,
+            probe.press_assignment_rate(),
+            probe.pressers_mean(),
+            &probe.press_players_hist[..]
+        );
+        if realism.marking {
+            assert!(probe.marking_calls > 0, "marking 探针未接线（seed {}）", seed);
+            assert!(probe.marking_assignments > 0, "marking 分配数恒为 0（seed {}）", seed);
+            assert!(
+                probe.marking_switches <= probe.marking_assignments,
+                "换人数不可能超过分配数（seed {}）：{} > {}",
+                seed,
+                probe.marking_switches,
+                probe.marking_assignments
+            );
+            assert!(
+                probe.marking_unmatched <= probe.marking_calls * 10,
+                "未匹配数超过「每次调用最多 10 名防守者」的上界（seed {}）",
+                seed
+            );
+            assert_eq!(
+                probe.marking_prev_index_mismatches, 0,
+                "身份对齐后旧口径错位哨兵应恒为 0（seed {}）",
+                seed
+            );
+            // 接线自检：三场里若一次换人也没有，switch 计数器很可能是死的。
+            // 若将来机制真的做到零换人，删除本断言并在 PR 里说明。
+            assert!(probe.marking_switches > 0, "三场无任何换盯人（seed {}）——检查探针或换人惩罚", seed);
+        } else {
+            assert_eq!(probe.marking_calls, 0, "marking 关闭时探针不应计数（seed {}）", seed);
+            assert_eq!(probe.marking_assignments, 0);
+        }
+        if realism.press {
+            assert!(probe.press_calls > 0, "press 探针未接线（seed {}）", seed);
+            assert!(probe.press_gate_passed > 0, "press 门控从未通过（seed {}）", seed);
+            let hist_sum: u64 = probe.press_players_hist.iter().sum();
+            assert_eq!(hist_sum, probe.press_calls, "压迫直方图计数和 != press_calls（seed {}）", seed);
+            assert!(
+                probe.press_gate_passed <= probe.press_calls,
+                "gate_passed 不可能超过 press_calls（seed {}）：{} > {}",
+                seed,
+                probe.press_gate_passed,
+                probe.press_calls
+            );
+            // 有压迫者的调用数（不假设“每次最多 1 人”：未来放开人数上限时仍成立）。
+            let assigned_calls = probe.press_calls - probe.press_players_hist[0];
+            assert!(
+                assigned_calls <= probe.press_gate_passed,
+                "有压迫者的调用数不可能超过门控通过次数（seed {}）：{} > {}",
+                seed,
+                assigned_calls,
+                probe.press_gate_passed
+            );
+            assert!(
+                probe.pressers_total >= assigned_calls,
+                "压迫人次不可能少于有压迫者的调用数（seed {}）：{} < {}",
+                seed,
+                probe.pressers_total,
+                assigned_calls
+            );
+            assert!(
+                probe.pressers_total <= probe.press_calls * 10,
+                "压迫人次超过「每次最多 10 人」上界（seed {}）：{} > {}",
+                seed,
+                probe.pressers_total,
+                probe.press_calls * 10
+            );
+            // 精确不变量：总人次 == Σ 桶人数 × 次数（当前上限 10，故 10+ 桶不会溢出）。
+            // 这条能抓「pressers_total += pressers 写了两次」这类重复累加。
+            let weighted: u64 = probe
+                .press_players_hist
+                .iter()
+                .enumerate()
+                .map(|(n, &c)| n as u64 * c)
+                .sum();
+            assert_eq!(
+                probe.pressers_total, weighted,
+                "pressers_total != Σ n*hist[n]（seed {}）",
+                seed
+            );
+            assert!(assigned_calls > 0, "压迫从未实际指派（seed {}）——探针或机制未接线", seed);
+        } else {
+            assert_eq!(probe.press_calls, 0, "press 关闭时探针不应计数（seed {}）", seed);
+            assert_eq!(probe.press_gate_passed, 0, "press 关闭时 gate_passed 应为 0（seed {}）", seed);
+            assert_eq!(probe.pressers_total, 0, "press 关闭时 pressers_total 应为 0（seed {}）", seed);
+            let hist_sum: u64 = probe.press_players_hist.iter().sum();
+            assert_eq!(hist_sum, 0, "press 关闭时直方图应为空（seed {}）", seed);
+        }
+        for (i, &c) in probe.press_players_hist.iter().enumerate() {
+            total.press_players_hist[i] += c;
+        }
+        total.marking_calls += probe.marking_calls;
+        total.marking_assignments += probe.marking_assignments;
+        total.marking_switches += probe.marking_switches;
+        total.marking_unmatched += probe.marking_unmatched;
+        total.marking_prev_index_mismatches += probe.marking_prev_index_mismatches;
+        total.press_calls += probe.press_calls;
+        total.press_gate_passed += probe.press_gate_passed;
+        total.pressers_total += probe.pressers_total;
+    }
+    println!(
+        "[probe] 合计 3 场 REALISM={:?}：marking calls={} assign={} switches={} (switches/call={:.3}) unmatched={} \
+         prev_idx_mismatch={} | press calls={} gate_passed={} assigned_calls={} pressers={} \
+         (call/gate={:.3}) mean={:.3} hist={:?}",
+        realism,
+        total.marking_calls,
+        total.marking_assignments,
+        total.marking_switches,
+        total.marking_switches as f64 / total.marking_calls.max(1) as f64,
+        total.marking_unmatched,
+        total.marking_prev_index_mismatches,
+        total.press_calls,
+        total.press_gate_passed,
+        total.press_calls - total.press_players_hist[0],
+        total.pressers_total,
+        total.press_assignment_rate(),
+        total.pressers_mean(),
+        &total.press_players_hist[..]
+    );
+}
+
+/// 探针必须是**纯旁路**：加探针前后事件流逐字节相同。
+#[test]
+fn realism_probe_is_sidecar_only() {
+    let cfg = MatchConfig {
+        match_duration_seconds: 300.0,
+        demo_mode: false,
+        model_version: MODEL_VERSION,
+        realism: RealismFlags::parse("motion+formation+marking+press"),
+    };
+    let plain = simulate(401, cfg);
+    let (probed, probe) = simulate_with_realism_probe(401, cfg);
+    assert_eq!(plain, probed, "探针改变了事件流（必须只读旁路）");
+    assert!(probe.marking_calls > 0, "探针在 300s 内未被调用");
 }
 
 /// chi-square 拟合优度（3 桶，df=2）。返回统计量。
@@ -740,9 +1116,11 @@ fn l1_shot_result_distributions() {
     // 不得为了让读数居中而下压带的界（那正是本 requirement 要消除的「按现状标定」）。
     let shots_per = regular as f64 / n;
     assert!(
-        (14.0..=29.0).contains(&shots_per),
-        "普通射门/场 {:.2} ∉ [14,29]（#104 重标定：真实侧 StatsBomb 大五 n=170 mean 21.64 sd 5.03 的 ±1.5sd）",
-        shots_per
+        (L1_BAND_SHOTS.0..=L1_BAND_SHOTS.1).contains(&shots_per),
+        "普通射门/场 {:.2} ∉ [{},{}]（#104 重标定：真实侧 StatsBomb 大五 n=170 mean 21.64 sd 5.03 的 ±1.5sd）",
+        shots_per,
+        L1_BAND_SHOTS.0,
+        L1_BAND_SHOTS.1
     );
 
     // 头球射门（emit_header_shot）：对齐禁区桶 goal 15 / saved 30 / off 55
@@ -787,9 +1165,11 @@ fn l1_tackle_dilution_and_slot_mix() {
     // ⚠️ WhoScored 的「~30/场（15-17/队）」是**成功抢断**口径，**不是**本带的依据（混口径会低估）。
     let tackles_per = tackles as f64 / n;
     assert!(
-        (24.0..=50.0).contains(&tackles_per),
-        "抢断/场 {:.2} ∉ [24,50]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）",
-        tackles_per
+        (L1_BAND_TACKLES.0..=L1_BAND_TACKLES.1).contains(&tackles_per),
+        "抢断/场 {:.2} ∉ [{},{}]（#104 新增体量带：真实侧 StatsBomb 大五 n=170 `Duel/Tackle` mean 36.90 sd 8.87 的 ±1.5sd）",
+        tackles_per,
+        L1_BAND_TACKLES.0,
+        L1_BAND_TACKLES.1
     );
     // P30（D3，2C）：`same_pair`/`far` 补丁已删，抢断结果只有 success/fail 两态，
     // 成功按 `TACKLE_SUCCESS_RATE`(0.5) 掷定 → 整体 success 应 ≈ 0.5。
@@ -958,9 +1338,11 @@ fn l1_pass_completion_rate() {
     assert!(intercepted + lost >= 3_000, "失败传球样本不足：{}（200 场应 ~7000）", intercepted + lost);
     let rate = success as f64 / total as f64;
     assert!(
-        (0.82..=0.90).contains(&rate),
-        "整体传球成功率 {:.4} ∉ [0.82,0.90]（目标中心 0.86-0.88，L3 口径同 95.9%→~87%）",
-        rate
+        (L1_BAND_PASS_RATE.0..=L1_BAND_PASS_RATE.1).contains(&rate),
+        "整体传球成功率 {:.4} ∉ [{},{}]（目标中心 0.86-0.88，L3 口径同 95.9%→~87%）",
+        rate,
+        L1_BAND_PASS_RATE.0,
+        L1_BAND_PASS_RATE.1
     );
     // 失败构成 sanity：拦截应显著多于传失（拦截是主要失败形态，真实拦截/失误 ~2-3:1）
     let int_share = intercepted as f64 / (intercepted + lost).max(1) as f64;
@@ -1106,7 +1488,13 @@ fn l1_fouls_and_cards() {
     let fk: usize = stats.iter().map(|s| s.n_free_kick).sum();
     assert!(fouls >= 2000, "犯规样本不足：{}（200 场应 ~4000+）", fouls);
     let foul_pm = fouls as f64 / n;
-    assert!((16.0..=30.0).contains(&foul_pm), "每场犯规 {:.2} ∉ [16,30]", foul_pm);
+    assert!(
+        (L1_BAND_FOULS.0..=L1_BAND_FOULS.1).contains(&foul_pm),
+        "每场犯规 {:.2} ∉ [{},{}]",
+        foul_pm,
+        L1_BAND_FOULS.0,
+        L1_BAND_FOULS.1
+    );
     let yellow_pm = yellows as f64 / n;
     assert!((2.0..=5.0).contains(&yellow_pm), "每场黄牌 {:.2} ∉ [2.0,5.0]", yellow_pm);
     let red_pm = reds as f64 / n;
@@ -1615,7 +2003,7 @@ fn p31_frequency_5min_directional() {
     /// 5 分钟 cohort 的 seed 数（D4：≥1000 场聚合，低均值计数才有统计意义）。
     const L1_5MIN_SEEDS: u64 = 1000;
     let count = |seed: u64| -> [u64; 5] {
-        let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 300.0, demo_mode: false, model_version: MODEL_VERSION, realism: fm_engine::RealismFlags::default() };
         let s = simulate(seed, cfg);
         let mut shot = 0;
         let mut restart = 0; // **出界重开**：角球 + 界外球 + 门球（spec scenario 口径）
@@ -1689,7 +2077,7 @@ fn p31_frequency_5min_directional() {
     let n90 = 20u64;
     let mut shots_90 = 0u64;
     for seed in 1..=n90 {
-        let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION });
+        let s = simulate(seed, MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION, realism: fm_engine::RealismFlags::default() });
         for e in split_events(&s) {
             if event_type(&e) == "shot" {
                 shots_90 += 1;

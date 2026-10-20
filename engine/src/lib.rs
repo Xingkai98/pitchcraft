@@ -250,16 +250,120 @@ pub const MODEL_VERSION: u32 = 9;
 /// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v5 `tests/golden-v5/`、
 /// v6 `tests/golden-v6/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
+pub mod carrier;
+pub mod formation;
+pub mod marking;
+pub mod space;
+pub mod motion;
+
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
     pub match_duration_seconds: f64,
     pub demo_mode: bool,
     pub model_version: u32,
+    /// C1–C4 的真实度改造开关。**默认全关**——旧路径与既有 golden/直播测试保持原样。
+    /// 由 wasm config JSON 的 `"realism":"motion+formation+marking+press"` 打开。
+    pub realism: RealismFlags,
+}
+
+/// 真实度改造的逐项开关（C1–C5 各一）。
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct RealismFlags {
+    /// C1：速度/加速度/转弯半径积分（`motion` 模块）。关闭时走旧 `move_toward`。
+    pub motion: bool,
+    /// C2：队形目标改为站位表 + 插值（`formation` 模块）。
+    pub formation: bool,
+    /// C3：防守方盯人分配（`marking` 模块）。
+    pub marking: bool,
+    /// C4：pitch control 压迫场（`space` 模块）。
+    pub press: bool,
+    /// C5：持球者链搜索（`carrier` 模块）。
+    pub carrier: bool,
+}
+
+impl RealismFlags {
+    /// 解析 `"motion+formation"` 形式；未知项忽略（配置错误由调用方在启动时报告）。
+    pub fn parse(spec: &str) -> Self {
+        let mut f = RealismFlags::default();
+        for part in spec.split('+') {
+            match part.trim() {
+                "motion" => f.motion = true,
+                "formation" => f.formation = true,
+                "marking" => f.marking = true,
+                "press" => f.press = true,
+                "carrier" => f.carrier = true,
+                _ => {}
+            }
+        }
+        f
+    }
+    /// 是否全关（默认路径）。
+    pub fn is_off(&self) -> bool {
+        *self == RealismFlags::default()
+    }
+}
+
+/// C3/C4 的**旁路探针**：只读计数，不参与任何决策、不写事件流。
+///
+/// 用途（#172 / #173 票据要求）：
+/// - `marking_switches`：换盯人对象的次数——防「每拍换人」导致的球员原地打转；
+/// - `marking_unmatched`：未匹配防守者数——防「所有人都被拉去盯人、没有人守区」；
+/// - `press_players_hist`：每次 mover 生成时实际去压迫的人数直方图——B4 只量「有没有人逼近」，
+///   量不了人数上限。
+///
+/// 口径：计数发生在**每次 `compute_mover_candidates` 调用**；正常开放局至多一拍一次
+/// （2026-10-19 实测 3 场 `marking_calls=5332–5342 < 5400 tick`）。若未来特殊分支
+/// 一拍多次，`calls` 会大于 tick 数——`marking_calls` / `press_calls` 是分母。
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RealismProbeReport {
+    pub marking_calls: u64,
+    pub marking_assignments: u64,
+    /// 换盯人对象的次数：某防守者**这次匹配到的进攻者 id** 与它上一次匹配到的不同。
+    /// 口径：跨过未匹配段后换了人仍计数（保存的是上一次**匹配到**的目标，不是上一拍状态）；
+    /// `Some → None`（暂时失去目标）本身不计，只有新的匹配目标不同才计。
+    /// 换防守方（球权回合切换）时重置，不跨回合比较。
+    pub marking_switches: u64,
+    pub marking_unmatched: u64,
+    /// **旧口径哨兵**：`prev` 下标在当前 `att_ids` 中指向的进攻者，与 `mark_prev_attacker`
+    /// 记录的上次目标不一致的次数。C3 身份对齐后 `prev` 由进攻者 id 构造，本值应恒为 0；
+    /// 保留用于抓“有人把构造逻辑改回下标”的回归（2026-10-19 审阅 P2）。
+    pub marking_prev_index_mismatches: u64,
+    pub press_calls: u64,
+    /// `apply_pressure` 通过了「球在防守方本方半场 + 双方都有人」这两道前置条件的次数。
+    /// 压迫人数为 0 的调用要分成「门控没过」与「过了门控但没有空闲防守者」两种——
+    /// 只看 `press_players_hist[0]` 会把它们混在一起（2026-10-19 审阅 P1）。
+    pub press_gate_passed: u64,
+    /// 实际被指派去压迫的人次总和（一次调用最多 10；与直方图分开记，避免 10+ 桶
+    /// 把均值压成下界——2026-10-19 审阅 P2）。
+    pub pressers_total: u64,
+    /// 下标 = 该次调用实际被指派去压迫的人数（上限 10，溢出并入最后一格）。
+    pub press_players_hist: [u64; 11],
+}
+
+impl RealismProbeReport {
+    /// 通过门控的调用里，**至少派出 1 名压迫者**的调用比例（不是人数；人数看
+    /// `pressers_total` / `pressers_mean`）。
+    pub fn press_assignment_rate(&self) -> f64 {
+        if self.press_gate_passed == 0 {
+            return 0.0;
+        }
+        let assigned_calls = self.press_calls.saturating_sub(self.press_players_hist[0]);
+        assigned_calls as f64 / self.press_gate_passed as f64
+    }
+
+    /// 每次 mover 生成的平均压迫人数（含未进入压迫门控的 0 人调用）。
+    /// 用 `pressers_total` 而不是直方图加权——后者在 10+ 溢出时只是下界。
+    pub fn pressers_mean(&self) -> f64 {
+        if self.press_calls == 0 {
+            return 0.0;
+        }
+        self.pressers_total as f64 / self.press_calls as f64
+    }
 }
 
 impl MatchConfig {
     pub fn default_() -> Self {
-        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION }
+        MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() }
     }
 }
 
@@ -614,6 +718,18 @@ pub const LOOSE_MAX_TICKS: u32 = 2;
 pub const CARRIER_SPEED_MS: f64 = 5.0;
 /// 无球跑位速度（m/s）
 pub const RUN_SPEED_MS: f64 = 4.0;
+/// C1（`realism.motion`）下的巡航速度上限（m/s）。旧 `RUN_SPEED_MS=4.0` 是恒速模型的产物，
+/// 相当于慢跑；真实比赛里无球跑动常在 6–7 m/s。仅在新路径使用，旧路径不变。
+pub const RUN_SPEED_MS_MOTION: f64 = 6.5;
+/// C3：盯人目标与队形目标的混合权重（0 = 完全队形，1 = 完全盯人）。
+/// 0.65 保留盯人的对抗性，同时让 C2 的队形约束仍然生效（否则全队被对手拉散）。
+pub const MARK_BLEND: f64 = 0.75;
+/// C3：盯人时允许压过中线的距离（归一化，0.10 ≈ 10.5m）。
+pub const MARK_FRONT_LIMIT: f64 = 0.10;
+/// C3：盯人目标相对队形目标的最大偏移（米）。
+pub const MARK_MAX_DRAG_M: f64 = 22.0;
+/// C1：每个决策拍内的积分子步数（10 × 0.1 s）。决策仍是 1 Hz，只有运动积分变细。
+pub const SIM_SUBSTEPS: u32 = 10;
 /// 门将回位速度（m/s）
 pub const GK_SPEED_MS: f64 = 3.0;
 
@@ -2028,7 +2144,47 @@ fn choose_pass_target(st: &MatchState) -> Option<i32> {
 
 /// 持球者的传球目标 id。`PASS_SELECTION_ENABLED` 时走价值函数，否则逐字退化为
 /// 「最近队友」（与 `emit_pass_highlight_inner` 同规则，零 RNG）。
+/// C5：用 `carrier` 模块的评分从前场队友里选传球目标。
+///
+/// 只在持球者不是门将、且存在候选时返回 `Some`；否则返回 `None` 让旧逻辑接手。
+fn model_pass_target(st: &MatchState) -> Option<i32> {
+    let carrier = st.carrier;
+    if carrier < 0 || carrier > 21 || carrier == 0 || carrier == 21 {
+        return None;
+    }
+    let home = carrier <= 10;
+    let dir = if home { 1.0 } else { -1.0 };
+    let from = st.pos[carrier as usize];
+    let mates: Vec<i32> = (0..22i32)
+        .filter(|&id| {
+            (id <= 10) == home
+                && id != carrier
+                && id != 0 && id != 21
+                && !st.sent_off[id as usize]
+        })
+        .collect();
+    if mates.is_empty() {
+        return None;
+    }
+    let mate_pos: Vec<(f64, f64)> = mates.iter().map(|&id| st.pos[id as usize]).collect();
+    let opp_pos: Vec<(f64, f64)> = (0..22i32)
+        .filter(|&id| {
+            let h = id <= 10;
+            h != home && !st.sent_off[id as usize]
+        })
+        .map(|id| st.pos[id as usize])
+        .collect();
+    let (idx, _score) = carrier::best_pass(from, &mate_pos, &opp_pos, dir)?;
+    Some(mates[idx])
+}
+
 fn carrier_pass_target(st: &MatchState) -> Option<i32> {
+    // C5（`realism.carrier`）：用确定性前向模型选传球目标，而不是「最近的队友」。
+    if st.realism.carrier {
+        if let Some(t) = model_pass_target(st) {
+            return Some(t);
+        }
+    }
     if PASS_SELECTION_ENABLED {
         if let Some(t) = choose_pass_target(st) {
             return Some(t);
@@ -2504,6 +2660,20 @@ fn execute_action_resolution(
 struct MatchState {
     lineup: [(f64, f64); 22],
     pos: [(f64, f64); 22],
+    /// C1：米制速度（m/s）。仅 `realism.motion` 开启时被读写；关闭时恒为 0、不影响旧路径。
+    vel: [(f64, f64); 22],
+    /// C1–C5 开关（从 `MatchConfig` 拷入，`MatchState::new` 后由 `match_events` 设置）。
+    realism: RealismFlags,
+    /// C3：按**防守者 id** 记录**上一次实际匹配到的进攻者 id**，既用于换人惩罚，
+    /// 也用于换人次数探针。⚠️ 必须存 id 而不是 `att_ids` 下标——持球者一变，
+    /// `att_ids` 的成员与顺序就变了，同一下标可能指向另一个进攻者（2026-10-19 审阅 P1）。
+    /// 未匹配的调用**不清空**：跨过一段未匹配后换了目标，仍算一次换人。
+    mark_prev_attacker: [Option<usize>; 22],
+    /// C3：上一次调用时哪一队在防守（0=home, 1=away）。换防守方时清空
+    /// `mark_prev_attacker`——一次进攻回合结束后的旧盯人不应算作下一次防守的「换人」。
+    mark_prev_team: Option<u8>,
+    /// C3/C4 旁路探针：只读计数，不参与决策。
+    probe: RealismProbeReport,
     ball_pos: (f64, f64), // 当前球位置（每 tick 按状态维护，供队形目标）
     possession: u32, // 0=home, 1=away
     carrier: i32,
@@ -2676,6 +2846,11 @@ impl MatchState {
         MatchState {
             lineup: lp,
             pos,
+            vel: [(0.0, 0.0); 22],
+            realism: RealismFlags::default(),
+            mark_prev_attacker: [None; 22],
+            mark_prev_team: None,
+            probe: RealismProbeReport::default(),
             ball_pos: (0.55, 0.5),
             possession: 0,
             carrier: 10,
@@ -3063,7 +3238,22 @@ pub fn simulate(seed: u64, config: MatchConfig) -> String {
     // 正式路径不建 recorder：传 `disabled()`，所有观察命令都是空操作。**行为与正式事件流
     // 不变**（观察关闭路径的开销近零），但不作绝对性能承诺——见 design §15 A9-9。
     let mut obs = observation::BehaviorObservationRecorder::disabled();
-    events_to_json(&match_events(seed, config, &mut obs))
+    events_to_json(&match_events(seed, config, &mut obs).0)
+}
+
+/// 与 [`simulate`] 跑**同一场比赛**，额外返回 C3/C4 的旁路探针（#172 / #173 票据要求）。
+///
+/// **事件流逐字节同源**：探针只累加只读计数，不参与决策、不消费 RNG；由测试
+/// `realism_probe_is_sidecar_only` 守住。用于：
+/// - 换盯人次数 / 未匹配防守者数（#172）；
+/// - 每次 mover 生成时的压迫人数直方图（#173）。
+pub fn simulate_with_realism_probe(
+    seed: u64,
+    config: MatchConfig,
+) -> (String, RealismProbeReport) {
+    let mut obs = observation::BehaviorObservationRecorder::disabled();
+    let (events, probe) = match_events(seed, config, &mut obs);
+    (events_to_json(&events), probe)
 }
 
 /// #15A（P15）opt-in 入口：跑同一场比赛，并在**不改动 `simulate()` 任何行为**的前提下返回
@@ -3093,7 +3283,7 @@ pub fn simulate_with_behavior_observations(
     if observable {
         recorder.match_started(observation::ObservedTime::event_emit(0.0), observation::TeamRef::Home);
     }
-    let events = match_events(seed, config, &mut recorder);
+    let (events, _probe) = match_events(seed, config, &mut recorder);
     if observable {
         observation::commit_stream_end_boundary(&mut recorder, &events);
     }
@@ -3117,9 +3307,9 @@ fn match_events(
     seed: u64,
     config: MatchConfig,
     obs: &mut observation::BehaviorObservationRecorder,
-) -> Vec<Event> {
+) -> (Vec<Event>, RealismProbeReport) {
     if config.demo_mode {
-        return match_events_demo(seed, config);
+        return (match_events_demo(seed, config), RealismProbeReport::default());
     }
     let mut rng = SeededRng::new(seed);
     let mut events = Vec::new();
@@ -3139,6 +3329,7 @@ fn match_events(
     });
 
     let mut st = MatchState::new(&lineup);
+    st.realism = config.realism;
     st.pos[9] = (0.5, 0.5);
     st.pos[10] = (0.55, 0.5);
     st.carrier_from = (0.55, 0.5);
@@ -3257,7 +3448,7 @@ fn match_events(
         st.away_score,
         "half_time",
     ));
-    events
+    (events, st.probe)
 }
 
 /// 构造 beat 事件（tick 节拍）
@@ -3542,6 +3733,12 @@ fn is_defender(st: &MatchState, id: i32) -> bool {
 /// 防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
 /// **门将不走本函数**（调用方 `compute_mover_candidates` 跳过 id 0/21，门将目标单独算，见常量 `GK_COME_OUT_SLOPE`）。
 fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
+    // C2：站位表 + 插值（`realism.formation`）。关闭时走旧解析公式。
+    if st.realism.formation {
+        let home = id <= 10;
+        let my_attack = (home && st.possession == 0) || (!home && st.possession == 1);
+        return formation::target(id, st.ball_pos, home, my_attack, st.ticks_since_meaningful_action as f64);
+    }
     let base = st.lineup[id as usize];
     let ball = st.ball_pos;
     let home = id <= 10;
@@ -3696,6 +3893,210 @@ fn attacking_forward(st: &MatchState, attacking: u32) -> (f64, f64) {
 ///
 /// P34（#53 D2）：本函数**只产候选、不写 `st.pos`**——最终位置分离与写回由 `commit_beat_positions`
 /// 统一负责（「候选计算之后、写入 st.pos / 构造 mover 事件之前」这一顺序是 codex 的硬约束）。
+/// C3：给防守方分配盯人对象并覆盖其目标。
+///
+/// 只有**非持球方**的外场球员参与；门将、罚下、已被特殊分支指派的人不参与
+/// （特殊分支的 action 不是 `run`，直接跳过——避免和 close_down/chase/角球抢点打架）。
+/// C4：用控制场选一个压迫点，由离球最近的自由防守者去；其余防守者按「弱侧向球收」微调。
+///
+/// C4 选人阶段：只在**非持球方**、球在本方半场（沿用 `OPEN_PRESS_GATE` 的门控语义）时生效。
+///
+/// **选人先于盯人**（#172 契约）：此时 C3 还没把防守者标成 `mark`，所以从 `action=="run"`
+/// 里能真正选出压迫者；调用方选中后先把 `action` 置为 `close_down`，让随后的 `apply_marking`
+/// 排除它。
+///
+/// 返回 `(是否通过门控, 被选中的 (id, 压迫点))`。只计算/选人，**不改 targets**。
+fn pick_presser(
+    st: &mut MatchState,
+    actions: &[String],
+    excluded: &[i32],
+) -> (bool, Option<(i32, (f64, f64))>) {
+    let def_home = st.possession == 1;
+    // 门控：球在防守方本方半场
+    let ball_in_own_half = if def_home { st.ball_pos.0 < 0.5 } else { st.ball_pos.0 > 0.5 };
+    if !ball_in_own_half {
+        return (false, None);
+    }
+    let is_def = |id: i32| (id <= 10) == def_home && id != 0 && id != 21 && !st.sent_off[id as usize];
+    let ours: Vec<(f64, f64)> = (0..22i32).filter(|&id| is_def(id)).map(|id| st.pos[id as usize]).collect();
+    let theirs: Vec<(f64, f64)> = (0..22i32)
+        .filter(|&id| {
+            let home = id <= 10;
+            home != def_home && id != 0 && id != 21 && !st.sent_off[id as usize]
+        })
+        .map(|id| st.pos[id as usize])
+        .collect();
+    if ours.is_empty() || theirs.is_empty() {
+        return (false, None);
+    }
+    st.probe.press_gate_passed += 1;
+    let pp = space::press_point(st.ball_pos, &ours, &theirs);
+    let mut best: Option<(f64, i32)> = None;
+    for id in 0..22i32 {
+        // `excluded` = 本拍不产 mover 的球员（高亮参与者/被冻结者）。选中他们不会产生
+        // 任何 mover 效果，只会让「压迫已派出」的探针读数虚高——必须跳过。
+        if excluded.contains(&id) || !is_def(id) || actions[id as usize] != "run" {
+            continue;
+        }
+        let d = dist_norm(st.pos[id as usize], st.ball_pos);
+        if best.map(|(bd, _)| d < bd).unwrap_or(true) {
+            best = Some((d, id));
+        }
+    }
+    (true, best.map(|(_, id)| (id, pp)))
+}
+
+/// C4 应用阶段：设置压迫者目标，并让其余防守者弱侧向球收。
+///
+/// `gate_passed=false` 时完全不动 targets（与旧实现的门控外行为一致）。
+/// 返回实际指派去压迫的人数（当前最多 1；未来放开上限时直方图会反映）。
+fn apply_pressure_target(
+    st: &mut MatchState,
+    targets: &mut [Option<(f64, f64)>],
+    actions: &mut [String],
+    gate_passed: bool,
+    presser: Option<(i32, (f64, f64))>,
+) -> usize {
+    if !gate_passed {
+        return 0;
+    }
+    let def_home = st.possession == 1;
+    let is_def = |id: i32| (id <= 10) == def_home && id != 0 && id != 21 && !st.sent_off[id as usize];
+    let ours: Vec<(f64, f64)> = (0..22i32).filter(|&id| is_def(id)).map(|id| st.pos[id as usize]).collect();
+    let theirs: Vec<(f64, f64)> = (0..22i32)
+        .filter(|&id| {
+            let home = id <= 10;
+            home != def_home && id != 0 && id != 21 && !st.sent_off[id as usize]
+        })
+        .map(|id| st.pos[id as usize])
+        .collect();
+    let mut pressers = 0usize;
+    if let Some((id, pp)) = presser {
+        targets[id as usize] = Some(pp);
+        actions[id as usize] = "close_down".to_string();
+        pressers += 1;
+    }
+    // 其余防守者：弱侧向球收（制造横向移动，而不是全队平移）
+    for id in 0..22i32 {
+        if !is_def(id) || actions[id as usize] == "close_down" {
+            continue;
+        }
+        if let Some(t) = targets[id as usize] {
+            let c = space::control_at(t, &ours, &theirs).clamp(-1.0, 1.0);
+            targets[id as usize] = Some((t.0, (t.1 + space::compress_dy(t.1, st.ball_pos.1, c)).clamp(0.06, 0.94)));
+        }
+    }
+    pressers
+}
+
+fn apply_marking(
+    st: &mut MatchState,
+    targets: &mut [Option<(f64, f64)>],
+    actions: &mut [String],
+) {
+    let def_team_home = st.possession == 1;
+    let def_ids: Vec<i32> = (0..22i32)
+        .filter(|&id| {
+            let home = id <= 10;
+            home == def_team_home
+                && id != 0 && id != 21
+                && !st.sent_off[id as usize]
+                && actions[id as usize] == "run"
+        })
+        .collect();
+    let att_ids: Vec<i32> = (0..22i32)
+        .filter(|&id| {
+            let home = id <= 10;
+            home != def_team_home
+                && id != 0 && id != 21
+                && !st.sent_off[id as usize]
+                && Some(id) != if st.carrier >= 0 { Some(st.carrier) } else { None }
+        })
+        .collect();
+    st.probe.marking_calls += 1;
+    let def_team = def_team_home as u8;
+    if st.mark_prev_team != Some(def_team) {
+        st.mark_prev_attacker = [None; 22];
+        st.mark_prev_team = Some(def_team);
+    }
+    if def_ids.is_empty() || att_ids.is_empty() {
+        st.probe.marking_unmatched += def_ids.len() as u64;
+        // 不清空 mark_prev_attacker：它保存「上一次匹配到的目标」，跨未匹配段仍用于换人判定。
+        return;
+    }
+    let def_pos: Vec<(f64, f64)> = def_ids.iter().map(|&id| st.pos[id as usize]).collect();
+    let att_pos: Vec<(f64, f64)> = att_ids.iter().map(|&id| st.pos[id as usize]).collect();
+    // 把“上一次匹配到的进攻者 id”映射到当前 `att_ids` 的下标；进攻者不在场时传 None。
+    // 这样 `marking::assign` 里的 `prev[i] == Some(j)` 才真正表示“还是同一个人”。
+    let prev: Vec<Option<usize>> = def_ids
+        .iter()
+        .map(|&d| {
+            st.mark_prev_attacker[d as usize]
+                .and_then(|att| att_ids.iter().position(|&a| a as usize == att))
+        })
+        .collect();
+    let out = marking::assign(&def_pos, &att_pos, &prev);
+    for k in 0..out.len() {
+        let defender = def_ids[k];
+        match out[k] {
+            Some(j) => {
+                // 存**进攻者 id**，不是 att_ids 下标（审阅 P1：下标会随持球者变化而错位）。
+                let attacker = att_ids[j] as usize;
+                let last_att = st.mark_prev_attacker[defender as usize];
+                // 诊断：换人惩罚的 `prev` 下标在当前 att_ids 里指向的进攻者，
+                // 与探针记住的上一次目标是否一致。下标越界（罚下导致 att_ids 变短）
+                // 也算错位——此时惩罚永远不会命中「同一人」。
+                let prev_idx = prev.get(k).and_then(|v| *v);
+                let penalty_att = prev_idx
+                    .and_then(|pi| att_ids.get(pi))
+                    .map(|&x| x as usize);
+                if let Some(last) = last_att {
+                    if prev_idx.is_some() && penalty_att != Some(last) {
+                        st.probe.marking_prev_index_mismatches += 1;
+                    }
+                }
+                st.probe.marking_assignments += 1;
+                if let Some(prev_att) = last_att {
+                    if prev_att != attacker {
+                        st.probe.marking_switches += 1;
+                    }
+                }
+                st.mark_prev_attacker[defender as usize] = Some(attacker);
+            }
+            None => {
+                st.probe.marking_unmatched += 1;
+                // 保留上一次匹配目标：跨过未匹配段再换人时仍能计出这次换人。
+            }
+        }
+    }
+    let own_goal_x = if def_team_home { 0.0 } else { 1.0 };
+    for (k, &id) in def_ids.iter().enumerate() {
+        if let Some(j) = out[k] {
+            let base = targets[id as usize]; // 盯人前 = C2 的队形目标
+            let mut t = marking::mark_point(att_pos[j], own_goal_x);
+            // ① 前压上限：最多压到对方半场 MARK_FRONT_LIMIT 处，不再往对方球门方向走。
+            //    没有这条时，盯的人退到对方禁区，防守者会一路跟到对面球门——整条防线被拉平。
+            //    （用固定线而不是「不许越过球」：后者会把防守者钉在球线上，两队被彻底拉开。）
+            let front = 0.5 + MARK_FRONT_LIMIT;
+            let back = 0.5 - MARK_FRONT_LIMIT;
+            t.0 = if def_team_home { t.0.min(front) } else { t.0.max(back) };
+            if let Some(b) = base {
+                // ② 与队形目标的最大偏离：盯人可以让防线移动，但不该把人拽到 30m 外。
+                let max_drag = MARK_MAX_DRAG_M / PITCH_LENGTH_M;
+                t.0 = b.0 + (t.0 - b.0).clamp(-max_drag, max_drag);
+            }
+            // ② 与队形目标混合：盯人是偏移，不是替换。纯盯人会让全队跟着对手跑散。
+            if let Some(b) = base {
+                t.0 = b.0 * (1.0 - MARK_BLEND) + t.0 * MARK_BLEND;
+                t.1 = b.1 * (1.0 - MARK_BLEND) + t.1 * MARK_BLEND;
+            }
+            targets[id as usize] = Some((t.0.clamp(0.03, 0.97), t.1.clamp(0.06, 0.94)));
+            actions[id as usize] = "mark".to_string();
+        }
+        // 未匹配者保留队形目标（`run`）
+    }
+}
+
 fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[i32]) -> Vec<Mover> {
     let _ = rng;
     let _ = t;
@@ -3785,6 +4186,29 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
             targets[id as usize] = Some(formation_target(st, id));
         }
     }
+    // C4（`realism.press`）**先选人**（#172 契约：press 优先于 mark）：只计算压迫点/选人，
+    // 把选中者的 action 先置为 `close_down`，让下面的 C3 自动排除它。
+    let press = if st.realism.press {
+        pick_presser(st, &actions, excluded)
+    } else {
+        (false, None)
+    };
+    if let Some((id, _)) = press.1 {
+        actions[id as usize] = "close_down".to_string();
+    }
+    // C3（`realism.marking`）：防守方盯人覆盖。在队形目标之后、repulsion 之前——
+    // repulsion 仍然生效（spec 要求所有 mover 目标先过同队分离），但停距量到分离后的点。
+    // presser 的 action 已不是 `run`，因此不会进入盯人分配。
+    if st.realism.marking {
+        apply_marking(st, &mut targets, &mut actions);
+    }
+    // C4 应用：设置压迫者目标 + 其余防守者弱侧向球收（在 mark 之后，保留原压缩行为）。
+    if st.realism.press {
+        let pressers = apply_pressure_target(st, &mut targets, &mut actions, press.0, press.1);
+        st.probe.press_calls += 1;
+        st.probe.pressers_total += pressers as u64;
+        st.probe.press_players_hist[pressers.min(10)] += 1;
+    }
     // 第二遍：repulsion（同队目标间距修正，迭代 ≤3；carrier 不参与）。
     // P34（#53）起判定与推开都走**米制**（`same_team_dist_m` + `separate_pair_m`），
     // 与 detector `player_overlap` 口径一致——旧归一化欧氏口径在 y 方向只保证 1.36m。
@@ -3819,16 +4243,28 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
             let out_norm = keeper_line_dist_m(ball_line_m) / PITCH_LENGTH_M;
             let tx = if id == 0 { out_norm } else { 1.0 - out_norm };
             let ty = 0.5 + (st.ball_pos.1 - 0.5) * GK_TRACK_Y;
-            ((tx, ty), "keeper_return".to_string(), GK_SPEED_MS)
+            let sp = if st.realism.motion { GK_SPEED_MS * 1.6 } else { GK_SPEED_MS };
+            ((tx, ty), "keeper_return".to_string(), sp)
         } else if let Some(ta) = targets[id as usize] {
-            (ta, actions[id as usize].clone(), RUN_SPEED_MS)
+            let sp = if st.realism.motion { RUN_SPEED_MS_MOTION } else { RUN_SPEED_MS };
+            (ta, actions[id as usize].clone(), sp)
         } else {
             continue;
         };
         let d = dist_norm(from, target);
-        if d < dead_zone { continue; }
-        let step = d.min(norm_step(speed * TICK_SECONDS));
-        let (tox, toy) = move_toward(from, target, step);
+        // C1（`realism.motion`）：去掉「到点冻结」，并改用速度/加速度/转弯半径积分。
+        // 关闭时保持旧行为（dead zone + 恒速直线），旧 golden 与本拍节奏不变。
+        let (tox, toy) = if st.realism.motion {
+            let (np, _) = motion::step_n(
+                from, st.vel[id as usize], target, speed, TICK_SECONDS, SIM_SUBSTEPS,
+            );
+            // 位置仍受球场边界约束（与旧路径一致：move_toward 的目标本身在界内）
+            (clamp01(np.0), clamp01(np.1))
+        } else {
+            if d < dead_zone { continue; }
+            let step = d.min(norm_step(speed * TICK_SECONDS));
+            move_toward(from, target, step)
+        };
         movers.push(Mover {
             id, from_x: from.0, from_y: from.1, to_x: tox, to_y: toy,
             speed, action,
@@ -6441,7 +6877,33 @@ fn beat_movers(
     let segs = highlight_frozen_segs(st, t, &movers);
     commit_beat_positions_ex(st, &mut movers, frozen, &[], &[], &segs);
     for m in &movers { st.last_emitted[m.id as usize] = (m.to_x, m.to_y); }
+    // C1：速度由**实际提交后的位移**反推（分离修正会改终点，用名义速度会失真）。
+    if st.realism.motion {
+        refresh_velocities(st, &movers, &[]);
+    }
     movers
+}
+
+/// C1：按本拍实际位移反推速度（m/s）。不在 `movers` 里的人视为静止（速度为 0）。
+///
+/// 用提交后的 `to_*` 而不是积分器给出的名义位置——`commit_beat_positions_ex` 的同队分离
+/// 会推开终点，若不反推，下一拍的积分会从「没走过的速度」继续，表现为滑步。
+fn refresh_velocities(st: &mut MatchState, movers: &[Mover], exclude: &[i32]) {
+    let mut seen = [false; 22];
+    for m in movers {
+        let id = m.id as usize;
+        if id >= 22 { continue; }
+        seen[id] = true;
+        st.vel[id] = (
+            (m.to_x - m.from_x) * PITCH_LENGTH_M / TICK_SECONDS,
+            (m.to_y - m.from_y) * PITCH_WIDTH_M / TICK_SECONDS,
+        );
+    }
+    for id in 0..22 {
+        if !seen[id] && !exclude.contains(&(id as i32)) {
+            st.vel[id] = (0.0, 0.0);
+        }
+    }
 }
 
 /// 高亮参与者的**拍内显示滑行线段**（#53 拍内扫掠的参与者侧）。
@@ -7385,6 +7847,287 @@ pub fn default_lineup_json() -> String {
 mod tests {
     use super::*;
 
+    /// C3 探针判别性守卫（2026-10-19 审阅 P1）：换人计数必须按**进攻者 id** 对齐。
+    ///
+    /// 场景：持球者从 13 变成 11 时，`att_ids` 从 `[11,12]` 变 `[12,13]`——同一个进攻者 12
+    /// 的下标从 1 平移到 0。按下标比较会把「没换人」误计成换人；按 id 比较不会。
+    /// 反向也守：真的换成另一个进攻者时必须计 1 次。
+    #[test]
+    fn c3_probe_switch_counts_by_attacker_id_not_index() {
+        let mut st = MatchState::new(&default_lineup());
+        st.possession = 1; // home 防守（def_team_home = true）
+        st.carrier = 13; // 先排除 13
+        for id in 0..22 {
+            st.sent_off[id] = true;
+        }
+        for id in [7, 11, 12, 13] {
+            st.sent_off[id] = false;
+        }
+        st.pos[7] = (0.30, 0.50);
+        st.pos[11] = (0.80, 0.80);
+        st.pos[12] = (0.30, 0.51);
+        st.pos[13] = (0.90, 0.20);
+
+        let mut targets = vec![None; 22];
+        let mut actions = vec!["run".to_string(); 22];
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(st.probe.marking_assignments, 1);
+        assert_eq!(st.probe.marking_switches, 0);
+
+        // 同一进攻者 12，下标 1 → 0：不应计为换人。
+        st.carrier = 11;
+        actions[7] = "run".to_string();
+        targets[7] = None;
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(st.probe.marking_assignments, 2);
+        assert_eq!(
+            st.probe.marking_switches, 0,
+            "同一进攻者因 att_ids 下标平移被误计为换人"
+        );
+        assert_eq!(
+            st.probe.marking_prev_index_mismatches, 0,
+            "身份对齐后，prev 由进攻者 id 构造，旧口径错位哨兵必须为 0"
+        );
+
+        // 换防守方：上一回合的盯人不该算进新回合的换人（mark_prev_team 重置）。
+        st.possession = 0; // away 防守；def_ids=[11,12,13]，att_ids=[7]
+        st.carrier = 12;
+        for id in 0..22 {
+            actions[id] = "run".to_string();
+            targets[id] = None;
+        }
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(
+            st.probe.marking_switches, 0,
+            "换防守方后的首次盯人不应计为换人（mark_prev_attacker 未重置）"
+        );
+        // 再换回来：home 7 现在盯 11（不是换防前的 12）。没有重置的话这里会误计 1 次。
+        st.possession = 1; // home 防守；def_ids=[7]，att_ids=[11,13]（carrier=12 被排除）
+        for id in 0..22 {
+            actions[id] = "run".to_string();
+            targets[id] = None;
+        }
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(
+            st.probe.marking_switches, 0,
+            "跨防守回合的首个盯人不该与上一回合比较"
+        );
+
+        // 正控：同一回合内换成另一个进攻者，必须计 1 次。
+        st.carrier = 13; // att_ids=[11,12]，7 号仍会选 12
+        actions[7] = "run".to_string();
+        targets[7] = None;
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(st.probe.marking_switches, 1, "真实换人必须被计数");
+
+        // 跨未匹配段：先让 att_ids 为空（无人可盯），再恢复并改盯另一个人——
+        // 仍应算一次换人（保存的是「上一次匹配到的目标」，不是上一拍状态）。
+        for id in [11, 12, 13] {
+            st.sent_off[id] = true;
+        }
+        actions[7] = "run".to_string();
+        targets[7] = None;
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(st.probe.marking_switches, 1, "失去目标本身不算换人");
+        for id in [11, 12, 13] {
+            st.sent_off[id] = false;
+        }
+        st.carrier = 12; // att_ids=[11,13]；7 号改盯 11
+        actions[7] = "run".to_string();
+        targets[7] = None;
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(
+            st.probe.marking_switches, 2,
+            "跨未匹配段换了目标必须计为换人"
+        );
+    }
+
+    /// C3 探针第二判别性守卫（2026-10-19 复审 P2）：单个防守者未匹配（`out[k]=None`）
+    /// 时不得清空上一次匹配目标——跨过未匹配段换了人仍要计一次换人。生产里 10 名防守者
+    /// 对约 9 名进攻者时这个分支每拍都会出现。
+    #[test]
+    fn c3_probe_switch_survives_unmatched_defender() {
+        let mut st = MatchState::new(&default_lineup());
+        st.possession = 1; // home 防守
+        st.carrier = 13;
+        for id in 0..22 {
+            st.sent_off[id] = true;
+        }
+        for id in [7, 8, 11, 12, 13] {
+            st.sent_off[id] = false;
+        }
+        // 14/15 先“不在场”，第三拍才上场（见下）。
+        st.pos[7] = (0.30, 0.50);
+        st.pos[8] = (0.32, 0.50);
+        st.pos[11] = (0.30, 0.51);
+        st.pos[12] = (0.32, 0.49);
+        st.pos[13] = (0.90, 0.90); // carrier，远离
+        st.pos[14] = (0.32, 0.60);
+        st.pos[15] = (0.30, 0.60);
+
+        let mut targets = vec![None; 22];
+        let mut actions = vec!["run".to_string(); 22];
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(st.probe.marking_switches, 0);
+
+        // 11 罚下：att=[12]。⚠️ 既有 `marking::assign` 在 att 少于 def 时只考虑**前 n 名**
+        // 防守者（n = min(def, att)）——def7 改盯 12，def8 走 `out[k]=None`（未匹配）。
+        st.sent_off[11] = true;
+        for id in 0..22 {
+            actions[id] = "run".to_string();
+            targets[id] = None;
+        }
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(
+            st.probe.marking_switches, 1,
+            "既有 assign 只考虑前 n 名防守者：def7 11→12 计 1；def8 未匹配本身不计"
+        );
+
+        // 12 也罚下、14/15 上场：att=[14,15]。def7 12→15、def8 跨过未匹配段 12→14，
+        // 两次都必须计（总数 3）。若 None 分支清空了 mark_prev_attacker[8]，def8 的换人
+        // 会被漏计（总数 2 而不是 3）。
+        st.sent_off[12] = true;
+        st.sent_off[14] = false;
+        st.sent_off[15] = false;
+        for id in 0..22 {
+            actions[id] = "run".to_string();
+            targets[id] = None;
+        }
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(
+            st.probe.marking_switches, 3,
+            "跨未匹配段的换人必须计数（None 分支不得清空上次目标）"
+        );
+    }
+
+    /// C3 身份对齐的**惩罚效果**守卫：上一次盯 12（稍远）时，换人惩罚应让防守者继续盯 12；
+    /// 没有上一次目标时则选更近的 11。若 `prev` 不按进攻者 id 构造（或惩罚失效），会选 11。
+    #[test]
+    fn c3_mark_prev_identity_changes_assignment() {
+        let mut st = MatchState::new(&default_lineup());
+        st.possession = 1; // home 防守
+        st.carrier = 13;
+        for id in 0..22 {
+            st.sent_off[id] = true;
+        }
+        for id in [7, 11, 12, 13] {
+            st.sent_off[id] = false;
+        }
+        st.pos[7] = (0.50, 0.50);
+        st.pos[11] = (0.50 + 5.0 / PITCH_LENGTH_M, 0.50);
+        st.pos[12] = (0.50 + 6.0 / PITCH_LENGTH_M, 0.50);
+        st.pos[13] = (0.90, 0.90);
+
+        let mut targets = vec![None; 22];
+        let mut actions = vec!["run".to_string(); 22];
+        // 上一次盯 12：12 的代价不加重罚，11 要 +0.8s，因此仍选 12。
+        // 先声明防守方仍是 home，避免首次调用被“换防守方重置”清掉这个前置状态。
+        st.mark_prev_team = Some(1);
+        st.mark_prev_attacker[7] = Some(12);
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(
+            st.mark_prev_attacker[7],
+            Some(12),
+            "换人惩罚应按上一次的进攻者 id 生效（继续盯稍远的 12）"
+        );
+
+        // 没有上一次目标：11 更近，应选 11。
+        st.mark_prev_attacker[7] = None;
+        actions[7] = "run".to_string();
+        targets[7] = None;
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_eq!(
+            st.mark_prev_attacker[7],
+            Some(11),
+            "没有换人惩罚时应选更近的进攻者"
+        );
+    }
+
+    /// C4 仲裁判别性守卫（2026-10-19）：`pick_presser` 先于 `apply_marking` 选人，
+    /// 被选中者的 action 置为 `close_down`，因此不会进入盯人分配；压迫目标在
+    /// `apply_pressure_target` 里单独设置。
+    #[test]
+    fn c4_pick_presser_precedes_marking() {
+        let mut st = MatchState::new(&default_lineup());
+        st.possession = 1; // home 防守
+        st.ball_pos = (0.30, 0.50);
+        st.carrier = 13; // away 持球者
+        for id in 0..22 {
+            st.sent_off[id] = true;
+        }
+        for id in 1..=20 {
+            st.sent_off[id] = false;
+        }
+        for id in 1..=10 {
+            st.pos[id] = (0.20 + 0.01 * id as f64, 0.50);
+        }
+        for id in 11..=20 {
+            st.pos[id] = (0.40 + 0.01 * id as f64, 0.50);
+        }
+        st.pos[13] = (0.50, 0.50); // carrier 在更远处
+
+        let mut actions = vec!["run".to_string(); 22];
+        let (gate, press) = pick_presser(&mut st, &actions, &[]);
+        assert!(gate, "球在防守方本方半场，门控应通过");
+        let (pid, pp) = press.expect("应能选出一名压迫者");
+        // excluded（高亮参与者/冻结者）不得被选为压迫者。
+        let (gate2, press2) = pick_presser(&mut st, &actions, &[pid]);
+        assert!(gate2);
+        let (pid2, _) = press2.expect("排除最近者后仍应有候选");
+        assert_ne!(pid2, pid, "excluded 中的球员不应被选为压迫者");
+        actions[pid as usize] = "close_down".to_string();
+
+        let mut targets = vec![None; 22];
+        apply_marking(&mut st, &mut targets, &mut actions);
+        assert_ne!(actions[pid as usize], "mark", "presser 不应被 mark 占用");
+        assert!(
+            targets[pid as usize].is_none(),
+            "presser 的目标应由 apply_pressure_target 设置，而不是 marking"
+        );
+
+        let pressers = apply_pressure_target(&mut st, &mut targets, &mut actions, gate, press);
+        assert_eq!(pressers, 1);
+        assert_eq!(targets[pid as usize], Some(pp), "压迫目标应在应用阶段写入");
+        assert_eq!(st.probe.press_gate_passed, 2, "两次 pick_presser 调用各计一次门控通过");
+    }
+
+    /// C4 接线判别性守卫：走完整 `compute_mover_candidates`，在 marking+press 同开时
+    /// 仍必须实际派出 C4 压迫者。
+    ///
+    /// 夹具必须让**可盯人防守者数 == 进攻者数**（这里 9 防 9 攻：def 1..=9，att 11..=20
+    /// 去掉 carrier 13）。否则 10 防 9 攻时旧 mark-first 会留下 1 名未匹配的 `run` 防守者，
+    /// 旧 press 正好选中他，`pressers_total` 仍是 1——测试就不判别顺序了。
+    #[test]
+    fn c4_compute_movers_does_not_starve_press() {
+        let mut st = MatchState::new(&default_lineup());
+        st.possession = 1; // home 防守
+        st.ball_pos = (0.30, 0.50);
+        st.carrier = 13;
+        for id in 0..22 {
+            st.sent_off[id] = true;
+        }
+        for id in 1..=20 {
+            st.sent_off[id] = false;
+        }
+        st.sent_off[10] = true; // 9 防守者对 9 进攻者（13 被 carrier 排除）
+        for id in 1..=10 {
+            st.pos[id] = (0.20 + 0.01 * id as f64, 0.50);
+        }
+        for id in 11..=20 {
+            st.pos[id] = (0.40 + 0.01 * id as f64, 0.50);
+        }
+        st.pos[13] = (0.50, 0.50);
+        st.realism = RealismFlags::parse("marking+press");
+
+        let mut rng = SeededRng::new(1);
+        let _movers = compute_mover_candidates(&mut st, &mut rng, 0.0, &[]);
+        assert_eq!(
+            st.probe.pressers_total, 1,
+            "marking+press 同开时 C4 必须仍能派出压迫者（旧 mark-first 顺序会饿死 press）"
+        );
+        assert_eq!(st.probe.press_players_hist[1], 1);
+    }
+
     /// P15（#8）接线守卫：**终场时间只有一个来源——正式事件流里的尾哨**。
     ///
     /// 为什么必须是源码守卫而不是行为测试：本引擎恰好在 `config.match_duration_seconds` 处推
@@ -7694,8 +8437,7 @@ mod tests {
     fn p15_observation_overhead_caliber() {
         let config = MatchConfig {
             match_duration_seconds: 5400.0,
-            ..MatchConfig::default_()
-        };
+            ..MatchConfig::default_() };
         let seeds: Vec<u64> = (1..=20).collect();
         // 预热
         for &s in seeds.iter().take(2) {
@@ -7845,7 +8587,7 @@ mod tests {
     fn simulate_produces_minimal_match() {
         // P31：seed 7 在 2700s 内不出射门（删槽位后射门由 hazard 涌现、机会数随 seed 波动，
         // 短比赛可能整场无射门）。改用 90 分钟默认时长——本测试只验事件流**类型齐全**，不验频率。
-        let cfg = MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 5400.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s = simulate(7, cfg);
         let types: Vec<String> = json_events(&s).iter().map(|e| type_of(e)).collect();
         // v2：kickoff + beat 节拍流 + pass/shot 高亮 + whistle + lineup；无顶层 dribble
@@ -7860,8 +8602,8 @@ mod tests {
 
     #[test]
     fn simulate_config_duration_respected() {
-        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false, model_version: MODEL_VERSION };
-        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
+        let cfg_short = MatchConfig { match_duration_seconds: 60.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
+        let cfg_long = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s_short = simulate(7, cfg_short);
         let s_long = simulate(7, cfg_long);
         // 短比赛事件少
@@ -7911,7 +8653,7 @@ mod tests {
         // 多 seed 扫：tackle 由防守动作竞争在几何满足时涌现（P30 起），不保证每个 seed 都有
         // tackle，故多 seed 扫描确保至少有一个带新字段。
         for seed in 1..30u64 {
-            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION };
+            let cfg = MatchConfig { match_duration_seconds: 2700.0, demo_mode: false, model_version: MODEL_VERSION, realism: RealismFlags::default() };
             let s = simulate(seed, cfg);
             if has_tackle_with_new_fields(&s) {
                 return;
@@ -7972,7 +8714,7 @@ mod tests {
 
     #[test]
     fn demo_tackle_has_carrier_from_and_loose() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let tackle = events.iter().find(|e| e.contains("\"type\":\"tackle\"")).expect("demo 应有 tackle");
@@ -7989,7 +8731,7 @@ mod tests {
 
     #[test]
     fn demo_has_foul_and_free_kick() {
-        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION };
+        let cfg = MatchConfig { match_duration_seconds: 200.0, demo_mode: true, model_version: MODEL_VERSION, realism: RealismFlags::default() };
         let s = simulate(42, cfg);
         let events = json_events(&s);
         let foul = events.iter().find(|e| e.contains("\"type\":\"foul\"")).expect("demo 应有 foul");
