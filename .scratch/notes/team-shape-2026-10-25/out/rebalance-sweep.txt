@@ -1,0 +1,6 @@
+R12 base: shot -4.45 / tackle -1.47 | baseline main: shot -4.0 / tackle -0.92
+shot=-4.30 tackle=-1.20 :: H/A 0.964, per-game 9.46/9.81 | H/A 1.117, per-game 1.19/1.06 | H/A 0.980, per-game 25.55/26.07 | H/A 1.155, per-game 7.21/6.24 | H/A 1.032, per-game 469.94/455.16
+shot=-4.30 tackle=-1.00 :: H/A 1.011, per-game 9.38/9.29 | H/A 0.977, per-game 1.08/1.11 | H/A 0.981, per-game 38.97/39.72 | H/A 1.156, per-game 2.77/2.40 | H/A 1.056, per-game 458.39/434.15
+shot=-4.30 tackle=-0.92 :: H/A 1.112, per-game 9.79/8.80 | H/A 1.238, per-game 1.17/0.94 | H/A 0.981, per-game 43.83/44.69 | H/A 1.056, per-game 1.43/1.35 | H/A 1.059, per-game 453.63/428.30
+shot=-4.15 tackle=-1.20 :: H/A 0.976, per-game 10.61/10.87 | H/A 1.040, per-game 1.29/1.24 | H/A 0.983, per-game 25.95/26.39 | H/A 1.178, per-game 7.12/6.04 | H/A 1.041, per-game 469.20/450.64
+shot=-4.15 tackle=-1.00 :: H/A 1.043, per-game 11.15/10.70 | H/A 1.081, per-game 1.27/1.18 | H/A 0.987, per-game 38.65/39.16 | H/A 1.086, per-game 2.77/2.54 | H/A 1.041, per-game 452.46/434.68

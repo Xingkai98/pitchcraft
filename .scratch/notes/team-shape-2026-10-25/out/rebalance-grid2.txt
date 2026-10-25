@@ -1,0 +1,10 @@
+fixed shot=-4.15; grid tackle x foul (120 seeds 401..520)
+tackle=-1.40 foul=-0.30 :: shots=22.1 goals=2.46 tackles=31.99 fouls=21.72
+tackle=-1.40 foul=-0.18 :: shots=22.36 goals=2.64 tackles=28.43 fouls=44.29
+tackle=-1.40 foul=-0.06 :: shots=22.33 goals=2.59 tackles=28.16 fouls=61.24
+tackle=-1.32 foul=-0.30 :: shots=23.82 goals=2.7 tackles=25.29 fouls=23.45
+tackle=-1.32 foul=-0.18 :: shots=22 goals=2.5 tackles=36.42 fouls=42.97
+tackle=-1.32 foul=-0.06 :: shots=22.42 goals=2.42 tackles=35.76 fouls=61.73
+tackle=-1.24 foul=-0.30 :: shots=22.08 goals=2.52 tackles=46.53 fouls=15.89
+tackle=-1.24 foul=-0.18 :: shots=22.56 goals=2.5 tackles=43.88 fouls=42.03
+tackle=-1.24 foul=-0.06 :: shots=21.47 goals=2.4 tackles=43.6 fouls=60.14

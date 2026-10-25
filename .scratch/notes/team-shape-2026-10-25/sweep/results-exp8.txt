@@ -1,0 +1,10 @@
+worker=pitchcraft-exp8 start=2026-10-25T15:44:12.4295613+08:00
+shot=-4.15 tackle=-1.10 foul=-0.30 stop=0.035 n=2 :: shots=9.54 goals=0.97 tackles=106.52 fouls=15.65 passes=928
+shot=-4.15 tackle=-1.10 foul=-0.05 stop=0.035 n=2 :: shots=9.81 goals=1.05 tackles=100.50 fouls=96.78 passes=935
+shot=-4.15 tackle=-1.10 foul=-0.05 stop=0.025 n=2 :: shots=6.52 goals=0.57 tackles=149.17 fouls=109.88 passes=889
+shot=-4.15 tackle=-1.10 foul=-0.05 stop=0.025 n=3 :: shots=5.62 goals=0.44 tackles=172.00 fouls=117.01 passes=864
+shot=-4.15 tackle=-1.10 foul=-0.05 stop=0.050 n=1 :: shots=21.67 goals=2.52 tackles=59.94 fouls=60.95 passes=903
+shot=-4.15 tackle=-1.10 foul=-0.05 stop=0.035 n=1 :: shots=14.23 goals=1.35 tackles=87.21 fouls=76.64 passes=918
+shot=-4.15 tackle=-1.10 foul=-0.30 stop=0.025 n=2 :: shots=6.80 goals=0.69 tackles=156.27 fouls=29.16 passes=878
+shot=-4.15 tackle=-1.10 foul=-0.05 stop=0.050 n=2 :: shots=16.64 goals=1.84 tackles=57.94 fouls=71.80 passes=934
+DONE 2026-10-25T15:49:54.4615431+08:00

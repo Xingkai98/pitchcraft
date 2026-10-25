@@ -1,0 +1,11 @@
+node : [render-trajectories] 渲染源：D:\code\pitchcraft
+所在位置 行:1 字符: 341
++ ... 10-25\out'; node openspec\changes\p38-formation-realism\notes\probes- ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([render-traject...code\pitchcraft:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+引擎 t∈[1800,1920]s
+→ .scratch\notes\team-shape-2026-10-25\out\traj-baseline.png  (22 名球员的 120s 轨迹)
+  非门将横向位移 sd 均值: 2.96 m
+  非门将纵向位移 sd 均值: 7.65 m

@@ -1,0 +1,109 @@
+=== date: 2026-10-25T13:05:39+08:00
+=== cargo test --test realism --release -- --ignored --nocapture
+warning: fields `home_defenders` and `away_defenders` are never read
+    --> src/lib.rs:2527:5
+     |
+2504 | struct MatchState {
+     |        ---------- fields in this struct
+...
+2527 |     home_defenders: [i32; 4],
+     |     ^^^^^^^^^^^^^^
+2528 |     away_defenders: [i32; 4],
+     |     ^^^^^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `FORM_MIX_X` is never used
+    --> src/lib.rs:3512:7
+     |
+3512 | const FORM_MIX_X: f64 = 0.5;
+     |       ^^^^^^^^^^
+
+warning: constant `FORM_MIX_Y` is never used
+    --> src/lib.rs:3514:7
+     |
+3514 | const FORM_MIX_Y: f64 = 0.7;
+     |       ^^^^^^^^^^
+
+warning: constant `FORM_TRACK_Y` is never used
+    --> src/lib.rs:3516:7
+     |
+3516 | const FORM_TRACK_Y: f64 = 0.3;
+     |       ^^^^^^^^^^^^
+
+warning: constant `FORM_SPREAD_X` is never used
+    --> src/lib.rs:3518:7
+     |
+3518 | const FORM_SPREAD_X: f64 = 0.8;
+     |       ^^^^^^^^^^^^^
+
+warning: constant `FORM_SPREAD_Y` is never used
+    --> src/lib.rs:3520:7
+     |
+3520 | const FORM_SPREAD_Y: f64 = 1.3;
+     |       ^^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_HOME` is never used
+    --> src/lib.rs:3522:7
+     |
+3522 | const FORM_CENTER_HOME: f64 = 0.358;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_AWAY` is never used
+    --> src/lib.rs:3523:7
+     |
+3523 | const FORM_CENTER_AWAY: f64 = 0.642;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_TRACK_X` is never used
+    --> src/lib.rs:3525:7
+     |
+3525 | const FORM_TRACK_X: f64 = 0.5;
+     |       ^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_OFFSET` is never used
+    --> src/lib.rs:3527:7
+     |
+3527 | const FORM_CENTER_OFFSET: f64 = 0.033;
+     |       ^^^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_ATTACK_SIGN` is never used
+    --> src/lib.rs:3529:7
+     |
+3529 | const FORM_ATTACK_SIGN: f64 = 1.0;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: function `is_defender` is never used
+    --> src/lib.rs:3539:4
+     |
+3539 | fn is_defender(st: &MatchState, id: i32) -> bool {
+     |    ^^^^^^^^^^^
+
+warning: `fm-engine` (lib) generated 12 warnings
+    Finished `release` profile [optimized] target(s) in 0.20s
+     Running tests/realism.rs (target/release/deps/realism-56fb9610a18efac2)
+
+running 9 tests
+[fouls] 每场: foul=21.82 yellow=2.83 red=0.05 free_kick=21.81
+test l1_pass_completion_rate ... ok
+test l1_shot_result_distributions ... ok[corners] 单场峰值 max=12（界 15，余量 3）均值=3.80/场
+
+test l1_fouls_and_cards ... ok
+test l1_tackle_dilution_and_slot_mix ... ok
+[L3] shots=3173 regular=2959 header=214 goals=405 saved=806 box_goals_legacy=356 禁区占比_legacy=0.8790 | box_goals_slab=351 禁区占比_slab=0.8667 | box_goals_rect=342 禁区占比_rect=0.8444 | sot=0.3817 conv=0.1276
+[P13+pilot3 副作用] 每场(200 seed 90min): 进球 主1.45/客0.58 (H/A 2.491) pass_evt=957.8 shot=14.79(+header 1.07) tackle=27.46(succ 14.29) corner=3.80 throw_in=20.39 goal_kick=25.48 foul=21.82(yellow 2.83/red 0.05)
+test l3_shot_ratios ... ok
+test p13_side_effect_snapshot ... ok
+[P31 5min cohort n=1000] 射门/场=0.89 出界重开/场=2.60（其中角球+界外球 1.26）犯规/场=1.31 进球/场=0.11
+test p31_frequency_5min_directional ... ok
+test l1_home_away_goal_asymmetry has been running for over 60 seconds
+test l3_home_away_goal_calibration has been running for over 60 seconds
+[home-adv] 主 1.372/场 客 0.578/场 合计 1.950 H/A=2.372 | 转化率 主 0.13215(823/6228) 客 0.09674(347/3587) 差 +0.03541
+[home-adv calibration] matches=600 home_goals=823 away_goals=347 H/A=2.372 log(H/A)=0.864 95% CI=[2.092, 2.689]
+test l1_home_away_goal_asymmetry ... ok
+test l3_home_away_goal_calibration ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 4 filtered out; finished in 98.87s
+
+l1_exit=0
+=== date: 2026-10-25T13:07:15+08:00

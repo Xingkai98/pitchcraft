@@ -1,0 +1,11 @@
+node : [render-trajectories] 渲染源：D:\code\pitchcraft
+所在位置 行:1 字符: 567
++ ... TEXITCODE"; node openspec\changes\p38-formation-realism\notes\probes- ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ([render-traject...code\pitchcraft:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+真实 t∈[1800,1920]s（Metrica game1）
+→ .scratch\notes\team-shape-2026-10-25\out\traj-real-game1.png  (22 名球员的 120s 轨迹)
+  非门将横向位移 sd 均值: 10.04 m
+  非门将纵向位移 sd 均值: 14.35 m

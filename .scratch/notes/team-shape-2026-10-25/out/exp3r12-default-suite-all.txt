@@ -1,0 +1,801 @@
+=== date: 2026-10-25T15:09:21+08:00
+=== cargo test --release --no-fail-fast
+warning: constant `FORM_MIX_X` is never used
+    --> src/lib.rs:3512:7
+     |
+3512 | const FORM_MIX_X: f64 = 0.5;
+     |       ^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `FORM_MIX_Y` is never used
+    --> src/lib.rs:3514:7
+     |
+3514 | const FORM_MIX_Y: f64 = 0.7;
+     |       ^^^^^^^^^^
+
+warning: constant `FORM_TRACK_Y` is never used
+    --> src/lib.rs:3516:7
+     |
+3516 | const FORM_TRACK_Y: f64 = 0.3;
+     |       ^^^^^^^^^^^^
+
+warning: constant `FORM_SPREAD_X` is never used
+    --> src/lib.rs:3518:7
+     |
+3518 | const FORM_SPREAD_X: f64 = 0.8;
+     |       ^^^^^^^^^^^^^
+
+warning: constant `FORM_SPREAD_Y` is never used
+    --> src/lib.rs:3520:7
+     |
+3520 | const FORM_SPREAD_Y: f64 = 1.3;
+     |       ^^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_HOME` is never used
+    --> src/lib.rs:3522:7
+     |
+3522 | const FORM_CENTER_HOME: f64 = 0.358;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_AWAY` is never used
+    --> src/lib.rs:3523:7
+     |
+3523 | const FORM_CENTER_AWAY: f64 = 0.642;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_TRACK_X` is never used
+    --> src/lib.rs:3525:7
+     |
+3525 | const FORM_TRACK_X: f64 = 0.5;
+     |       ^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_OFFSET` is never used
+    --> src/lib.rs:3527:7
+     |
+3527 | const FORM_CENTER_OFFSET: f64 = 0.033;
+     |       ^^^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_ATTACK_SIGN` is never used
+    --> src/lib.rs:3529:7
+     |
+3529 | const FORM_ATTACK_SIGN: f64 = 1.0;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `B_COMPACT` is never used
+    --> src/lib.rs:3634:7
+     |
+3634 | const B_COMPACT: u8 = 1;
+     |       ^^^^^^^^^
+
+warning: `fm-engine` (lib) generated 11 warnings
+   Compiling fm-engine v0.1.0 (/mnt/d/pitchcraft-exp3/engine)
+warning: unused import: `std::collections::BTreeMap`
+  --> tests/p16/reference.rs:22:5
+   |
+22 | use std::collections::BTreeMap;
+   |     ^^^^^^^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `calibers_of` is never used
+   --> tests/p16/caliber.rs:252:8
+    |
+252 | pub fn calibers_of(dm: &DiagnosticMatch) -> Vec<EpisodeCaliber> {
+    |        ^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: method `merge` is never used
+   --> tests/p16/caliber.rs:358:12
+    |
+313 | impl CaliberCoverage {
+    | -------------------- method in this implementation
+...
+358 |     pub fn merge(&mut self, other: &CaliberCoverage) {
+    |            ^^^^^
+
+warning: function `band_share` is never used
+   --> tests/p16/caliber.rs:384:8
+    |
+384 | pub fn band_share(bands: &BTreeMap<&'static str, usize>, band: &str, total: usize) -> Option<f64> {
+    |        ^^^^^^^^^^
+
+warning: methods `len` and `is_empty` are never used
+  --> tests/p16/features.rs:51:12
+   |
+50 | impl Window {
+   | ----------- methods in this implementation
+51 |     pub fn len(&self) -> f64 {
+   |            ^^^
+...
+55 |     pub fn is_empty(&self) -> bool {
+   |            ^^^^^^^^
+
+warning: value assigned to `saw_corner_after_saved` is never read
+    --> src/lib.rs:9961:21
+     |
+9961 |                     saw_corner_after_saved = true;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `carry_plan`
+     --> src/lib.rs:10724:13
+      |
+10724 |         let carry_plan = CarrierPlan {
+      |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_carry_plan`
+      |
+      = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: function `count_detail` is never used
+     --> src/lib.rs:10064:8
+      |
+10064 |     fn count_detail(s: &str, detail: &str) -> usize {
+      |        ^^^^^^^^^^^^
+
+warning: function `count_goals` is never used
+     --> src/lib.rs:10071:8
+      |
+10071 |     fn count_goals(s: &str) -> usize {
+      |        ^^^^^^^^^^^
+
+warning: `fm-engine` (lib test) generated 15 warnings (11 duplicates) (run `cargo fix --lib -p fm-engine --tests` to apply 1 suggestion)
+warning: `fm-engine` (test "p16_spatial_features") generated 5 warnings (run `cargo fix --test "p16_spatial_features" -p fm-engine` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 9.56s
+     Running unittests src/lib.rs (target/release/deps/fm_engine-2ffd4e341a7fa2a2)
+
+running 202 tests
+test observation::tests::consecutive_rejects_do_not_accumulate_false_violations ... ok
+test observation::tests::contradictory_input_records_gap_and_does_not_guess ... ok
+test observation::tests::closed_set_string_names_are_unique_and_snake_case ... ok
+test observation::tests::dead_ball_lifecycle_requires_preparation_then_taken ... ok
+test observation::tests::deferred_violations_are_never_cleared ... ok
+test observation::tests::demo_mode_sequences_carry_no_facts ... ok
+test observation::tests::detail_must_pair_with_its_fact_kind ... ok
+test observation::tests::disabled_recorder_is_a_no_op ... ok
+test observation::tests::episode_and_restart_event_indexes_go_through_the_same_guard ... ok
+test observation::tests::event_index_binding_is_guarded_against_tail_compaction ... ok
+test observation::tests::action_facts_never_bind_to_a_beat ... ok
+test observation::tests::every_closed_set_enum_lists_all_members ... ok
+test observation::tests::every_bound_fact_event_index_is_not_after_the_fact ... ok
+test observation::tests::first_kickoff_has_no_flight_while_a_goal_restart_kickoff_waits_for_the_flight_to_end ... ok
+test observation::tests::drain_period_bindings_are_suspended_not_gap_reported ... ok
+test observation::tests::foul_opens_a_free_kick_with_explicit_preparation_then_delivery_restores_open_play ... ok
+test observation::tests::full_time_closes_every_open_object_including_unfinished_flight ... ok
+test observation::tests::full_time_time_comes_from_the_formal_whistle_not_config ... ok
+test observation::tests::gap_does_not_mask_a_later_state_downgrade ... ok
+test observation::tests::gap_reason_counts_aggregate_by_reason_not_just_total ... ok
+test observation::tests::goal_kick_has_no_preparation_phase_and_binds_taken_at_delivery ... ok
+test observation::tests::fixed_seed_sidecar_binds_event_indexes_and_leaves_no_gaps ... ok
+test observation::tests::half_time_closes_contest_and_terminates_restart_without_sequencing ... ok
+test observation::tests::interception_starts_a_loose_contest_then_same_tick_pickup_opens_the_new_episode ... ok
+test observation::tests::invariant_checker_catches_each_state_record_mismatch ... ok
+test observation::tests::invariant_checker_catches_overlapping_open_objects ... ok
+test observation::tests::invariant_checker_catches_state_downgraded_below_records ... ok
+test observation::tests::invariant_checker_rejects_corrupted_recorders ... ok
+test observation::tests::invariant_checker_rejects_non_finite_restart_times ... ok
+test observation::tests::invariant_checker_rejects_open_objects_after_match_ended ... ok
+test observation::tests::kickoff_flight_action_is_named_not_unknown ... ok
+test observation::tests::lost_pass_closes_episode_and_enters_contest ... ok
+test observation::tests::match_started_time_basis_is_event_emit_at_zero ... ok
+test observation::tests::minimal_path_closes_kickoff_sequence_and_opens_episode ... ok
+test observation::tests::note_gap_before_match_started_is_not_a_violation ... ok
+test observation::tests::note_gap_records_fact_without_touching_objects ... ok
+test observation::tests::control_facts_never_contradict_their_own_player ... ok
+test observation::tests::observation_sidecar_is_deterministic_and_has_no_gaps_on_a_full_match ... ok
+test observation::tests::open_play_control_keeps_its_declared_start_reason ... ok
+test observation::tests::opt_in_sidecar_carries_invariant_violations_and_terminal_state ... ok
+test observation::tests::out_of_play_restarts_carry_their_own_team_kind_and_lifecycle_shape ... ok
+test observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception ... FAILED
+test observation::tests::rebinding_a_fact_event_index_must_not_move_it_backwards ... ok
+test observation::tests::reject_does_not_exempt_ill_formed_state ... ok
+test observation::tests::rejected_input_leaves_no_false_positive_violation ... ok
+test observation::tests::restart_delivery_control_start_reason_is_decided_by_the_open_restart ... ok
+test observation::tests::real_match_sidecar_has_control_facts_and_closes_all_objects ... ok
+test observation::tests::restart_preparation_without_a_scheduled_restart_is_rejected_not_invented ... ok
+test observation::tests::rng_draw_helper_is_seed_dependent_and_skip_sensitive ... ok
+test observation::tests::same_team_receive_continues_episode_without_new_boundary ... ok
+test observation::tests::shot_off_target_ends_the_episode_as_out_and_takes_a_goal_kick_without_preparation ... ok
+test observation::tests::shot_outcome_closes_episode_with_its_own_reason ... ok
+test observation::tests::shot_saved_rebound_closes_episode_and_opens_a_rebound_contest_with_matching_reason ... ok
+test observation::tests::goal_kick_sequence_team_is_the_taking_side ... ok
+test observation::tests::stream_end_boundary_takes_the_last_whistle_and_full_time_uses_it ... ok
+test observation::tests::superseding_an_unfinished_restart_is_normal_and_records_no_gap ... ok
+test observation::tests::suspended_binding_is_a_silent_no_op_not_a_gap ... ok
+test observation::tests::tackle_success_opens_a_loose_contest_before_anyone_has_control ... ok
+test observation::tests::truncated_stream_produces_a_full_time_gap_by_design ... FAILED
+test observation::tests::unattributed_facts_watermark_binds_exactly_the_new_facts ... ok
+test observation::tests::unknown_basis_allows_non_finite_fact_time ... ok
+test observation::tests::unknown_kind_never_downgrades_known_restart_kind ... ok
+test observation::tests::unknown_restart_kind_and_team_are_refinable_not_rejected ... ok
+test observation::tests::whistle_interrupt_is_a_gap_only_when_the_ball_was_in_flight ... ok
+test rng::tests::different_seed_different_sequence ... ok
+test rng::tests::never_zero_state ... ok
+test rng::tests::same_seed_same_sequence ... ok
+test tests::beat_movers_id_unique_on_tackle_push ... ok
+test observation::tests::restart_delivery_start_reason_matches_the_restart_kind_on_real_matches ... ok
+test tests::demo_has_foul_and_free_kick ... ok
+test tests::demo_tackle_has_carrier_from_and_loose ... ok
+test observation::tests::superseded_by_dead_ball_is_a_recorder_level_contract_not_engine_reachable ... ok
+test tests::home_advantage_channel_semantics ... ok
+test tests::lineup_has_22_players ... ok
+test tests::coordinates_in_range ... ok
+test tests::p15_compaction_boundary_is_actually_registered ... ok
+test tests::p15_full_time_source_is_the_stream_not_the_config_duration ... ok
+test tests::p15_observation_overhead_caliber ... ignored, 口径测量，不是门（见 A9-9）
+test tests::p15_recorder_stays_out_of_the_decision_path ... FAILED
+test tests::p23_all_outfield_sent_off_is_total_and_never_returns_sent_off ... ok
+test tests::p23_kickoff_pick_skips_sent_off ... ok
+test tests::p23_kickoff_receiver_never_equals_kicker ... ok
+test tests::p23_sent_off_keeper_produces_no_keeper_return ... ok
+test tests::p23_sent_off_not_picked_as_close_down ... ok
+test tests::p23_sent_off_not_picked_as_tackler ... ok
+test tests::p23_sent_off_produces_no_mover ... ok
+test tests::p25_forward_pass_degenerate_returns_keeper_not_panic ... ok
+test tests::non_demo_produces_fouls_with_valid_shape ... ok
+test tests::p27_clearance_normal_still_contested ... ok
+test tests::foul_deterministic ... ok
+test tests::p28_action_deadline_formula ... ok
+test tests::p27_contested_preserved_for_restart_passes ... ok
+test tests::p27_out_pass_fields_all_paths ... ok
+test tests::p28_deadline_geometry_directions ... ok
+test tests::p28_resolution_consistent_with_candidates ... ok
+test tests::p28_resolution_priority ... ok
+test tests::p29_back_to_goal_forbids_shoot_candidate ... ok
+test tests::p29_commit_produces_shot_and_clears_setup ... ok
+test tests::p29_committed_is_irreversible ... ok
+test tests::p29_cooldown_feature_is_live ... ok
+test observation::tests::observation_api_leaves_formal_events_byte_identical ... ok
+test tests::p29_cooldown_penalty_shape ... ok
+test tests::p29_distance_quality_reuses_shot_bucket_bands ... ok
+test tests::p28_deadline_bounds_over_full_match ... ok
+test tests::p29_hazard_factor_directions ... ok
+test tests::p29_hazard_probability_shape ... ok
+test tests::p29_window_arrival_enters_window_without_shooting ... ok
+test tests::p28_action_opportunity_is_live ... ok
+test tests::p29_window_not_shot_on_arrival ... ok
+test tests::p29_window_tackle_cancels_without_shot ... ok
+test tests::p30_contain_jockey_state_only ... ok
+test tests::p30_cooldown_is_score_only_not_eligibility ... ok
+test tests::p30_cooldown_write_read_closed_loop ... ok
+test tests::p30_foul_cooldown_decays_every_tick ... ok
+test tests::p30_foul_qualifications ... ok
+test tests::p30_foul_yellow_deterrence ... ok
+test tests::p29_shot_window_is_live_and_only_shot_path ... ok
+test tests::p30_pair_cooldown_direction_and_expiry ... ok
+test tests::p30_select_is_exclusive ... ok
+test tests::p30_tackle_cooldowns_lower_score ... ok
+test tests::p30_tackle_result_only_two_states ... ok
+test tests::p30_tackle_score_directions ... ok
+test tests::p30_never_both_tackle_and_foul ... ok
+test tests::p30_window_foul_cancels_without_shot ... ok
+test tests::p31_all_four_liveness_hooks_are_live ... ok
+test tests::p31_deadline_bounds_with_liveness ... ok
+test tests::p31_landing_error_grows_with_risk_and_length ... ok
+test tests::p31_landing_error_only_in_open_play_passes ... ok
+test tests::p31_landing_is_deterministic ... ok
+test tests::p31_landing_out_side_classification ... ok
+test tests::p31_liveness_consumed_in_three_places ... ok
+test tests::p31_liveness_profile_three_stages_monotone ... ok
+test tests::p31_liveness_section_never_emits_events ... ok
+test tests::p30_three_layer_cooldown_live ... ok
+test tests::p31_meaningful_action_resets_counter ... ok
+test tests::p31_natural_deadline_is_deterministic ... ok
+test tests::p31_no_fixed_evaluation_beat ... ok
+test tests::p31_open_play_carrier_decision_is_geometric ... ok
+test tests::p31_out_of_play_emerges_from_pass_risk_channel ... ok
+test tests::p31_liveness_stages_reachable_and_pulls_back ... ok
+test tests::p31_out_restart_mapping ... ok
+test tests::p31_out_side_direction_is_geometric ... ok
+test tests::p31_pass_risk_bonus_reads_pre_reset_ticks ... ok
+test tests::p31_slot_layer_is_gone ... ok
+test tests::p32_interception_roll_width_quantizes_by_ceil ... ok
+test tests::p31_out_rate_is_sane ... ok
+test tests::p53_cross_team_not_constrained ... ok
+test tests::p53_highlight_landing_enters_solver_on_breach ... ok
+test tests::p53_same_team_frozen_participant_separates_mover ... ok
+test tests::p53_same_team_spacing_ge_2m ... ok
+test tests::p29_cooldown_is_local_not_match_wide ... ok
+test tests::p53_sent_off_not_separated ... ok
+test tests::p53_separate_pair_clamps_to_pitch ... ok
+test tests::p53_separate_pair_coincident_degenerates_along_x ... ok
+test tests::p53_separate_pair_uses_metric_direction_not_normalized ... ok
+test tests::p53_separate_pair_x_axis_2m1_not_separated ... ok
+test tests::p53_separate_pair_y_axis_1m36_separated_to_min ... ok
+test tests::p5_approach_cap ... ok
+test tests::p5_ball_side_shift ... ok
+test tests::p53_same_team_spacing_holds_between_anchors ... ok
+test tests::p5_press_up_and_gk_exempt ... ok
+test tests::p5_repulsion_separates_overlap ... ok
+test tests::p6_battle_attack_win_branches ... ok
+test tests::p5_formation_and_transition ... ok
+test tests::p6_clearance_structure ... ok
+test tests::p6_corner_award_saved_rebound_path ... ok
+test tests::p6_corner_battle_double_chase ... ok
+test tests::p6_corner_kick_structure ... ok
+test tests::p6_goal_direct_center_spot ... ok
+test tests::p6_goal_kick_produced_on_off_target ... ok
+test tests::p6_clearance_restart_team_attribution ... ok
+test tests::p6_goal_kick_then_loose_ball ... ok
+test tests::p6_h_field_serialization ... ok
+test tests::p6_pass_h_classification ... ok
+test tests::p6_header_shot_h_zero ... ok
+test tests::p6_pass_out_sideline_throw_in ... ok
+test tests::p6_restart_prep_ball_anchor ... ok
+test tests::p6_shot_off_target_no_detail ... ok
+test tests::p6_throw_in_h_zero_non_gk ... ok
+test tests::simulate_config_duration_respected ... ok
+test tests::p29_window_commit_rate_falls_with_pressure ... ok
+test tests::simulate_different_seed_differs ... ok
+test tests::simulate_produces_minimal_match ... ok
+test tests::simulate_same_seed_deterministic ... ok
+test tests::tackle_deterministic_with_new_fields ... ok
+test tests::tackle_events_carry_loose_and_carrier_from ... ok
+test tests::tackle_settle_endpoints_separated ... ok
+test tests::p6_pass_out_goal_line_goal_kick ... ok
+test tests::tackle_success_and_fail_both_reachable ... ok
+test tests::v2_ball_ownership_exclusive ... ok
+test tests::v2_beat_has_no_top_level_subject ... ok
+test tests::v2_beat_stream_structure ... ok
+test tests::v2_carrier_not_in_movers ... ok
+test tests::tackle_new_fields_coordinates_in_range ... ok
+test tests::v2_highlight_participants_excluded ... ok
+test tests::v2_loose_ball_produced ... ok
+test tests::v2_tackle_fail_resumes_main_from_contact ... ok
+test tests::v2_highlight_gate_frequency ... ok
+test tests::v2_tick_monotonic ... ok
+test tests::tackle_stream_participants_not_overlapping ... ok
+test tests::v2_tackle_frequency_in_target_range ... ok
+test tests::p32_interception_self_consistency ... ok
+
+failures:
+
+---- observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception stdout ----
+
+thread 'observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception' (1350) panicked at src/observation.rs:5629:9:
+seed 集合没有覆盖全部三种截断形态（episode 0 / restart 未 taken 0 / restart 已 taken 0）——豁免条款有分支是空转的；请在 SEEDS 里补命中该形态的 seed
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- observation::tests::truncated_stream_produces_a_full_time_gap_by_design stdout ----
+
+thread 'observation::tests::truncated_stream_produces_a_full_time_gap_by_design' (1396) panicked at src/observation.rs:5349:9:
+assertion `left == right` failed: 该样本必须在终场哨上截断一条未决飞行；实际 gaps = 0
+  left: 0
+ right: 1
+
+---- tests::p15_recorder_stays_out_of_the_decision_path stdout ----
+
+thread 'tests::p15_recorder_stays_out_of_the_decision_path' (1415) panicked at src/lib.rs:7929:14:
+找不到 recorder impl 块的结尾（结构变了？守卫失效）
+
+
+failures:
+    observation::tests::every_episode_and_restart_object_has_event_indexes_or_a_documented_exception
+    observation::tests::truncated_stream_produces_a_full_time_gap_by_design
+    tests::p15_recorder_stays_out_of_the_decision_path
+
+test result: FAILED. 198 passed; 3 failed; 1 ignored; 0 measured; 0 filtered out; finished in 33.38s
+
+error: test failed, to rerun pass `--lib`
+     Running tests/p124_intent_observations.rs (target/release/deps/p124_intent_observations-d9487e11ac8bb5b5)
+
+running 37 tests
+test artifact_write_guard_has_discriminating_power ... ok
+test contact_intents_match_the_event_stream ... ok
+test def_share_is_none_when_there_was_no_opportunity ... ok
+test defensive_intents_are_attributed_by_time_window_not_by_index ... ok
+test def_none_signal_is_mechanically_tied_to_shots ... ok
+test defensive_intents_are_sparse_and_well_formed ... FAILED
+test committed_is_not_observable_at_the_per_tick_sampling_point ... ok
+test counter_proof_confirms_the_probe_is_intact ... FAILED
+test empty_control_is_unbiased ... ok
+test intent_export_is_tick_aligned_with_positions ... ok
+test gate_rerun_and_p16_baseline_side_by_side ... FAILED
+test intent_feature_definitions_are_pinned ... ok
+test intent_features_cannot_reach_positions ... FAILED
+test intent_export_never_enters_the_formal_path ... ok
+test intent_features_share_the_index_space_with_calibers ... ok
+test intent_semantics_are_pinned ... ok
+test merge_into_object_strips_exactly_one_brace ... ok
+test identical_inputs_produce_byte_identical_output ... ok
+test on_disk_artifacts_share_the_current_source_fingerprint ... ok
+test p124_baseline ... ignored, 300 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p124_baseline
+test p124_canary ... ignored, 30 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p124_canary
+test p124_fingerprint_covers_its_own_sources ... ok
+test pool_rejects_index_space_mismatch ... ok
+test json_validator_rejects_the_known_bad_shapes ... ok
+test provenance_carries_the_comparability_triple ... ok
+test provenance_records_worktree_state ... ok
+test public_fields_have_readers ... ok
+test intent_feature_coverage_is_reported ... ok
+test probe_rejects_non_finite_and_never_hides_skips ... ok
+test purification_over_intent_features_reproduces_the_verdict ... ok
+test purification_records_the_v4_verdict_pending_review ... FAILED
+test rate_auc_spatial_matches_the_probe_implementation ... ok
+test rendered_json_is_structurally_valid ... ok
+test motif_predicates_agree_with_the_p16_reference_set ... ok
+test spatial_rows_match_the_p16_separability ... ok
+test window_features_are_mechanically_tied_to_shots ... ok
+test verdict_best_intent_row_is_adequately_sampled ... ok
+
+failures:
+
+---- defensive_intents_are_sparse_and_well_formed stdout ----
+
+thread 'defensive_intents_are_sparse_and_well_formed' (1546) panicked at tests/p124_intent_observations.rs:626:5:
+防守意图 1379 条 vs 逐拍 5399 条——它应是**稀疏事件**（每个机会点一条），接近逐拍说明记错了通道
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- counter_proof_confirms_the_probe_is_intact stdout ----
+反证条 final_third vs 其余（forward_m/s）：AUC = Some(0.675)  [pos=519 neg=4665 跳过=0]
+  口径：30 seed（1..=30）/ 5184 episode（期望 0.764 ± 0.05）
+
+thread 'counter_proof_confirms_the_probe_is_intact' (1540) panicked at tests/p124_intent_observations.rs:135:5:
+**反证条判红**：final_third 的 forward_m/s AUC = 0.675，落在期望带 [0.714, 0.814] 之外（P16 的 30 seed 实测 0.764）。
+这不是「结论变了」，是**探针坏了**——按 P16 的血泪史逐条查：
+① 索引空间是否被压缩（`flatten` / 过滤掉 `None` 后没抬 offset）——本次实测值 0.675；
+② 是否有非有限值被静默吞掉（`require_finite` 是否真的挂在逐值路径上）；
+③ 池化下标是否跨 seed 重叠（`pool_episodes` 的三处 `assert_eq!` 是否被绕过）。
+
+---- gate_rerun_and_p16_baseline_side_by_side stdout ----
+phaseability gate 重跑（30 seed（1..=30）/ 5184 episode）：
+-- final_third vs 其余 --
+   net_progress[空间]                   AUC=0.558 [Spatial]
+   forward_m[空间]                      AUC=0.700 [Spatial]
+   backward_m[空间]                     AUC=0.443 [Spatial]
+   lateral_m[空间]                      AUC=0.548 [Spatial]
+   depth_slope[空间]                    AUC=0.625 [Spatial]
+   support_frames_share[空间]           AUC=0.272 [Spatial]
+   start_progress[区域量·仅对照]            AUC=0.512 [Spatial]
+   forward_m/s[空间]                    AUC=0.675 [Spatial]
+   window_opened[循环·仅对照]              AUC=0.957 [Circular]
+   window_share[循环·仅对照]               AUC=0.956 [Circular]
+   setup_share[循环·仅对照]                AUC=0.956 [Circular]
+   first_window_frac                  AUC=0.894 [Intent]
+   max_window_ticks                   AUC=0.092 [Intent]
+   pressure_share                     AUC=0.407 [Intent]
+   pressure_mean                      AUC=0.391 [Intent]
+   def_per_s                          AUC=0.476 [Intent]
+   def_contain                        AUC=0.566 [Intent]
+   def_jockey                         AUC=0.353 [Intent]
+   def_tackle                         AUC=0.461 [Intent]
+   def_foul                           AUC=0.427 [Intent]
+   def_none[循环·仅对照]                   AUC=0.959 [Circular]
+-- build_up vs progression --
+   net_progress[空间]                   AUC=0.483 [Spatial]
+   forward_m[空间]                      AUC=0.542 [Spatial]
+   backward_m[空间]                     AUC=0.637 [Spatial]
+   lateral_m[空间]                      AUC=0.639 [Spatial]
+   depth_slope[空间]                    AUC=0.620 [Spatial]
+   support_frames_share[空间]           AUC=0.377 [Spatial]
+   start_progress[区域量·仅对照]            AUC=0.645 [Spatial]
+   forward_m/s[空间]                    AUC=0.349 [Spatial]
+   window_opened[循环·仅对照]              AUC=0.500 [Circular]
+   window_share[循环·仅对照]               AUC=0.500 [Circular]
+   setup_share[循环·仅对照]                AUC=0.500 [Circular]
+   first_window_frac                  AUC=0.483 [Intent]
+   max_window_ticks                   AUC=0.535 [Intent]
+   pressure_share                     AUC=0.375 [Intent]
+   pressure_mean                      AUC=0.393 [Intent]
+   def_per_s                          AUC=0.431 [Intent]
+   def_contain                        AUC=0.417 [Intent]
+   def_jockey                         AUC=0.600 [Intent]
+   def_tackle                         AUC=0.520 [Intent]
+   def_foul                           AUC=0.485 [Intent]
+   def_none[循环·仅对照]                   AUC=0.478 [Circular]
+
+thread 'gate_rerun_and_p16_baseline_side_by_side' (1548) panicked at tests/p124_intent_observations.rs:1288:5:
+P16 基线（v4 重锚值 0.764）未复现：forward_m/s 对 final_third AUC = 0.675——对照表不可比，先查池化/参考集是否与基线同源
+
+---- intent_features_cannot_reach_positions stdout ----
+
+thread 'intent_features_cannot_reach_positions' (1555) panicked at tests/p124_intent_observations.rs:867:5:
+`match_intents` 的签名变了——它必须**只**收三个无位置通道（意图快照 / 保守事件 / episode 列表），不得接收 `DiagnosticMatch`（那会让位置结构上可达）。当前签名见 `intent.rs`。
+
+---- purification_records_the_v4_verdict_pending_review stdout ----
+净化臂（30 seed（1..=30）/ 5184 episode)：build_up vs progression，forward_m/s
+  current[p16 原定义]             抽掉：（基线，什么都不抽）         AUC=Some(0.349)  [build=1103 prog=2064 跳过=0]
+  drop_restart[只留传球数]          抽掉：是否重开               AUC=Some(0.427)  [build=2523 prog=3736 跳过=0]
+  drop_passcount[只留是否重开]       抽掉：传球数                AUC=Some(0.446)  [build=2086 prog=2436 跳过=0]
+  empty_control[两个都抽]          抽掉：两个都抽（空对照）          AUC=Some(0.5)  [build=4522 prog=4522 跳过=0]
+
+thread 'purification_records_the_v4_verdict_pending_review' (1575) panicked at tests/p124_intent_observations.rs:368:9:
+臂 `current[p16 原定义]` 的 AUC = 0.349 偏离 v4 记录值 0.388——「裁决待定」期间该读数被钉住（P16 裁决已被 v4 移动层推翻，待用户拍板；改动即须人工复核）
+
+
+failures:
+    counter_proof_confirms_the_probe_is_intact
+    defensive_intents_are_sparse_and_well_formed
+    gate_rerun_and_p16_baseline_side_by_side
+    intent_features_cannot_reach_positions
+    purification_records_the_v4_verdict_pending_review
+
+test result: FAILED. 30 passed; 5 failed; 2 ignored; 0 measured; 0 filtered out; finished in 12.13s
+
+error: test failed, to rerun pass `--test p124_intent_observations`
+     Running tests/p15_behavior_observation.rs (target/release/deps/p15_behavior_observation-2c5d72033d2935e3)
+
+running 12 tests
+test gap_is_a_classified_outcome_not_a_failure ... FAILED
+test every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect ... FAILED
+test l3_300_seed_90min_calibration_lands_evidence_on_disk ... ignored, 300 场 × 90 分钟：debug 实测 ~110s；用 --release -- --ignored --nocapture 显式跑
+test event_indexes_are_non_empty_monotonic_and_in_range ... FAILED
+test contest_reasons_and_settlements_are_bound_to_their_own_engine_events ... ok
+test recorder_on_and_off_reproduce_the_golden_canary_stream ... FAILED
+test kickoff_flight_basis_separates_first_kickoff_from_a_goal_restart ... ok
+test restart_end_reasons_stay_within_the_two_reachable_ones ... ok
+test restart_kind_decides_the_delivered_episode_start_reason ... ok
+test plain_and_opt_in_paths_agree_byte_for_byte ... ok
+test terminal_state_invariants_and_closure_hold_on_the_canary_seeds ... ok
+test sidecar_is_deterministic_for_the_same_seed_and_config ... ok
+
+failures:
+
+---- gap_is_a_classified_outcome_not_a_failure stdout ----
+
+thread 'gap_is_a_classified_outcome_not_a_failure' (1586) panicked at tests/p15_behavior_observation.rs:1237:9:
+seed 562 @ dur 120：该样本必须复现截断 gap；实际 0（样本失效了？）
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect stdout ----
+
+thread 'every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect' (1585) panicked at tests/p15_behavior_observation.rs:1346:5:
+所有样本一条 gap 都没产——本门没有真的验证过分类逻辑（允许集是空转的）
+
+---- event_indexes_are_non_empty_monotonic_and_in_range stdout ----
+
+thread 'event_indexes_are_non_empty_monotonic_and_in_range' (1584) panicked at tests/p15_behavior_observation.rs:1148:5:
+canary 集合没有覆盖全部三种截断形态（episode 0 / restart 未 taken 0 / restart 已 taken 0）——豁免条款有分支是空转的
+
+---- recorder_on_and_off_reproduce_the_golden_canary_stream stdout ----
+
+thread 'recorder_on_and_off_reproduce_the_golden_canary_stream' (1589) panicked at tests/p15_behavior_observation.rs:267:9:
+assertion `left == right` failed: seed 1：正式路径偏离 golden 基线（引擎行为变了，不是 P15 的锅——先查这一条）
+  left: 807073964604493615
+ right: 11954035598676565781
+
+
+failures:
+    event_indexes_are_non_empty_monotonic_and_in_range
+    every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect
+    gap_is_a_classified_outcome_not_a_failure
+    recorder_on_and_off_reproduce_the_golden_canary_stream
+
+test result: FAILED. 7 passed; 4 failed; 1 ignored; 0 measured; 0 filtered out; finished in 6.19s
+
+error: test failed, to rerun pass `--test p15_behavior_observation`
+     Running tests/p16_spatial_features.rs (target/release/deps/p16_spatial_features-5c261eb9c84a0c5c)
+
+running 38 tests
+test action_facts_construction_never_reads_position ... ok
+test caliber_closing_fact_tie_break_names_the_episode_closing_fact ... ok
+test caliber_end_is_same_source_and_never_borrows_the_start ... ok
+test caliber_guard_has_discriminating_power ... ok
+test caliber_never_reads_across_episode_boundaries ... ok
+test caliber_start_comes_from_control_fact_not_action_position ... ok
+test displacement_decomposition_normalizes_direction_and_splits_axes ... ok
+test all_feature_times_use_a_single_basis ... ok
+test engine_shape_coverage_is_total_and_missing_reasons_stay_empty ... ok
+test identical_inputs_produce_byte_identical_output ... ok
+test json_validator_rejects_the_known_bad_shapes ... ok
+test line_spacing_slope_is_least_squares_not_endpoint_difference ... ok
+test motifs_do_not_use_position ... ok
+test on_disk_artifacts_share_the_current_source_fingerprint ... ok
+test on_disk_json_is_structurally_valid ... ok
+test p16_baseline ... ignored, 300 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p16_baseline
+test p16_canary ... ignored, 30 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p16_canary
+test p16_does_not_change_the_p17a_schema_fingerprint ... ok
+test formal_path_produces_no_snapshots_and_is_byte_identical ... ok
+test caliber_coverage_on_a_real_seed ... ok
+test progress_normalizes_direction_per_team ... ok
+test provenance_caliber_snapshot_lists_the_live_constants ... ok
+test provenance_carries_the_comparability_triple ... ok
+test quantile_matches_the_r_type7_convention_exactly ... ok
+test reference_predicate_semantics_are_pinned ... ok
+test reference_set_source_references_no_position_quantity ... ok
+test reference_sets_are_sized_and_documented ... ok
+test rust_shape_is_in_the_same_regime_as_the_js_ruler ... FAILED
+test spread_pairs_unsorted_coordinates ... ok
+test state_snapshot_frozen_marks_active_highlight_only ... ok
+test state_snapshot_positions_match_the_beat_projection_bit_for_bit ... ok
+test state_snapshots_are_per_tick_and_bit_identical ... ok
+test support_uses_ball_position_and_only_counts_players_ahead ... ok
+test team_shape_excludes_keeper_and_uses_quantile_span ... ok
+test time_relationship_feature_coverage_on_a_real_seed ... ok
+test phaseability_separability_is_measured ... ok
+test phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled ... FAILED
+test goal_kick_amplifier_matches_the_pinned_share ... ok
+
+failures:
+
+---- rust_shape_is_in_the_same_regime_as_the_js_ruler stdout ----
+Rust 侧 seed 1：可算帧 5399/5399 平均 depth=23.67 m 平均 width=43.44 m
+
+thread 'rust_shape_is_in_the_same_regime_as_the_js_ruler' (1623) panicked at tests/p16_spatial_features.rs:770:5:
+Rust 侧平均 depth 23.67 m 明显偏离 JS 标尺的 ≈40 m 量级——口径可能分叉
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled stdout ----
+final_third vs 其余（forward_m/s）AUC = 0.675
+
+thread 'phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled' (1615) panicked at tests/p16_spatial_features.rs:1542:5:
+final_third 在 forward_m/s 上应与其余显著可分（实测 0.675）——若跌回 ~0.5，先查 join（`all_feats` 是否漏了 `i + offset`），再查样本
+
+
+failures:
+    phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled
+    rust_shape_is_in_the_same_regime_as_the_js_ruler
+
+test result: FAILED. 34 passed; 2 failed; 2 ignored; 0 measured; 0 filtered out; finished in 5.93s
+
+error: test failed, to rerun pass `--test p16_spatial_features`
+     Running tests/p17a_behavior_chain_baseline.rs (target/release/deps/p17a_behavior_chain_baseline-65e713e44d8934f5)
+
+running 26 tests
+test action_mapping_covers_the_engine_vocabulary ... ok
+test a7_reports_the_per_match_statistic_not_the_pooled_mean ... ok
+test a5_evidence_comes_from_the_statistic_population ... ok
+test a7_title_is_interpolated_and_evidence_covers_the_control_channel ... ok
+test anomaly_rules_degrade_when_sample_is_insufficient ... ok
+test baseline_and_canary_seed_ranges_are_pinned_and_nested ... ok
+test contest_pairing_uses_the_adjacent_ended_fact ... ok
+test engine_source_fingerprint_covers_all_simulation_sources ... ok
+test anomaly_expectations_are_tagged_uncalibrated ... ok
+test aggregates_are_not_vacuous_on_real_seeds ... ok
+test by_kind_stats_group_per_match_not_per_observation ... ok
+test identical_inputs_produce_byte_identical_output ... ok
+test markdown_states_the_missing_real_match_dataset ... ok
+test multi_pass_share_counts_open_play_passes_only ... ok
+test named_motif_matchers_hold_on_constructed_chains ... ok
+test on_disk_artifacts_share_one_provenance_block ... ok
+test p17a_baseline ... ignored, 300 场 × 90 分钟；用 --release -- --ignored --nocapture p17a_baseline 显式跑
+test p17a_canary ... ignored, 30 场 × 90 分钟；用 --release -- --ignored --nocapture p17a_canary 显式跑
+test per_episode_action_chain_uses_only_decision_events ... ok
+test restart_first_control_uses_the_next_episode ... ok
+test sidecar_schema_fingerprint_is_stable_and_content_sensitive ... ok
+test statistics_are_per_match_then_cross_match ... ok
+test mechanism_prose_carries_no_frozen_statistical_ratios ... ok
+test mechanism_prose_carries_no_line_number_citations ... ok
+test zero_count_closed_set_members_are_present_not_omitted ... ok
+test first_control_delay_equals_delivery_flight_on_real_path ... ok
+
+test result: ok. 24 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 1.09s
+
+     Running tests/p17b_diagnosis_report.rs (target/release/deps/p17b_diagnosis_report-e202fdff13dccc90)
+
+running 35 tests
+test action_tokens_match_the_p17a_reference ... ok
+test closed_set_coverage_is_declared_for_every_contest_reason ... ok
+test contest_coverage_guard_has_discriminating_power ... ok
+test every_p17a_anomaly_rule_is_declared_in_the_per_episode_map ... ok
+test evidence_table_lists_every_locus_and_every_row_is_readable ... ok
+test exception_thresholds_match_the_p17a_rules ... ok
+test aggregates_are_not_vacuous_on_real_seeds ... ok
+test anomaly_coverage_notes_only_cite_fields_the_product_carries ... ok
+test instant_contest_uses_the_contest_duration_not_the_possession_duration ... ok
+test invisible_causes_are_named_not_left_blank ... ok
+test locus_read_probes_actually_read_the_field ... ok
+test loose_ball_criterion_excludes_the_restart_prep_window ... ok
+test a_contest_fact_closes_at_most_one_episode ... ok
+test loose_ball_criterion_guard_has_discriminating_power ... ok
+test match_gap_count_probe_actually_counts ... ok
+test instant_contest_covers_only_the_episode_closing_share_of_a2 ... FAILED
+test on_disk_artifacts_share_the_current_source_fingerprints ... ok
+test p17b_baseline ... ignored, 300 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p17b_baseline
+test p17b_canary ... ignored, 30 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p17b_canary
+test observation_credibility_gate_annotates_but_keeps ... ok
+test pursuit_role_guard_has_discriminating_power ... ok
+test pursuit_roles_are_classified_never_merged ... ok
+test formal_path_is_byte_identical_and_produces_no_observations ... ok
+test replay_locators_resolve_to_real_events_with_consistent_time ... ok
+test loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber ... FAILED
+test retracted_close_down_claim_sites_carry_their_retraction ... ok
+test spec_anomaly_coverage_blocks_carry_both_halves ... ok
+test spec_anomaly_coverage_guard_is_not_vacuous ... ok
+test support_caliber_is_live_read_from_p16_not_copied ... ok
+test unknown_is_recorded_never_guessed ... ok
+test wording_guard_rejects_phase_vocabulary_after_stripping_comments ... ok
+test wording_guard_strips_comments_and_still_catches_violations ... ok
+test pursuit_window_spans_the_whole_contest_not_just_the_closing_tick ... ok
+test report_is_deterministic_and_self_describing ... ok
+test restart_window_falls_back_explicitly_when_taken_t_is_missing ... FAILED
+
+failures:
+
+---- instant_contest_covers_only_the_episode_closing_share_of_a2 stdout ----
+
+thread 'instant_contest_covers_only_the_episode_closing_share_of_a2' (1667) panicked at tests/p17b_diagnosis_report.rs:1352:5:
+零时长争抢应过半（实测 30 seed 53.4%）：1852/3790
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber stdout ----
+
+thread 'loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber' (1673) panicked at tests/p17b_diagnosis_report.rs:1502:5:
+普查均长 4.19 偏离 design §4.4.1 的 3.02 太多
+
+---- restart_window_falls_back_explicitly_when_taken_t_is_missing stdout ----
+
+thread 'restart_window_falls_back_explicitly_when_taken_t_is_missing' (1682) panicked at tests/p17b_diagnosis_report.rs:597:5:
+canary 上应出现 `taken_t` 缺失的 fallback 窗口（实测 30 seed 里有 2 例）——若为 0，fallback 分支是未被执行的代码。实际分布：{"taken_t": 2498}
+
+
+failures:
+    instant_contest_covers_only_the_episode_closing_share_of_a2
+    loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber
+    restart_window_falls_back_explicitly_when_taken_t_is_missing
+
+test result: FAILED. 30 passed; 3 failed; 2 ignored; 0 measured; 0 filtered out; finished in 6.09s
+
+error: test failed, to rerun pass `--test p17b_diagnosis_report`
+     Running tests/p18_behavior_gates.rs (target/release/deps/p18_behavior_gates-3cf621f2a13eb7f7)
+
+running 8 tests
+test p18_baseline ... ignored, 300 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p18_baseline
+test p18_canary ... ignored, 30 seed × 90 分钟；显式跑：--release -- --ignored --nocapture p18_canary
+test gates_are_finite_and_not_vacuous ... ok
+test ball_and_main_are_mutually_exclusive ... ok
+test carrier_ticks_dominate_loose_ticks ... ok
+test pass_fail_c7_differs_from_p17a_and_both_are_reported ... ok
+test wording_guard_has_discriminating_power ... ok
+test wording_guard_rejects_phase_vocabulary ... ok
+
+test result: ok. 6 passed; 0 failed; 2 ignored; 0 measured; 0 filtered out; finished in 0.10s
+
+     Running tests/realism.rs (target/release/deps/realism-56fb9610a18efac2)
+
+running 13 tests
+test l1_fouls_and_cards ... ignored
+test l1_home_away_goal_asymmetry ... ignored
+test l1_pass_completion_rate ... ignored
+test l1_shot_result_distributions ... ignored
+test l1_tackle_dilution_and_slot_mix ... ignored
+test gm_canary_seeds ... FAILED
+test l2_sent_off_kickoff_seeds ... FAILED
+test l3_home_away_goal_calibration ... ignored
+test l3_shot_ratios ... ignored
+test p13_side_effect_snapshot ... ignored
+test p31_frequency_5min_directional ... ignored
+test gm_legacy_baselines_preserved_and_differs ... ok
+test l2_cross_event_invariants has been running for over 60 seconds
+test l2_cross_event_invariants ... ok
+
+failures:
+
+---- gm_canary_seeds stdout ----
+
+thread 'gm_canary_seeds' (1698) panicked at tests/realism.rs:1484:9:
+assertion `left == right` failed: seed 1 [current] home_score 漂移: golden=1 current=0（审阅后用 ACCEPT_GOLDEN=1 重基线）
+  left: 1
+ right: 0
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+---- l2_sent_off_kickoff_seeds stdout ----
+
+thread 'l2_sent_off_kickoff_seeds' (1701) panicked at tests/realism.rs:1319:9:
+seed 33 应含红牌（定向 seed 失效？）
+
+
+failures:
+    gm_canary_seeds
+    l2_sent_off_kickoff_seeds
+
+test result: FAILED. 2 passed; 2 failed; 9 ignored; 0 measured; 0 filtered out; finished in 63.51s
+
+error: test failed, to rerun pass `--test realism`
+   Doc-tests fm_engine
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+error: 6 targets failed:
+    `--lib`
+    `--test p124_intent_observations`
+    `--test p15_behavior_observation`
+    `--test p16_spatial_features`
+    `--test p17b_diagnosis_report`
+    `--test realism`
+no_fail_fast_exit=101
+=== date: 2026-10-25T15:11:34+08:00

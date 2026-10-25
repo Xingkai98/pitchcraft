@@ -1,0 +1,23 @@
+shot-zone probe v2 (read-only, 20 seeds each)
+wasm=D:\pitchcraft-exp3\viewer\engine.wasm
+seeds=401..420 matches=20
+box actions: pass=3826 shot=176
+box & goal-side-clear: pass=2774 shot=143  => pass share=95.1%
+arc & goal-side-clear: pass=2408 shot=92
+clean-box passes nearest defender (any dir): <=4m 54.8% | 4-6m 27.2% | 6-8m 14.8% | 8-12m 3.2%, >12m 0.0%
+clean-box shots  nearest defender (any dir): <=4m 18.6% | 4-6m 65.9% | 6-8m 14.1% | 8-12m 1.4%, >12m 0.0%
+clean-box passes: nearest defender BEHIND carrier 69.0%; behind & <=4.5m 45.2%; gap>=4s 100.0%
+clean-box & nearest>4m: pass=1254 shot=203; of those gap<4s: pass=0 shot=1
+clean-box pass dirs: mean forward=-2.84m; lateral(|fwd|<=3,|lat|>=6) 47.0%; backward(<=-3m) 45.5%
+mean goal-dist: pass 11.0m shot 15.1m
+wasm=D:\pitchcraft-preview\v2_attack_max\viewer\engine.wasm
+seeds=401..420 matches=20
+box actions: pass=3018 shot=266
+box & goal-side-clear: pass=1937 shot=196  => pass share=90.8%
+arc & goal-side-clear: pass=2342 shot=166
+clean-box passes nearest defender (any dir): <=4m 49.4% | 4-6m 29.4% | 6-8m 19.0% | 8-12m 2.2%, >12m 0.0%
+clean-box shots  nearest defender (any dir): <=4m 21.7% | 4-6m 64.3% | 6-8m 12.7% | 8-12m 1.3%, >12m 0.0%
+clean-box passes: nearest defender BEHIND carrier 73.3%; behind & <=4.5m 40.3%; gap>=4s 100.0%
+clean-box & nearest>4m: pass=980 shot=304; of those gap<4s: pass=0 shot=0
+clean-box pass dirs: mean forward=-2.70m; lateral(|fwd|<=3,|lat|>=6) 46.5%; backward(<=-3m) 45.6%
+mean goal-dist: pass 11.1m shot 15.3m

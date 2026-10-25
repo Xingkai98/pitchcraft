@@ -1,0 +1,24 @@
+✓ 已落盘 .scratch\notes\team-shape-2026-10-25\ratchet-before.json
+  commit=1c5729d wasm=bc2f2b2b lib=eb675c14 realGames=2 node=v24.22.1
+  lf.disp             6.270
+  lf.lat              0.370
+  lf.mix              0.800
+  lf.hd              38.700
+  lf.ad              36.390
+  lf.spread          20.730
+  lf.gap             18.880
+  lf.ballDist        18.620
+  lf.distance         0.542
+  p38.hd             38.736
+  p38.spread         20.722
+  p38.gap            18.905
+  p38.latSd           3.219
+  p38.swarm           0.678
+  p38.fault          12.220
+  p38.balance         0.984
+  p38.shotsReg       23.400
+  p18.a1             29.487
+  p18.a2              5.844
+  p18.b4              0.646
+  p18.a3              5.104
+  p18.c1              0.141

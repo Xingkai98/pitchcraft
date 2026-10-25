@@ -1,0 +1,40 @@
+shot-zone probe (read-only, 20 seeds each)
+wasm=D:\pitchcraft-exp3\viewer\engine.wasm
+seeds=401..420 matches=20
+near-goal actions (<=25m): pass=7285 shot=290
+  box (<=16.5m): pass=7285 shot=290
+  box + goal-side-clear(8m,45deg): pass=2774 shot=143
+  arc 16.5-25 + goal-side-clear: pass=2468 shot=92
+clean box passes=5242
+  nearest defender any direction: <=4m 59.8%, 4-6m 22.9%, 6-8m 14.7%, 8-12m 2.6%, >12m 0.0%
+  nearest defender BEHIND carrier: 71.6%; behind & <=4.5m: 46.7%
+  stalled >=4s before pass: 96.7%
+  pass direction: mean forward=-2.02m; lateral-only(|fwd|<=3 & |lat|>=6): 40.7%; backward(<=-3m): 39.8%
+  mean distance-to-goal at pass: 15.6m
+clean box shots=235; mean distance-to-goal at shot=15.0m
+wasm=D:\pitchcraft-preview\v2_attack_max\viewer\engine.wasm
+seeds=401..420 matches=20
+near-goal actions (<=25m): pass=6278 shot=465
+  box (<=16.5m): pass=6278 shot=465
+  box + goal-side-clear(8m,45deg): pass=1937 shot=196
+  arc 16.5-25 + goal-side-clear: pass=2430 shot=166
+clean box passes=4367
+  nearest defender any direction: <=4m 56.2%, 4-6m 25.4%, 6-8m 15.9%, 8-12m 2.5%, >12m 0.0%
+  nearest defender BEHIND carrier: 76.0%; behind & <=4.5m: 45.7%
+  stalled >=4s before pass: 96.3%
+  pass direction: mean forward=-1.98m; lateral-only(|fwd|<=3 & |lat|>=6): 38.1%; backward(<=-3m): 40.7%
+  mean distance-to-goal at pass: 16.5m
+clean box shots=362; mean distance-to-goal at shot=15.4m
+wasm=D:\code\pitchcraft\viewer\engine.wasm
+seeds=401..420 matches=20
+near-goal actions (<=25m): pass=1391 shot=394
+  box (<=16.5m): pass=1391 shot=394
+  box + goal-side-clear(8m,45deg): pass=52 shot=156
+  arc 16.5-25 + goal-side-clear: pass=710 shot=162
+clean box passes=762
+  nearest defender any direction: <=4m 25.7%, 4-6m 23.5%, 6-8m 16.7%, 8-12m 34.1%, >12m 0.0%
+  nearest defender BEHIND carrier: 66.9%; behind & <=4.5m: 13.8%
+  stalled >=4s before pass: 90.9%
+  pass direction: mean forward=-15.57m; lateral-only(|fwd|<=3 & |lat|>=6): 0.9%; backward(<=-3m): 97.0%
+  mean distance-to-goal at pass: 21.8m
+clean box shots=318; mean distance-to-goal at shot=17.0m

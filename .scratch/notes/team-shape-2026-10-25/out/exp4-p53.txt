@@ -1,0 +1,133 @@
+=== date: 2026-10-25T14:54:28+08:00
+=== cargo test --lib --release p53
+   Compiling fm-engine v0.1.0 (/mnt/d/pitchcraft-exp4/engine)
+warning: unused variable: `col`
+    --> src/lib.rs:3836:9
+     |
+3836 |     let col = ((st.ball_pos.0 * 3.0).floor() as i32).clamp(0, 2) as f64;
+     |         ^^^ help: if this is intentional, prefix it with an underscore: `_col`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `row`
+    --> src/lib.rs:3837:9
+     |
+3837 |     let row = ((st.ball_pos.1 * 3.0).floor() as i32).clamp(0, 2) as f64;
+     |         ^^^ help: if this is intentional, prefix it with an underscore: `_row`
+
+warning: value assigned to `saw_corner_after_saved` is never read
+    --> src/lib.rs:9971:21
+     |
+9971 |                     saw_corner_after_saved = true;
+     |                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: maybe it is overwritten before being read?
+     = note: `#[warn(unused_assignments)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `carry_plan`
+     --> src/lib.rs:10734:13
+      |
+10734 |         let carry_plan = CarrierPlan {
+      |             ^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_carry_plan`
+
+warning: constant `FORM_MIX_X` is never used
+    --> src/lib.rs:3514:7
+     |
+3514 | const FORM_MIX_X: f64 = 0.5;
+     |       ^^^^^^^^^^
+     |
+     = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: constant `FORM_MIX_Y` is never used
+    --> src/lib.rs:3516:7
+     |
+3516 | const FORM_MIX_Y: f64 = 0.7;
+     |       ^^^^^^^^^^
+
+warning: constant `FORM_TRACK_Y` is never used
+    --> src/lib.rs:3518:7
+     |
+3518 | const FORM_TRACK_Y: f64 = 0.3;
+     |       ^^^^^^^^^^^^
+
+warning: constant `FORM_SPREAD_X` is never used
+    --> src/lib.rs:3520:7
+     |
+3520 | const FORM_SPREAD_X: f64 = 0.8;
+     |       ^^^^^^^^^^^^^
+
+warning: constant `FORM_SPREAD_Y` is never used
+    --> src/lib.rs:3522:7
+     |
+3522 | const FORM_SPREAD_Y: f64 = 1.3;
+     |       ^^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_HOME` is never used
+    --> src/lib.rs:3524:7
+     |
+3524 | const FORM_CENTER_HOME: f64 = 0.358;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_AWAY` is never used
+    --> src/lib.rs:3525:7
+     |
+3525 | const FORM_CENTER_AWAY: f64 = 0.642;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_TRACK_X` is never used
+    --> src/lib.rs:3527:7
+     |
+3527 | const FORM_TRACK_X: f64 = 0.5;
+     |       ^^^^^^^^^^^^
+
+warning: constant `FORM_CENTER_OFFSET` is never used
+    --> src/lib.rs:3529:7
+     |
+3529 | const FORM_CENTER_OFFSET: f64 = 0.033;
+     |       ^^^^^^^^^^^^^^^^^^
+
+warning: constant `FORM_ATTACK_SIGN` is never used
+    --> src/lib.rs:3531:7
+     |
+3531 | const FORM_ATTACK_SIGN: f64 = 1.0;
+     |       ^^^^^^^^^^^^^^^^
+
+warning: constant `B_COMPACT` is never used
+    --> src/lib.rs:3638:7
+     |
+3638 | const B_COMPACT: u8 = 1;
+     |       ^^^^^^^^^
+
+warning: function `count_detail` is never used
+     --> src/lib.rs:10074:8
+      |
+10074 |     fn count_detail(s: &str, detail: &str) -> usize {
+      |        ^^^^^^^^^^^^
+
+warning: function `count_goals` is never used
+     --> src/lib.rs:10081:8
+      |
+10081 |     fn count_goals(s: &str) -> usize {
+      |        ^^^^^^^^^^^
+
+warning: `fm-engine` (lib test) generated 17 warnings (run `cargo fix --lib -p fm-engine --tests` to apply 3 suggestions)
+    Finished `release` profile [optimized] target(s) in 6.31s
+     Running unittests src/lib.rs (target/release/deps/fm_engine-2ffd4e341a7fa2a2)
+
+running 11 tests
+test tests::p53_highlight_landing_enters_solver_on_breach ... ok
+test tests::p53_same_team_frozen_participant_separates_mover ... ok
+test tests::p53_cross_team_not_constrained ... ok
+test tests::p53_sent_off_not_separated ... ok
+test tests::p53_separate_pair_clamps_to_pitch ... ok
+test tests::p53_separate_pair_coincident_degenerates_along_x ... ok
+test tests::p53_separate_pair_uses_metric_direction_not_normalized ... ok
+test tests::p53_separate_pair_x_axis_2m1_not_separated ... ok
+test tests::p53_separate_pair_y_axis_1m36_separated_to_min ... ok
+test tests::p53_same_team_spacing_holds_between_anchors ... ok
+test tests::p53_same_team_spacing_ge_2m ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 191 filtered out; finished in 2.75s
+
+p53_exit=0
+=== date: 2026-10-25T14:54:37+08:00

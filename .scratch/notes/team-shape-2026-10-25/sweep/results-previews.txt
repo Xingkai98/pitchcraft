@@ -1,0 +1,7 @@
+preview labels (60 seeds, per-game totals)
+v1_attack :: shots=21.4 goals=2.63 tackles=42.7 fouls=41.6
+v2_attack_max :: shots=27.6 goals=3.37 tackles=40.8 fouls=42
+v3_defense :: shots=12.4 goals=1.21 tackles=53.1 fouls=60.6
+v4_balanced :: shots=26.4 goals=3.15 tackles=38.6 fouls=63
+v5_smooth :: shots=15.6 goals=1.87 tackles=25.3 fouls=22.4
+v6_smooth_lively :: shots=28.9 goals=3.37 tackles=32.6 fouls=41.4

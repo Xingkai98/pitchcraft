@@ -1,0 +1,28 @@
+ratchet：.scratch\notes\team-shape-2026-10-25\ratchet-before.json
+  before commit=1c5729d wasm=bc2f2b2b lib=eb675c14 realGames=2
+  after  commit=1c5729d wasm=bc2f2b2b lib=eb675c14 realGames=2
+
+  lf.disp             6.270 →      6.270  · 持平   (higher)
+  lf.lat              0.370 →      0.370  · 持平   (higher)
+  lf.mix              0.800 →      0.800  · 持平   (higher)
+  lf.hd              38.700 →     38.700  · 持平   (lower)
+  lf.ad              36.390 →     36.390  · 持平   (lower)
+  lf.spread          20.730 →     20.730  · 持平   (lower)
+  lf.gap             18.880 →     18.880  · 持平   (lower)
+  lf.ballDist        18.620 →     18.620  · 持平   (lower)
+  lf.distance         0.542 →      0.542  · 持平   (lower)
+  p38.hd             38.736 →     38.736  · 持平   (band)
+  p38.spread         20.722 →     20.722  · 持平   (band)
+  p38.gap            18.905 →     18.905  · 持平   (band)
+  p38.latSd           3.219 →      3.219  · 持平   (band)
+  p38.swarm           0.678 →      0.678  · 持平   (band)
+  p38.fault          12.220 →     12.220  · 持平   (band)
+  p38.balance         0.984 →      0.984  · 持平   (band)
+  p38.shotsReg       23.400 →     23.400  · 持平   (higher)
+  p18.a1             29.487 →     29.487  · 持平   (lower)
+  p18.a2              5.844 →      5.844  · 持平   (lower)
+  p18.b4              0.646 →      0.646  · 持平   (lower)
+  p18.a3              5.104 →      5.104  · 对照   (report)
+  p18.c1              0.141 →      0.141  · 对照   (report)
+
+✓ 无退化

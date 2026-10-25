@@ -1,0 +1,10 @@
+    Finished `release` profile [optimized] target(s) in 0.10s
+     Running tests/p18_behavior_gates.rs (target/release/deps/p18_behavior_gates-3cf621f2a13eb7f7)
+
+running 1 test
+[p18:canary] 30 场 / 落盘 /mnt/d/code/pitchcraft/engine/target/p18-gates/canary.json
+[p18:canary] provenance: caliber=p18-engine-v1 engine_fp=fnv1a64:69d438e67b08239b seeds=1..=30
+test p18_canary ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 7 filtered out; finished in 1.41s
+
