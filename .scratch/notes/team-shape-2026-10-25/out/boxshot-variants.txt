@@ -1,0 +1,35 @@
+in-box shot priority variants (R12 base + direction-aware forced pass + gated box shot)
+=== P=0.35 ===
+wasm=D:\pitchcraft-exp10\viewer\engine.wasm
+seeds=401..412 matches=12
+box actions: pass=165 shot=557
+box & goal-side-clear: pass=16 shot=512  => pass share=3.0%
+arc & goal-side-clear: pass=678 shot=280
+clean-box passes nearest defender (any dir): <=4m 93.8% | 4-6m 6.3% | 6-8m 0.0% | 8-12m 0.0%, >12m 0.0%
+clean-box shots  nearest defender (any dir): <=4m 29.6% | 4-6m 60.6% | 6-8m 9.7% | 8-12m 0.1%, >12m 0.0%
+clean-box passes: nearest defender BEHIND carrier 43.8%; behind & <=4.5m 37.5%; gap>=4s 100.0%
+clean-box & nearest>4m: pass=1 shot=570; of those gap<4s: pass=0 shot=2
+clean-box pass dirs: mean forward=-2.45m; lateral(|fwd|<=3,|lat|>=6) 0.0%; backward(<=-3m) 31.3%
+mean goal-dist: pass 11.4m shot 14.9m
+wasm=D:\pitchcraft-exp10\viewer\engine.wasm seeds=401..520 dur=5400
+shot: home 5005 away 4344 (H/A 1.152, per-game 41.71/36.20)
+goal: home 793 away 610 (H/A 1.300, per-game 6.61/5.08)
+tackle: home 1273 away 1097 (H/A 1.160, per-game 10.61/9.14)
+foul: home 1617 away 1323 (H/A 1.222, per-game 13.47/11.03)
+=== P=0.2 ===
+wasm=D:\pitchcraft-exp10\viewer\engine.wasm
+seeds=401..412 matches=12
+box actions: pass=165 shot=557
+box & goal-side-clear: pass=16 shot=512  => pass share=3.0%
+arc & goal-side-clear: pass=678 shot=280
+clean-box passes nearest defender (any dir): <=4m 93.8% | 4-6m 6.3% | 6-8m 0.0% | 8-12m 0.0%, >12m 0.0%
+clean-box shots  nearest defender (any dir): <=4m 29.6% | 4-6m 60.6% | 6-8m 9.7% | 8-12m 0.1%, >12m 0.0%
+clean-box passes: nearest defender BEHIND carrier 43.8%; behind & <=4.5m 37.5%; gap>=4s 100.0%
+clean-box & nearest>4m: pass=1 shot=570; of those gap<4s: pass=0 shot=2
+clean-box pass dirs: mean forward=-2.45m; lateral(|fwd|<=3,|lat|>=6) 0.0%; backward(<=-3m) 31.3%
+mean goal-dist: pass 11.4m shot 14.9m
+wasm=D:\pitchcraft-exp10\viewer\engine.wasm seeds=401..520 dur=5400
+shot: home 5005 away 4344 (H/A 1.152, per-game 41.71/36.20)
+goal: home 793 away 610 (H/A 1.300, per-game 6.61/5.08)
+tackle: home 1273 away 1097 (H/A 1.160, per-game 10.61/9.14)
+foul: home 1617 away 1323 (H/A 1.222, per-game 13.47/11.03)

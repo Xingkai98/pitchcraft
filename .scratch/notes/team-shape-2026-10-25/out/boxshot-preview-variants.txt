@@ -1,0 +1,1 @@
+box-shot priority preview variants (direction-aware forced pass + gated clear-box shot)

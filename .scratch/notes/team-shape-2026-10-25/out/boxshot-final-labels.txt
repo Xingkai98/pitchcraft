@@ -1,0 +1,52 @@
+final preview labels
+=== v10_boxshot_medium ===
+wasm=D:\pitchcraft-preview\v10_boxshot_medium\viewer\engine.wasm
+seeds=401..412 matches=12
+box actions: pass=1534 shot=415
+box & goal-side-clear: pass=1102 shot=375  => pass share=74.6%
+arc & goal-side-clear: pass=973 shot=79
+clean-box passes nearest defender (any dir): <=4m 30.9% | 4-6m 45.2% | 6-8m 20.2% | 8-12m 3.7%, >12m 0.0%
+clean-box shots  nearest defender (any dir): <=4m 36.6% | 4-6m 54.8% | 6-8m 8.4% | 8-12m 0.2%, >12m 0.0%
+clean-box passes: nearest defender BEHIND carrier 71.3%; behind & <=4.5m 31.9%; gap>=4s 100.0%
+clean-box & nearest>4m: pass=762 shot=301; of those gap<4s: pass=0 shot=1
+clean-box pass dirs: mean forward=-3.43m; lateral(|fwd|<=3,|lat|>=6) 36.7%; backward(<=-3m) 53.5%
+mean goal-dist: pass 10.6m shot 12.5m
+wasm=D:\pitchcraft-preview\v10_boxshot_medium\viewer\engine.wasm seeds=401..520 dur=5400
+shot: home 2921 away 2408 (H/A 1.213, per-game 24.34/20.07)
+goal: home 312 away 219 (H/A 1.425, per-game 2.60/1.82)
+tackle: home 1457 away 1426 (H/A 1.022, per-game 12.14/11.88)
+foul: home 1624 away 1261 (H/A 1.288, per-game 13.53/10.51)
+=== v11_boxshot_high ===
+wasm=D:\pitchcraft-preview\v11_boxshot_high\viewer\engine.wasm
+seeds=401..412 matches=12
+box actions: pass=782 shot=585
+box & goal-side-clear: pass=474 shot=539  => pass share=46.8%
+arc & goal-side-clear: pass=932 shot=83
+clean-box passes nearest defender (any dir): <=4m 32.9% | 4-6m 39.0% | 6-8m 21.1% | 8-12m 7.0%, >12m 0.0%
+clean-box shots  nearest defender (any dir): <=4m 33.5% | 4-6m 59.5% | 6-8m 6.9% | 8-12m 0.1%, >12m 0.0%
+clean-box passes: nearest defender BEHIND carrier 68.8%; behind & <=4.5m 32.7%; gap>=4s 100.0%
+clean-box & nearest>4m: pass=318 shot=433; of those gap<4s: pass=0 shot=1
+clean-box pass dirs: mean forward=-3.04m; lateral(|fwd|<=3,|lat|>=6) 41.4%; backward(<=-3m) 47.3%
+mean goal-dist: pass 11.9m shot 12.4m
+wasm=D:\pitchcraft-preview\v11_boxshot_high\viewer\engine.wasm seeds=401..520 dur=5400
+shot: home 4005 away 3373 (H/A 1.187, per-game 33.38/28.11)
+goal: home 456 away 281 (H/A 1.623, per-game 3.80/2.34)
+tackle: home 1361 away 1213 (H/A 1.122, per-game 11.34/10.11)
+foul: home 1584 away 1325 (H/A 1.195, per-game 13.20/11.04)
+=== v7_mild ===
+wasm=D:\pitchcraft-preview\v7_mild\viewer\engine.wasm
+seeds=401..412 matches=12
+box actions: pass=2394 shot=160
+box & goal-side-clear: pass=1779 shot=138  => pass share=92.8%
+arc & goal-side-clear: pass=1090 shot=67
+clean-box passes nearest defender (any dir): <=4m 33.4% | 4-6m 44.8% | 6-8m 18.2% | 8-12m 3.6%, >12m 0.0%
+clean-box shots  nearest defender (any dir): <=4m 27.4% | 4-6m 61.1% | 6-8m 11.1% | 8-12m 0.4%, >12m 0.0%
+clean-box passes: nearest defender BEHIND carrier 66.9%; behind & <=4.5m 33.1%; gap>=4s 100.0%
+clean-box & nearest>4m: pass=1185 shot=156; of those gap<4s: pass=0 shot=1
+clean-box pass dirs: mean forward=-3.51m; lateral(|fwd|<=3,|lat|>=6) 41.8%; backward(<=-3m) 53.2%
+mean goal-dist: pass 10.0m shot 14.1m
+wasm=D:\pitchcraft-preview\v7_mild\viewer\engine.wasm seeds=401..520 dur=5400
+shot: home 1451 away 1328 (H/A 1.093, per-game 12.09/11.07)
+goal: home 197 away 161 (H/A 1.224, per-game 1.64/1.34)
+tackle: home 1602 away 1626 (H/A 0.985, per-game 13.35/13.55)
+foul: home 1540 away 1172 (H/A 1.314, per-game 12.83/9.77)
