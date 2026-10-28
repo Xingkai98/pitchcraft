@@ -507,6 +507,25 @@ export class Game {
       }
       const span = Math.max(next.t - prev.t, 1e-6);
       const u = Math.min(Math.max((t - prev.t) / span, 0), 1);
+      // C5（R2）：**球员**锚点转角平滑（跨拍 Catmull–Rom）。1s 拍链上线性插值让每名球员的
+      // 轨迹在拍边界出现硬折角（盲测判据「直角阶梯/电路板走线」的形态来源之一）；真实球员
+      // 因惯性会在转角处走弧。平滑只在**均匀拍链**上启用（两侧邻锚点时间跨度都接近本段），
+      // 锚点时刻位置不变（曲线过锚点），中段最多外扩约 1/6 邻段（≈0.7m）。
+      // 球不平滑：球路是物理量（飞行/滚动），平滑会歪曲球的真实轨迹。
+      if (kind === 'player') {
+        const smooth = this._smoothNeighborPositions(arr, pos, prev, next);
+        if (smooth) {
+          const { p0, p3 } = smooth;
+          const u2 = u * u; const u3 = u2 * u;
+          const cr = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * u
+            + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
+          return {
+            x: Math.min(Math.max(cr(p0.x, prev.x, next.x, p3.x), 0), 1),
+            y: Math.min(Math.max(cr(p0.y, prev.y, next.y, p3.y), 0), 1),
+            h: 0,
+          };
+        }
+      }
       return {
         x: prev.x + (next.x - prev.x) * u,
         y: prev.y + (next.y - prev.y) * u,
@@ -541,6 +560,32 @@ export class Game {
     }
     if (prevAny) return { x: prevAny.x, y: prevAny.y };
     return null;
+  }
+
+  // C5 辅助：为 Catmull–Rom 找相邻的「拍前 / 拍后」锚点（严格早于 prev.t / 晚于 next.t，
+  // 跳过拍边界同时间戳的重复锚点）。返回 null = 不满足均匀拍链条件（退回线性）。
+  _smoothNeighborPositions(arr, pos, prev, next) {
+    const s1 = next.t - prev.t;
+    if (!(s1 >= 0.5 && s1 <= 1.5)) return null;
+    // 拍前：最后一个 t 严格小于 prev.t 的锚点（不含同时间戳重复点）
+    let lo = 0; let hi = arr.length - 1; let p0i = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (arr[mid].t < prev.t - 1e-6) { p0i = mid; lo = mid + 1; } else { hi = mid - 1; }
+    }
+    // 拍后：第一个 t 严格大于 next.t 的锚点
+    lo = 0; hi = arr.length - 1; let p3i = -1;
+    while (lo <= hi) {
+      const mid = (lo + hi) >> 1;
+      if (arr[mid].t > next.t + 1e-6) { p3i = mid; hi = mid - 1; } else { lo = mid + 1; }
+    }
+    if (p0i < 0 || p3i < 0) return null;
+    const p0 = arr[p0i]; const p3 = arr[p3i];
+    const s0 = prev.t - p0.t; const s3 = p3.t - next.t;
+    // 只在均匀拍链上平滑（高亮飞行/重开等非均匀段退回线性，避免把飞行弧线改形）
+    if (!(s0 >= 0.5 && s0 <= 1.5 && s3 >= 0.5 && s3 <= 1.5)) return null;
+    if (s0 > 2.2 * s1 || s3 > 2.2 * s1 || s1 > 2.2 * Math.min(s0, s3)) return null;
+    return { p0, p3 };
   }
 
   togglePlay() {
