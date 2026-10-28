@@ -1,0 +1,226 @@
+{
+  "version": "replay-blind-v1",
+  "judge_id": "c-opus-4-8",
+  "judged_at": "2026-10-29",
+  "instructions": "对每个 item 独立回答 A/B；不要根据文件名或元数据推断。controls 回答同源/不同源；mixed 另答哪侧更像真实。",
+  "items": [
+    {
+      "order": 1,
+      "id": "rb-f0fcd89cb7",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    },
+    {
+      "order": 2,
+      "id": "rb-19cca27cbc",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 3,
+      "id": "rb-d933feacd3",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    },
+    {
+      "order": 4,
+      "id": "rb-536de2e1b9",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 5,
+      "id": "rb-d9a45e5191",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "球路偏短、推进不足，球多在中场折返"
+    },
+    {
+      "order": 6,
+      "id": "rb-87634adcba",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "球路偏短、推进不足，球多在中场折返"
+    },
+    {
+      "order": 7,
+      "id": "rb-a2f2b571d6",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 1,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 8,
+      "id": "rb-426608d7ba",
+      "A_guess": "real",
+      "A_confidence": 4,
+      "B_score": 4,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    },
+    {
+      "order": 9,
+      "id": "rb-a901267e82",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 10,
+      "id": "rb-e4453603a5",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 1,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 11,
+      "id": "rb-e4a4c2cf44",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    },
+    {
+      "order": 12,
+      "id": "rb-e933652054",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 13,
+      "id": "rb-6af71d8739",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    },
+    {
+      "order": 14,
+      "id": "rb-d63f6f60ea",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    },
+    {
+      "order": 15,
+      "id": "rb-4a782ed4b5",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 16,
+      "id": "rb-08bfdbf59c",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 17,
+      "id": "rb-5751e369be",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "球路偏短、推进不足，球多在中场折返"
+    },
+    {
+      "order": 18,
+      "id": "rb-0ac1c1c304",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 19,
+      "id": "rb-bf0d0a6a02",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 20,
+      "id": "rb-13ad1579c8",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 21,
+      "id": "rb-86a8fa034b",
+      "A_guess": "real",
+      "A_confidence": 4,
+      "B_score": 4,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    },
+    {
+      "order": 22,
+      "id": "rb-456e8790f5",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 23,
+      "id": "rb-4510df3b42",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、局限局部，球推进距离小"
+    },
+    {
+      "order": 24,
+      "id": "rb-63ad6311eb",
+      "A_guess": "real",
+      "A_confidence": 5,
+      "B_score": 5,
+      "cues": "球路长、横贯多区域，球持续推进覆盖全场"
+    }
+  ],
+  "controls": [
+    {
+      "order": 1,
+      "id": "ctl-4fbe446dde",
+      "same_source": "same",
+      "confidence": 4,
+      "more_real": null,
+      "notes": "两侧球路都长（>400px），更像同源真实回放"
+    },
+    {
+      "order": 2,
+      "id": "ctl-f9895b41a6",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "A",
+      "notes": "A 球路(340px)明显长于 B(214px)，A 更像真实推进、B 球路局限"
+    },
+    {
+      "order": 3,
+      "id": "ctl-ad55a187d6",
+      "same_source": "same",
+      "confidence": 4,
+      "more_real": null,
+      "notes": "两侧球路接近(~360px)，更像同源真实回放"
+    }
+  ]
+}

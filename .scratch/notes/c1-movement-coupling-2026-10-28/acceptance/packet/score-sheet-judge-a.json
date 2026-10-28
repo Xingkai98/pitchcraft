@@ -1,0 +1,226 @@
+{
+  "version": "replay-blind-v1",
+  "judge_id": "a-sonnet-5",
+  "judged_at": "2026-10-28",
+  "instructions": "对每个 item 独立回答 A/B；不要根据文件名或元数据推断。controls 回答同源/不同源；mixed 另答哪侧更像真实。",
+  "items": [
+    {
+      "order": 1,
+      "id": "rb-f0fcd89cb7",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "两名门将各自贴门线；个体路径有回卷/小环，球路折线长且跨度大；平均球程偏长、全队平均移速偏高，处判据边界"
+    },
+    {
+      "order": 2,
+      "id": "rb-19cca27cbc",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "路径多发夹弯/涡旋、约 1/5 球员几乎静止；球路为大折线；结构像真实逼抢窗口，但个体路径旋绕程度可疑"
+    },
+    {
+      "order": 3,
+      "id": "rb-d933feacd3",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "纵向绞线队形（宽度铺开、长度很窄）；球员平均位移偏小（约 1.7m/s）；球路竖折线"
+    },
+    {
+      "order": 4,
+      "id": "rb-536de2e1b9",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "全队同向长扫掠、轨迹近乎平行铺满全场；球程相对球员路径短；画面机械"
+    },
+    {
+      "order": 5,
+      "id": "rb-d9a45e5191",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "整块队形随球缓慢漂移、约 1/4 球员近静止；长而平滑的个体弧线；球程偏长"
+    },
+    {
+      "order": 6,
+      "id": "rb-87634adcba",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "全场密网式同步位移，22 人都在大范围移动；球程/球员行程度比低"
+    },
+    {
+      "order": 7,
+      "id": "rb-a2f2b571d6",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "长直扫掠段平行成束、个体差异小；球路与其他项比明显短；队形整体平移"
+    },
+    {
+      "order": 8,
+      "id": "rb-426608d7ba",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "稠密但交叉的弦状路径、无明显平行束；球路有长对角；速度/球程居中，判据边界"
+    },
+    {
+      "order": 9,
+      "id": "rb-a901267e82",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "个体漫游、直进比低（net/L≈0.34）；球路为长折线大环；球员平均移速偏低"
+    },
+    {
+      "order": 10,
+      "id": "rb-e4453603a5",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "横向平行条带、整队同步横移；球程短（约 135m/24s）"
+    },
+    {
+      "order": 11,
+      "id": "rb-e4a4c2cf44",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "个体长而平滑的 S 形弧线、互不平行；两队分块、门将居中；移速约 1.7m/s，最像真实回放的一段"
+    },
+    {
+      "order": 12,
+      "id": "rb-e933652054",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "右半场密集纵向绞线、个体旋绕；两队分块清晰、门将各守一端；球程偏长"
+    },
+    {
+      "order": 13,
+      "id": "rb-6af71d8739",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "长而平滑的大弧线、球路跨度大；球员位移偏小；进攻集中于中右，其余区域留白"
+    },
+    {
+      "order": 14,
+      "id": "rb-d63f6f60ea",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "大弧形路径、球路为大幅跨场折线；移速约 1.6m/s、约 1/5 球员近静止"
+    },
+    {
+      "order": 15,
+      "id": "rb-4a782ed4b5",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "横向长段落平行成束、整队同向平移；球路为矩形折线、球程短"
+    },
+    {
+      "order": 16,
+      "id": "rb-08bfdbf59c",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "典型平行车道：全场横向编织、几乎所有人同向长距离移动；球程/球员行程度比最低档"
+    },
+    {
+      "order": 17,
+      "id": "rb-5751e369be",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "横向平行长笔触、整队同步；球员平均移速最高档（约 3m/s 持续）；球路短"
+    },
+    {
+      "order": 18,
+      "id": "rb-0ac1c1c304",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "球程偏长而球员移速最低（约 1.4m/s）、约 30% 近静止；路径为交叉弦而非平行带"
+    },
+    {
+      "order": 19,
+      "id": "rb-bf0d0a6a02",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "最明显的平行横条带；球路几乎是水平直线往返；球程/球员行程度比最低（≈1.55）"
+    },
+    {
+      "order": 20,
+      "id": "rb-13ad1579c8",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "全体近乎同向平行扫掠（直进比 0.80）、两队同向；球路水平折线"
+    },
+    {
+      "order": 21,
+      "id": "rb-86a8fa034b",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "球路长（跨场大折线），但个体路径偏弦状、移速偏高；判据冲突取球程一侧"
+    },
+    {
+      "order": 22,
+      "id": "rb-456e8790f5",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "横向平行条带、直进比最高（0.82）；球员移速最高档；球程短"
+    },
+    {
+      "order": 23,
+      "id": "rb-4510df3b42",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "横向平行条带、两队同向移动；球路短平"
+    },
+    {
+      "order": 24,
+      "id": "rb-63ad6311eb",
+      "A_confidence": 2,
+      "A_guess": "real",
+      "B_score": 3,
+      "cues": "球程最长（≈260m/24s）、球员移速最低；个体出现多个小圆环（真实逼抢也可能），但旋绕程度偏高"
+    }
+  ],
+  "controls": [
+    {
+      "order": 1,
+      "id": "ctl-4fbe446dde",
+      "same_source": "different",
+      "confidence": 2,
+      "more_real": "A",
+      "notes": "A：紧凑区内的回卷/成环路径＋大跨度球路，球程偏长；B：开阔铺陈的长直边扫掠、球路为细长三角，更像整队同步漂移。A 更像真实"
+    },
+    {
+      "order": 2,
+      "id": "ctl-f9895b41a6",
+      "same_source": "same",
+      "confidence": 3,
+      "more_real": null,
+      "notes": "两侧都是横向平行长笔触、球员大幅移动而球程都短（球/人行程比 <2.1），同一类机械整队平移"
+    },
+    {
+      "order": 3,
+      "id": "ctl-ad55a187d6",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "B",
+      "notes": "A：横向平行条带、球/人行程比 2.34；B：紧凑绞线＋超大球路环（球/人行程比 5.36），个体路径旋绕不一，更像真实"
+    }
+  ]
+}

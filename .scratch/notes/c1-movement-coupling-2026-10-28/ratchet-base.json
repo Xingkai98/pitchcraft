@@ -1,0 +1,101 @@
+{
+  "version": 1,
+  "metrics": {
+    "lf.disp": {
+      "value": 13.52,
+      "real": 13.46
+    },
+    "lf.lat": {
+      "value": 0.35,
+      "real": 0.43
+    },
+    "lf.mix": {
+      "value": 0.8,
+      "real": 0.8
+    },
+    "lf.hd": {
+      "value": 23.83,
+      "real": 18.31
+    },
+    "lf.ad": {
+      "value": 24.18,
+      "real": 18.45
+    },
+    "lf.spread": {
+      "value": 14.95,
+      "real": 12.76
+    },
+    "lf.gap": {
+      "value": 6.94,
+      "real": 5.24
+    },
+    "lf.ballDist": {
+      "value": 12.69,
+      "real": 14.97
+    },
+    "lf.distance": {
+      "value": 0.169,
+      "real": null
+    },
+    "p38.hd": {
+      "value": 23.912,
+      "real": 23.385
+    },
+    "p38.spread": {
+      "value": 15.005,
+      "real": 13.41
+    },
+    "p38.gap": {
+      "value": 6.924,
+      "real": 6.54
+    },
+    "p38.latSd": {
+      "value": 9.135,
+      "real": 7.015
+    },
+    "p38.swarm": {
+      "value": 0.748,
+      "real": 0.451
+    },
+    "p38.fault": {
+      "value": 3.56,
+      "real": 2.45
+    },
+    "p38.balance": {
+      "value": 1.076,
+      "real": 0.84
+    },
+    "p38.shotsReg": {
+      "value": 20.898,
+      "real": null
+    },
+    "p18.a1": {
+      "value": 25.5831,
+      "real": 10.1814
+    },
+    "p18.a2": {
+      "value": 5.862,
+      "real": 3.201
+    },
+    "p18.b4": {
+      "value": 0.8692,
+      "real": 0.5609
+    },
+    "p18.a3": {
+      "value": 4.5242,
+      "real": 3.1081
+    },
+    "p18.c1": {
+      "value": 0.2336,
+      "real": 0.0749
+    }
+  },
+  "provenance": {
+    "commit": "2732450",
+    "wasmSha": "1ba8a76732ee3382",
+    "libSha": "82ae6c2fd8d57d0c",
+    "node": "v22.22.2",
+    "realGames": 2,
+    "at": "2026-10-28T14:31:15.033Z"
+  }
+}

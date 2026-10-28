@@ -1,0 +1,226 @@
+{
+  "version": "replay-blind-v1",
+  "judge_id": "b-fable-5",
+  "judged_at": "2026-10-28T23:47:11+08:00",
+  "instructions": "对每个 item 独立回答 A/B；不要根据文件名或元数据推断。controls 回答同源/不同源；mixed 另答哪侧更像真实。",
+  "items": [
+    {
+      "order": 1,
+      "id": "rb-f0fcd89cb7",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "局部拥挤混战：多方向交叉的短线团、路径长度差异大、个体急转而不是整齐平移；球路有长直段和锐角但落点在人附近"
+    },
+    {
+      "order": 2,
+      "id": "rb-19cca27cbc",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "两队各自成束的长弧线几乎平行同向流动，曲率近一致、缺乏个体停顿与逆流；球路为一条平滑闭合大回环"
+    },
+    {
+      "order": 3,
+      "id": "rb-d933feacd3",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "锯齿状高频折返与不同方向短线交错，个体路径形态差异大，没有整队统一曲率"
+    },
+    {
+      "order": 4,
+      "id": "rb-536de2e1b9",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "长直斜线与不规则肘弯混合、两端 GK 短轨；路径方向离散、无平行条带"
+    },
+    {
+      "order": 5,
+      "id": "rb-d9a45e5191",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "斜向平行的长弧带，红蓝两端各自成流，形状高度相似；球路长直段干净、拐角锐利"
+    },
+    {
+      "order": 6,
+      "id": "rb-87634adcba",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "全幅密集乱麻、方向高度异质、线头小勾频繁；像真实 24s 混战"
+    },
+    {
+      "order": 7,
+      "id": "rb-a2f2b571d6",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "密集多方向交叉，红蓝互相穿插而非分带；球路折线但落点散"
+    },
+    {
+      "order": 8,
+      "id": "rb-426608d7ba",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 2,
+      "cues": "路径偏平滑稀疏、直角拐弯规律；球路在右侧出现近正交折角；整体像按点移动"
+    },
+    {
+      "order": 9,
+      "id": "rb-a901267e82",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "路径方向杂乱、长短不一；球路三角形但球员轨迹不平行，有折返"
+    },
+    {
+      "order": 10,
+      "id": "rb-e4453603a5",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "两队长弧近乎同形同向（车道感），球路长直水平线+锐角；缺乏个体差异"
+    },
+    {
+      "order": 11,
+      "id": "rb-e4a4c2cf44",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "整队绕圈：两色轨迹围成闭合环带、球沿环线绕行，几何过于规整，像绕球轨道"
+    },
+    {
+      "order": 12,
+      "id": "rb-e933652054",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 2,
+      "cues": "大量平滑大回环、整队成团同向卷动；球路大环且拐角锐利"
+    },
+    {
+      "order": 13,
+      "id": "rb-6af71d8739",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "局部乱麻、多方向短线交错；虽球路呈大三角但球员侧不规整"
+    },
+    {
+      "order": 14,
+      "id": "rb-d63f6f60ea",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 2,
+      "cues": "长而平滑的同形弧线、蓝队整片同步；球路垂直/斜向长直线带尖角"
+    },
+    {
+      "order": 15,
+      "id": "rb-4a782ed4b5",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "密集交叉乱麻、个体折返多；球路矩形回路是疑点，但球员轨迹异质"
+    },
+    {
+      "order": 16,
+      "id": "rb-08bfdbf59c",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "全宽度高密度交叉、个体路径长短差异显著、频繁小停顿/转向"
+    },
+    {
+      "order": 17,
+      "id": "rb-5751e369be",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "长线来回覆盖、方向离散、红蓝互穿；无平行车道"
+    },
+    {
+      "order": 18,
+      "id": "rb-0ac1c1c304",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "整队平滑同步扫掠、同形弧线多；球路折角干净"
+    },
+    {
+      "order": 19,
+      "id": "rb-bf0d0a6a02",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "全幅密集多向交叉、端点小勾与折返频繁；球路长直但整体杂"
+    },
+    {
+      "order": 20,
+      "id": "rb-13ad1579c8",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "全幅乱麻、方向异质、路径长度差异大；球路有一条很长直段"
+    },
+    {
+      "order": 21,
+      "id": "rb-86a8fa034b",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "局部密集团+多方向长线、个体差异明显；GK 短轨在右"
+    },
+    {
+      "order": 22,
+      "id": "rb-456e8790f5",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "极密乱麻、尖角小折返多、全幅红蓝互穿；球路折线"
+    },
+    {
+      "order": 23,
+      "id": "rb-4510df3b42",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "异质路径、长短混杂、部分平滑长掠线与局部乱麻并存；球路折线"
+    },
+    {
+      "order": 24,
+      "id": "rb-63ad6311eb",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "个体卷曲小环多且互不同形，红蓝穿插；球路长斜线但落点不规则"
+    }
+  ],
+  "controls": [
+    {
+      "order": 1,
+      "id": "ctl-4fbe446dde",
+      "same_source": "different",
+      "confidence": 2,
+      "more_real": "B",
+      "notes": "A 侧球员在竖直带内近同形往返、端点卷勾整齐（机械感强）；B 侧红线曲线形态各异、路径长度差异更大，更像真实转移"
+    },
+    {
+      "order": 2,
+      "id": "ctl-f9895b41a6",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "A",
+      "notes": "A 侧全幅乱麻、方向离散像真实混战；B 侧球员被排进数条水平带内同步波浪，轨道感明显"
+    },
+    {
+      "order": 3,
+      "id": "ctl-ad55a187d6",
+      "same_source": "different",
+      "confidence": 2,
+      "more_real": "A",
+      "notes": "B 侧轨迹局限于一小团且球路是过于干净的锐角多边形，整队围着同一片移动；A 侧交叉乱麻、方向多样"
+    }
+  ]
+}

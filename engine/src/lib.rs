@@ -503,6 +503,11 @@ const BASE_DEF_FOUL: f64 = -0.30;
 const FOUL_DANGER_GAIN: f64 = 0.40;
 /// 犯规的 closeness 增益：**小于** `TACKLE_CLOSENESS_GAIN`（见上）。
 const FOUL_CLOSENESS_GAIN: f64 = 0.55;
+/// 「被过掉的防守者伸手拉人」增益（乘 `bad_angle` ∈ [0,1]：防守者在持球者身后越远越高）。
+/// 这是犯规与**移动层**的耦合项：持球者带球跑动越多，防守者越常处于身后（坏角度），
+/// 拉人/绊人倾向随之上升——与 `score_tackle` 的 `-bad_angle`（背后铲球容易失位）同源。
+/// 0 = 关闭（现行基线行为）。
+const FOUL_BEATEN_GAIN: f64 = 0.15;
 /// 吃黄威慑的打分惩罚（由 `FOUL_YELLOWED_DETERRENCE` 换算，保持同一「威慑」常量族）。
 const FOUL_YELLOW_PENALTY: f64 = FOUL_YELLOWED_DETERRENCE;
 /// 全局犯规冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]，分母 `FOUL_MIN_GAP_TICKS`）。
@@ -617,8 +622,25 @@ pub const PICKUP_RADIUS_METERS: f64 = 0.5;
 pub const LOOSE_MAX_TICKS: u32 = 2 * TPF;
 /// carrier 带球速度上限（m/s）：main 每拍推进 ≤ speed×1s
 pub const CARRIER_SPEED_MS: f64 = 5.0;
-/// 无球跑位速度（m/s）
+/// 无球跑位速度（m/s）——**远端** movers 的队形追踪速度。
 pub const RUN_SPEED_MS: f64 = 4.0;
+/// **近球** movers（双方，距球 ≤ `BALL_LOCAL_SPRINT_RADIUS_M`）的冲刺速度（m/s）。
+///
+/// 机制（C1 movement-coupling）：carrier 带球 5 m/s，而旧的无球跑位上限只有 4 m/s
+/// ⇒ 持球者一动就把所有无球队员甩开（评估点最近防守者 <2m 的占比 8.2%→5.1%），
+/// 抢断/犯规随球程上升而下降。真实比赛里靠近球的球员是冲刺的、远端才是慢跑：
+/// 本常量把「近球」这一段单独提到 7 m/s，让防线在持球者跑动时仍能保持接触。
+/// **只提高度/距离受限的局部队列，不动全队队形速度**——全队同提会同时抬位移量
+/// （lf.disp 出带），只提防守方则会让两队重心间距漂移（分边 6.9→8.6）。
+pub const BALL_LOCAL_SPRINT_MS: f64 = 7.0;
+/// 近球冲刺的**局部半径**（米）：只有距球 ≤ 此值的 movers 用 `BALL_LOCAL_SPRINT_MS`，
+/// 其余保持 `RUN_SPEED_MS`。
+pub const BALL_LOCAL_SPRINT_RADIUS_M: f64 = 30.0;
+/// 普通带球拍里「原地控球」的掷定阈值（百分点，再减去 liveness 前插加成）：
+/// `roll < 此值` → 原地小幅控球；否则向对方球门推进一拍。
+/// 70 = C1 基线（每拍推进概率 30%）；本轮取 45（每拍推进概率 55%）——
+/// 移动层提球程的杠杆（§9.2.4 的 hold 70→45 探针即为本值）。
+pub const CARRIER_HOLD_PP: u64 = 45;
 /// 门将回位速度（m/s）
 pub const GK_SPEED_MS: f64 = 3.0;
 
@@ -3601,7 +3623,7 @@ fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
     // 接入点②的执行层绑定：记录**实际应用**的前插加成（恒 0 = 死代码）。
     st.opportunity_tally.liveness_forward_intent_pp_max =
         st.opportunity_tally.liveness_forward_intent_pp_max.max(forward_pp);
-    let hold_pp = 70u64.saturating_sub(forward_pp);
+    let hold_pp = CARRIER_HOLD_PP.saturating_sub(forward_pp);
     let roll = rng.next_u64() % 100;
     // 抖动幅度按秒语义 ×TICK_SECONDS（1 Hz 时 = ±0.01）。
     let wob = TICK_SECONDS;
@@ -4221,7 +4243,18 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
             let ty = 0.5 + (st.ball_pos.1 - 0.5) * GK_TRACK_Y;
             ((tx, ty), "keeper_return".to_string(), GK_SPEED_MS)
         } else if let Some(ta) = targets[id as usize] {
-            (ta, actions[id as usize].clone(), RUN_SPEED_MS)
+            // 逼抢者（close_down 指派）不参与近球冲刺：它的目标是显式停点（开放局 5m /
+            // transition 2m），速度提到 7 会改变接触时序（实测 per-seed 抢断/犯规边角与
+            // latSd 6.77 出带〔带 [7.015,14.015]〕）。近球冲刺只给「按队形目标跑位」的 movers。
+            let near_ball = distance_meters(from, st.ball_pos) <= BALL_LOCAL_SPRINT_RADIUS_M;
+            let spd = if actions[id as usize] == "close_down" {
+                RUN_SPEED_MS
+            } else if near_ball {
+                BALL_LOCAL_SPRINT_MS
+            } else {
+                RUN_SPEED_MS
+            };
+            (ta, actions[id as usize].clone(), spd)
         } else {
             continue;
         };
@@ -7318,6 +7351,7 @@ fn score_foul(f: &DefensiveFeatures) -> f64 {
     BASE_DEF_FOUL
         + f.danger * FOUL_DANGER_GAIN
         + f.foul_closeness() * FOUL_CLOSENESS_GAIN
+        + f.bad_angle() * FOUL_BEATEN_GAIN
         - if f.yellowed { FOUL_YELLOW_PENALTY } else { 0.0 }
         - f.foul_cd_ratio * FOUL_CD_PENALTY
 }

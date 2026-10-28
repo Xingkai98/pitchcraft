@@ -620,6 +620,18 @@ pub fn closing_contest_fact<'a>(
     ep: &PossessionEpisode,
 ) -> Option<(usize, &'a ControlFact, f64)> {
     let end = ep.end_t?.value;
+    // ⚠️ **流边界收束的段不得认领争抢成因**（`a_contest_fact_closes_at_most_one_episode`
+    //    的 ② 不变量）：收束它的是哨声（FullTime/HalfTime），不是同刻开始的争抢。
+    //    实测 seed 20 在 t=5400 会产出一个**零长度 episode**（start=end=5400，FullTime），
+    //    同刻还有 DeliveryLoose 的 `contest_started`（V1 movement-coupling 改变 RNG 流后
+    //    首次可触达）。若不在此提前返回，卡片会把「哨声收束」误报成「被争抢收束」——
+    //    与下方 seed 24 的多段 tie-break 同源（值看起来合理、但指的是同刻另一过程）。
+    if matches!(
+        ep.end_reason,
+        Some(EpisodeEndReason::FullTime) | Some(EpisodeEndReason::HalfTime)
+    ) {
+        return None;
+    }
     // ⚠️ **同一 `end_t` 可能收束多个 episode**（实测 30 seed 恰好 1 例：
     // seed 24 的 t=5400，episode 102 `control_lost` 与 episode 103 `full_time` 同刻）。
     // 那条争抢事实只属于**真正被它收束**的那一段。用「列表里最靠前的那段」做确定性

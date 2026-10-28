@@ -1,0 +1,560 @@
+{
+  "version": "replay-blind-v1",
+  "window_sec": 24,
+  "contact_frames": 8,
+  "item_count": 24,
+  "control_pair_count": 3,
+  "order": [
+    "rb-f0fcd89cb7",
+    "rb-19cca27cbc",
+    "rb-d933feacd3",
+    "rb-536de2e1b9",
+    "rb-d9a45e5191",
+    "rb-87634adcba",
+    "rb-a2f2b571d6",
+    "rb-426608d7ba",
+    "rb-a901267e82",
+    "rb-e4453603a5",
+    "rb-e4a4c2cf44",
+    "rb-e933652054",
+    "rb-6af71d8739",
+    "rb-d63f6f60ea",
+    "rb-4a782ed4b5",
+    "rb-08bfdbf59c",
+    "rb-5751e369be",
+    "rb-0ac1c1c304",
+    "rb-bf0d0a6a02",
+    "rb-13ad1579c8",
+    "rb-86a8fa034b",
+    "rb-456e8790f5",
+    "rb-4510df3b42",
+    "rb-63ad6311eb"
+  ],
+  "items": [
+    {
+      "id": "rb-f0fcd89cb7",
+      "order": 1,
+      "files": {
+        "contact": "items/rb-f0fcd89cb7/contact.png",
+        "trajectory": "items/rb-f0fcd89cb7/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "3d0213f1ca88acc36695095e2e44dc1fe87da78c7c4182097c0413b9d9ef428e"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "82a37e21fbb39734b65cbeacd8fc4e786ab490338de7ca032f550b0fd5f6ca6d"
+      }
+    },
+    {
+      "id": "rb-19cca27cbc",
+      "order": 2,
+      "files": {
+        "contact": "items/rb-19cca27cbc/contact.png",
+        "trajectory": "items/rb-19cca27cbc/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "048c3e8d3ea6571d129e3816fe1865b040c25de5c8601d58bb4ada2d31958b1e"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "f9f7baa9d3bb5c700b8e5547ba1d8fa8a3b2ab4a6ece35fb97199706cafa9c13"
+      }
+    },
+    {
+      "id": "rb-d933feacd3",
+      "order": 3,
+      "files": {
+        "contact": "items/rb-d933feacd3/contact.png",
+        "trajectory": "items/rb-d933feacd3/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "4e2be068a90a558fed15050b3f6b923cd0904baa7d281b5d32589cc5f4635460"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "12a24083ade7d1cb9dd50ca5bac88c5f3c67a6671b5ada0a7e674a78752a59e7"
+      }
+    },
+    {
+      "id": "rb-536de2e1b9",
+      "order": 4,
+      "files": {
+        "contact": "items/rb-536de2e1b9/contact.png",
+        "trajectory": "items/rb-536de2e1b9/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "0554e19645e2663a6a4408894ddba8f9e6bb8d386a49cf71cc4176f7977ff434"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "d5f36430392368f72907ff176da03801dbd5802e3cd2dd5f19151d847c1c1650"
+      }
+    },
+    {
+      "id": "rb-d9a45e5191",
+      "order": 5,
+      "files": {
+        "contact": "items/rb-d9a45e5191/contact.png",
+        "trajectory": "items/rb-d9a45e5191/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "1946abf97a5364344033836b8c85bdfbb139fb5b89a600f0704ea4e8d908a458"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "855762963ad02bb2d234853a88d1a4f91b9e57186f358e21ad776319153b4cf7"
+      }
+    },
+    {
+      "id": "rb-87634adcba",
+      "order": 6,
+      "files": {
+        "contact": "items/rb-87634adcba/contact.png",
+        "trajectory": "items/rb-87634adcba/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "92090676156ff9f032972b2bc2c3593114fc1de924abb59582226a19768159aa"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "82b3a8695294f987509571b83a5cc024abc496d6d22d55e314570a232217b8b4"
+      }
+    },
+    {
+      "id": "rb-a2f2b571d6",
+      "order": 7,
+      "files": {
+        "contact": "items/rb-a2f2b571d6/contact.png",
+        "trajectory": "items/rb-a2f2b571d6/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "3d1df88613d55a7c83b23e38276b954072452a86b87b6ef29833c6bbe5433116"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "d8fa97beef264f28488efdac02522f05732e4b0a46384656d7d178f40fb8bbfb"
+      }
+    },
+    {
+      "id": "rb-426608d7ba",
+      "order": 8,
+      "files": {
+        "contact": "items/rb-426608d7ba/contact.png",
+        "trajectory": "items/rb-426608d7ba/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "d33000fca0867c9757b1899ea0e0f242818170edf2f46da932fc84b0eab658f4"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "7ade6c6ec92cea3bb518fbde0317245e8dc9ebad328e615f9b862918280a89d6"
+      }
+    },
+    {
+      "id": "rb-a901267e82",
+      "order": 9,
+      "files": {
+        "contact": "items/rb-a901267e82/contact.png",
+        "trajectory": "items/rb-a901267e82/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "c5dbcd8b25a8df9d8c1d8da2ce7d015f54b666700a9c5fcc7ce13edcb596b67b"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "840b490c086c838539668a5605bad40ed4b560b23767e2a98686f44741107464"
+      }
+    },
+    {
+      "id": "rb-e4453603a5",
+      "order": 10,
+      "files": {
+        "contact": "items/rb-e4453603a5/contact.png",
+        "trajectory": "items/rb-e4453603a5/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "12c5a35af4b238ea47882170dcbf0a43974eb26cb8794975a1e9707c05c992d5"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "332b0311f06b9eb89a0635c4e170bbe4abb2d83b421d602746f656c400c29219"
+      }
+    },
+    {
+      "id": "rb-e4a4c2cf44",
+      "order": 11,
+      "files": {
+        "contact": "items/rb-e4a4c2cf44/contact.png",
+        "trajectory": "items/rb-e4a4c2cf44/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "c14f66c8ae95266a34947f68989ed445f1a05cee2e3e6d0cc66fb0ff1f38b504"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "963115b0fe911ed9f509c3445e8be18247d995f90b44824dc52f0f23b643e4b6"
+      }
+    },
+    {
+      "id": "rb-e933652054",
+      "order": 12,
+      "files": {
+        "contact": "items/rb-e933652054/contact.png",
+        "trajectory": "items/rb-e933652054/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "e6bdd5b1745ba29b955bacde249d8fe1304f3b09c5bd88fe52ff3e1f38db2728"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "b87fee35b46a286459ba5d36ccf3dd266354772adf1c9b262d9f8e5370c0eb84"
+      }
+    },
+    {
+      "id": "rb-6af71d8739",
+      "order": 13,
+      "files": {
+        "contact": "items/rb-6af71d8739/contact.png",
+        "trajectory": "items/rb-6af71d8739/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "a7a792263c784966c2690439a79cc5c2b161dfffa4187200ac440438ae406af0"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "bcf6bc6d4c4173855773b5070295a95bd64b04f72bca3f920352c71b0dcb8547"
+      }
+    },
+    {
+      "id": "rb-d63f6f60ea",
+      "order": 14,
+      "files": {
+        "contact": "items/rb-d63f6f60ea/contact.png",
+        "trajectory": "items/rb-d63f6f60ea/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "b2e00c25819385f6da1b28e3326631ade369db1fb092eac84a640083b0a543a3"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "9fef3476fe5a8ce7f82d0f0ee298112dc4a942c6ee906e761c875351ea0dce2e"
+      }
+    },
+    {
+      "id": "rb-4a782ed4b5",
+      "order": 15,
+      "files": {
+        "contact": "items/rb-4a782ed4b5/contact.png",
+        "trajectory": "items/rb-4a782ed4b5/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "639485a198b3f801a6a63a09d28744bbef01f5d81e3612bab8c39b6d1eb7ad1e"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "3b733061f018434c8002a3daafeab4cdf1384bd4e4fc9b4d20a7d4a6fe78bce9"
+      }
+    },
+    {
+      "id": "rb-08bfdbf59c",
+      "order": 16,
+      "files": {
+        "contact": "items/rb-08bfdbf59c/contact.png",
+        "trajectory": "items/rb-08bfdbf59c/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "35d2a2368a719de7632ec1d1713f6bf69adf89bc4abc38f85392c6c47aa8507d"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "8229dc2954c6ec9658b5bcb4fe7d19ed10eda541e722250c32fab0f9d7bdbfa8"
+      }
+    },
+    {
+      "id": "rb-5751e369be",
+      "order": 17,
+      "files": {
+        "contact": "items/rb-5751e369be/contact.png",
+        "trajectory": "items/rb-5751e369be/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "4caffdb3f68c57b259a6cc05d1332e70d689f2f650b06a2bc2eb29a35b3705ef"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "c3e5e2ebaf4bf2cacd6298a72f49dfbd0e749de8a25f31a7ce3d33df4651ac68"
+      }
+    },
+    {
+      "id": "rb-0ac1c1c304",
+      "order": 18,
+      "files": {
+        "contact": "items/rb-0ac1c1c304/contact.png",
+        "trajectory": "items/rb-0ac1c1c304/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "42b12f4188af1d157551728e8292d08245b338f7c682b66a651905f331c51d8b"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "895ad63f98f962d2db734a838823d6ee4b2d98b3ac69b4f5d964b81fad6a89e9"
+      }
+    },
+    {
+      "id": "rb-bf0d0a6a02",
+      "order": 19,
+      "files": {
+        "contact": "items/rb-bf0d0a6a02/contact.png",
+        "trajectory": "items/rb-bf0d0a6a02/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "ddf0d0131fb9030139c6242426653d5796b0e2c27f6994d8c18fb84cca1c151d"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "742a1ba27993b955af7e6dcb035333cf8b2b33a92ce32a271d7ee6b0921837af"
+      }
+    },
+    {
+      "id": "rb-13ad1579c8",
+      "order": 20,
+      "files": {
+        "contact": "items/rb-13ad1579c8/contact.png",
+        "trajectory": "items/rb-13ad1579c8/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "f97d948f474fc893e85b83b99626e08913b424e5ec3f7dfca636ee114717fb79"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "c19064b3f4b500f6051fc70a8ed9811f5eb84e738791e45ab3868325c1851802"
+      }
+    },
+    {
+      "id": "rb-86a8fa034b",
+      "order": 21,
+      "files": {
+        "contact": "items/rb-86a8fa034b/contact.png",
+        "trajectory": "items/rb-86a8fa034b/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "91ab597238771ccd42a18e0f4262790947c022a158973c85465284b6169c1849"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "06e74d266c9c374ab48fa3577880dca3e7e9bd0bbe1074c2823dd8d54b12b1f4"
+      }
+    },
+    {
+      "id": "rb-456e8790f5",
+      "order": 22,
+      "files": {
+        "contact": "items/rb-456e8790f5/contact.png",
+        "trajectory": "items/rb-456e8790f5/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "2185850e9b5eabaf46c555b26b6ca24a55735eeded05ed3aed49f9a19bde9cde"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "e7106435f81bc1cfee299e8a5a91a389b352ea28be8f4b5617bc9d467f48cb33"
+      }
+    },
+    {
+      "id": "rb-4510df3b42",
+      "order": 23,
+      "files": {
+        "contact": "items/rb-4510df3b42/contact.png",
+        "trajectory": "items/rb-4510df3b42/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "9e8a855b5a613a39f8e81c142d463dd1cccc4d0018ca0637d8bf1c6e67403673"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "ebf7a6a9ab4b48df59cdf687eb2d5b6080bdeb31cfac1c19e13f437ddb71845c"
+      }
+    },
+    {
+      "id": "rb-63ad6311eb",
+      "order": 24,
+      "files": {
+        "contact": "items/rb-63ad6311eb/contact.png",
+        "trajectory": "items/rb-63ad6311eb/trajectory.png"
+      },
+      "contact": {
+        "w": 2472,
+        "h": 210,
+        "bytes": 21250,
+        "sha256": "4f071b12a705c5e1ba69dd57ba788a4d18a6de4aba4d389a05f43934ea46ee95"
+      },
+      "trajectory": {
+        "w": 624,
+        "h": 413,
+        "bytes": 19849,
+        "sha256": "0391f399a93645c02a02ae5e199f8a9c7153035d640e260cb1dc1c5c61712b96"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "ctl-4fbe446dde",
+      "order": 1,
+      "files": {
+        "a": {
+          "contact": "controls/ctl-4fbe446dde/a-contact.png",
+          "trajectory": "controls/ctl-4fbe446dde/a-trajectory.png"
+        },
+        "b": {
+          "contact": "controls/ctl-4fbe446dde/b-contact.png",
+          "trajectory": "controls/ctl-4fbe446dde/b-trajectory.png"
+        }
+      }
+    },
+    {
+      "id": "ctl-f9895b41a6",
+      "order": 2,
+      "files": {
+        "a": {
+          "contact": "controls/ctl-f9895b41a6/a-contact.png",
+          "trajectory": "controls/ctl-f9895b41a6/a-trajectory.png"
+        },
+        "b": {
+          "contact": "controls/ctl-f9895b41a6/b-contact.png",
+          "trajectory": "controls/ctl-f9895b41a6/b-trajectory.png"
+        }
+      }
+    },
+    {
+      "id": "ctl-ad55a187d6",
+      "order": 3,
+      "files": {
+        "a": {
+          "contact": "controls/ctl-ad55a187d6/a-contact.png",
+          "trajectory": "controls/ctl-ad55a187d6/a-trajectory.png"
+        },
+        "b": {
+          "contact": "controls/ctl-ad55a187d6/b-contact.png",
+          "trajectory": "controls/ctl-ad55a187d6/b-trajectory.png"
+        }
+      }
+    }
+  ],
+  "note": "每条含 24s 窗口的 8 帧 contact sheet 与 24s 球员/球轨迹图；文件名随机、图内无标签。"
+}

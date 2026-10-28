@@ -1,0 +1,207 @@
+{
+  "version": "replay-blind-v1",
+  "frozen_at": "2026-10-28",
+  "frozen_before_rendering": true,
+  "purpose": "guarded goal loop R5 验收（C1 movement-coupling：CARRIER_HOLD_PP=45 + BALL_LOCAL_SPRINT 7m@30m + FOUL_BEATEN_GAIN=0.15）。**held-out**：engine seeds 401+（R3 用 301–343、R2 用 201+、开发用 42/7）；真实侧沿用 R3 的偶数位 10 场 + Metrica 两场（真实侧材料未改，只有引擎侧是新 hold-out）；盲法盐全新。24 张刺激（12 真 12 引擎）+ 3 负控。",
+  "worktree": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28",
+  "engine_commit": "2732450 + R5 movement-coupling（working tree 未提交快照；wasm 9341cfff，行为指纹见 note §3）",
+  "window": {
+    "sec": 24,
+    "canonical_hz": 5,
+    "canonical_step_sec": 0.2,
+    "samples_per_window": 121,
+    "contact_frames": 8,
+    "contact_step_sec": 3.4285714285714284
+  },
+  "selection": {
+    "usable_margin_sec": 60,
+    "search_step_sec": 2,
+    "max_search_offset_sec": 360,
+    "anchors_main": {
+      "metrica": [
+        0.52
+      ],
+      "skillcorner": [
+        0.18
+      ],
+      "engine": [
+        0.36
+      ]
+    },
+    "anchors_control": {
+      "metrica": [
+        0.35,
+        0.9
+      ],
+      "skillcorner": [
+        0.75
+      ],
+      "engine": [
+        0.2,
+        0.65,
+        0.92
+      ]
+    },
+    "thresholds": {
+      "coverage": 0.98,
+      "all_players_frac": 0.98,
+      "raw_ball_frac": 0.9,
+      "max_ball_fill_sec": 1.0,
+      "ball_in_field_frac": 0.98,
+      "min_ball_path_m": 30,
+      "min_outfield_median_path_m": 1.0,
+      "max_duplicate_coord_frac": 0.1,
+      "contact_samples_ok": true,
+      "contact_raw_ball": true,
+      "contact_ball_in_field": true,
+      "contact_min_team_blobs": 6
+    },
+    "rule": "从 anchor 起每 2s 向前搜索，取第一个满足全部阈值的窗口；最多 360s。8 个 contact 取样时刻与 121 个 canonical 取样时刻都必须能就近取到源帧（<=0.3s）。若无候选通过，则在搜索范围内取 quality 最大者并标 fallback=true（同分取更小 t）。quality=2*cov+2*all22+3*raw+2*ballIn+min(ball_path_m/100,1)-max_fill_sec/10-dup_frac。",
+    "quality_formula": "2*coverage + 2*all_players_frac + 3*raw_ball_frac + 2*ball_in_field_frac + min(ball_path_m/100,1) - max_fill_sec/10 - duplicate_coord_frac",
+    "no_manual_replacement": true,
+    "freeze": "窗口表在渲图前写入 windows.json + windows.sha256；渲图只读该表，不重新选窗。"
+  },
+  "real": {
+    "metrica": [
+      {
+        "dataset": "metrica",
+        "match": "metrica-1",
+        "path": "viewer/data/real-game-1.json",
+        "pitch_meters": [
+          105,
+          68
+        ]
+      },
+      {
+        "dataset": "metrica",
+        "match": "metrica-2",
+        "path": "viewer/data/real-game-2.json",
+        "pitch_meters": [
+          105,
+          68
+        ]
+      }
+    ],
+    "skillcorner": {
+      "dir": "viewer/data",
+      "selection_rule": "20 场中按 match id 升序取**偶数位** 10 场（R2 验收用的是奇数位 1,3,..,19）：indices 0,2,4,..,18。若某场验证失败，按升序取下一个未用 id（wrap）替换。",
+      "match_ids": [
+        1874553,
+        1899585,
+        1927964,
+        1959846,
+        1996435,
+        2006229,
+        2007448,
+        2010085,
+        2013725,
+        2017461
+      ],
+      "pitch_meters": [
+        105,
+        68
+      ],
+      "provenance": "本 worktree 本地转换（tools/convert-skillcorner-to-frames.mjs，源码未改）产物 viewer/data/skillcorner-*.json（gitignored）。"
+    }
+  },
+  "engine": {
+    "wasm": ".scratch/notes/c1-movement-coupling-2026-10-28/acceptance/engine.wasm",
+    "built_from": "本 worktree 现构建（c1-movement-coupling/2026-10-28），wasm sha256 9341cfff03aecdf549153f4bac77441e3cee6c07a3c81f49452acb1264b29d9c",
+    "seeds": [
+      401,
+      404,
+      407,
+      410,
+      413,
+      416,
+      419,
+      422,
+      425,
+      428,
+      431,
+      434,
+      437,
+      440,
+      443,
+      446
+    ],
+    "duration_sec": 5400,
+    "config": {
+      "demo_mode": false,
+      "off_ball_movement_demo": true,
+      "match_duration_seconds": 5400
+    },
+    "target_count": 12
+  },
+  "items": {
+    "main_real": 12,
+    "main_engine": 12,
+    "main_total": 24,
+    "controls_pairs": 3,
+    "control_composition": [
+      {
+        "type": "real-real",
+        "a": "metrica-1@0.35",
+        "b": "metrica-2@0.9"
+      },
+      {
+        "type": "engine-engine",
+        "a": "seed401@0.2",
+        "b": "seed401@0.65"
+      },
+      {
+        "type": "real-engine",
+        "a": "metrica-1@0.9",
+        "b": "seed404@0.92"
+      }
+    ]
+  },
+  "render": {
+    "shared_renderer": "contact 逐面板复用 tools/visual-review/render.mjs 的 drawPanel；trajectory 用 replay-blind-core 的 panel，字段/颜色/坐标映射与 drawPanel 相同并由 calibration 自证。",
+    "contact": {
+      "panel_w": 300,
+      "panel_h": 194,
+      "gap": 8,
+      "margin": 8,
+      "background": "#111",
+      "field": "#0d2b0f",
+      "field_border": "#3a8a3a",
+      "red": "#e84040",
+      "blue": "#4090e8",
+      "ball_outline": "#111",
+      "ball": "#ffe400",
+      "player_radius": 5,
+      "ball_outline_radius": 8.5,
+      "ball_radius": 6,
+      "labels": false
+    },
+    "trajectory": {
+      "panel_w": 600,
+      "panel_h": 389,
+      "margin": 12,
+      "background": "#111",
+      "field": "#0d2b0f",
+      "field_border": "#3a8a3a",
+      "red": "#e84040",
+      "blue": "#4090e8",
+      "ball": "#ffe400",
+      "line_width": 1.3,
+      "ball_line_width": 1.5,
+      "endpoint_radius": 3,
+      "ball_radius": 5,
+      "labels": false
+    },
+    "png": {
+      "encode": "viewer/soft-canvas.js canvasToPng",
+      "equalize_file_size_per_kind": true,
+      "padding_chunk_type": "prVt",
+      "padding_bytes_target": "max original size of that kind + 4096",
+      "fixed_mtime_utc": "2026-10-28T00:00:00Z"
+    }
+  },
+  "blinding": {
+    "item_id_salt": "r5-c1-2026-10-28-4e8a11c3",
+    "order_salt_base": "r5-order-2026-10-28-71bd2f95",
+    "control_order_salt_base": "r5-ctl-2026-10-28-a0c6e48d"
+  }
+}

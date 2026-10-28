@@ -1,0 +1,226 @@
+{
+  "version": "replay-blind-v1",
+  "judge_id": null,
+  "judged_at": null,
+  "instructions": "对每个 item 独立回答 A/B；不要根据文件名或元数据推断。controls 回答同源/不同源；mixed 另答哪侧更像真实。",
+  "items": [
+    {
+      "order": 1,
+      "id": "rb-f0fcd89cb7",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 2,
+      "id": "rb-19cca27cbc",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 3,
+      "id": "rb-d933feacd3",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 4,
+      "id": "rb-536de2e1b9",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 5,
+      "id": "rb-d9a45e5191",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 6,
+      "id": "rb-87634adcba",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 7,
+      "id": "rb-a2f2b571d6",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 8,
+      "id": "rb-426608d7ba",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 9,
+      "id": "rb-a901267e82",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 10,
+      "id": "rb-e4453603a5",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 11,
+      "id": "rb-e4a4c2cf44",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 12,
+      "id": "rb-e933652054",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 13,
+      "id": "rb-6af71d8739",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 14,
+      "id": "rb-d63f6f60ea",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 15,
+      "id": "rb-4a782ed4b5",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 16,
+      "id": "rb-08bfdbf59c",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 17,
+      "id": "rb-5751e369be",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 18,
+      "id": "rb-0ac1c1c304",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 19,
+      "id": "rb-bf0d0a6a02",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 20,
+      "id": "rb-13ad1579c8",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 21,
+      "id": "rb-86a8fa034b",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 22,
+      "id": "rb-456e8790f5",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 23,
+      "id": "rb-4510df3b42",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    },
+    {
+      "order": 24,
+      "id": "rb-63ad6311eb",
+      "A_guess": null,
+      "A_confidence": null,
+      "B_score": null,
+      "cues": null
+    }
+  ],
+  "controls": [
+    {
+      "order": 1,
+      "id": "ctl-4fbe446dde",
+      "same_source": null,
+      "confidence": null,
+      "more_real": null,
+      "notes": null
+    },
+    {
+      "order": 2,
+      "id": "ctl-f9895b41a6",
+      "same_source": null,
+      "confidence": null,
+      "more_real": null,
+      "notes": null
+    },
+    {
+      "order": 3,
+      "id": "ctl-ad55a187d6",
+      "same_source": null,
+      "confidence": null,
+      "more_real": null,
+      "notes": null
+    }
+  ]
+}
