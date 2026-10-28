@@ -32,16 +32,20 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // dir: 'higher' 越高越好 | 'lower' 越低越好 | 'band' 落带内最好（用 distToBand 判）
 // 取不到的指标一律 throw，不填默认值。
 export const METRICS = [
-  // ── like-football.mjs（5 seed × 12s 窗；真实锚 = Metrica real-game-1/2）──
-  { id: 'lf.disp', label: '位移/窗', source: 'like', dir: 'higher', caliber: 'like-football · 5 seed · 12s 窗 · Metrica 2 场', re: /^\s*\S+\s+位移\/窗★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.lat', label: '横向占比', source: 'like', dir: 'higher', caliber: 'like-football · 5 seed · 12s 窗 · Metrica 2 场', re: /^\s*\S+\s+横向占比★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.mix', label: '混队度', source: 'like', dir: 'higher', caliber: 'like-football · 5 seed · 12s 窗 · Metrica 2 场', re: /^\s*\S+\s+混队度★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.hd', label: '纵深(主)', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+纵深\(主\)\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.ad', label: '纵深(客)', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+纵深\(客\)\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.spread', label: '紧凑度', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+紧凑度\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.gap', label: '分边', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+分边★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.ballDist', label: '球距', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+球距\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.distance', label: '距离', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · 8 行 mean|ln(E/R)|', re: /距离（幅度量[^=]*=\s*([\d.]+)/m },
+  // ── like-football.mjs（5 seed × 12s 窗）──
+  // 2026-10-28：软指标从「比当前高/低」改为「以真实为中心的带」（±25%），带内 = 不退化——
+  // 方向正确但中间小回退的候选不再被一刀切（第 1 轮 K1a/K2a/K4 均因此被错杀）。
+  // 真实值出处：disp/lat/mix = Metrica 2 场（like-football 基线行）；hd/ad/spread/gap =
+  // SkillCorner **allPoints**（dbg-caliber 探针，盲测渲染口径）；球距 ≈ 15m。带 = 真实 ×(0.75,1.25)。
+  { id: 'lf.disp', label: '位移/窗', source: 'like', dir: 'band', band: [10.1, 16.8], caliber: 'like-football · 5 seed · Metrica 真实 13.46 ±25%', re: /^\s*\S+\s+位移\/窗★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.lat', label: '横向占比', source: 'like', dir: 'band', band: [0.32, 0.54], caliber: 'like-football · 5 seed · Metrica 真实 0.43 ±25%', re: /^\s*\S+\s+横向占比★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.mix', label: '混队度', source: 'like', dir: 'band', band: [0.60, 1.00], caliber: 'like-football · 5 seed · Metrica 真实 0.80 ±25%(上界封1)', re: /^\s*\S+\s+混队度★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.hd', label: '纵深(主)', source: 'like', dir: 'band', band: [19.4, 32.3], caliber: 'like-football · 5 seed · SkillCorner allPoints 25.82 ±25%', re: /^\s*\S+\s+纵深\(主\)\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.ad', label: '纵深(客)', source: 'like', dir: 'band', band: [19.2, 32.0], caliber: 'like-football · 5 seed · SkillCorner allPoints 25.63 ±25%', re: /^\s*\S+\s+纵深\(客\)\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.spread', label: '紧凑度', source: 'like', dir: 'band', band: [11.1, 18.5], caliber: 'like-football · 5 seed · SkillCorner allPoints 14.78 ±25%', re: /^\s*\S+\s+紧凑度\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.gap', label: '分边', source: 'like', dir: 'band', band: [5.2, 8.6], caliber: 'like-football · 5 seed · SkillCorner allPoints 6.88 ±25%', re: /^\s*\S+\s+分边★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.ballDist', label: '球距', source: 'like', dir: 'band', band: [11.2, 18.7], caliber: 'like-football · 5 seed · SkillCorner 结构锚 ~15m ±25%', re: /^\s*\S+\s+球距\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.distance', label: '距离', source: 'like', dir: 'report', caliber: 'like-football · 5 seed · 8 行 mean|ln(E/R)| · 报告项(不判退化)', re: /距离（幅度量[^=]*=\s*([\d.]+)/m },
 
   // ── check-criteria.mjs（10 seed；真实锚 = Metrica；band 取自 criteria-spec）──
   { id: 'p38.hd', label: '纵深', source: 'criteria', dir: 'band', band: [23.385, 28.385], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /纵深\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
@@ -119,15 +123,14 @@ export function judge(m, before, after) {
   if (Math.abs(d) <= eps) return 'same';
   if (m.dir === 'higher') return d < 0 ? 'regress' : 'improve';
   if (m.dir === 'lower') return d > 0 ? 'regress' : 'improve';
-  // band：看「离带心的距离」是变远还是变近
+  // band：带内 = 可接受（不退化）；带外 = 越远越退化、越近越改善。
+  // 2026-10-28 起：带内朝边缘走不再判退化（软指标 lf.* 用「真实 ±25%」带，方向正确但中间
+  // 小回退不拦；p38.* 本就用真实 q10-q90 带，同语义）。
   const [lo, hi] = m.band;
-  const mid = (lo + hi) / 2;
   const outBefore = before < lo ? lo - before : before > hi ? before - hi : 0;
   const outAfter = after < lo ? lo - after : after > hi ? after - hi : 0;
-  if (Math.abs(outBefore - outAfter) <= eps) {
-    // 都在带内或同距：按离带心远近判
-    return Math.abs(after - mid) <= Math.abs(before - mid) ? 'same' : 'regress';
-  }
+  if (outBefore <= eps && outAfter <= eps) return 'same'; // 都在带内
+  if (Math.abs(outAfter - outBefore) <= eps) return 'same';
   return outAfter > outBefore ? 'regress' : 'improve';
 }
 

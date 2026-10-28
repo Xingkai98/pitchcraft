@@ -26,11 +26,13 @@ test('lower：上升=变差，下降=改善', () => {
   assert.equal(judge(m, 0.54, 0.54), 'same');
 });
 
-test('band：从带内走到带外=变差；从带外走近带=改善', () => {
+test('band：带内=不退化（含朝边缘走）；带外越远越退化、越近越改善', () => {
   const m = { dir: 'band', band: [7.015, 14.015] };
   assert.equal(judge(m, 7.5, 20.0), 'regress');   // 带内 → 带外
   assert.equal(judge(m, 20.0, 7.5), 'improve');   // 带外 → 带内
-  assert.equal(judge(m, 7.5, 8.0), 'same');       // 都在带内、离带心更近 → 不算退化
+  assert.equal(judge(m, 7.5, 8.0), 'same');       // 都在带内 → 不退化
+  assert.equal(judge(m, 10.5, 13.9), 'same');     // 带内、朝上边缘走 → 不退化（2026-10-28 语义）
+  assert.equal(judge(m, 13.9, 10.5), 'same');     // 带内、朝带心走 → 不退化
 });
 
 test('band：带外但更接近带 = 改善；带外更远 = 变差', () => {
