@@ -51,12 +51,12 @@ export const METRICS = [
   { id: 'p38.hd', label: '纵深', source: 'criteria', dir: 'band', band: [23.385, 28.385], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /纵深\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.spread', label: '紧凑度', source: 'criteria', dir: 'band', band: [13.41, 17.01], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /紧凑度\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.gap', label: '重心间距', source: 'criteria', dir: 'band', band: [6.54, 10.14], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /重心间距\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
-  { id: 'p38.latSd', label: '横向位移 sd', source: 'criteria', dir: 'band', band: [7.015, 14.015], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /横向位移 sd\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
+  { id: 'p38.latSd', label: '横向位移 sd', source: 'criteria', dir: 'band', band: [7.015, 14.015], noiseTol: 0.8, caliber: 'check-criteria · 10 seed · Metrica 锚 · 噪声容差 0.8（同 base 换 seed 集 7.07–8.60，见 RECORD R2）', re: /横向位移 sd\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.swarm', label: 'y 两两相关', source: 'criteria', dir: 'band', band: [0.451, 0.891], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /y 两两相关\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.fault', label: '断层幅度', source: 'criteria', dir: 'band', band: [2.45, 7.45], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /断层幅度\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.balance', label: '各线均衡', source: 'criteria', dir: 'band', band: [0.84, 1.28], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /各线均衡\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   // 单边下界：只防崩，不是真实目标
-  { id: 'p38.shotsReg', label: '普通射门/场', source: 'criteria', dir: 'higher', caliber: 'check-criteria · 10 seed · 单边下界（真实参照 16.51）', re: /普通射门\/场\s+当前\s+([\d.]+)/m },
+  { id: 'p38.shotsReg', label: '普通射门/场', source: 'criteria', dir: 'higher', noiseTol: 1.8, caliber: 'check-criteria · 10 seed · 单边下界（真实参照 16.51）· 噪声容差 1.8（同 base 换 seed 集 39.0/37.8/35.4/37.3，见 RECORD R2）', re: /普通射门\/场\s+当前\s+([\d.]+)/m },
 
   // ── check-behavior-gates.mjs（canary 30 seed；真实锚 = A-League 20 场）──
   { id: 'p18.a1', label: 'A1 链时长(s)', source: 'p18', dir: 'lower', caliber: 'p18 行为门 · canary 30 seed · 真实 A-League', re: /\[A1\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)\s+倍数\s+([\d.]+)×/m },
@@ -118,18 +118,24 @@ export function collect({ skipP18 = false } = {}) {
 /** 方向感知的退化判定。返回 'regress' | 'improve' | 'same' | 'report'。 */
 export function judge(m, before, after) {
   if (m.dir === 'report') return 'report';
-  const eps = Math.max(Math.abs(before) * 1e-4, 1e-6); // 抖动容差
+  const nt = m.noiseTol ?? 0; // 种子噪声容差：同一 base 换 seed 集的最大半差（见各 metric 的 caliber 出处）
+  const eps = Math.max(Math.abs(before) * 1e-4, 1e-6); // 浮点抖动容差
   const d = after - before;
   if (Math.abs(d) <= eps) return 'same';
-  if (m.dir === 'higher') return d < 0 ? 'regress' : 'improve';
-  if (m.dir === 'lower') return d > 0 ? 'regress' : 'improve';
-  // band：带内 = 可接受（不退化）；带外 = 越远越退化、越近越改善。
-  // 2026-10-28 起：带内朝边缘走不再判退化（软指标 lf.* 用「真实 ±25%」带，方向正确但中间
-  // 小回退不拦；p38.* 本就用真实 q10-q90 带，同语义）。
+  if (m.dir === 'higher') {
+    if (d < 0 && Math.abs(d) <= nt) return 'same'; // 噪声内的小退化不判
+    return d < 0 ? 'regress' : 'improve';
+  }
+  if (m.dir === 'lower') {
+    if (d > 0 && Math.abs(d) <= nt) return 'same';
+    return d > 0 ? 'regress' : 'improve';
+  }
+  // band：带内（或噪声内）= 可接受（不退化）；带外越远越退化、越近越改善。
   const [lo, hi] = m.band;
+  const tol = Math.max(nt, eps);
   const outBefore = before < lo ? lo - before : before > hi ? before - hi : 0;
   const outAfter = after < lo ? lo - after : after > hi ? after - hi : 0;
-  if (outBefore <= eps && outAfter <= eps) return 'same'; // 都在带内
+  if (outBefore <= tol && outAfter <= tol) return 'same'; // 都在带内(或噪声内)
   if (Math.abs(outAfter - outBefore) <= eps) return 'same';
   return outAfter > outBefore ? 'regress' : 'improve';
 }

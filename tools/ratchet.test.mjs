@@ -51,6 +51,16 @@ test('抖动容差：极小变化记为持平（避免浮点噪声刷红）', ()
   assert.equal(judge(m, 100, 100.004), 'same');   // 相对容差 1e-4
 });
 
+test('噪声容差 noiseTol：带内小退化不判（种子噪声不被误判为退化）', () => {
+  // 冻结 10-seed 是上尾样本：shotsReg 换 seed 集 39.0/37.8/35.4/37.3，半差 1.8；latSd 7.07–8.60 半差 0.8
+  const shots = { dir: 'higher', noiseTol: 1.8 };
+  assert.equal(judge(shots, 39.0, 37.5), 'same');     // 退化 1.5 < 容差 → 不判
+  assert.equal(judge(shots, 39.0, 34.0), 'regress');  // 退化 5.0 > 容差 → 判
+  const lat = { dir: 'band', band: [7.015, 14.015], noiseTol: 0.8 };
+  assert.equal(judge(lat, 7.07, 6.9), 'same');        // 出带 0.115 < 容差 → 不判
+  assert.equal(judge(lat, 7.07, 5.5), 'regress');     // 出带 1.515 > 容差 → 判
+});
+
 test('登记表：id 唯一', () => {
   const ids = METRICS.map((m) => m.id);
   assert.equal(new Set(ids).size, ids.length, `重复 id：${ids.filter((v, i) => ids.indexOf(v) !== i)}`);
