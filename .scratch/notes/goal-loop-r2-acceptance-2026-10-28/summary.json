@@ -1,0 +1,1130 @@
+{
+  "key": ".scratch/notes/goal-loop-r2-acceptance-2026-10-28/blind-key.json",
+  "judges": [
+    {
+      "path": "/tmp/r2-judge-a/judgement.json",
+      "judge_id": "sonnet-5",
+      "main": {
+        "n": 24,
+        "correct": 12,
+        "accuracy": 0.5,
+        "accuracyCI95": {
+          "lo": 0.31427131627763083,
+          "hi": 0.6857286837223692
+        },
+        "confusion": {
+          "real_as_real": 7,
+          "real_as_engine": 5,
+          "engine_as_real": 7,
+          "engine_as_engine": 5
+        },
+        "bScore": {
+          "real": {
+            "n": 12,
+            "mean": 3,
+            "median": 3
+          },
+          "engine": {
+            "n": 12,
+            "mean": 3,
+            "median": 3
+          },
+          "aucRealHigher": 0.5
+        },
+        "confidenceBuckets": {
+          "high": {
+            "n": 1,
+            "accuracy": 1
+          },
+          "low": {
+            "n": 17,
+            "accuracy": 0.5294117647058824
+          }
+        }
+      },
+      "controls": {
+        "n": 3,
+        "byType": {
+          "real-real": {
+            "n": 1,
+            "correct": 1
+          },
+          "engine-engine": {
+            "n": 1,
+            "correct": 1
+          },
+          "real-engine": {
+            "n": 1,
+            "correct": 0
+          }
+        },
+        "balancedAccuracy": 0.5,
+        "mixedMoreRealAccuracy": null,
+        "rows": [
+          {
+            "id": "ctl-0c2560ea3e",
+            "type": "real-real",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-601052c9b3",
+            "type": "engine-engine",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-0120410f66",
+            "type": "real-engine",
+            "truth": "different",
+            "guess": "same",
+            "correct": false,
+            "confidence": 2,
+            "moreRealCorrect": null
+          }
+        ]
+      },
+      "cues": [
+        {
+          "cue": "球折返",
+          "count": 5
+        },
+        {
+          "cue": "局部拥挤",
+          "count": 4
+        },
+        {
+          "cue": "低强度",
+          "count": 3
+        },
+        {
+          "cue": "长弧线",
+          "count": 2
+        },
+        {
+          "cue": "整队同向",
+          "count": 2
+        },
+        {
+          "cue": "水平长线",
+          "count": 2
+        },
+        {
+          "cue": "局部聚集",
+          "count": 2
+        },
+        {
+          "cue": "多向跑动",
+          "count": 2
+        },
+        {
+          "cue": "球短折",
+          "count": 2
+        },
+        {
+          "cue": "路径抖动",
+          "count": 2
+        },
+        {
+          "cue": "平滑长弧",
+          "count": 2
+        },
+        {
+          "cue": "平行推进",
+          "count": 1
+        },
+        {
+          "cue": "球大三角",
+          "count": 1
+        },
+        {
+          "cue": "全员连续跑动",
+          "count": 1
+        },
+        {
+          "cue": "平行跑动",
+          "count": 1
+        },
+        {
+          "cue": "球横穿",
+          "count": 1
+        },
+        {
+          "cue": "少急折",
+          "count": 1
+        },
+        {
+          "cue": "球折角",
+          "count": 1
+        },
+        {
+          "cue": "路径毛糙",
+          "count": 1
+        },
+        {
+          "cue": "跑动不一",
+          "count": 1
+        },
+        {
+          "cue": "缠绕多环",
+          "count": 1
+        },
+        {
+          "cue": "个体差异",
+          "count": 1
+        },
+        {
+          "cue": "水平直线",
+          "count": 1
+        },
+        {
+          "cue": "车道平行",
+          "count": 1
+        },
+        {
+          "cue": "长传笔直",
+          "count": 1
+        },
+        {
+          "cue": "密集缠斗",
+          "count": 1
+        },
+        {
+          "cue": "球大幅折返",
+          "count": 1
+        },
+        {
+          "cue": "弧线各异",
+          "count": 1
+        },
+        {
+          "cue": "局部抖动",
+          "count": 1
+        },
+        {
+          "cue": "近直线",
+          "count": 1
+        },
+        {
+          "cue": "平行移动",
+          "count": 1
+        },
+        {
+          "cue": "部分站立",
+          "count": 1
+        },
+        {
+          "cue": "车道感",
+          "count": 1
+        },
+        {
+          "cue": "低速游走",
+          "count": 1
+        },
+        {
+          "cue": "球慢且抖",
+          "count": 1
+        },
+        {
+          "cue": "路径弯曲",
+          "count": 1
+        },
+        {
+          "cue": "缠绕大弧",
+          "count": 1
+        },
+        {
+          "cue": "密集",
+          "count": 1
+        },
+        {
+          "cue": "队形整体平移",
+          "count": 1
+        },
+        {
+          "cue": "路径较直",
+          "count": 1
+        },
+        {
+          "cue": "缠绕小环",
+          "count": 1
+        },
+        {
+          "cue": "平行车道",
+          "count": 1
+        },
+        {
+          "cue": "球全场直线",
+          "count": 1
+        },
+        {
+          "cue": "直角转折",
+          "count": 1
+        },
+        {
+          "cue": "整队同步",
+          "count": 1
+        },
+        {
+          "cue": "球缓慢",
+          "count": 1
+        },
+        {
+          "cue": "路径弯曲抖动",
+          "count": 1
+        },
+        {
+          "cue": "松散",
+          "count": 1
+        },
+        {
+          "cue": "交叠缠绕",
+          "count": 1
+        },
+        {
+          "cue": "球长折线",
+          "count": 1
+        },
+        {
+          "cue": "车道不清",
+          "count": 1
+        },
+        {
+          "cue": "轻微车道",
+          "count": 1
+        },
+        {
+          "cue": "路径环状",
+          "count": 1
+        },
+        {
+          "cue": "球大折线",
+          "count": 1
+        },
+        {
+          "cue": "队形整体移动",
+          "count": 1
+        },
+        {
+          "cue": "平滑",
+          "count": 1
+        },
+        {
+          "cue": "竖直队形",
+          "count": 1
+        },
+        {
+          "cue": "横向车道",
+          "count": 1
+        },
+        {
+          "cue": "球直角折返",
+          "count": 1
+        },
+        {
+          "cue": "全员高活动量",
+          "count": 1
+        },
+        {
+          "cue": "密集缠绕",
+          "count": 1
+        },
+        {
+          "cue": "局部",
+          "count": 1
+        },
+        {
+          "cue": "全队连续",
+          "count": 1
+        },
+        {
+          "cue": "球流畅",
+          "count": 1
+        },
+        {
+          "cue": "大范围同步",
+          "count": 1
+        },
+        {
+          "cue": "小环抖动",
+          "count": 1
+        },
+        {
+          "cue": "多方缠绕",
+          "count": 1
+        },
+        {
+          "cue": "拥挤",
+          "count": 1
+        },
+        {
+          "cue": "短距缠斗",
+          "count": 1
+        },
+        {
+          "cue": "路径不规则",
+          "count": 1
+        },
+        {
+          "cue": "无固定车道",
+          "count": 1
+        },
+        {
+          "cue": "禁区混战",
+          "count": 1
+        },
+        {
+          "cue": "路径缠绕",
+          "count": 1
+        },
+        {
+          "cue": "球急折",
+          "count": 1
+        },
+        {
+          "cue": "个体差异大",
+          "count": 1
+        },
+        {
+          "cue": "全队连续跑动",
+          "count": 1
+        },
+        {
+          "cue": "球路圆滑",
+          "count": 1
+        },
+        {
+          "cue": "平行倾向",
+          "count": 1
+        },
+        {
+          "cue": "环状缠绕",
+          "count": 1
+        },
+        {
+          "cue": "多向",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "path": "/tmp/r2-judge-b/judgement.json",
+      "judge_id": "fable-5",
+      "main": {
+        "n": 24,
+        "correct": 2,
+        "accuracy": 0.08333333333333333,
+        "accuracyCI95": {
+          "lo": 0.02315832784297353,
+          "hi": 0.2584921520145059
+        },
+        "confusion": {
+          "real_as_real": 1,
+          "real_as_engine": 11,
+          "engine_as_real": 11,
+          "engine_as_engine": 1
+        },
+        "bScore": {
+          "real": {
+            "n": 12,
+            "mean": 3,
+            "median": 3
+          },
+          "engine": {
+            "n": 12,
+            "mean": 3.25,
+            "median": 3
+          },
+          "aucRealHigher": 0.375
+        },
+        "confidenceBuckets": {
+          "high": {
+            "n": 1,
+            "accuracy": 1
+          },
+          "low": {
+            "n": 15,
+            "accuracy": 0.06666666666666667
+          }
+        }
+      },
+      "controls": {
+        "n": 3,
+        "byType": {
+          "real-real": {
+            "n": 1,
+            "correct": 0
+          },
+          "engine-engine": {
+            "n": 1,
+            "correct": 1
+          },
+          "real-engine": {
+            "n": 1,
+            "correct": 1
+          }
+        },
+        "balancedAccuracy": 0.5,
+        "mixedMoreRealAccuracy": 0,
+        "rows": [
+          {
+            "id": "ctl-0c2560ea3e",
+            "type": "real-real",
+            "truth": "same",
+            "guess": "different",
+            "correct": false,
+            "confidence": 2,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-601052c9b3",
+            "type": "engine-engine",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-0120410f66",
+            "type": "real-engine",
+            "truth": "different",
+            "guess": "different",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": false
+          }
+        ]
+      },
+      "cues": [
+        {
+          "cue": "队形静止",
+          "count": 5
+        },
+        {
+          "cue": "低抖动",
+          "count": 5
+        },
+        {
+          "cue": "尖角",
+          "count": 4
+        },
+        {
+          "cue": "平滑大弧线",
+          "count": 2
+        },
+        {
+          "cue": "长直对角",
+          "count": 2
+        },
+        {
+          "cue": "尖角折返",
+          "count": 2
+        },
+        {
+          "cue": "平滑旋涡",
+          "count": 2
+        },
+        {
+          "cue": "直角折点",
+          "count": 2
+        },
+        {
+          "cue": "抖动",
+          "count": 2
+        },
+        {
+          "cue": "过度顺滑",
+          "count": 2
+        },
+        {
+          "cue": "整队绕圈",
+          "count": 2
+        },
+        {
+          "cue": "球矩形回环",
+          "count": 2
+        },
+        {
+          "cue": "低采样台阶",
+          "count": 2
+        },
+        {
+          "cue": "密集抖动",
+          "count": 2
+        },
+        {
+          "cue": "拥挤缠斗",
+          "count": 2
+        },
+        {
+          "cue": "拥挤",
+          "count": 2
+        },
+        {
+          "cue": "大弧线",
+          "count": 2
+        },
+        {
+          "cue": "整队同步",
+          "count": 2
+        },
+        {
+          "cue": "闭环绕圈",
+          "count": 1
+        },
+        {
+          "cue": "球平滑扫掠",
+          "count": 1
+        },
+        {
+          "cue": "队形几乎静止",
+          "count": 1
+        },
+        {
+          "cue": "方向突变",
+          "count": 1
+        },
+        {
+          "cue": "冲刺",
+          "count": 1
+        },
+        {
+          "cue": "方块球路",
+          "count": 1
+        },
+        {
+          "cue": "折线轨迹",
+          "count": 1
+        },
+        {
+          "cue": "拥挤尖角",
+          "count": 1
+        },
+        {
+          "cue": "短促移动",
+          "count": 1
+        },
+        {
+          "cue": "球长折线",
+          "count": 1
+        },
+        {
+          "cue": "整齐弧线",
+          "count": 1
+        },
+        {
+          "cue": "平行车道",
+          "count": 1
+        },
+        {
+          "cue": "连续闭合绕圈",
+          "count": 1
+        },
+        {
+          "cue": "无锐角",
+          "count": 1
+        },
+        {
+          "cue": "折线台阶",
+          "count": 1
+        },
+        {
+          "cue": "横向长直段",
+          "count": 1
+        },
+        {
+          "cue": "折线抖动",
+          "count": 1
+        },
+        {
+          "cue": "球小方块",
+          "count": 1
+        },
+        {
+          "cue": "纵向冲刺",
+          "count": 1
+        },
+        {
+          "cue": "平滑大曲线",
+          "count": 1
+        },
+        {
+          "cue": "球密集折返",
+          "count": 1
+        },
+        {
+          "cue": "过度圆滑",
+          "count": 1
+        },
+        {
+          "cue": "折线直角",
+          "count": 1
+        },
+        {
+          "cue": "约40m长传直线",
+          "count": 1
+        },
+        {
+          "cue": "长冲刺",
+          "count": 1
+        },
+        {
+          "cue": "直角短段折线",
+          "count": 1
+        },
+        {
+          "cue": "尖锐转弯",
+          "count": 1
+        },
+        {
+          "cue": "平滑弧线穹顶",
+          "count": 1
+        },
+        {
+          "cue": "整队同步漂移",
+          "count": 1
+        },
+        {
+          "cue": "球折返链",
+          "count": 1
+        },
+        {
+          "cue": "小区域堆叠",
+          "count": 1
+        },
+        {
+          "cue": "短促折返",
+          "count": 1
+        },
+        {
+          "cue": "平滑漫游",
+          "count": 1
+        },
+        {
+          "cue": "几乎无折角",
+          "count": 1
+        },
+        {
+          "cue": "长直线冲刺",
+          "count": 1
+        },
+        {
+          "cue": "球矩形折返",
+          "count": 1
+        },
+        {
+          "cue": "大范围拉扯",
+          "count": 1
+        },
+        {
+          "cue": "直角折线",
+          "count": 1
+        },
+        {
+          "cue": "轴向对齐",
+          "count": 1
+        },
+        {
+          "cue": "平滑8字",
+          "count": 1
+        },
+        {
+          "cue": "平滑闭环",
+          "count": 1
+        },
+        {
+          "cue": "球尖角不自然",
+          "count": 1
+        },
+        {
+          "cue": "同相位平行波浪",
+          "count": 1
+        },
+        {
+          "cue": "整队同步滑动",
+          "count": 1
+        },
+        {
+          "cue": "机械节律",
+          "count": 1
+        },
+        {
+          "cue": "高频抖动",
+          "count": 1
+        },
+        {
+          "cue": "球贴脚密集触球",
+          "count": 1
+        },
+        {
+          "cue": "平行跑道椭圆",
+          "count": 1
+        },
+        {
+          "cue": "平滑折返",
+          "count": 1
+        },
+        {
+          "cue": "间距均匀",
+          "count": 1
+        },
+        {
+          "cue": "平滑大回环",
+          "count": 1
+        },
+        {
+          "cue": "球折线",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "path": "/tmp/r2-judge-c/judgement.json",
+      "judge_id": "opus-4-8",
+      "main": {
+        "n": 24,
+        "correct": 12,
+        "accuracy": 0.5,
+        "accuracyCI95": {
+          "lo": 0.31427131627763083,
+          "hi": 0.6857286837223692
+        },
+        "confusion": {
+          "real_as_real": 4,
+          "real_as_engine": 8,
+          "engine_as_real": 4,
+          "engine_as_engine": 8
+        },
+        "bScore": {
+          "real": {
+            "n": 12,
+            "mean": 2.5,
+            "median": 2
+          },
+          "engine": {
+            "n": 12,
+            "mean": 2.25,
+            "median": 2
+          },
+          "aucRealHigher": 0.5798611111111112
+        },
+        "confidenceBuckets": {
+          "high": {
+            "n": 8,
+            "accuracy": 0.75
+          },
+          "low": {
+            "n": 3,
+            "accuracy": 0.3333333333333333
+          }
+        }
+      },
+      "controls": {
+        "n": 3,
+        "byType": {
+          "real-real": {
+            "n": 1,
+            "correct": 1
+          },
+          "engine-engine": {
+            "n": 1,
+            "correct": 0
+          },
+          "real-engine": {
+            "n": 1,
+            "correct": 1
+          }
+        },
+        "balancedAccuracy": 1,
+        "mixedMoreRealAccuracy": 1,
+        "rows": [
+          {
+            "id": "ctl-0c2560ea3e",
+            "type": "real-real",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 4,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-601052c9b3",
+            "type": "engine-engine",
+            "truth": "same",
+            "guess": "different",
+            "correct": false,
+            "confidence": 4,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-0120410f66",
+            "type": "real-engine",
+            "truth": "different",
+            "guess": "different",
+            "correct": true,
+            "confidence": 4,
+            "moreRealCorrect": true
+          }
+        ]
+      },
+      "cues": [
+        {
+          "cue": "静止离群点",
+          "count": 3
+        },
+        {
+          "cue": "球直线三角",
+          "count": 2
+        },
+        {
+          "cue": "折线直角",
+          "count": 2
+        },
+        {
+          "cue": "球直线折线",
+          "count": 2
+        },
+        {
+          "cue": "噪声抖动",
+          "count": 2
+        },
+        {
+          "cue": "球贴脚",
+          "count": 2
+        },
+        {
+          "cue": "各向同性",
+          "count": 2
+        },
+        {
+          "cue": "球直线",
+          "count": 2
+        },
+        {
+          "cue": "全体平行车道",
+          "count": 1
+        },
+        {
+          "cue": "两队同步平移",
+          "count": 1
+        },
+        {
+          "cue": "密集争抢",
+          "count": 1
+        },
+        {
+          "cue": "平滑不规则曲线",
+          "count": 1
+        },
+        {
+          "cue": "平行水平车道",
+          "count": 1
+        },
+        {
+          "cue": "同一角度",
+          "count": 1
+        },
+        {
+          "cue": "球直线往返",
+          "count": 1
+        },
+        {
+          "cue": "聚集成团",
+          "count": 1
+        },
+        {
+          "cue": "反复折返",
+          "count": 1
+        },
+        {
+          "cue": "整体平移",
+          "count": 1
+        },
+        {
+          "cue": "等距平行车道",
+          "count": 1
+        },
+        {
+          "cue": "位移一致",
+          "count": 1
+        },
+        {
+          "cue": "高频锯齿直角",
+          "count": 1
+        },
+        {
+          "cue": "球角形",
+          "count": 1
+        },
+        {
+          "cue": "有机弧线",
+          "count": 1
+        },
+        {
+          "cue": "球平滑对角线",
+          "count": 1
+        },
+        {
+          "cue": "宽阔有机曲线",
+          "count": 1
+        },
+        {
+          "cue": "圆滑转角",
+          "count": 1
+        },
+        {
+          "cue": "球直线多边形",
+          "count": 1
+        },
+        {
+          "cue": "直角锯齿",
+          "count": 1
+        },
+        {
+          "cue": "冻结点",
+          "count": 1
+        },
+        {
+          "cue": "平行斜车道",
+          "count": 1
+        },
+        {
+          "cue": "统一平移",
+          "count": 1
+        },
+        {
+          "cue": "球箭头直线",
+          "count": 1
+        },
+        {
+          "cue": "队形不对称",
+          "count": 1
+        },
+        {
+          "cue": "极度拥挤重叠",
+          "count": 1
+        },
+        {
+          "cue": "球员冻结",
+          "count": 1
+        },
+        {
+          "cue": "全体追球",
+          "count": 1
+        },
+        {
+          "cue": "球交叉直线",
+          "count": 1
+        },
+        {
+          "cue": "等距链",
+          "count": 1
+        },
+        {
+          "cue": "平行车道",
+          "count": 1
+        },
+        {
+          "cue": "全员持续滑行",
+          "count": 1
+        },
+        {
+          "cue": "样条平滑",
+          "count": 1
+        },
+        {
+          "cue": "球巨大闭合环",
+          "count": 1
+        },
+        {
+          "cue": "近平行车道",
+          "count": 1
+        },
+        {
+          "cue": "球闭合多边形",
+          "count": 1
+        },
+        {
+          "cue": "球闭合矩形",
+          "count": 1
+        },
+        {
+          "cue": "平行竖线",
+          "count": 1
+        },
+        {
+          "cue": "整体滑移",
+          "count": 1
+        },
+        {
+          "cue": "宽阔有机弧线",
+          "count": 1
+        },
+        {
+          "cue": "队形伸展",
+          "count": 1
+        },
+        {
+          "cue": "球跳跃",
+          "count": 1
+        },
+        {
+          "cue": "噪声环",
+          "count": 1
+        },
+        {
+          "cue": "有机波浪曲线",
+          "count": 1
+        },
+        {
+          "cue": "交叉穿行",
+          "count": 1
+        },
+        {
+          "cue": "速度差异大",
+          "count": 1
+        },
+        {
+          "cue": "杂散抖动",
+          "count": 1
+        },
+        {
+          "cue": "球多边形路径",
+          "count": 1
+        },
+        {
+          "cue": "全队挤成团",
+          "count": 1
+        },
+        {
+          "cue": "均匀随机游走",
+          "count": 1
+        },
+        {
+          "cue": "球平滑",
+          "count": 1
+        },
+        {
+          "cue": "球直线尖角",
+          "count": 1
+        },
+        {
+          "cue": "轨迹折返",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "nJudges": 3,
+    "meanMainAccuracy": 0.36111111111111116,
+    "meanControlBalancedAccuracy": 0.6666666666666666
+  }
+}

@@ -1,0 +1,273 @@
+{
+ "version": "replay-blind-v1",
+ "frozen_at": "2026-10-28",
+ "frozen_before_rendering": true,
+ "purpose": "guarded goal loop R2 验收（C3 tick-filling flight + C5 viewer 转角平滑；wasm 61a5bc43 + viewer dc5d041）。**held-out**：engine seeds 201+、anchor 与开发窗不同、真实侧用开发未用的 10 场 SkillCorner + Metrica 新 anchor；盲法盐全新。24 张刺激（12 真 12 引擎）+ 3 负控。",
+ "worktree": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28",
+ "engine_commit": "dc5d041(viewer) + f564f6d(engine lib)",
+ "window": {
+  "sec": 24,
+  "canonical_hz": 5,
+  "canonical_step_sec": 0.2,
+  "samples_per_window": 121,
+  "contact_frames": 8,
+  "contact_step_sec": 3.4285714285714284
+ },
+ "selection": {
+  "usable_margin_sec": 60,
+  "search_step_sec": 2,
+  "max_search_offset_sec": 360,
+  "anchors_main": {
+   "metrica": [
+    0.68
+   ],
+   "skillcorner": [
+    0.32
+   ],
+   "engine": [
+    0.44
+   ]
+  },
+  "anchors_control": {
+   "metrica": [
+    0.22,
+    0.78,
+    0.95
+   ],
+   "skillcorner": [
+    0.62
+   ],
+   "engine": [
+    0.11,
+    0.57,
+    0.83
+   ]
+  },
+  "thresholds": {
+   "coverage": 0.98,
+   "all_players_frac": 0.98,
+   "raw_ball_frac": 0.9,
+   "max_ball_fill_sec": 1.0,
+   "ball_in_field_frac": 0.98,
+   "min_ball_path_m": 30,
+   "min_outfield_median_path_m": 1.0,
+   "max_duplicate_coord_frac": 0.1,
+   "contact_samples_ok": true,
+   "contact_raw_ball": true,
+   "contact_ball_in_field": true,
+   "contact_min_team_blobs": 6
+  },
+  "rule": "从 anchor 起每 2s 向前搜索，取第一个满足全部阈值的窗口；最多 360s。8 个 contact 取样时刻与 121 个 canonical 取样时刻都必须能就近取到源帧（<=0.3s）。若无候选通过，则在搜索范围内取 quality 最大者并标 fallback=true（同分取更小 t）。quality=2*cov+2*all22+3*raw+2*ballIn+min(ball_path_m/100,1)-max_fill_sec/10-dup_frac。",
+  "quality_formula": "2*coverage + 2*all_players_frac + 3*raw_ball_frac + 2*ball_in_field_frac + min(ball_path_m/100,1) - max_fill_sec/10 - duplicate_coord_frac",
+  "no_manual_replacement": true,
+  "freeze": "窗口表在渲图前写入 windows.json + windows.sha256；渲图只读该表，不重新选窗。"
+ },
+ "real": {
+  "metrica": [
+   {
+    "dataset": "metrica",
+    "match": "metrica-1",
+    "path": "viewer/data/real-game-1.json",
+    "pitch_meters": [
+     105,
+     68
+    ]
+   },
+   {
+    "dataset": "metrica",
+    "match": "metrica-2",
+    "path": "viewer/data/real-game-2.json",
+    "pitch_meters": [
+     105,
+     68
+    ]
+   }
+  ],
+  "skillcorner": {
+   "dir": "viewer/data",
+   "selection_rule": "20 场中按 match id 升序取**奇数位** 10 场（开发包用的是偶数位 0,2,..,18）：indices 1,3,5,7,9,11,13,15,17,19。若某场验证失败，按升序取下一个未用 id（wrap）替换。",
+   "match_ids": [
+    1886347,
+    1925299,
+    1953632,
+    1986691,
+    1996436,
+    2006363,
+    2007721,
+    2011166,
+    2015213,
+    2016236
+   ],
+   "pitch_meters": [
+    105,
+    68
+   ],
+   "provenance": "本 worktree 本地转换（tools/convert-skillcorner-to-frames.mjs，源码未改）产物 viewer/data/skillcorner-*.json（gitignored）。"
+  }
+ },
+ "engine": {
+  "wasm": ".scratch/notes/goal-loop-r2-acceptance-2026-10-28/engine.wasm",
+  "built_from": "本 worktree HEAD dc5d041（C3 tick-filling flight + C5 viewer 平滑）；cargo build --target wasm32-unknown-unknown --release",
+  "seeds": [
+   201,
+   203,
+   205,
+   208,
+   211,
+   214,
+   217,
+   220,
+   223,
+   226,
+   229,
+   232,
+   235,
+   238,
+   241,
+   244
+  ],
+  "duration_sec": 5400,
+  "config": {
+   "demo_mode": false,
+   "off_ball_movement_demo": true,
+   "match_duration_seconds": 5400
+  },
+  "target_count": 12
+ },
+ "items": {
+  "main_real": 12,
+  "main_engine": 12,
+  "main_total": 24,
+  "controls_pairs": 3,
+  "control_composition": [
+   {
+    "type": "real-real",
+    "a": "metrica-1@0.22",
+    "b": "metrica-2@0.78"
+   },
+   {
+    "type": "engine-engine",
+    "a": "seed201@0.11",
+    "b": "seed201@0.57"
+   },
+   {
+    "type": "real-engine",
+    "a": "metrica-1@0.95",
+    "b": "seed203@0.83"
+   }
+  ]
+ },
+ "render": {
+  "shared_renderer": "contact 逐面板复用 tools/visual-review/render.mjs 的 drawPanel；trajectory 用 replay-blind-core 的 panel，字段/颜色/坐标映射与 drawPanel 相同并由 calibration 自证。",
+  "contact": {
+   "panel_w": 300,
+   "panel_h": 194,
+   "gap": 8,
+   "margin": 8,
+   "background": "#111",
+   "field": "#0d2b0f",
+   "field_border": "#3a8a3a",
+   "red": "#e84040",
+   "blue": "#4090e8",
+   "ball_outline": "#111",
+   "ball": "#ffe400",
+   "player_radius": 5,
+   "ball_outline_radius": 8.5,
+   "ball_radius": 6,
+   "labels": false
+  },
+  "trajectory": {
+   "panel_w": 600,
+   "panel_h": 389,
+   "margin": 12,
+   "background": "#111",
+   "field": "#0d2b0f",
+   "field_border": "#3a8a3a",
+   "red": "#e84040",
+   "blue": "#4090e8",
+   "ball": "#ffe400",
+   "line_width": 1.3,
+   "ball_line_width": 1.5,
+   "endpoint_radius": 3,
+   "ball_radius": 5,
+   "labels": false
+  },
+  "png": {
+   "encode": "viewer/soft-canvas.js canvasToPng",
+   "equalize_file_size_per_kind": true,
+   "padding_chunk_type": "prVt",
+   "padding_bytes_target": "max original size of that kind + 4096",
+   "fixed_mtime_utc": "2026-10-28T00:00:00Z"
+  }
+ },
+ "blinding": {
+  "item_id_salt": "goal-loop-r2-accept-2026-10-28-id-v1",
+  "order_salt_base": "goal-loop-r2-accept-2026-10-28-order-v1",
+  "order_check": "前一半 12 项中 real 数 ∈ [4,8]，且同源连续 run <= 4；从 k=0 起递增取第一个满足的 salt。（本仓 2026-10-28 把 mainOrderCheck 的 [6,12] 收紧为 [4,8]：24 项 12/12 下前者允许前半全真，是呈现顺序泄题口。）",
+  "control_order_salt_base": "goal-loop-r2-accept-2026-10-28-control-v1",
+  "control_check": "3 对中 A 侧为 real 的数目 ∈ [1,2]；从 k=0 起递增取第一个满足的 salt。",
+  "packet_forbidden_substrings": [
+   "metrica",
+   "skillcorner",
+   "seed",
+   "real-game",
+   "engine.wasm",
+   "1886347",
+   "1925299",
+   "1953632",
+   "1986691",
+   "1996436",
+   "2006363",
+   "2007721",
+   "2011166",
+   "2015213",
+   "2016236",
+   "201",
+   "203",
+   "205",
+   "208",
+   "211",
+   "214",
+   "217",
+   "220",
+   "223",
+   "226",
+   "229",
+   "232",
+   "235",
+   "238",
+   "241",
+   "244"
+  ]
+ },
+ "protocol": {
+  "main_question_A": "这是真实比赛 tracking 的 2D 回放，还是游戏引擎生成的？",
+  "main_question_B": "1-5 分：这段 24s 的 2D 回放有多像真实比赛？",
+  "main_cues": "可选自由文本：水平车道 / 整队同步 / 间距 / 球与人关系 / 静止段 / 折返 / 队形 / 其他",
+  "control_question": "A 与 B 是否来自同一来源（都是真实 / 都是引擎），还是一个是真实一个是引擎？",
+  "control_extra": "mixed pair 另问哪一侧更像真实；所有项报 confidence 1-5。",
+  "judges": "2 个独立零上下文模型评审（fresh，每轮换人）；packet 与评分表由主会话路由，密钥不进 packet。",
+  "no_fabricated_results": true
+ },
+ "amendments": [
+  {
+   "at": "2026-10-28",
+   "before_images_or_judging": true,
+   "change": "engine.seeds 追加备用 seed + seed 顺延规则；mainOrderCheck/controlOrderCheck 边界泛化为前一半的 1/3..2/3（24 项 → [4,8]）",
+   "why": "seed 71 全窗 21 人（早红牌）→ buildContactImage 的 all-22 不变量红；旧顺序检查在 12/12 下允许前半全真（泄题口）"
+  },
+  {
+   "at": "2026-10-28",
+   "before_images_or_judging": true,
+   "change": "selection.thresholds 增加 contact_min_team_blobs=6（合并半径 3.6m：300px 面板下点半径 5px≈1.75m，相切 3.5m）",
+   "why": "首轮渲染自证抓到真实侧瑕疵：某接触帧 7 名同队球员叠成 4 个色块（verifyContactImage 要求每色≥5 组件）。该筛选更严、与引擎/真实形态无关；未产生任何判读。"
+  },
+  {
+   "at": "2026-10-28",
+   "before_images_or_judging": true,
+   "change": "build 增加 snake_case→camelCase 阈值映射",
+   "why": "预注册阈值键一直是 snake_case、core 读 camelCase，阈值从未真正生效（值同默认故未暴露）；contact_min_team_blobs 被吞后才暴露——这是探针自审抓到的 harness bug"
+  }
+ ],
+ "amendment_note": "2026-10-28 修正：首建包漏 engine.target_count ⇒ 15 个引擎项（12 真/15 引擎，基准率不对称）。按预注册顺序取前 12 个通过者（201,203,205,211,214,217,220,223,226,229,232,235；208 因 fallback 顺延被拒，238/241/244 为第 13–15 个、按规则剔除——剔除与裁判输出无关）。item id 由盐+本项描述符决定，与集合无关，故裁判已完成的逐项判定按 id 仍有效。"
+}
