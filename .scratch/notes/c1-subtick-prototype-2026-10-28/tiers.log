@@ -1,0 +1,96 @@
+
+######## S ########
+    Finished `release` profile [optimized] target(s) in 9.72s
+4d0b4cfd4c923265f9c847227ab5efa27b85d22295903147586b0217210d249f  ../viewer/engine.wasm
+seed 42: ballPath/24s=87.1  per24={"pass":4.288888888888889,"dribble":33.96,"shot":0.18666666666666665,"tackle":0.11555555555555556,"foul":0.08888888888888889,"loose":4.035555555555556}  per90={"pass":965,"shot":42,"tackle":26,"foul":20}  passSucc=0.8311
+seed 7: ballPath/24s=86.2  per24={"pass":4.2444444444444445,"dribble":33.73777777777778,"shot":0.19555555555555554,"tackle":0.09777777777777777,"foul":0.1111111111111111,"loose":4.595555555555555}  per90={"pass":955,"shot":44,"tackle":22,"foul":25}  passSucc=0.8188
+seed 23: ballPath/24s=87.9  per24={"pass":4.235555555555556,"dribble":33.888888888888886,"shot":0.21333333333333332,"tackle":0.12444444444444444,"foul":0.10666666666666666,"loose":4.435555555555556}  per90={"pass":953,"shot":48,"tackle":28,"foul":24}  passSucc=0.8258
+seed 11: ballPath/24s=87.7  per24={"pass":4.16,"dribble":32.94666666666667,"shot":0.19555555555555554,"tackle":0.10666666666666666,"foul":0.1111111111111111,"loose":5.182222222222222}  per90={"pass":936,"shot":44,"tackle":24,"foul":25}  passSucc=0.8098
+
+引擎 wasm=viewer/engine.wasm  seeds=5  窗数 2250
+真实 Metrica 2 场  窗数 953
+  球总行程(m)        引擎     47.4  真实     60.7  E/R 0.78×
+  快段(>=8m/s)     引擎     31.8  真实     40.6  E/R 0.78×
+  慢段             引擎     15.6  真实     20.1  E/R 0.77×
+  平均球速(m/s)      引擎     3.95  真实     5.06  E/R 0.78×
+  球静止占比(%)       引擎     21.5%  真实     15.6%  E/R 1.38×
+（报告项：不进 ratchet、不判 pass/fail。口径见文件头；原始球帧缺失处断开，不插值。）
+
+mean base=71.5 now=94.4  min/max now=65.2/164.5
+real windows min/max/mean = 136.5 / 192.6 / 164.6
+
+violating passes: 59
+{
+
+
+######## D2 ########
+    Finished `release` profile [optimized] target(s) in 8.38s
+7ca08092809bd676e13b5feccdaa5817980f3c409e5272271f002dcac98e5b34  ../viewer/engine.wasm
+seed 42: ballPath/24s=96.7  per24={"pass":4.0088888888888885,"dribble":32.66222222222222,"shot":0.25333333333333335,"tackle":0.08,"foul":0.08888888888888889,"loose":5.608888888888888}  per90={"pass":902,"shot":57,"tackle":18,"foul":20}  passSucc=0.8082
+seed 7: ballPath/24s=94.9  per24={"pass":4.022222222222222,"dribble":32.82666666666667,"shot":0.2577777777777778,"tackle":0.1111111111111111,"foul":0.09777777777777777,"loose":5.417777777777777}  per90={"pass":905,"shot":58,"tackle":25,"foul":22}  passSucc=0.8243
+seed 23: ballPath/24s=95.4  per24={"pass":4.04,"dribble":33.33333333333333,"shot":0.23555555555555555,"tackle":0.12444444444444444,"foul":0.10666666666666666,"loose":4.937777777777778}  per90={"pass":909,"shot":53,"tackle":28,"foul":24}  passSucc=0.8251
+seed 11: ballPath/24s=98.1  per24={"pass":4.142222222222222,"dribble":33.48888888888889,"shot":0.2577777777777778,"tackle":0.06222222222222222,"foul":0.07555555555555556,"loose":4.551111111111111}  per90={"pass":932,"shot":58,"tackle":14,"foul":17}  passSucc=0.8079
+
+引擎 wasm=viewer/engine.wasm  seeds=5  窗数 2250
+真实 Metrica 2 场  窗数 953
+  球总行程(m)        引擎     53.0  真实     60.7  E/R 0.87×
+  快段(>=8m/s)     引擎     33.4  真实     40.6  E/R 0.82×
+  慢段             引擎     19.6  真实     20.1  E/R 0.97×
+  平均球速(m/s)      引擎     4.42  真实     5.06  E/R 0.87×
+  球静止占比(%)       引擎     24.0%  真实     15.6%  E/R 1.54×
+（报告项：不进 ratchet、不判 pass/fail。口径见文件头；原始球帧缺失处断开，不插值。）
+
+mean base=71.5 now=107.7  min/max now=86.7/139.4
+real windows min/max/mean = 136.5 / 192.6 / 164.6
+
+violating passes: 53
+{
+
+
+######## D2l ########
+    Finished `release` profile [optimized] target(s) in 9.02s
+e8cfc6f0bfbed9e00ecb2d6232af506eeee98dd2ee9bb0524b315fec7c980804  ../viewer/engine.wasm
+seed 42: ballPath/24s=88.4  per24={"pass":4.1288888888888895,"dribble":33.24,"shot":0.18666666666666665,"tackle":0.14222222222222222,"foul":0.08444444444444445,"loose":4.88}  per90={"pass":929,"shot":42,"tackle":32,"foul":19}  passSucc=0.8428
+seed 7: ballPath/24s=88.8  per24={"pass":4.315555555555555,"dribble":33.69777777777777,"shot":0.17777777777777778,"tackle":0.06666666666666667,"foul":0.1111111111111111,"loose":4.293333333333333}  per90={"pass":971,"shot":40,"tackle":15,"foul":25}  passSucc=0.8229
+seed 23: ballPath/24s=89.0  per24={"pass":4.306666666666667,"dribble":33.43111111111111,"shot":0.1511111111111111,"tackle":0.09777777777777777,"foul":0.07555555555555556,"loose":4.5777777777777775}  per90={"pass":969,"shot":34,"tackle":22,"foul":17}  passSucc=0.8080
+seed 11: ballPath/24s=86.3  per24={"pass":4.355555555555556,"dribble":33.98222222222223,"shot":0.16,"tackle":0.1288888888888889,"foul":0.1111111111111111,"loose":4.133333333333333}  per90={"pass":980,"shot":36,"tackle":29,"foul":25}  passSucc=0.8204
+
+引擎 wasm=viewer/engine.wasm  seeds=5  窗数 2250
+真实 Metrica 2 场  窗数 953
+  球总行程(m)        引擎     48.0  真实     60.7  E/R 0.79×
+  快段(>=8m/s)     引擎     32.3  真实     40.6  E/R 0.80×
+  慢段             引擎     15.7  真实     20.1  E/R 0.78×
+  平均球速(m/s)      引擎     4.00  真实     5.06  E/R 0.79×
+  球静止占比(%)       引擎     22.1%  真实     15.6%  E/R 1.42×
+（报告项：不进 ratchet、不判 pass/fail。口径见文件头；原始球帧缺失处断开，不插值。）
+
+mean base=71.5 now=95.6  min/max now=64.2/142.9
+real windows min/max/mean = 136.5 / 192.6 / 164.6
+
+violating passes: 48
+{
+
+
+######## D3 ########
+    Finished `release` profile [optimized] target(s) in 9.02s
+c55393e9cda6f24d67854a5dbeed749679f3c285972f482a5c32a25b38afa67a  ../viewer/engine.wasm
+seed 42: ballPath/24s=97.8  per24={"pass":4.306666666666667,"dribble":51.968888888888884,"shot":0.22666666666666668,"tackle":0.14222222222222222,"foul":0.07111111111111111,"loose":6.1644444444444435}  per90={"pass":969,"shot":51,"tackle":32,"foul":16}  passSucc=0.8256
+seed 7: ballPath/24s=104.6  per24={"pass":4.275555555555555,"dribble":50.84444444444445,"shot":0.28,"tackle":0.09333333333333332,"foul":0.09777777777777777,"loose":6.004444444444444}  per90={"pass":962,"shot":63,"tackle":21,"foul":22}  passSucc=0.8264
+seed 23: ballPath/24s=103.6  per24={"pass":4.235555555555556,"dribble":49.297777777777775,"shot":0.28444444444444444,"tackle":0.11555555555555556,"foul":0.09777777777777777,"loose":7.826666666666667}  per90={"pass":953,"shot":64,"tackle":26,"foul":22}  passSucc=0.8090
+seed 11: ballPath/24s=100.0  per24={"pass":4.3244444444444445,"dribble":50.751111111111115,"shot":0.24888888888888888,"tackle":0.08888888888888889,"foul":0.11555555555555556,"loose":7.022222222222222}  per90={"pass":973,"shot":56,"tackle":20,"foul":26}  passSucc=0.8191
+
+引擎 wasm=viewer/engine.wasm  seeds=5  窗数 2250
+真实 Metrica 2 场  窗数 953
+  球总行程(m)        引擎     54.4  真实     60.7  E/R 0.90×
+  快段(>=8m/s)     引擎     39.6  真实     40.6  E/R 0.97×
+  慢段             引擎     14.9  真实     20.1  E/R 0.74×
+  平均球速(m/s)      引擎     4.54  真实     5.06  E/R 0.90×
+  球静止占比(%)       引擎     31.2%  真实     15.6%  E/R 2.00×
+（报告项：不进 ratchet、不判 pass/fail。口径见文件头；原始球帧缺失处断开，不插值。）
+
+mean base=71.5 now=107.9  min/max now=82.5/140.7
+real windows min/max/mean = 136.5 / 192.6 / 164.6
+
+violating passes: 21
+{
+

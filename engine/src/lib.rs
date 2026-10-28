@@ -382,11 +382,11 @@ pub const FOUL_TYPE_TRIP_P: u64 = 13;
 // （窄），犯规用 8m（宽），两者错开距离窗口。
 
 /// defender 级抢断冷却（tick，3-5s 档）：同一防守者抢断/犯规后此窗口内 `score_tackle` 被压（D1）。
-const TACKLE_COOLDOWN_TICKS: u32 = 4;
+const TACKLE_COOLDOWN_TICKS: u32 = 4 * TPF;
 /// pair 级接触冷却（tick，5-8s 档）：同一（防守者, 被抢者）对接触后此窗口内再次接触的
 /// `score_tackle` 被压（D1）。取代旧的 `last_tackle_pair`（单 pair、无 age、只用于
 /// 「连续同对强制失败」的事后补丁）。
-const CONTACT_PAIR_COOLDOWN_TICKS: u32 = 6;
+const CONTACT_PAIR_COOLDOWN_TICKS: u32 = 6 * TPF;
 /// **抢断**的接触尺度（米）：`tackle_closeness = clamp01(1 - d / SCALE)`。取 2.5m——抢断是
 /// 「脚下」动作，只在极近处成立。校准依据：每场 90min 约 715 次防守评估，抢断目标 ~5-7/场
 /// → 命中率需 ~1%，故抢断只能在评估中占比很小的「≤2.5m」带里胜出（见 `.p30-progress.md`）。
@@ -509,7 +509,7 @@ const FOUL_YELLOW_PENALTY: f64 = FOUL_YELLOWED_DETERRENCE;
 const FOUL_CD_PENALTY: f64 = 0.80;
 /// 持球者压迫状态的保持时长（tick，D5）：contain/jockey 结算时置满，每 tick 衰减 1。
 /// 取 8 ≈ 机会点平均间距（~7 tick），使「无事件防守」在两次机会之间保持生效但会衰减。
-const PRESSURE_STATE_HOLD_TICKS: u32 = 8;
+const PRESSURE_STATE_HOLD_TICKS: u32 = 8 * TPF;
 /// 压迫状态对射门 hazard `defensive_pressure` 因子的权重（D5 的唯一落点）。
 /// 取小值：它是几何压迫的**补充**（无事件防守的持续逼抢），不是替代。
 const PRESSURE_STATE_GAIN: f64 = 0.12;
@@ -603,13 +603,17 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
 // ==== v2 并行节拍（P4 parallel-beats）====
 
 /// 固定 tick 时长（秒）
-pub const TICK_SECONDS: f64 = 1.0;
+///
+/// C1 原型：TICK=0.5（2 Hz 决策节拍）。`TPF` 与 `TICK_SECONDS` 必须手工同步。
+pub const TICK_SECONDS: f64 = 0.5;
+/// 每 1 秒的拍数（== 1/TICK_SECONDS）。所有「秒语义」的 tick 常量写作 `秒数 × TPF`。
+const TPF: u32 = 2;
 /// movers 位移阈值 = 静区（dead-zone），2.0m（移动 ⇔ 发 movers；P7 由 0.5m 放大）
 pub const DEAD_ZONE_METERS: f64 = 2.0; // P7 观感：到位静止距离——前锋到位后目标微变（球位置波动）不追，避免球门旁来回小幅摆动
 /// 松散球拾取半径（米）
 pub const PICKUP_RADIUS_METERS: f64 = 0.5;
 /// 松散球最长持续 tick 数；超时球 hold 等待（不瞬移）
-pub const LOOSE_MAX_TICKS: u32 = 2;
+pub const LOOSE_MAX_TICKS: u32 = 2 * TPF;
 /// carrier 带球速度上限（m/s）：main 每拍推进 ≤ speed×1s
 pub const CARRIER_SPEED_MS: f64 = 5.0;
 /// 无球跑位速度（m/s）
@@ -675,12 +679,12 @@ fn keeper_line_dist_m(ball_line_dist_m: f64) -> f64 {
 }
 
 /// 持球 hold 门控下限/上限（tick）
-pub const HOLD_MIN_TICKS: u32 = 8;
-pub const HOLD_MAX_TICKS: u32 = 15;
+pub const HOLD_MIN_TICKS: u32 = 8 * TPF;
+pub const HOLD_MAX_TICKS: u32 = 15 * TPF;
 
 // ---- P9 射门质量（按起脚位置分桶 + 推进后射门）----
 /// 带球推进上限（tick）：carrier 向球门推进的步数上限（5 tick × 5m = 25m 覆盖，保证能推进到禁区）
-pub const SHOT_DRIVE_MAX_TICKS: u32 = 8;
+pub const SHOT_DRIVE_MAX_TICKS: u32 = 8 * TPF;
 /// 传球推进阈值（m）：dist > 此值先向前传球推进（复用 pass 高亮），再带球/射门
 pub const SHOT_PASS_ADVANCE_M: f64 = 40.0;
 /// 禁区线距离（m）——分桶边界
@@ -702,14 +706,14 @@ const BASE_SHOT_TENDENCY: f64 = -4.45;
 /// 五因子增益（log 尺度缩放，见上方说明）
 const SHOT_FACTOR_GAIN: f64 = 2.5;
 /// 起脚窗口长度（tick，D1）：推进到射程后在此窗口内由 hazard 决定射/转/被抢断
-const SHOT_WINDOW_TICKS: u32 = 2;
+const SHOT_WINDOW_TICKS: u32 = 2 * TPF;
 /// 最近防守者压迫尺度（米）：≤ 此距离按满压迫计，≥ 则无压迫
 const SHOT_PRESSURE_NEAR_M: f64 = 6.0;
 /// 第二防守者压迫尺度（米）
 const SHOT_PRESSURE_SECOND_M: f64 = 12.0;
 /// 射门冷却（tick）：最近一次射门后的局部衰减窗口。
 /// **只读局部计时器**（最近一射后的 tick 数），不读「本场已射多少次」——C 路原则（D2）。
-const SHOT_COOLDOWN_TICKS: u32 = 8;
+const SHOT_COOLDOWN_TICKS: u32 = 8 * TPF;
 /// 射门空间可用性：防守者距离 ≤ 此值视为完全无空间
 const SHOT_SPACE_MIN_M: f64 = 2.0;
 /// 射门空间可用性：防守者距离 ≥ 此值视为完全自由
@@ -799,7 +803,7 @@ pub const BATTLE_ATTACK_WIN_HOME: u64 = 58;
 pub const BATTLE_ATTACK_WIN_AWAY: u64 = 52;
 
 /// P7 观感：角球准备期最短持续（tick）——发球者到角旗后继续等攻方球员跑进禁区包抄，再发球
-pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
+pub const CORNER_SETUP_MIN_TICKS: u32 = 8 * TPF;
 
 // ---- P5 队形/攻防转换参数 ----
 /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
@@ -809,7 +813,7 @@ pub const DEFENSE_PUSH_FACTOR: f64 = 0.12;
 /// 控球阶段压上偏移（归一化）：己方持球前压 / 对方持球回收（≈2m）
 pub const PRESS_UP_OFFSET: f64 = 0.02;
 /// transition 窗口长度（tick）
-pub const TRANSITION_TICKS: u32 = 4;
+pub const TRANSITION_TICKS: u32 = 4 * TPF;
 /// 同队球员最小间距（**米制**，#53）。2.0m（detector `player_overlap` 的 strict `<` 阈值）
 /// + 0.08 安全余量：发射坐标经 `json` 的 `round3`（4 位归一化小数）序列化后，2.05m 级
 /// 间距会被舍入到 2.03–2.04m，0.5s 采样再叠一层舍入——余量不足会让 detector 在 2.00m
@@ -949,15 +953,15 @@ fn move_toward(from: (f64, f64), to: (f64, f64), step: f64) -> (f64, f64) {
 /// 压到 2/4/7 后，档位与决策节奏同尺度：停滞 2 秒即开始介入、4 秒改选出球、7 秒强制前插。
 /// 注意：三档阈值（7）现在**大于** deadline 基线（2）——这是有意的，档位衡量的是
 /// `ticks_since_meaningful_action`（真实行动间隔），不是 deadline。
-pub const LIVENESS_STAGE_1_TICKS: u32 = 2;
-pub const LIVENESS_STAGE_2_TICKS: u32 = 4;
-pub const LIVENESS_STAGE_3_TICKS: u32 = 7;
+pub const LIVENESS_STAGE_1_TICKS: u32 = 2 * TPF;
+pub const LIVENESS_STAGE_2_TICKS: u32 = 4 * TPF;
+pub const LIVENESS_STAGE_3_TICKS: u32 = 7 * TPF;
 /// 各档的前插倾向加成（`carrier_move` 的前插掷定阈值，百分点；基线「原地控球」70 减去它）。
 const LIVENESS_STAGE_FORWARD_PP: [f64; 3] = [12.0, 28.0, 55.0];
 /// 各档的传球风险加成（并入 `open_play_pass_risk`，无量纲）
 const LIVENESS_STAGE_PASS_RISK: [f64; 3] = [0.10, 0.25, 0.45];
 /// 各档的 deadline 压缩（tick）
-const LIVENESS_STAGE_DEADLINE: [u32; 3] = [1, 2, 3];
+const LIVENESS_STAGE_DEADLINE: [u32; 3] = [1 * TPF, 2 * TPF, 3 * TPF];
 
 /// liveness guard 的三档递进行为参数（纯数据；零 RNG、零状态）。
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -1240,19 +1244,20 @@ fn nearest_any(st: &MatchState, target: (f64, f64)) -> i32 {
 /// 有球权流动远快于「每 7 秒一次决策」。下限同样 3 → 2（见 `MIN_ACTION_DEADLINE_TICKS`），
 /// 使压满档位也能到 2 tick/决策。DANGER/PRESSURE/ESCAPE 三个调制系数不变——deadline
 /// 现落在 `[2, 7]`（基线 2 + 最多 `ESCAPE_BONUS`(5) 的放宽）。
-const BASE_ACTION_DEADLINE_TICKS: u32 = 2;
-/// 危险度压缩系数（越接近球门，决策越急）
-const DANGER_URGENCY: f64 = 4.0;
+const BASE_ACTION_DEADLINE_TICKS: u32 = 2 * TPF;
+/// 危险度压缩系数（越接近球门，决策越急）。**C1 原型**：三个调制系数与 deadline 同量纲（tick），
+/// 须随拍频 ×TPF 才能保持「秒语义」（漏scale会让安全局面的 deadline 变短 → 决策次数虚增）。
+const DANGER_URGENCY: f64 = 4.0 * TPF as f64;
 /// 压迫压缩系数（防守越近，决策越急）
-const PRESSURE_URGENCY: f64 = 3.0;
+const PRESSURE_URGENCY: f64 = 3.0 * TPF as f64;
 /// 出球空间放宽系数（越好出球，越从容）
-const ESCAPE_BONUS: f64 = 5.0;
+const ESCAPE_BONUS: f64 = 5.0 * TPF as f64;
 /// deadline 下界 / 上界（tick）。**p143r-v4：下界 3 → 2**（与基线 7 → 2 同步，
 /// 否则 `compute_action_deadline` 的钳制会把基线又抬回 3，密度上不去）。
-const MIN_ACTION_DEADLINE_TICKS: u32 = 2;
-const MAX_ACTION_DEADLINE_TICKS: u32 = 12;
+const MIN_ACTION_DEADLINE_TICKS: u32 = 2 * TPF;
+const MAX_ACTION_DEADLINE_TICKS: u32 = 12 * TPF;
 /// 门将持球放宽（D2「门将/本方后场持球允许更长」）：门将持球时对手不能合法上抢，决策时间更长
-const GK_DEADLINE_BONUS_TICKS: u32 = 3;
+const GK_DEADLINE_BONUS_TICKS: u32 = 3 * TPF;
 /// 压迫归一化尺度（米）：最近 / 第二防守者
 const PRESSURE_NEAR_M: f64 = 25.0;
 const PRESSURE_SECOND_M: f64 = 35.0;
@@ -2109,7 +2114,7 @@ fn shot_hazard_hits(st: &mut MatchState, rng: &mut SeededRng) -> bool {
         t.shot_cooldown_feature_max = t.shot_cooldown_feature_max.max(v);
         t.shot_cooldown_feature_min = t.shot_cooldown_feature_min.min(v);
     }
-    let p = shot_hazard_probability(compute_shot_score(&f), 1.0);
+    let p = shot_hazard_probability(compute_shot_score(&f), TICK_SECONDS);
     let roll = rng.next_u64() % SHOT_ROLL_SCALE as u64;
     (roll as f64) < p * SHOT_ROLL_SCALE
 }
@@ -2614,7 +2619,7 @@ struct MatchState {
 
 /// 两犯规之间的最短间隔（tick）。犯规后哨停/任意球重开在槽位模型中表现为后续事件重排，
 /// 过度连发观感差且挤压槽位——>11 tick（≥11s）才允许下一次犯规。
-pub const FOUL_MIN_GAP_TICKS: u32 = 11;
+pub const FOUL_MIN_GAP_TICKS: u32 = 11 * TPF;
 
 /// P9 射门推进（带球向球门推进）+ P29 起脚窗口。
 ///
@@ -3522,10 +3527,10 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 /// 守卫）；原飞行 ≥ 0.95s 的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
 /// 返回 `(speed, flight)`：调用方必须同时用这两项的返回值（事件与 `t_end` 一致）。
 fn tick_filling_flight(dist_m: f64, speed: f64) -> (f64, f64) {
-    const TICK_FILL_FLIGHT_S: f64 = 0.95;
+    let tick_fill_flight_s = 0.95 * TICK_SECONDS;
     let flight = dist_m / speed;
-    if flight < TICK_FILL_FLIGHT_S && dist_m >= 0.5 {
-        (dist_m / TICK_FILL_FLIGHT_S, TICK_FILL_FLIGHT_S)
+    if flight < tick_fill_flight_s && dist_m >= 0.5 {
+        (dist_m / tick_fill_flight_s, tick_fill_flight_s)
     } else {
         (speed, flight)
     }
@@ -3546,20 +3551,24 @@ fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
         st.opportunity_tally.liveness_forward_intent_pp_max.max(forward_pp);
     let hold_pp = 70u64.saturating_sub(forward_pp);
     let roll = rng.next_u64() % 100;
+    // 抖动幅度按秒语义 ×TICK_SECONDS（1 Hz 时 = ±0.01）。
+    let wob = TICK_SECONDS;
     let (x2, y2) = if is_gk || (!in_transition && roll < hold_pp) {
-        let ox = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
-        let oy = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
+        let ox = ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob;
+        let oy = ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob;
         (clamp01(p.0 + ox), clamp01(p.1 + oy))
     } else if in_transition {
-        // 反击：持球者前插（每拍推进 ~5m）
+        // 反击：持球者前插（D2：每拍推进保持 0.05——决策密度随拍频提高，被 max_step 截流）
         let dir = if home { 1.0 } else { -1.0 };
         let x = p.0 + dir * 0.05;
-        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01));
+        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob);
         (clamp01(x), y)
     } else {
+        // C1 原型带球变体
+        let dir = if home { 1.0 } else { -1.0 };
         let dir = if home { 1.0 } else { -1.0 };
         let x = p.0 + dir * 0.03;
-        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01));
+        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob);
         (clamp01(x), y)
     };
     let max_step = norm_step(CARRIER_SPEED_MS * TICK_SECONDS);
@@ -3679,7 +3688,8 @@ fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
     let cy_m = PITCH_WIDTH_M * 0.5 + EXP1_LATERAL_TRACK * (ball_y_m - PITCH_WIDTH_M * 0.5);
     let y_m = cy_m + (base.1 - 0.5) * PITCH_WIDTH_M * (width_m / EXP1_BASE_Y_SPAN_M);
     // 保留个体抖动（横向），避免全队完全同步。
-    let phase = (st.ticks_since_meaningful_action as f64 + id as f64 * FORM_PHASE_ID_STEP)
+    let phase = (st.ticks_since_meaningful_action as f64 * TICK_SECONDS
+        + id as f64 * FORM_PHASE_ID_STEP)
         * (6.28318 / FORM_PHASE_PERIOD_S);
     let iy = (phase + id as f64 * 1.3).cos() * FORM_INDIV;
     let ty = (y_m / PITCH_WIDTH_M + iy).clamp(0.02, 0.98);
@@ -5129,7 +5139,7 @@ fn finalize_highlight(
             st.carrier = -1;
             st.dead_ball = Some(DeadBall {
                 goal: true,
-                remaining: 2,
+                remaining: 2 * TPF,
                 preparing: false,
                 kickoff_id,
                 kicked: false,
@@ -5796,7 +5806,7 @@ fn advance_loose(
             let raw = move_toward(s, dir_vec, norm_step(l.speed * TICK_SECONDS));
             let e = (clamp01(raw.0), clamp01(raw.1));
             l.pos = e;
-            l.speed *= 0.5;
+            l.speed *= 0.5f64.powf(TICK_SECONDS);
             (s, e)
         } else {
             (s, s) // 超时：球在当前位置 hold 等待（不瞬移）

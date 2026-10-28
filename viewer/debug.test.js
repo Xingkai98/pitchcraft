@@ -2,8 +2,16 @@
 // 验证：开启 debug 后，step 会打印球位置 + 移动球员 + 事件切换日志
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { Game } from './game.js';
-import { config } from './config.js';
+
+// game.js 的 config 是带 cache-busting 查询串的 import（`./config.js?v=<版本>`）——查询串
+// 参与模块身份，裸 `import './config.js'` 拿到的是**另一个实例**，切它 game.js 读不到。
+// 与 app.test.js 同法：从 game.js 源码抠出实际说明符，拿同一实例测 debug 开关。
+const _gameSrc = readFileSync(new URL('./game.js', import.meta.url), 'utf8');
+const _configSpec = _gameSrc.match(/from '(\.\/config\.js[^']*)'/)?.[1];
+assert.ok(_configSpec, 'game.js 顶层应 import ./config.js（带 ?v=）——测试据此取同一模块实例');
+const { config } = await import(_configSpec);
 
 function makeDemoGame() {
   const events = [
