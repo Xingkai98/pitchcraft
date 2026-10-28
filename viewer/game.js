@@ -30,6 +30,25 @@ function eventBoundaryFlags(arr) {
   };
 }
 
+// ── R3 T1：球员路径纹理（viewer 层合成「拍内持续微调」，事件流零改动）───────────────
+// 实测（22 场真实 tracking，0.2s 轨、运动步，24s 窗逐窗）：真实球员相邻步转角中位 3.0°、
+// 1s 窗偏离弦 p50 0.059m / p75 0.120m —— 拍内也在持续微调方向；引擎拍内是直线
+// （转角中位 1.1°、偏离弦 p50 0.027m），90s 轨迹图因此是「长直线 + 硬折角」的多边形网。
+// 做法：段内加**垂直弦的弓形偏移**（sin²(π·u) 包络：两端值与斜率都为 0 ⇒ 锚点位置与
+// 锚点切向逐位不变，与 C5 同一承诺），弓的符号按 blockSec=3s 分块哈希（相邻 2–3 拍同向
+// ⇒ 跨拍走小弧，而非每拍一摆）；幅度按真实弦偏离 p50 定（0.12m ⇔ 0.061m vs 真实 0.059m，
+// 同幅度下 0.2s 转角中位 2.99° vs 真实 3.02°）。确定性哈希，不依赖播放方式/帧率。
+// 球不加：球路是物理量（飞行/滚动），纹理只属于球员跑动。
+export const PLAYER_TEXTURE = { ampM: 0.12, blockSec: 3.0 };
+
+// 确定性哈希 → [-1,1]（整数格点；同 (id,k,axis) 永远同值）。
+function textureHash01(id, k, axis) {
+  let h = (Math.imul(id | 0, 374761393) + Math.imul(k | 0, 668265263) + Math.imul(axis | 0, 1442695041)) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  h ^= h >>> 16;
+  return ((h >>> 0) / 4294967296) * 2 - 1;
+}
+
 // 每个事件的结束时间：该事件所有锚点里最大的 t（无锚点则回落事件自身的 t）。
 function computeEventEnds(events, timeline) {
   const ends = new Array(events.length);
@@ -155,6 +174,10 @@ export class Game {
     // opts.baseSpeed 可覆盖基速（测试用 1x）；opts.skipThreshold 可覆盖间隙阈值（测试用 Infinity 关闭跳过）。
     this._baseSpeed = opts.baseSpeed ?? 1;
     this._skipThreshold = opts.skipThreshold ?? config.playback.skipThresholdSeconds;
+    // R3 T1：球员纹理幅度（米）。默认来自 PLAYER_TEXTURE（已按真实转角分布校准）；
+    // opts 仅给探针做标定扫描，生产路径不传。
+    this._textureAmpM = opts.textureAmpM ?? PLAYER_TEXTURE.ampM;
+    this._textureBlockSec = opts.textureBlockSec ?? PLAYER_TEXTURE.blockSec;
     // 高亮事件索引（间隙检测用）
     this._buildHighlightIndex();
     // 跳过模式：fast（快速播放 skipChoice 倍速）/ skip（直接跳到下一个高亮）
@@ -519,18 +542,18 @@ export class Game {
           const u2 = u * u; const u3 = u2 * u;
           const cr = (a, b, c, d) => 0.5 * ((2 * b) + (-a + c) * u
             + (2 * a - 5 * b + 4 * c - d) * u2 + (-a + 3 * b - 3 * c + d) * u3);
-          return {
+          return this._applyTexture(kind, id, t, u, {
             x: Math.min(Math.max(cr(p0.x, prev.x, next.x, p3.x), 0), 1),
             y: Math.min(Math.max(cr(p0.y, prev.y, next.y, p3.y), 0), 1),
             h: 0,
-          };
+          }, prev, next);
         }
       }
-      return {
+      return this._applyTexture(kind, id, t, u, {
         x: prev.x + (next.x - prev.x) * u,
         y: prev.y + (next.y - prev.y) * u,
         h: (prev.h ?? 0) + ((next.h ?? 0) - (prev.h ?? 0)) * u,
-      };
+      }, prev, next);
     }
     // clip 模式
     const idx = this._clipIndex;
@@ -560,6 +583,34 @@ export class Game {
     }
     if (prevAny) return { x: prevAny.x, y: prevAny.y };
     return null;
+  }
+
+  // R3 T1：段内**垂直弦**的弓形偏移（归一化坐标）。sin²(π·u) 包络：两端值为 0 且斜率 0
+  // ⇒ 锚点时刻位置与切向都不变。弓的符号按 blockSec 分块哈希 → 相邻 2–3 拍同向（跨拍走弧）。
+  _textureOffset(id, u, prev, next) {
+    const amp = this._textureAmpM;
+    if (!(amp > 0)) return null;
+    const L = config.pitch.lengthMeters; const W = config.pitch.widthMeters;
+    const vx = (next.x - prev.x) * L; const vy = (next.y - prev.y) * W;
+    const len = Math.hypot(vx, vy);
+    if (!(len > 1e-6)) return { dx: 0, dy: 0 };
+    const block = Math.floor(prev.t / this._textureBlockSec);
+    const sign = textureHash01(id, block, 7);
+    const env = Math.sin(Math.PI * u) ** 2;
+    const offM = amp * env * sign;
+    return { dx: (offM * (-vy / len)) / L, dy: (offM * (vx / len)) / W };
+  }
+
+  // 只对球员叠纹理；球/无球锚点（hold 分支）不动。
+  _applyTexture(kind, id, t, u, pos, prev, next) {
+    if (kind !== 'player') return pos;
+    const off = this._textureOffset(id, u, prev, next);
+    if (!off) return pos;
+    return {
+      x: Math.min(Math.max(pos.x + off.dx, 0), 1),
+      y: Math.min(Math.max(pos.y + off.dy, 0), 1),
+      h: pos.h,
+    };
   }
 
   // C5 辅助：为 Catmull–Rom 找相邻的「拍前 / 拍后」锚点（严格早于 prev.t / 晚于 next.t，

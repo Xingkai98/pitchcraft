@@ -1,7 +1,7 @@
 // Game 播放控制单测（解耦模式：每个事件独立片段，默认不播放，点播才播）
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { Game, buildGameIndex } from './game.js';
+import { Game, buildGameIndex, PLAYER_TEXTURE } from './game.js';
 import { config } from './config.js';
 import { interpretEvent } from './interpretation.js';
 
@@ -728,4 +728,64 @@ test('#154 索引复用必须同源：换了事件流/站位/模式 → 报错�
   // 合法路径：clip 模式的索引给 clip 模式用
   const clipIndex = buildGameIndex(events, lineup, 'clip');
   assert.doesNotThrow(() => new Game(events, lineup, 'clip', { index: clipIndex }), 'clip 索引复用到 clip 模式必须放行');
+});
+
+// ---- R3 T1：球员路径纹理（bow 偏移）----
+
+test('T1 纹理：确定性（同 t 同位置，与 seek 历史/顺序无关）', () => {
+  const { events, lineup } = indexFixture();
+  const g1 = new Game(events, lineup, 'continuous');
+  const g2 = new Game(events, lineup, 'continuous');
+  const at = [3.3, 10.7, 47.2, 200.1];
+  const p1 = at.map((t) => { g1.seekTo(t); return g1.players.map((p) => [p.id, p.x, p.y]); });
+  // 反序 seek（模拟任意播放/跳转路径）
+  const p2 = [...at].reverse().map((t) => { g2.seekTo(t); return g2.players.map((p) => [p.id, p.x, p.y]); }).reverse();
+  assert.deepEqual(p1, p2, '纹理必须是 t 的纯函数（同 t 同位置）');
+});
+
+test('T1 纹理：锚点时刻位置逐位不变（C5 同一承诺）', () => {
+  const { events, lineup } = indexFixture();
+  const g = new Game(events, lineup, 'continuous');
+  let checked = 0;
+  for (const [id, arr] of g._playerAnchors) {
+    for (const a of arr) {
+      if (!(a.t >= 0 && a.t <= g.matchEnd)) continue;
+      g.seekTo(a.t);
+      const p = g.players.find((q) => q.id === id);
+      if (!p) continue; // 罚下球员不渲染
+      assert.ok(Math.abs(p.x - a.x) < 1e-9 && Math.abs(p.y - a.y) < 1e-9,
+        `球员 ${id} 在锚点 t=${a.t} 位置被纹理移动：(${p.x},${p.y}) vs (${a.x},${a.y})`);
+      checked += 1;
+      if (checked > 400) return; // 抽样上限（逐锚点全量等价，取前 400 足够覆盖多球员多段）
+    }
+  }
+  assert.ok(checked > 0, '必须真的检查到锚点（防空转）');
+});
+
+test('T1 纹理：球不受影响（纹理只属于球员）', () => {
+  const { events, lineup } = indexFixture();
+  const g = new Game(events, lineup, 'continuous');
+  const g0 = new Game(events, lineup, 'continuous', { textureAmpM: 0 });
+  for (const t of [3.3, 10.7, 47.2]) {
+    g.seekTo(t); g0.seekTo(t);
+    assert.deepEqual([g.ball.x, g.ball.y], [g0.ball.x, g0.ball.y], `球位置不得随球员纹理变化（t=${t}）`);
+  }
+});
+
+test('T1 纹理：偏移幅度上界 ≤ ampM（米），且关掉时逐位等于原行为', () => {
+  const { events, lineup } = indexFixture();
+  const g = new Game(events, lineup, 'continuous');
+  const g0 = new Game(events, lineup, 'continuous', { textureAmpM: 0 });
+  const ampM = PLAYER_TEXTURE.ampM;
+  let maxDev = 0;
+  for (let t = 1; t < 80; t += 0.37) {
+    g.seekTo(t); g0.seekTo(t);
+    for (const p of g.players) {
+      const q = g0.players.find((x) => x.id === p.id);
+      const dm = Math.hypot((p.x - q.x) * config.pitch.lengthMeters, (p.y - q.y) * config.pitch.widthMeters);
+      if (dm > maxDev) maxDev = dm;
+    }
+  }
+  assert.ok(maxDev > 0.01, `纹理必须真的有偏移（maxDev=${maxDev}），防「空转通过」`);
+  assert.ok(maxDev <= ampM + 1e-9, `偏移须 ≤ ampM=${ampM}m，实际 ${maxDev}`);
 });
