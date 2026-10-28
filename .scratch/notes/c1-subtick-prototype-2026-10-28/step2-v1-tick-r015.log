@@ -1,0 +1,15 @@
+### fill=tick rate=0.015 tag=v1-tick-r015 wasm=e93f8a5e
+seed 42: ballPath/24s=95.2  per24={"pass":4.333333333333333,"dribble":34.84888888888889,"shot":0.13777777777777778,"tackle":0.10222222222222223,"foul":0.05777777777777778,"loose":3.533333333333333}  per90={"pass":975,"shot":31,"tackle":23,"foul":13}  passSucc=0.8349
+seed 7: ballPath/24s=97.1  per24={"pass":4.271111111111111,"dribble":33.897777777777776,"shot":0.14666666666666667,"tackle":0.1111111111111111,"foul":0.08,"loose":4.257777777777777}  per90={"pass":961,"shot":33,"tackle":25,"foul":18}  passSucc=0.8273
+seed 23: ballPath/24s=98.1  per24={"pass":4.315555555555555,"dribble":34.00888888888889,"shot":0.14222222222222222,"tackle":0.1288888888888889,"foul":0.09333333333333332,"loose":4.093333333333333}  per90={"pass":971,"shot":32,"tackle":29,"foul":21}  passSucc=0.8352
+seed 11: ballPath/24s=96.1  per24={"pass":4.346666666666667,"dribble":34.217777777777776,"shot":0.12,"tackle":0.10222222222222223,"foul":0.09777777777777777,"loose":3.96}  per90={"pass":978,"shot":27,"tackle":23,"foul":22}  passSucc=0.8272
+--- shotbuckets ---
+seed 42: shots=31 box=22 arc=8 far=1 header=3
+seed 7: shots=33 box=21 arc=6 far=6 header=4
+--- shortpass ---
+violating passes: 48
+{
+  'intercepted/-/h0': 6,
+--- packet windows ---
+mean base=71.5 now=101.0  min/max now=80.4/142.0
+real windows min/max/mean = 136.5 / 192.6 / 164.6

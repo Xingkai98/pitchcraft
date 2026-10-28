@@ -604,11 +604,11 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
 
 /// 固定 tick 时长（秒）
 ///
-/// 本步（shot-rate-anchor 第一步）保持在 1 Hz 基线上验证机制；2 Hz 档在下一步落地。
+/// C1 shot-rate-anchor 第二步：2 Hz 决策节拍（第一步的 1 Hz 验证见 note §9.1）。
 /// `TPF` 与 `TICK_SECONDS` 必须手工同步。
-pub const TICK_SECONDS: f64 = 1.0;
+pub const TICK_SECONDS: f64 = 0.5;
 /// 每 1 秒的拍数（== 1/TICK_SECONDS）。所有「秒语义」的 tick 常量写作 `秒数 × TPF`。
-const TPF: u32 = 1;
+const TPF: u32 = 2;
 /// movers 位移阈值 = 静区（dead-zone），2.0m（移动 ⇔ 发 movers；P7 由 0.5m 放大）
 pub const DEAD_ZONE_METERS: f64 = 2.0; // P7 观感：到位静止距离——前锋到位后目标微变（球位置波动）不追，避免球门旁来回小幅摆动
 /// 松散球拾取半径（米）
@@ -783,7 +783,13 @@ const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// 让每个机会点都被更频繁地评估，攻击方的「推进档」命中率随之抬高。压得比 vol 单层（−3.95）
 /// 和 vol-j1 档（−4.05）都更深，是因为 def 层的 `OPEN_PLAY_PASS_PRESSURE_M` 4m 又把一部分
 /// 「恒出球」还给了「可推进」——两股力方向相反，净效果是必须比任一单层压得更狠。
-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.15;
+///
+/// **C1 2 Hz 重标定：−4.15 → −4.50**。2 Hz + fill-to-tick 下，箱内优先档已被
+/// `OPEN_BOX_SHOT_RATE_PER_S` 重锚（只占少量射门），射门体量**由本 hazard 主导**；
+/// −4.15 时常规射门 28–29/场（带沿），−4.50 时 15–26/场（均值 21，≈ StatsBomb 大五
+/// n=170 的 21.64），且抢断 25–27、传球成功率 .818–.837 同时在带内。读数与
+/// 「移动层杠杆会破抢断/犯规带」的实测见 note §9.2。
+const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.50;
 /// 射门推进 hazard 的**每秒率参考窗口**（秒）：λ = e^(score+shift) / 本值。
 /// 旧实现是「每机会一次、window=1.0 s」；1 Hz 基线实测机会间隔 ≈ 2.0 s（四 seed
 /// due_mean_s = 2.00–2.01，见同一 note 节），故取 2.0 s 使 1 Hz 基线行为不变；机会间隔
@@ -3561,6 +3567,13 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 /// **不动任何决策输入**；finalize tick 仍是 t+1，动力学逐位不变——由事件流哈希（掩掉 speed）
 /// 守卫）；原飞行 ≥ 0.95s 的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
 /// 返回 `(speed, flight)`：调用方必须同时用这两项的返回值（事件与 `t_end` 一致）。
+///
+/// **C1 2 Hz 决策（fill-to-tick，A 案）**：填充时长 = `0.95 × TICK_SECONDS`（2 Hz 下
+/// 0.475 s），保持「每个 tick 内无死等」的原意。备选 fill-to-second（固定 0.95 s）实测：
+/// 盲测包同窗球程相同（101.6 vs 101.0 m/24s），但 L2 传球速度契约违例 309/场 vs 48/场
+/// （短传被拉长到 0.95 s → `dist/0.95 < 10 m/s`），故弃 B 取 A。A 的代价同样存在：
+/// 2 Hz 下 < 4.75 m 的短传会被压到 < 10 m/s（seed 1 实测 48 例/场）——**L2 速度契约
+/// 必须随 2 Hz 重标**（本步未改契约；读数见 note §9.2）。
 fn tick_filling_flight(dist_m: f64, speed: f64) -> (f64, f64) {
     let tick_fill_flight_s = 0.95 * TICK_SECONDS;
     let flight = dist_m / speed;

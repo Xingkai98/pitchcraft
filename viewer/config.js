@@ -43,8 +43,8 @@ export const config = {
   // 演绎节奏（所有时长单位：真实秒）
   interpretation: {
     // 引擎决策拍长（秒）：beat 演绎把它铺满本拍 `[t, t+tickSeconds]`。
-    // 必须与引擎 `TICK_SECONDS` 同步（本步 = 1.0；2 Hz 档在下一步落地）。
-    tickSeconds: 1.0,
+    // 必须与引擎 `TICK_SECONDS` 同步（C1 shot-rate-anchor 第二步：2 Hz = 0.5）。
+    tickSeconds: 0.5,
     // 带球：连续推进（人球解耦——球始终领先人 separation，非人球平移；不再拆"踢-追"周期）
     // 下方 touchDuration/chaseDuration/windupDuration 为旧踢-追参数，当前实现未读取（改之无效果）
     dribble: {

@@ -3,7 +3,17 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { interpretEvent, buildTimeline } from './interpretation.js';
+
+// beat 演绎铺满一拍 [t, t + tickSeconds]；拍长必须从 interpretation.js 实际使用的
+// config 模块实例读（带 ?v= 查询串的 import 与裸 './config.js' 是两个实例——与
+// app.test.js / debug.test.js 同法：从源码抠说明符，不写死版本号）。
+const _interpSrc = readFileSync(new URL('./interpretation.js', import.meta.url), 'utf8');
+const _configSpec = _interpSrc.match(/from '(\.\/config\.js[^']*)'/)?.[1];
+assert.ok(_configSpec, 'interpretation.js 顶层应 import ./config.js（带 ?v=）');
+const { config } = await import(_configSpec);
+const TICK = config.interpretation.tickSeconds;
 
 test('pass: 生成球飞行 + 接球者跑位锚点', () => {
   const e = { t: 10, type: 'pass', from: 8, to: 9, x: 0.4, y: 0.5, x2: 0.6, y2: 0.4, speed: 12, lead: 0.3, result: 'success' };
@@ -350,7 +360,7 @@ test('buildTimeline continuous: tackle 前跳过 off_ball_run 找到同被铲者
 
 // ---- v2：beat 节拍演绎 ----
 
-test('beat: movers 铺满整拍 [t, t+1]，main 人球解耦，ball 滚动', () => {
+test('beat: movers 铺满整拍 [t, t+tick]，main 人球解耦，ball 滚动', () => {
   const e = {
     t: 10, type: 'beat',
     movers: [
@@ -360,11 +370,11 @@ test('beat: movers 铺满整拍 [t, t+1]，main 人球解耦，ball 滚动', () 
     main: { type: 'dribble', subject: 10, x: 0.55, y: 0.5, x2: 0.58, y2: 0.5, speed: 5, touch_freq: 1.5 },
   };
   const anchors = interpretEvent(e);
-  // movers 铺满整拍：起点 t=10，终点 t=11
+  // movers 铺满整拍：起点 t=10，终点 t=10+tick
   const m5 = anchors.filter((a) => a.kind === 'player' && a.id === 5).sort((a, b) => a.t - b.t);
   assert.equal(m5[0].t, 10);
   assert.equal(m5[0].x, 0.3);
-  assert.equal(m5[m5.length - 1].t, 11);
+  assert.equal(m5[m5.length - 1].t, 10 + TICK);
   assert.equal(m5[m5.length - 1].x, 0.35);
   // main：球随 carrier（拍边界连续，不做 sep 领先偏移——避免方向变化导致拍边界球跳）
   const carrier = anchors.filter((a) => a.kind === 'player' && a.id === 10).sort((a, b) => a.t - b.t);
@@ -386,7 +396,7 @@ test('beat: 松散球 ball 铺满整拍', () => {
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
   assert.equal(balls[0].t, 20);
   assert.equal(balls[0].x, 0.4);
-  assert.equal(balls[balls.length - 1].t, 21);
+  assert.equal(balls[balls.length - 1].t, 20 + TICK);
   assert.equal(balls[balls.length - 1].x, 0.42);
 });
 
@@ -414,17 +424,18 @@ test('buildTimeline 两层合成: 高亮参与者从重叠 beat movers 排除', 
 });
 
 test('buildTimeline 跨 beat 连续: from(N+1)==to(N)', () => {
+  const t1 = 10 + TICK;
   const events = [
     { t: 10, type: 'beat', movers: [{ id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.35, to_y: 0.4, speed: 4, action: 'run' }] },
-    { t: 11, type: 'beat', movers: [{ id: 5, from_x: 0.35, from_y: 0.4, to_x: 0.38, to_y: 0.42, speed: 4, action: 'run' }] },
+    { t: t1, type: 'beat', movers: [{ id: 5, from_x: 0.35, from_y: 0.4, to_x: 0.38, to_y: 0.42, speed: 4, action: 'run' }] },
   ];
   const tl = buildTimeline(events, 'continuous');
   const m5 = tl.filter((a) => a.kind === 'player' && a.id === 5).sort((a, b) => a.t - b.t);
-  // 锚点序列：10(0.3) → 11(0.35) → 11(0.35) → 12(0.38)
-  // 跨拍衔接：beat0 终点 (11, 0.35) == beat1 起点 (11, 0.35)
-  assert.equal(m5[1].t, 11);
+  // 锚点序列：10(0.3) → t1(0.35) → t1(0.35) → t1+TICK(0.38)
+  // 跨拍衔接：beat0 终点 (t1, 0.35) == beat1 起点 (t1, 0.35)
+  assert.equal(m5[1].t, t1);
   assert.equal(m5[1].x, 0.35);
-  assert.equal(m5[2].t, 11);
+  assert.equal(m5[2].t, t1);
   assert.equal(m5[2].x, 0.35, '跨拍 from(N+1)==to(N)，位置连续');
 });
 

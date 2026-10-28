@@ -1,0 +1,22 @@
+### v4: fill=tick rate=0.008 engage=-4.65 (2 Hz) wasm=dcb0737b
+seed 42: ball24=95.8 pass=1000 passSucc=0.8390 shot=14 tackle=35 foul=19 | regular=12 box=11
+seed 7:  ball24=97.0 pass=982  passSucc=0.8279 shot=19 tackle=26 foul=19 | regular=17 box=16
+seed 23: ball24=95.8 pass=1010 passSucc=0.8267 shot=12 tackle=16 foul=15 | regular=12 box=10
+seed 11: ball24=96.6 pass=1000 passSucc=0.8300 shot=15 tackle=27 foul=18 | regular=12 box=11
+packet windows: mean 99.2 (85.6-123.1); real 164.6 (136.5-192.6)
+
+### v5 (FINAL): fill=tick rate=0.015 engage=-4.50 (2 Hz) wasm=e37c5b24
+seed 42: ball24=97.6 pass=994 passSucc=0.8209 shot=17 tackle=26 foul=22 | regular=15 box=15
+seed 7:  ball24=94.9 pass=982 passSucc=0.8371 shot=22 tackle=25 foul=19 | regular=20 box=17
+seed 23: ball24=98.6 pass=950 passSucc=0.8179 shot=29 tackle=26 foul=19 | regular=23 box=21
+seed 11: ball24=95.3 pass=974 passSucc=0.8347 shot=29 tackle=27 foul=13 | regular=26 box=25
+packet windows: mean 106.8 (74.7-177.4); real 164.6 (136.5-192.6)
+shortpass violations: 48/match
+frame caliber (ball-travel 5 seeds/12s): total 52.0 vs real 60.7 (0.86x), fast 31.4/40.6 (0.77x), slow 20.6/20.1 (1.02x), static 21.2%/15.6%
+
+### decision probe: v5 + hold 70%->45% (movement layer, OUT OF SCOPE) wasm=8f052779
+seed 42: ball24=111.8 pass=981 passSucc=0.8165 shot=24 tackle=13 foul=11 | regular=24
+seed 7:  ball24=106.7 pass=963 passSucc=0.8401 shot=23 tackle=20 foul=9  | regular=21
+seed 23: ball24=110.2 pass=972 passSucc=0.8025 shot=20 tackle=16 foul=13 | regular=18
+seed 11: ball24=109.2 pass=948 passSucc=0.8091 shot=31 tackle=13 foul=18 | regular=28
+packet windows: mean 108.4 (84.3-180.8)
