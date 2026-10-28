@@ -1,0 +1,3674 @@
+{
+  "version": "replay-blind-v1",
+  "generated_at": "2026-10-28",
+  "preregistration_sha256": "20f61692b0d4fbd94a04e6af5255061a9521d6fa8c7a10cad609affe4166683d",
+  "windows_sha256": "a50cfee378b0d3f77219ae30369092ccafdcc184368e8319c4aa16329c8cb754",
+  "engine": {
+    "commit": "8f13a5d + R3 T1（viewer/game.js 球员路径纹理）；engine lib 仍 f564f6d（与 R2 相同 wasm 61a5bc43）",
+    "wasm_sha256": "61a5bc432951b9bb547e0f6c0cb59e1aec51fcfd95590ffa5dbb2145a7145b0b",
+    "lib_rs_sha256": "3eea20845d9b418f0ced4ba2848de86e4a0e961b9ee232d2619ccc675361d933",
+    "cargo_lock_sha256": "8981fd7dcf8f15f1c7b7ddd0621218a157dc49783fcc58d4d7e8d442d4464379",
+    "build_command": "(cd engine && cargo build --target wasm32-unknown-unknown --release)",
+    "config": {
+      "demo_mode": false,
+      "off_ball_movement_demo": true,
+      "match_duration_seconds": 5400
+    },
+    "eventHashes": [
+      {
+        "seed": 301,
+        "hash": "8bd1bfb450e992adac8a0d158358d2cfa078095ba90e754c760cd100129bae4e",
+        "length": 8229036
+      },
+      {
+        "seed": 303,
+        "hash": "02869e4c44b48d849f23926a0f9f167ff1ed3c97c782b25e739c22e923d024f9",
+        "length": 8206319
+      },
+      {
+        "seed": 305,
+        "hash": "60fe4a7f1e9e801bb258c33959aa96cb741ce17089b19550b08a300812805040",
+        "length": 8053381
+      },
+      {
+        "seed": 307,
+        "hash": "341a60016cbcbeb7217fe759e39722954e73c5f0c2e80122b982226682833ed5",
+        "length": 8137969
+      },
+      {
+        "seed": 310,
+        "hash": "ef73a5fb9bfb39229b0456434d843d33c2b194489b9d53372728848e18c5ad33",
+        "length": 8073917
+      },
+      {
+        "seed": 313,
+        "hash": "654721eab314e9aa6e048091df9ddbb37a0487f77aa398eb08db5c73ea7cb1ba",
+        "length": 8200823
+      },
+      {
+        "seed": 316,
+        "hash": "e65e70a4a8fcbc01c75290ccc64de84eef53be4bba05ea8dfb804ff3f08e5fad",
+        "length": 8064412
+      },
+      {
+        "seed": 319,
+        "hash": "e3c31b4aedce98f4a7b65f26d7d8d45f0097f7578dcf8ef50bb556ab80381e40",
+        "length": 8243878
+      },
+      {
+        "seed": 322,
+        "hash": "6938dcd34e0482093afe8163aa5b194f84feea3264a7e48cab7f8e372e2c6129",
+        "length": 8128435
+      },
+      {
+        "seed": 325,
+        "hash": "b00dcb3e1498ff985118c39051e5cb84655fa021e3dac2c6b1667ef27dd4e6ce",
+        "length": 8128308
+      },
+      {
+        "seed": 328,
+        "hash": "79950b562e5609f8dbceb5e1af231511466d06ff6fdb733b4125c39345679dfe",
+        "length": 8129126
+      },
+      {
+        "seed": 331,
+        "hash": "86ce6acb297d17138da90cb3b81e03807264ce56c08bafc267f8fc443dfae17b",
+        "length": 8103640
+      },
+      {
+        "seed": 334,
+        "hash": "3249969eaeb3c99019277ef0605f38d4676d96898edb9798913a1d6e17bb31ee",
+        "length": 8252575
+      },
+      {
+        "seed": 337,
+        "hash": "bdc21e02842385ec2d93620d8e7bf623db4cf0d1e5bdcd9515a14a5496e9eafc",
+        "length": 8094169
+      },
+      {
+        "seed": 340,
+        "hash": "6cd6cf44fd1c72b07650a97c7e2be26e28f5f4aebc7b1dbc1383f7652e3ef2a9",
+        "length": 8262791
+      },
+      {
+        "seed": 343,
+        "hash": "8724247892ebf961212c3b4ffa6853c9b3abcf36070e99def731cf79be2174c9",
+        "length": 8050945
+      }
+    ]
+  },
+  "render": {
+    "params_hash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+    "params": {
+      "contact": {
+        "PW": 300,
+        "PH": 194,
+        "GAP": 8,
+        "MARGIN": 8,
+        "BG": "#111",
+        "colors": {
+          "red": "#e84040",
+          "blue": "#4090e8",
+          "ball": "#ffe400"
+        },
+        "labels": false
+      },
+      "trajectory": {
+        "PW": 600,
+        "PH": 389,
+        "MARGIN": 12,
+        "BG": "#111",
+        "LINE": 1.3,
+        "DOT": 3,
+        "BALL_LINE": 1.5,
+        "BALL_R": 5,
+        "BALL_OUTLINE": 7.5,
+        "colors": {
+          "red": "#e84040",
+          "blue": "#4090e8",
+          "ball": "#ffe400"
+        },
+        "labels": false
+      }
+    },
+    "renderer_files": [
+      "tools/visual-review/render.mjs",
+      "viewer/soft-canvas.js",
+      "tools/visual-review/replay-blind-core.mjs"
+    ]
+  },
+  "blinding": {
+    "item_id_salt": "r3-bow-2026-10-28-9f3c41d7",
+    "order_salt": "r3-order-2026-10-28-5a8e2b60:0",
+    "order_k": 0,
+    "order_check": {
+      "ok": true,
+      "realInFirstHalf": 6,
+      "maxRun": 4,
+      "n": 24
+    },
+    "control_salt": "r3-ctl-2026-10-28-c17d09fa:0",
+    "control_k": 0,
+    "control_check": {
+      "ok": true,
+      "aReal": 2,
+      "n": 3
+    }
+  },
+  "sources": {
+    "real": {
+      "metrica-1": {
+        "frames": 29002,
+        "tEnd": 5800.24,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-1.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "metrica-2": {
+        "frames": 28232,
+        "tEnd": 5646.24,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-2.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1874553": {
+        "frames": 22122,
+        "tEnd": 6024.1,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1874553.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1899585": {
+        "frames": 20341,
+        "tEnd": 6041.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1899585.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1927964": {
+        "frames": 22380,
+        "tEnd": 5900,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1927964.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1959846": {
+        "frames": 21370,
+        "tEnd": 5840.3,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1959846.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1996435": {
+        "frames": 21766,
+        "tEnd": 5759.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1996435.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2006229": {
+        "frames": 22086,
+        "tEnd": 5924.1,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2006229.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2007448": {
+        "frames": 22142,
+        "tEnd": 5804.5,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2007448.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2010085": {
+        "frames": 22761,
+        "tEnd": 5896.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2010085.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2013725": {
+        "frames": 22496,
+        "tEnd": 5674.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2013725.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2017461": {
+        "frames": 20202,
+        "tEnd": 5843.6,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2017461.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      }
+    },
+    "engine": {
+      "seed-301": {
+        "frames": 27010,
+        "tEnd": 5401.8,
+        "eventHash": "8bd1bfb450e992adac8a0d158358d2cfa078095ba90e754c760cd100129bae4e",
+        "eventLength": 8229036
+      },
+      "seed-303": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "02869e4c44b48d849f23926a0f9f167ff1ed3c97c782b25e739c22e923d024f9",
+        "eventLength": 8206319
+      },
+      "seed-305": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "60fe4a7f1e9e801bb258c33959aa96cb741ce17089b19550b08a300812805040",
+        "eventLength": 8053381
+      },
+      "seed-307": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "341a60016cbcbeb7217fe759e39722954e73c5f0c2e80122b982226682833ed5",
+        "eventLength": 8137969
+      },
+      "seed-310": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "ef73a5fb9bfb39229b0456434d843d33c2b194489b9d53372728848e18c5ad33",
+        "eventLength": 8073917
+      },
+      "seed-313": {
+        "frames": 27006,
+        "tEnd": 5401,
+        "eventHash": "654721eab314e9aa6e048091df9ddbb37a0487f77aa398eb08db5c73ea7cb1ba",
+        "eventLength": 8200823
+      },
+      "seed-316": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "e65e70a4a8fcbc01c75290ccc64de84eef53be4bba05ea8dfb804ff3f08e5fad",
+        "eventLength": 8064412
+      },
+      "seed-319": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "e3c31b4aedce98f4a7b65f26d7d8d45f0097f7578dcf8ef50bb556ab80381e40",
+        "eventLength": 8243878
+      },
+      "seed-322": {
+        "frames": 27006,
+        "tEnd": 5401,
+        "eventHash": "6938dcd34e0482093afe8163aa5b194f84feea3264a7e48cab7f8e372e2c6129",
+        "eventLength": 8128435
+      },
+      "seed-325": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "b00dcb3e1498ff985118c39051e5cb84655fa021e3dac2c6b1667ef27dd4e6ce",
+        "eventLength": 8128308
+      },
+      "seed-328": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "79950b562e5609f8dbceb5e1af231511466d06ff6fdb733b4125c39345679dfe",
+        "eventLength": 8129126
+      },
+      "seed-331": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "86ce6acb297d17138da90cb3b81e03807264ce56c08bafc267f8fc443dfae17b",
+        "eventLength": 8103640
+      }
+    }
+  },
+  "items": [
+    {
+      "id": "rb-86ffc62f2d",
+      "order": 1,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1996435",
+      "anchorFrac": 0.18,
+      "anchorT": 1070.862,
+      "t0": 1192.862,
+      "t1": 1216.862,
+      "offsetSec": 122,
+      "searched": 62,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 135.4689869026301,
+        "outfieldMedianPathM": 55.25594030256352,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1192.862,
+        1196.291,
+        1199.719,
+        1203.148,
+        1206.576,
+        1210.005,
+        1213.433,
+        1216.862
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1996435.json",
+      "extrapolatedFrac": 0.18031555221637866,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-86ffc62f2d/contact.png",
+        "trajectory": "items/rb-86ffc62f2d/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-1ca040956a",
+      "order": 2,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2007448",
+      "anchorFrac": 0.18,
+      "anchorT": 1078.89,
+      "t0": 1078.89,
+      "t1": 1102.89,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 138.89557253245724,
+        "outfieldMedianPathM": 65.34080964795814,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1078.89,
+        1082.319,
+        1085.747,
+        1089.176,
+        1092.604,
+        1096.033,
+        1099.461,
+        1102.89
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2007448.json",
+      "extrapolatedFrac": 0.3181818181818182,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-1ca040956a/contact.png",
+        "trajectory": "items/rb-1ca040956a/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-8eeaef1b32",
+      "order": 3,
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-2",
+      "anchorFrac": 0.52,
+      "anchorT": 2921.165,
+      "t0": 3081.165,
+      "t1": 3105.165,
+      "offsetSec": 160,
+      "searched": 81,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 128.72103489105803,
+        "outfieldMedianPathM": 55.14979565134016,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3081.165,
+        3084.594,
+        3088.022,
+        3091.451,
+        3094.879,
+        3098.308,
+        3101.736,
+        3105.165
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-2.json",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-8eeaef1b32/contact.png",
+        "trajectory": "items/rb-8eeaef1b32/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-67cb848695",
+      "order": 4,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2010085",
+      "anchorFrac": 0.18,
+      "anchorT": 1095.522,
+      "t0": 1099.522,
+      "t1": 1123.522,
+      "offsetSec": 4,
+      "searched": 3,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 150.8731050378461,
+        "outfieldMedianPathM": 62.49126306886226,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1099.522,
+        1102.951,
+        1106.379,
+        1109.808,
+        1113.236,
+        1116.665,
+        1120.093,
+        1123.522
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2010085.json",
+      "extrapolatedFrac": 0.48873027798647634,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-67cb848695/contact.png",
+        "trajectory": "items/rb-67cb848695/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-b72fcd4e17",
+      "order": 5,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-319",
+      "seed": 319,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 74.76494182650033,
+        "outfieldMedianPathM": 41.79817335571956,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e3c31b4aedce98f4a7b65f26d7d8d45f0097f7578dcf8ef50bb556ab80381e40",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-b72fcd4e17/contact.png",
+        "trajectory": "items/rb-b72fcd4e17/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-b499264240",
+      "order": 6,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-325",
+      "seed": 325,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 66.99548252491958,
+        "outfieldMedianPathM": 33.12443324177878,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "b00dcb3e1498ff985118c39051e5cb84655fa021e3dac2c6b1667ef27dd4e6ce",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-b499264240/contact.png",
+        "trajectory": "items/rb-b499264240/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-27b791ab07",
+      "order": 7,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-328",
+      "seed": 328,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 67.82516017684478,
+        "outfieldMedianPathM": 46.603571220801534,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "79950b562e5609f8dbceb5e1af231511466d06ff6fdb733b4125c39345679dfe",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-27b791ab07/contact.png",
+        "trajectory": "items/rb-27b791ab07/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-9f00689b0b",
+      "order": 8,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1899585",
+      "anchorFrac": 0.18,
+      "anchorT": 1121.622,
+      "t0": 1121.622,
+      "t1": 1145.622,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9586776859504132,
+        "maxFillSec": 1,
+        "ballInFieldFrac": 1,
+        "ballPathM": 143.0528614465927,
+        "outfieldMedianPathM": 53.25039398532478,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        1121.622,
+        1125.051,
+        1128.479,
+        1131.908,
+        1135.336,
+        1138.765,
+        1142.193,
+        1145.622
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1899585.json",
+      "extrapolatedFrac": 0.1919609316303531,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-9f00689b0b/contact.png",
+        "trajectory": "items/rb-9f00689b0b/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-e16521aa87",
+      "order": 9,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-307",
+      "seed": 307,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1964,
+      "t1": 1988,
+      "offsetSec": 20,
+      "searched": 11,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 100.70860597181844,
+        "outfieldMedianPathM": 67.47971832797559,
+        "duplicateCoordFrac": 0.01652892561983471,
+        "contactMinTeamBlobs": 6
+      },
+      "contactTimes": [
+        1964,
+        1967.429,
+        1970.857,
+        1974.286,
+        1977.714,
+        1981.143,
+        1984.571,
+        1988
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "341a60016cbcbeb7217fe759e39722954e73c5f0c2e80122b982226682833ed5",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-e16521aa87/contact.png",
+        "trajectory": "items/rb-e16521aa87/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-8559434f59",
+      "order": 10,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-313",
+      "seed": 313,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 73.43035748390018,
+        "outfieldMedianPathM": 45.883052216910855,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "654721eab314e9aa6e048091df9ddbb37a0487f77aa398eb08db5c73ea7cb1ba",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-8559434f59/contact.png",
+        "trajectory": "items/rb-8559434f59/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-cb94fa1eb0",
+      "order": 11,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2013725",
+      "anchorFrac": 0.18,
+      "anchorT": 1055.562,
+      "t0": 1119.562,
+      "t1": 1143.562,
+      "offsetSec": 64,
+      "searched": 33,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 140.7440603682641,
+        "outfieldMedianPathM": 50.269279974854726,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1119.562,
+        1122.991,
+        1126.419,
+        1129.848,
+        1133.276,
+        1136.705,
+        1140.133,
+        1143.562
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2013725.json",
+      "extrapolatedFrac": 0.3407212622088655,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-cb94fa1eb0/contact.png",
+        "trajectory": "items/rb-cb94fa1eb0/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-f0beaa26c1",
+      "order": 12,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-316",
+      "seed": 316,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 95.75309225016652,
+        "outfieldMedianPathM": 54.697798151270476,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e65e70a4a8fcbc01c75290ccc64de84eef53be4bba05ea8dfb804ff3f08e5fad",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-f0beaa26c1/contact.png",
+        "trajectory": "items/rb-f0beaa26c1/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-b875845cf1",
+      "order": 13,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-331",
+      "seed": 331,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1964,
+      "t1": 1988,
+      "offsetSec": 20,
+      "searched": 11,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 98.65626590788416,
+        "outfieldMedianPathM": 68.9069529156961,
+        "duplicateCoordFrac": 0.008264462809917356,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        1964,
+        1967.429,
+        1970.857,
+        1974.286,
+        1977.714,
+        1981.143,
+        1984.571,
+        1988
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "86ce6acb297d17138da90cb3b81e03807264ce56c08bafc267f8fc443dfae17b",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-b875845cf1/contact.png",
+        "trajectory": "items/rb-b875845cf1/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-260a60e307",
+      "order": 14,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-305",
+      "seed": 305,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1964,
+      "t1": 1988,
+      "offsetSec": 20,
+      "searched": 11,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 103.13809964750806,
+        "outfieldMedianPathM": 63.74718509646188,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1964,
+        1967.429,
+        1970.857,
+        1974.286,
+        1977.714,
+        1981.143,
+        1984.571,
+        1988
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "60fe4a7f1e9e801bb258c33959aa96cb741ce17089b19550b08a300812805040",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-260a60e307/contact.png",
+        "trajectory": "items/rb-260a60e307/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-09ab7c6946",
+      "order": 15,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1874553",
+      "anchorFrac": 0.18,
+      "anchorT": 1118.418,
+      "t0": 1118.418,
+      "t1": 1142.418,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 137.8638813364143,
+        "outfieldMedianPathM": 50.39657746895043,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1118.418,
+        1121.847,
+        1125.275,
+        1128.704,
+        1132.132,
+        1135.561,
+        1138.989,
+        1142.418
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1874553.json",
+      "extrapolatedFrac": 0.3230653643876784,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-09ab7c6946/contact.png",
+        "trajectory": "items/rb-09ab7c6946/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-20dc812554",
+      "order": 16,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1927964",
+      "anchorFrac": 0.18,
+      "anchorT": 1096.08,
+      "t0": 1132.08,
+      "t1": 1156.08,
+      "offsetSec": 36,
+      "searched": 19,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 134.12029270894263,
+        "outfieldMedianPathM": 45.11717436269752,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        1132.08,
+        1135.509,
+        1138.937,
+        1142.366,
+        1145.794,
+        1149.223,
+        1152.651,
+        1156.08
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1927964.json",
+      "extrapolatedFrac": 0.22764838467317805,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-20dc812554/contact.png",
+        "trajectory": "items/rb-20dc812554/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-9a0a68cde4",
+      "order": 17,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2017461",
+      "anchorFrac": 0.18,
+      "anchorT": 1085.928,
+      "t0": 1253.928,
+      "t1": 1277.928,
+      "offsetSec": 168,
+      "searched": 85,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 193.67284236834217,
+        "outfieldMedianPathM": 54.86199761082179,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1253.928,
+        1257.357,
+        1260.785,
+        1264.214,
+        1267.642,
+        1271.071,
+        1274.499,
+        1277.928
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2017461.json",
+      "extrapolatedFrac": 0.4259954921111946,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-9a0a68cde4/contact.png",
+        "trajectory": "items/rb-9a0a68cde4/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-17117e21a5",
+      "order": 18,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-310",
+      "seed": 310,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 84.69905043993815,
+        "outfieldMedianPathM": 58.03138931059239,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "ef73a5fb9bfb39229b0456434d843d33c2b194489b9d53372728848e18c5ad33",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-17117e21a5/contact.png",
+        "trajectory": "items/rb-17117e21a5/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-b08ef0f0f4",
+      "order": 19,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2006229",
+      "anchorFrac": 0.18,
+      "anchorT": 1100.418,
+      "t0": 1108.418,
+      "t1": 1132.418,
+      "offsetSec": 8,
+      "searched": 5,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 142.198057219095,
+        "outfieldMedianPathM": 51.87364369008584,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1108.418,
+        1111.847,
+        1115.275,
+        1118.704,
+        1122.132,
+        1125.561,
+        1128.989,
+        1132.418
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2006229.json",
+      "extrapolatedFrac": 0.1453794139744553,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-b08ef0f0f4/contact.png",
+        "trajectory": "items/rb-b08ef0f0f4/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-3bd4202448",
+      "order": 20,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-301",
+      "seed": 301,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1958,
+      "t1": 1982,
+      "offsetSec": 14,
+      "searched": 8,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 109.86240805505689,
+        "outfieldMedianPathM": 68.81895295914194,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1958,
+        1961.429,
+        1964.857,
+        1968.286,
+        1971.714,
+        1975.143,
+        1978.571,
+        1982
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "8bd1bfb450e992adac8a0d158358d2cfa078095ba90e754c760cd100129bae4e",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-3bd4202448/contact.png",
+        "trajectory": "items/rb-3bd4202448/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-095a4e0864",
+      "order": 21,
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1959846",
+      "anchorFrac": 0.18,
+      "anchorT": 1085.334,
+      "t0": 1157.334,
+      "t1": 1181.334,
+      "offsetSec": 72,
+      "searched": 37,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 133.13772973735183,
+        "outfieldMedianPathM": 48.97569716169549,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 6
+      },
+      "contactTimes": [
+        1157.334,
+        1160.763,
+        1164.191,
+        1167.62,
+        1171.048,
+        1174.477,
+        1177.905,
+        1181.334
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1959846.json",
+      "extrapolatedFrac": 0.27197595792637114,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-095a4e0864/contact.png",
+        "trajectory": "items/rb-095a4e0864/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-7f28167bd6",
+      "order": 22,
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-1",
+      "anchorFrac": 0.52,
+      "anchorT": 3001.245,
+      "t0": 3001.245,
+      "t1": 3025.245,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 179.3896431185085,
+        "outfieldMedianPathM": 71.79068154156855,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3001.245,
+        3004.674,
+        3008.102,
+        3011.531,
+        3014.959,
+        3018.388,
+        3021.816,
+        3025.245
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-1.json",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-7f28167bd6/contact.png",
+        "trajectory": "items/rb-7f28167bd6/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-06782d4283",
+      "order": 23,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-322",
+      "seed": 322,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 2002,
+      "t1": 2026,
+      "offsetSec": 58,
+      "searched": 30,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 71.46182858895993,
+        "outfieldMedianPathM": 63.28184951973828,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        2002,
+        2005.429,
+        2008.857,
+        2012.286,
+        2015.714,
+        2019.143,
+        2022.571,
+        2026
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "6938dcd34e0482093afe8163aa5b194f84feea3264a7e48cab7f8e372e2c6129",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-06782d4283/contact.png",
+        "trajectory": "items/rb-06782d4283/trajectory.png"
+      }
+    },
+    {
+      "id": "rb-0f0a6a5804",
+      "order": 24,
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-303",
+      "seed": 303,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 87.92237017692584,
+        "outfieldMedianPathM": 50.03625307022807,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "02869e4c44b48d849f23926a0f9f167ff1ed3c97c782b25e739c22e923d024f9",
+      "extrapolatedFrac": 0,
+      "renderParamsHash": "3a5bf9d63459e76351af27d00613a13d8a5fe49311ce89f8374bc81cfb78161a",
+      "imageFiles": {
+        "contact": "items/rb-0f0a6a5804/contact.png",
+        "trajectory": "items/rb-0f0a6a5804/trajectory.png"
+      }
+    }
+  ],
+  "controls": [
+    {
+      "id": "ctl-1598c2a683",
+      "order": 1,
+      "type": "engine-engine",
+      "composition": "seed301@0.2 vs seed301@0.65",
+      "A": {
+        "source": "engine",
+        "dataset": "engine",
+        "match": "seed-301",
+        "seed": 301,
+        "t0": 1080,
+        "t1": 1104,
+        "anchorFrac": 0.2,
+        "fallback": false
+      },
+      "B": {
+        "source": "engine",
+        "dataset": "engine",
+        "match": "seed-301",
+        "seed": 301,
+        "t0": 3512,
+        "t1": 3536,
+        "anchorFrac": 0.65,
+        "fallback": false
+      }
+    },
+    {
+      "id": "ctl-da25d03f9a",
+      "order": 2,
+      "type": "real-real",
+      "composition": "metrica-1@0.35 vs metrica-2@0.9",
+      "A": {
+        "source": "real",
+        "dataset": "metrica",
+        "match": "metrica-2",
+        "seed": null,
+        "t0": 5034.016,
+        "t1": 5058.016,
+        "anchorFrac": 0.9,
+        "fallback": false
+      },
+      "B": {
+        "source": "real",
+        "dataset": "metrica",
+        "match": "metrica-1",
+        "seed": null,
+        "t0": 2061.684,
+        "t1": 2085.684,
+        "anchorFrac": 0.35,
+        "fallback": false
+      }
+    },
+    {
+      "id": "ctl-6ce6f3486d",
+      "order": 3,
+      "type": "real-engine",
+      "composition": "metrica-1@0.9 vs seed303@0.92",
+      "A": {
+        "source": "real",
+        "dataset": "metrica",
+        "match": "metrica-1",
+        "seed": null,
+        "t0": 5186.616,
+        "t1": 5210.616,
+        "anchorFrac": 0.9,
+        "fallback": false
+      },
+      "B": {
+        "source": "engine",
+        "dataset": "engine",
+        "match": "seed-303",
+        "seed": 303,
+        "t0": 4968,
+        "t1": 4992,
+        "anchorFrac": 0.92,
+        "fallback": false
+      }
+    }
+  ],
+  "control_windows": [
+    {
+      "key": "metrica-1@0.35",
+      "framesKey": "metrica-1",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-1",
+      "anchorFrac": 0.35,
+      "anchorT": 2039.684,
+      "t0": 2061.684,
+      "t1": 2085.684,
+      "offsetSec": 22,
+      "searched": 12,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9917355371900827,
+        "maxFillSec": 0.2,
+        "ballInFieldFrac": 1,
+        "ballPathM": 184.22282531920925,
+        "outfieldMedianPathM": 65.56475172387903,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        2061.684,
+        2065.113,
+        2068.541,
+        2071.97,
+        2075.398,
+        2078.827,
+        2082.255,
+        2085.684
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-1.json"
+    },
+    {
+      "key": "metrica-1@0.9",
+      "framesKey": "metrica-1",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-1",
+      "anchorFrac": 0.9,
+      "anchorT": 5150.616,
+      "t0": 5186.616,
+      "t1": 5210.616,
+      "offsetSec": 36,
+      "searched": 19,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 187.41221059654671,
+        "outfieldMedianPathM": 55.698438706807586,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        5186.616,
+        5190.045,
+        5193.473,
+        5196.902,
+        5200.33,
+        5203.759,
+        5207.187,
+        5210.616
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-1.json"
+    },
+    {
+      "key": "metrica-2@0.35",
+      "framesKey": "metrica-2",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-2",
+      "anchorFrac": 0.35,
+      "anchorT": 1985.784,
+      "t0": 2019.784,
+      "t1": 2043.784,
+      "offsetSec": 34,
+      "searched": 18,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9834710743801653,
+        "maxFillSec": 0.4,
+        "ballInFieldFrac": 1,
+        "ballPathM": 150.26368020428876,
+        "outfieldMedianPathM": 56.33923402968914,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        2019.784,
+        2023.213,
+        2026.641,
+        2030.07,
+        2033.498,
+        2036.927,
+        2040.355,
+        2043.784
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-2.json"
+    },
+    {
+      "key": "metrica-2@0.9",
+      "framesKey": "metrica-2",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-2",
+      "anchorFrac": 0.9,
+      "anchorT": 5012.016,
+      "t0": 5034.016,
+      "t1": 5058.016,
+      "offsetSec": 22,
+      "searched": 12,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 172.99428956498716,
+        "outfieldMedianPathM": 48.56811104177619,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        5034.016,
+        5037.445,
+        5040.873,
+        5044.302,
+        5047.73,
+        5051.159,
+        5054.587,
+        5058.016
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/real-game-2.json"
+    },
+    {
+      "key": "skillcorner-1874553@0.75",
+      "framesKey": "skillcorner-1874553",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1874553",
+      "anchorFrac": 0.75,
+      "anchorT": 4470.075,
+      "t0": 4532.075,
+      "t1": 4556.075,
+      "offsetSec": 62,
+      "searched": 32,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 155.49298153552695,
+        "outfieldMedianPathM": 57.402246282518504,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4532.075,
+        4535.504,
+        4538.932,
+        4542.361,
+        4545.789,
+        4549.218,
+        4552.646,
+        4556.075
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1874553.json"
+    },
+    {
+      "key": "skillcorner-1899585@0.75",
+      "framesKey": "skillcorner-1899585",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1899585",
+      "anchorFrac": 0.75,
+      "anchorT": 4483.425,
+      "t0": 4565.425,
+      "t1": 4589.425,
+      "offsetSec": 82,
+      "searched": 42,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 189.4856584771431,
+        "outfieldMedianPathM": 56.38058533230072,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4565.425,
+        4568.854,
+        4572.282,
+        4575.711,
+        4579.139,
+        4582.568,
+        4585.996,
+        4589.425
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1899585.json"
+    },
+    {
+      "key": "skillcorner-1927964@0.75",
+      "framesKey": "skillcorner-1927964",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1927964",
+      "anchorFrac": 0.75,
+      "anchorT": 4377,
+      "t0": 4377,
+      "t1": 4401,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 181.54748479037264,
+        "outfieldMedianPathM": 74.76254669310273,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4377,
+        4380.429,
+        4383.857,
+        4387.286,
+        4390.714,
+        4394.143,
+        4397.571,
+        4401
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1927964.json"
+    },
+    {
+      "key": "skillcorner-1959846@0.75",
+      "framesKey": "skillcorner-1959846",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1959846",
+      "anchorFrac": 0.75,
+      "anchorT": 4332.225,
+      "t0": 4366.225,
+      "t1": 4390.225,
+      "offsetSec": 34,
+      "searched": 18,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 132.97508834419997,
+        "outfieldMedianPathM": 77.75434017281219,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        4366.225,
+        4369.654,
+        4373.082,
+        4376.511,
+        4379.939,
+        4383.368,
+        4386.796,
+        4390.225
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1959846.json"
+    },
+    {
+      "key": "skillcorner-1996435@0.75",
+      "framesKey": "skillcorner-1996435",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1996435",
+      "anchorFrac": 0.75,
+      "anchorT": 4271.925,
+      "t0": 4277.925,
+      "t1": 4301.925,
+      "offsetSec": 6,
+      "searched": 4,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 156.96622471770712,
+        "outfieldMedianPathM": 50.84301459488979,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        4277.925,
+        4281.354,
+        4284.782,
+        4288.211,
+        4291.639,
+        4295.068,
+        4298.496,
+        4301.925
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-1996435.json"
+    },
+    {
+      "key": "skillcorner-2006229@0.75",
+      "framesKey": "skillcorner-2006229",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2006229",
+      "anchorFrac": 0.75,
+      "anchorT": 4395.075,
+      "t0": 4683.075,
+      "t1": 4707.075,
+      "offsetSec": 288,
+      "searched": 181,
+      "fallback": true,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9834710743801653,
+        "maxFillSec": 0.4,
+        "ballInFieldFrac": 1,
+        "ballPathM": 191.674105314916,
+        "outfieldMedianPathM": 70.10688787904803,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4683.075,
+        4686.504,
+        4689.932,
+        4693.361,
+        4696.789,
+        4700.218,
+        4703.646,
+        4707.075
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2006229.json"
+    },
+    {
+      "key": "skillcorner-2007448@0.75",
+      "framesKey": "skillcorner-2007448",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2007448",
+      "anchorFrac": 0.75,
+      "anchorT": 4305.375,
+      "t0": 4305.375,
+      "t1": 4329.375,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 166.0364322471678,
+        "outfieldMedianPathM": 42.699089151822065,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4305.375,
+        4308.804,
+        4312.232,
+        4315.661,
+        4319.089,
+        4322.518,
+        4325.946,
+        4329.375
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2007448.json"
+    },
+    {
+      "key": "skillcorner-2010085@0.75",
+      "framesKey": "skillcorner-2010085",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2010085",
+      "anchorFrac": 0.75,
+      "anchorT": 4374.675,
+      "t0": 4374.675,
+      "t1": 4398.675,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 152.66551181090065,
+        "outfieldMedianPathM": 52.07709305554822,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4374.675,
+        4378.104,
+        4381.532,
+        4384.961,
+        4388.389,
+        4391.818,
+        4395.246,
+        4398.675
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2010085.json"
+    },
+    {
+      "key": "skillcorner-2013725@0.75",
+      "framesKey": "skillcorner-2013725",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2013725",
+      "anchorFrac": 0.75,
+      "anchorT": 4208.175,
+      "t0": 4208.175,
+      "t1": 4232.175,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 166.74192375621607,
+        "outfieldMedianPathM": 43.23289327478961,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        4208.175,
+        4211.604,
+        4215.032,
+        4218.461,
+        4221.889,
+        4225.318,
+        4228.746,
+        4232.175
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2013725.json"
+    },
+    {
+      "key": "skillcorner-2017461@0.75",
+      "framesKey": "skillcorner-2017461",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2017461",
+      "anchorFrac": 0.75,
+      "anchorT": 4334.7,
+      "t0": 4334.7,
+      "t1": 4358.7,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 142.77653537478824,
+        "outfieldMedianPathM": 53.6695102355483,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4334.7,
+        4338.129,
+        4341.557,
+        4344.986,
+        4348.414,
+        4351.843,
+        4355.271,
+        4358.7
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/viewer/data/skillcorner-2017461.json"
+    },
+    {
+      "key": "seed301@0.2",
+      "framesKey": "seed-301",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-301",
+      "seed": 301,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 77.62422609038957,
+        "outfieldMedianPathM": 50.197999706758225,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "8bd1bfb450e992adac8a0d158358d2cfa078095ba90e754c760cd100129bae4e"
+    },
+    {
+      "key": "seed301@0.65",
+      "framesKey": "seed-301",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-301",
+      "seed": 301,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3512,
+      "t1": 3536,
+      "offsetSec": 2,
+      "searched": 2,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 127.60568317717342,
+        "outfieldMedianPathM": 62.53354254299174,
+        "duplicateCoordFrac": 0.049586776859504134,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        3512,
+        3515.429,
+        3518.857,
+        3522.286,
+        3525.714,
+        3529.143,
+        3532.571,
+        3536
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "8bd1bfb450e992adac8a0d158358d2cfa078095ba90e754c760cd100129bae4e"
+    },
+    {
+      "key": "seed301@0.92",
+      "framesKey": "seed-301",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-301",
+      "seed": 301,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 85.74402967315358,
+        "outfieldMedianPathM": 38.11294693960194,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "8bd1bfb450e992adac8a0d158358d2cfa078095ba90e754c760cd100129bae4e"
+    },
+    {
+      "key": "seed303@0.2",
+      "framesKey": "seed-303",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-303",
+      "seed": 303,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 83.27432856467146,
+        "outfieldMedianPathM": 58.86911662909257,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "02869e4c44b48d849f23926a0f9f167ff1ed3c97c782b25e739c22e923d024f9"
+    },
+    {
+      "key": "seed303@0.65",
+      "framesKey": "seed-303",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-303",
+      "seed": 303,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 78.52656849088676,
+        "outfieldMedianPathM": 38.650177823911925,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "02869e4c44b48d849f23926a0f9f167ff1ed3c97c782b25e739c22e923d024f9"
+    },
+    {
+      "key": "seed303@0.92",
+      "framesKey": "seed-303",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-303",
+      "seed": 303,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 72.54565190890324,
+        "outfieldMedianPathM": 56.58607408988482,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "02869e4c44b48d849f23926a0f9f167ff1ed3c97c782b25e739c22e923d024f9"
+    },
+    {
+      "key": "seed305@0.2",
+      "framesKey": "seed-305",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-305",
+      "seed": 305,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 56.21415856099083,
+        "outfieldMedianPathM": 70.15436870582289,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "60fe4a7f1e9e801bb258c33959aa96cb741ce17089b19550b08a300812805040"
+    },
+    {
+      "key": "seed305@0.65",
+      "framesKey": "seed-305",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-305",
+      "seed": 305,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 78.13642306271663,
+        "outfieldMedianPathM": 59.6672170543946,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "60fe4a7f1e9e801bb258c33959aa96cb741ce17089b19550b08a300812805040"
+    },
+    {
+      "key": "seed305@0.92",
+      "framesKey": "seed-305",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-305",
+      "seed": 305,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 89.45584348806295,
+        "outfieldMedianPathM": 56.4461550526406,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "60fe4a7f1e9e801bb258c33959aa96cb741ce17089b19550b08a300812805040"
+    },
+    {
+      "key": "seed307@0.2",
+      "framesKey": "seed-307",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-307",
+      "seed": 307,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 81.9700427839328,
+        "outfieldMedianPathM": 59.35442427229526,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "341a60016cbcbeb7217fe759e39722954e73c5f0c2e80122b982226682833ed5"
+    },
+    {
+      "key": "seed307@0.65",
+      "framesKey": "seed-307",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-307",
+      "seed": 307,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3566,
+      "t1": 3590,
+      "offsetSec": 56,
+      "searched": 29,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 79.62295133413798,
+        "outfieldMedianPathM": 50.69723126631439,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3566,
+        3569.429,
+        3572.857,
+        3576.286,
+        3579.714,
+        3583.143,
+        3586.571,
+        3590
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "341a60016cbcbeb7217fe759e39722954e73c5f0c2e80122b982226682833ed5"
+    },
+    {
+      "key": "seed307@0.92",
+      "framesKey": "seed-307",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-307",
+      "seed": 307,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 132.52775193254237,
+        "outfieldMedianPathM": 53.05841766902172,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "341a60016cbcbeb7217fe759e39722954e73c5f0c2e80122b982226682833ed5"
+    },
+    {
+      "key": "seed310@0.2",
+      "framesKey": "seed-310",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-310",
+      "seed": 310,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 81.07214846993949,
+        "outfieldMedianPathM": 44.06101497344001,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "ef73a5fb9bfb39229b0456434d843d33c2b194489b9d53372728848e18c5ad33"
+    },
+    {
+      "key": "seed310@0.65",
+      "framesKey": "seed-310",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-310",
+      "seed": 310,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3528,
+      "t1": 3552,
+      "offsetSec": 18,
+      "searched": 10,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 57.23050746523165,
+        "outfieldMedianPathM": 44.46600403514479,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3528,
+        3531.429,
+        3534.857,
+        3538.286,
+        3541.714,
+        3545.143,
+        3548.571,
+        3552
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "ef73a5fb9bfb39229b0456434d843d33c2b194489b9d53372728848e18c5ad33"
+    },
+    {
+      "key": "seed310@0.92",
+      "framesKey": "seed-310",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-310",
+      "seed": 310,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4978,
+      "t1": 5002,
+      "offsetSec": 10,
+      "searched": 6,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 81.22165071651862,
+        "outfieldMedianPathM": 55.01793664989501,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4978,
+        4981.429,
+        4984.857,
+        4988.286,
+        4991.714,
+        4995.143,
+        4998.571,
+        5002
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "ef73a5fb9bfb39229b0456434d843d33c2b194489b9d53372728848e18c5ad33"
+    },
+    {
+      "key": "seed313@0.2",
+      "framesKey": "seed-313",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-313",
+      "seed": 313,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 88.56496720435584,
+        "outfieldMedianPathM": 55.10042582638035,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "654721eab314e9aa6e048091df9ddbb37a0487f77aa398eb08db5c73ea7cb1ba"
+    },
+    {
+      "key": "seed313@0.65",
+      "framesKey": "seed-313",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-313",
+      "seed": 313,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 79.89005766614774,
+        "outfieldMedianPathM": 47.3139465910643,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "654721eab314e9aa6e048091df9ddbb37a0487f77aa398eb08db5c73ea7cb1ba"
+    },
+    {
+      "key": "seed313@0.92",
+      "framesKey": "seed-313",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-313",
+      "seed": 313,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4974,
+      "t1": 4998,
+      "offsetSec": 6,
+      "searched": 4,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 71.4488164748871,
+        "outfieldMedianPathM": 41.5213838531611,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        4974,
+        4977.429,
+        4980.857,
+        4984.286,
+        4987.714,
+        4991.143,
+        4994.571,
+        4998
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "654721eab314e9aa6e048091df9ddbb37a0487f77aa398eb08db5c73ea7cb1ba"
+    },
+    {
+      "key": "seed316@0.2",
+      "framesKey": "seed-316",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-316",
+      "seed": 316,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1144,
+      "t1": 1168,
+      "offsetSec": 64,
+      "searched": 33,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 100.96900392362471,
+        "outfieldMedianPathM": 59.474238531839504,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1144,
+        1147.429,
+        1150.857,
+        1154.286,
+        1157.714,
+        1161.143,
+        1164.571,
+        1168
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e65e70a4a8fcbc01c75290ccc64de84eef53be4bba05ea8dfb804ff3f08e5fad"
+    },
+    {
+      "key": "seed316@0.65",
+      "framesKey": "seed-316",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-316",
+      "seed": 316,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3540,
+      "t1": 3564,
+      "offsetSec": 30,
+      "searched": 16,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 86.60756152466205,
+        "outfieldMedianPathM": 47.70610581123836,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3540,
+        3543.429,
+        3546.857,
+        3550.286,
+        3553.714,
+        3557.143,
+        3560.571,
+        3564
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e65e70a4a8fcbc01c75290ccc64de84eef53be4bba05ea8dfb804ff3f08e5fad"
+    },
+    {
+      "key": "seed316@0.92",
+      "framesKey": "seed-316",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-316",
+      "seed": 316,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4974,
+      "t1": 4998,
+      "offsetSec": 6,
+      "searched": 4,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 100.80055882128352,
+        "outfieldMedianPathM": 65.5931793853854,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 6
+      },
+      "contactTimes": [
+        4974,
+        4977.429,
+        4980.857,
+        4984.286,
+        4987.714,
+        4991.143,
+        4994.571,
+        4998
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e65e70a4a8fcbc01c75290ccc64de84eef53be4bba05ea8dfb804ff3f08e5fad"
+    },
+    {
+      "key": "seed319@0.2",
+      "framesKey": "seed-319",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-319",
+      "seed": 319,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1124,
+      "t1": 1148,
+      "offsetSec": 44,
+      "searched": 23,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 146.22304546049125,
+        "outfieldMedianPathM": 59.2457621030009,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1124,
+        1127.429,
+        1130.857,
+        1134.286,
+        1137.714,
+        1141.143,
+        1144.571,
+        1148
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e3c31b4aedce98f4a7b65f26d7d8d45f0097f7578dcf8ef50bb556ab80381e40"
+    },
+    {
+      "key": "seed319@0.65",
+      "framesKey": "seed-319",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-319",
+      "seed": 319,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3514,
+      "t1": 3538,
+      "offsetSec": 4,
+      "searched": 3,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 80.44642976091048,
+        "outfieldMedianPathM": 50.95704522370522,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3514,
+        3517.429,
+        3520.857,
+        3524.286,
+        3527.714,
+        3531.143,
+        3534.571,
+        3538
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e3c31b4aedce98f4a7b65f26d7d8d45f0097f7578dcf8ef50bb556ab80381e40"
+    },
+    {
+      "key": "seed319@0.92",
+      "framesKey": "seed-319",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-319",
+      "seed": 319,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 64.9942819540149,
+        "outfieldMedianPathM": 39.07247937839826,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "e3c31b4aedce98f4a7b65f26d7d8d45f0097f7578dcf8ef50bb556ab80381e40"
+    },
+    {
+      "key": "seed322@0.2",
+      "framesKey": "seed-322",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-322",
+      "seed": 322,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 74.66521285960225,
+        "outfieldMedianPathM": 40.17551372263593,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "6938dcd34e0482093afe8163aa5b194f84feea3264a7e48cab7f8e372e2c6129"
+    },
+    {
+      "key": "seed322@0.65",
+      "framesKey": "seed-322",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-322",
+      "seed": 322,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3554,
+      "t1": 3578,
+      "offsetSec": 44,
+      "searched": 23,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 75.64159035460834,
+        "outfieldMedianPathM": 48.664869367099584,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3554,
+        3557.429,
+        3560.857,
+        3564.286,
+        3567.714,
+        3571.143,
+        3574.571,
+        3578
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "6938dcd34e0482093afe8163aa5b194f84feea3264a7e48cab7f8e372e2c6129"
+    },
+    {
+      "key": "seed322@0.92",
+      "framesKey": "seed-322",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-322",
+      "seed": 322,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 79.04676207122345,
+        "outfieldMedianPathM": 51.72219072080718,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "6938dcd34e0482093afe8163aa5b194f84feea3264a7e48cab7f8e372e2c6129"
+    },
+    {
+      "key": "seed325@0.2",
+      "framesKey": "seed-325",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-325",
+      "seed": 325,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1094,
+      "t1": 1118,
+      "offsetSec": 14,
+      "searched": 8,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 83.72125717193961,
+        "outfieldMedianPathM": 58.12308245641806,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1094,
+        1097.429,
+        1100.857,
+        1104.286,
+        1107.714,
+        1111.143,
+        1114.571,
+        1118
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "b00dcb3e1498ff985118c39051e5cb84655fa021e3dac2c6b1667ef27dd4e6ce"
+    },
+    {
+      "key": "seed325@0.65",
+      "framesKey": "seed-325",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-325",
+      "seed": 325,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3582,
+      "t1": 3606,
+      "offsetSec": 72,
+      "searched": 37,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 100.91936465425024,
+        "outfieldMedianPathM": 55.54339499899011,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        3582,
+        3585.429,
+        3588.857,
+        3592.286,
+        3595.714,
+        3599.143,
+        3602.571,
+        3606
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "b00dcb3e1498ff985118c39051e5cb84655fa021e3dac2c6b1667ef27dd4e6ce"
+    },
+    {
+      "key": "seed325@0.92",
+      "framesKey": "seed-325",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-325",
+      "seed": 325,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4990,
+      "t1": 5014,
+      "offsetSec": 22,
+      "searched": 12,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 92.9434086862479,
+        "outfieldMedianPathM": 52.441715584081635,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        4990,
+        4993.429,
+        4996.857,
+        5000.286,
+        5003.714,
+        5007.143,
+        5010.571,
+        5014
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "b00dcb3e1498ff985118c39051e5cb84655fa021e3dac2c6b1667ef27dd4e6ce"
+    },
+    {
+      "key": "seed328@0.2",
+      "framesKey": "seed-328",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-328",
+      "seed": 328,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 82.53113609322243,
+        "outfieldMedianPathM": 48.59940723838935,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "79950b562e5609f8dbceb5e1af231511466d06ff6fdb733b4125c39345679dfe"
+    },
+    {
+      "key": "seed328@0.65",
+      "framesKey": "seed-328",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-328",
+      "seed": 328,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 82.415232454435,
+        "outfieldMedianPathM": 53.23566413011521,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "79950b562e5609f8dbceb5e1af231511466d06ff6fdb733b4125c39345679dfe"
+    },
+    {
+      "key": "seed328@0.92",
+      "framesKey": "seed-328",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-328",
+      "seed": 328,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 65.8216214343764,
+        "outfieldMedianPathM": 39.69338236959237,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "79950b562e5609f8dbceb5e1af231511466d06ff6fdb733b4125c39345679dfe"
+    },
+    {
+      "key": "seed331@0.2",
+      "framesKey": "seed-331",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-331",
+      "seed": 331,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 121.81643820968554,
+        "outfieldMedianPathM": 52.37055122815393,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "86ce6acb297d17138da90cb3b81e03807264ce56c08bafc267f8fc443dfae17b"
+    },
+    {
+      "key": "seed331@0.65",
+      "framesKey": "seed-331",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-331",
+      "seed": 331,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 107.71213222042998,
+        "outfieldMedianPathM": 58.203970673082154,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "86ce6acb297d17138da90cb3b81e03807264ce56c08bafc267f8fc443dfae17b"
+    },
+    {
+      "key": "seed331@0.92",
+      "framesKey": "seed-331",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-331",
+      "seed": 331,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 5000,
+      "t1": 5024,
+      "offsetSec": 32,
+      "searched": 17,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 92.15343533421596,
+        "outfieldMedianPathM": 66.36093789292718,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        5000,
+        5003.429,
+        5006.857,
+        5010.286,
+        5013.714,
+        5017.143,
+        5020.571,
+        5024
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/.scratch/notes/goal-loop-r3-acceptance-2026-10-28/engine.wasm",
+      "eventHash": "86ce6acb297d17138da90cb3b81e03807264ce56c08bafc267f8fc443dfae17b"
+    }
+  ],
+  "unused_control_windows": [
+    "metrica-2@0.35",
+    "skillcorner-1874553@0.75",
+    "skillcorner-1899585@0.75",
+    "skillcorner-1927964@0.75",
+    "skillcorner-1959846@0.75",
+    "skillcorner-1996435@0.75",
+    "skillcorner-2006229@0.75",
+    "skillcorner-2007448@0.75",
+    "skillcorner-2010085@0.75",
+    "skillcorner-2013725@0.75",
+    "skillcorner-2017461@0.75",
+    "seed301@0.92",
+    "seed303@0.2",
+    "seed303@0.65",
+    "seed305@0.2",
+    "seed305@0.65",
+    "seed305@0.92",
+    "seed307@0.2",
+    "seed307@0.65",
+    "seed307@0.92",
+    "seed310@0.2",
+    "seed310@0.65",
+    "seed310@0.92",
+    "seed313@0.2",
+    "seed313@0.65",
+    "seed313@0.92",
+    "seed316@0.2",
+    "seed316@0.65",
+    "seed316@0.92",
+    "seed319@0.2",
+    "seed319@0.65",
+    "seed319@0.92",
+    "seed322@0.2",
+    "seed322@0.65",
+    "seed322@0.92",
+    "seed325@0.2",
+    "seed325@0.65",
+    "seed325@0.92",
+    "seed328@0.2",
+    "seed328@0.65",
+    "seed328@0.92",
+    "seed331@0.2",
+    "seed331@0.65",
+    "seed331@0.92"
+  ]
+}
