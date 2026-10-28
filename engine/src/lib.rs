@@ -604,10 +604,11 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
 
 /// 固定 tick 时长（秒）
 ///
-/// C1 原型：TICK=0.5（2 Hz 决策节拍）。`TPF` 与 `TICK_SECONDS` 必须手工同步。
-pub const TICK_SECONDS: f64 = 0.5;
+/// 本步（shot-rate-anchor 第一步）保持在 1 Hz 基线上验证机制；2 Hz 档在下一步落地。
+/// `TPF` 与 `TICK_SECONDS` 必须手工同步。
+pub const TICK_SECONDS: f64 = 1.0;
 /// 每 1 秒的拍数（== 1/TICK_SECONDS）。所有「秒语义」的 tick 常量写作 `秒数 × TPF`。
-const TPF: u32 = 2;
+const TPF: u32 = 1;
 /// movers 位移阈值 = 静区（dead-zone），2.0m（移动 ⇔ 发 movers；P7 由 0.5m 放大）
 pub const DEAD_ZONE_METERS: f64 = 2.0; // P7 观感：到位静止距离——前锋到位后目标微变（球位置波动）不追，避免球门旁来回小幅摆动
 /// 松散球拾取半径（米）
@@ -740,7 +741,19 @@ const CIRCULATION_PASS_P: f64 = 0.15;
 const OPEN_PLAY_PASS_PRESSURE_M: f64 = 4.0;
 /// In-box clear radius (m): no goal-side defender within this distance => shoot first.
 const OPEN_BOX_SHOT_CLEAR_M: f64 = 8.0;
-const OPEN_BOX_SHOT_P: f64 = 0.30;
+/// 箱内「立即起脚」优先档的**每秒 hazard 率**。旧语义是「每机会固定 0.30」——在 1 Hz
+/// 基线（机会间隔实测 ≈ 2.0 s，四 seed due_mean_s = 2.00–2.01）下等价于 0.16334/s，
+/// 但机会变密（deadline 压缩 / 决策节拍提高）时每机会掷定次数上升、射门随球程同步上涨。
+/// 现改为每秒率：单次机会概率 = `per_second_hazard(rate, Δt)`，Δt = 本次机会的 deadline
+/// 秒数 ⇒ 射门/90min ≈ 率 × 可起脚时长，而不是率 × 机会次数（读数与斜率见
+/// `.scratch/notes/c1-subtick-prototype-2026-10-28.md` 的 shot-rate-anchor 节）。
+///
+/// **重锚**：旧「0.30/机会」是低球程基线留下的校准债——1 Hz 基线普通射门 39–47/场，
+/// 已高于真实带 `[14,29]`（带与真实锚出处：`engine/tests/realism.rs` 的
+/// `l1_shot_result_distributions`，StatsBomb 大五 n=170 mean 21.64 / sd 5.03；Metrica 参照 16.51
+/// 见 `.scratch/notes/team-shape-2026-10-25/current-engine-anatomy.md`）。0.015/s 把 1 Hz
+/// 基线重锚到普通射门 ~20/场、禁区内占比 ~0.66（读数见同一 note 节）。
+const OPEN_BOX_SHOT_RATE_PER_S: f64 = 0.015;
 const OPEN_BOX_SHOT_MAX_DIST_M: f64 = 12.0;
 const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
@@ -771,6 +784,11 @@ const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// 和 vol-j1 档（−4.05）都更深，是因为 def 层的 `OPEN_PLAY_PASS_PRESSURE_M` 4m 又把一部分
 /// 「恒出球」还给了「可推进」——两股力方向相反，净效果是必须比任一单层压得更狠。
 const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.15;
+/// 射门推进 hazard 的**每秒率参考窗口**（秒）：λ = e^(score+shift) / 本值。
+/// 旧实现是「每机会一次、window=1.0 s」；1 Hz 基线实测机会间隔 ≈ 2.0 s（四 seed
+/// due_mean_s = 2.00–2.01，见同一 note 节），故取 2.0 s 使 1 Hz 基线行为不变；机会间隔
+/// 变化时单次机会概率按 `1 − e^(−λΔt)` 归一（机会变密 → 单次概率变小，每秒率不变）。
+const OPEN_PLAY_SHOT_ENGAGE_WINDOW_S: f64 = 2.0;
 
 /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
 fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
@@ -1878,6 +1896,18 @@ fn action_deadline_for(st: &MatchState, carrier: i32) -> u32 {
     )
 }
 
+/// 本次自然 deadline 评估距上次评估的秒数（机会持续时长 Δt）。到期评估时
+/// `action_opportunity` 仍是刚过期的那一个 → 取它的 `deadline_ticks`；无机会（防御性兜底）
+/// → 用基线 deadline。零 RNG、零状态。
+fn natural_deadline_dt_s(st: &MatchState) -> f64 {
+    let ticks = st
+        .action_opportunity
+        .as_ref()
+        .map(|o| o.deadline_ticks.max(1))
+        .unwrap_or(BASE_ACTION_DEADLINE_TICKS);
+    ticks as f64 * TICK_SECONDS
+}
+
 /// 开启 / 重置一次行动机会（D1/D2，零 RNG）：deadline 由几何量公式算出。
 /// 同时采样 liveness 档位（护栏可达性的观测口径，只写、不耗 RNG）。
 fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
@@ -2173,11 +2203,15 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
     let pressured = goal_side_m <= OPEN_PLAY_PASS_PRESSURE_M;
     // Inside the box with no goal-side defender within the clear radius: shoot now,
     // before the stall-forced pass and the low-probability engage roll.
-    if !gk_holding
+    let box_shot_gate = !gk_holding
         && goal_side_m >= OPEN_BOX_SHOT_CLEAR_M
         && dist_to_goal_m(st, carrier) <= OPEN_BOX_SHOT_MAX_DIST_M
-        && (st.pos[carrier as usize].1 - 0.5).abs() * PITCH_WIDTH_M <= OPEN_BOX_SHOT_MAX_LATERAL_M
-        && ((rng.next_u64() % 1000) as f64) < OPEN_BOX_SHOT_P * 1000.0 {
+        && (st.pos[carrier as usize].1 - 0.5).abs() * PITCH_WIDTH_M <= OPEN_BOX_SHOT_MAX_LATERAL_M;
+    // 每机会概率 = 1 − (1 − 每秒率)^Δt（Δt = 本次机会的 deadline 秒数）——
+    // 机会变密时单次概率按 Δt 缩小，每秒率恒定（射门/90 ≈ 率 × 可起脚时长）。
+    let box_shot_p = per_second_hazard(OPEN_BOX_SHOT_RATE_PER_S, natural_deadline_dt_s(st));
+    if box_shot_gate
+        && ((rng.next_u64() % 1000) as f64) < box_shot_p * 1000.0 {
         let target = sample_shot_target(rng);
         let dist = dist_to_goal_m(st, carrier);
         let (action, exec) = if dist <= target {
@@ -2199,7 +2233,7 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
         };
     }
     // ② 射门推进档：射门推进 hazard 命中 → 复用 2B 的目标距离采样与三态分流
-    if open_play_shot_engage_hits(st, rng) {
+    if open_play_shot_engage_hits(st, rng, natural_deadline_dt_s(st)) {
         let target = sample_shot_target(rng);
         let dist = dist_to_goal_m(st, carrier);
         let (action, exec) = if dist <= target {
@@ -2247,10 +2281,11 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
 /// P31 D1：开放比赛的「射门推进」掷定（1 次 RNG）。复用 2B 的 `compute_shot_score` 五因子，
 /// 整体平移 `OPEN_PLAY_SHOT_ENGAGE_SHIFT` 到「机会点上要不要启动一次推进」的尺度。
 /// **这不是射门 hazard**：命中只表示「值得推进到射程」，射门与否仍由起脚窗口的 hazard 决定。
-fn open_play_shot_engage_hits(st: &MatchState, rng: &mut SeededRng) -> bool {
+fn open_play_shot_engage_hits(st: &MatchState, rng: &mut SeededRng, dt_s: f64) -> bool {
     let f = shot_opportunity_features(st, st.carrier);
     let score = compute_shot_score(&f) + OPEN_PLAY_SHOT_ENGAGE_SHIFT;
-    let p = shot_hazard_probability(score, 1.0);
+    // 每秒率 λ = e^score / WINDOW；机会时长 Δt 归一 → 与机会密度无关的每秒推进率。
+    let p = shot_hazard_probability(score, dt_s / OPEN_PLAY_SHOT_ENGAGE_WINDOW_S);
     let roll = rng.next_u64() % SHOT_ROLL_SCALE as u64;
     (roll as f64) < p * SHOT_ROLL_SCALE
 }
@@ -3564,8 +3599,7 @@ fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
         let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob);
         (clamp01(x), y)
     } else {
-        // C1 原型带球变体
-        let dir = if home { 1.0 } else { -1.0 };
+        // 普通带球：每拍向前推进 0.03（归一化，x 向 ≈3.15 m）；y 抖动按秒语义 ×TICK_SECONDS。
         let dir = if home { 1.0 } else { -1.0 };
         let x = p.0 + dir * 0.03;
         let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob);
@@ -7117,6 +7151,13 @@ fn shot_hazard_probability(score: f64, window: f64) -> f64 {
     1.0 - (-(hazard * window.max(0.0))).exp()
 }
 
+/// 每秒 hazard 率 `r` 在机会时长 `Δt` 内的累计概率：`1 − (1 − r)^Δt`。
+/// 机会间隔 Δt 由 natural-deadline 的实际 deadline 秒数给出——拍频 / 机会密度变化时
+/// **每秒率恒定**，单机会概率随 Δt 缩放（射门/90min ≈ 率 × 可起脚时长，而不是率 × 机会次数）。
+fn per_second_hazard(rate_per_s: f64, dt_s: f64) -> f64 {
+    1.0 - (1.0 - rate_per_s.clamp(0.0, 1.0)).powf(dt_s.max(0.0))
+}
+
 /// 持球者→所攻球门中心 与 进攻方向 的夹角余弦（真实米，含 y 角向）。
 /// x/y 前向分量：home 攻 x=1、away 攻 x=0，球门中心恒在 y=0.5。
 /// 退化（持球者恰在球门中心点）→ 1.0（正对，贴门必进形态）。
@@ -10596,6 +10637,47 @@ mod tests {
         assert!((p2 - (1.0 - (1.0 - p1).powi(2))).abs() < 1e-12, "窗口自洽：p2 应等于 1-(1-p1)^2");
         // window = 0 → 不射
         assert_eq!(shot_hazard_probability(0.0, 0.0), 0.0);
+    }
+
+    /// C1 shot-rate anchor：`per_second_hazard` 的语义 = 每秒 Bernoulli 率。
+    /// 关键不变量：**机会变密（Δt 减半、机会数翻倍）时，每秒起脚率不变**——
+    /// 两次独立的 1 s 窗口掷定 ≡ 一次 2 s 窗口掷定（`1-(1-p1)^2`）。
+    #[test]
+    fn c1_per_second_hazard_composes_over_opportunity_windows() {
+        // 边界：rate=0 / dt=0 → 0；单秒 dt=1 时 p 就是 rate；rate≥1 → 必中。
+        assert_eq!(per_second_hazard(0.0, 2.0), 0.0);
+        assert_eq!(per_second_hazard(0.5, 0.0), 0.0);
+        assert!((per_second_hazard(0.25, 1.0) - 0.25).abs() < 1e-12);
+        assert_eq!(per_second_hazard(1.0, 0.5), 1.0);
+        assert_eq!(per_second_hazard(1.5, 0.5), 1.0, "rate > 1 被钳制到必中");
+        // 机会窗口组合律：两个独立 1 s 窗口 = 一个 2 s 窗口（率恒定）。
+        let p1 = per_second_hazard(0.2, 1.0);
+        let p2 = per_second_hazard(0.2, 2.0);
+        assert!((p2 - (1.0 - (1.0 - p1).powi(2))).abs() < 1e-12);
+        // 机会间隔减半 → 单次概率严格下降（但同一时长内的累计率不变）。
+        let dense = per_second_hazard(0.2, 0.5);
+        assert!(dense < p1, "Δt 减半时单次机会概率必须下降");
+        assert!(per_second_hazard(0.2, 4.0) > p2, "Δt 加倍时单次机会概率上升");
+    }
+
+    /// C1 shot-rate anchor：Δt 取自**刚过期**的自然机会（不是重开后的新 deadline）。
+    #[test]
+    fn c1_natural_deadline_dt_uses_expired_opportunity() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.action_opportunity = None;
+        assert_eq!(
+            natural_deadline_dt_s(&st),
+            BASE_ACTION_DEADLINE_TICKS as f64 * TICK_SECONDS,
+            "无机会（防御性兜底）→ 基线 deadline 的秒数"
+        );
+        st.action_opportunity = Some(ActionOpportunity {
+            carrier: 5,
+            age_ticks: 3,
+            deadline_ticks: 3,
+            reason: OpportunityReason::DeadlineElapsed,
+        });
+        assert_eq!(natural_deadline_dt_s(&st), 3.0 * TICK_SECONDS);
     }
 
     /// P29 D2：背向球门 → 禁止 Shoot 候选（`facing_goal` 为假）。

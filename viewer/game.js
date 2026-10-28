@@ -7,8 +7,8 @@
 //   clip：每个事件是"独立片段"，选中事件 → 显示初始状态，点播放 → 只在该事件窗口推进，播完停。
 //     （保留为调试/单事件点播工具。）
 
-import { config } from './config.js?v=20261028-2';
-import { buildTimeline } from './interpretation.js?v=20261028-2';
+import { config } from './config.js?v=20261028-3';
+import { buildTimeline } from './interpretation.js?v=20261028-3';
 import { parseEventStream } from './protocol.js';
 
 // 每个锚点是否为其事件（`evt`）的**首 / 末**锚点。

@@ -2,7 +2,7 @@
 // 原则：引擎给参数、画面给戏；人球解耦（带球=踢-追周期、传球=传跑配合、射门=门将先动）。
 // 本模块为纯函数（不碰 DOM/Canvas），便于单测（tasks 5.4/6.1）。
 
-import { config } from './config.js?v=20261028-2';
+import { config } from './config.js?v=20261028-3';
 
 // 动画锚点：一个可渲染的关键帧（球员位置/球位置随时间变化）
 // { t, kind: 'player'|'ball'|'pitch', id?, x, y }
@@ -296,7 +296,7 @@ function interpretOffBallRun(e, out) {
 // 高亮参与者由 buildTimeline 在 beat 展开前排除（两层合成，spec 要求 viewer 侧防御）。
 function interpretBeat(e, out, excluded = null) {
   const t0 = e.t;
-  const t1 = t0 + config.interpretation.tickSeconds; // 铺满整拍（与引擎 TICK_SECONDS 同步；C1 原型 0.5s）
+  const t1 = t0 + config.interpretation.tickSeconds; // 铺满整拍（与引擎 TICK_SECONDS 同步；本步 1.0s）
   // main：carrier 带球。球位置 = carrier（拍边界连续；不做 sep 领先偏移——方向变化会导致拍边界球跳，审阅 minor）
   if (e.main) {
     const m = e.main;
