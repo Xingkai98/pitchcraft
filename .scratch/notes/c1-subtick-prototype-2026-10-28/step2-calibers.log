@@ -1,6 +1,7 @@
 # step2 V5 (2Hz fill-to-tick rate 0.015 engage -4.50) calibers
 # git HEAD: 8f85f63（viewer 行为 = 8f85f63；工作树差异仅 note/test/注释，不改 viewer 行为）
 # wasm: 1ba8a76732ee33823f1cbaeac378de14ccdc7f734af6481d00bb3ec035e8a78d  viewer/engine.wasm
+# 注：E/R 比值按未取整值计算；打印的米数四舍五入到 1 位（慢段 1.03× 不能用 20.6/20.1 复算）。
 # dirty:  M .scratch/notes/c1-subtick-prototype-2026-10-28.md  M .scratch/notes/c1-subtick-prototype-2026-10-28/l1-2hz-v5.log  M .scratch/notes/c1-subtick-prototype-2026-10-28/step2-calibers.log  M engine/src/lib.rs  M viewer/derive-audit-features.js  M viewer/interpretation.test.js 
 ## frame caliber: ball-travel 5 seeds 12s
 引擎 wasm=viewer/engine.wasm  seeds=5  窗数 2250
