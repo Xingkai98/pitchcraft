@@ -148,6 +148,18 @@ test('tackle 高亮终点 = t + tickSeconds（与引擎 t_end = t + TICK_SECONDS
   assert.ok(players.some((a) => Math.abs(a.t - tEnd) < 1e-9), `防守者应在 t+tick 到位（TICK=${TICK}）`);
 });
 
+test('buildTimeline: tackle 高亮在 t+tick 结束，下一拍参与者不被错误排除', () => {
+  // highlightEndTime 的 tackle 分支必须读 tickSeconds：旧 1 s 窗口会把 t+tick 的那一拍
+  // 参与者错误划入「飞行中高亮」并从 beat movers 排除（2 Hz 下每场 ~25 次抢断）。
+  const events = [
+    { t: 30, type: 'tackle', subject: 10, carrier: 16, x: 0.55, y: 0.5, x2: 0.45, y2: 0.55, result: 'fail' },
+    { t: 30 + TICK, type: 'beat', movers: [{ id: 10, from_x: 0.45, from_y: 0.55, to_x: 0.46, to_y: 0.55, speed: 4, action: 'run' }] },
+  ];
+  const tl = buildTimeline(events, 'continuous');
+  const beatMovers = tl.filter((a) => a.evt === 1 && a.kind === 'player' && a.id === 10);
+  assert.ok(beatMovers.length > 0, `t+tick 的 beat 不应被 tackle 高亮排除（TICK=${TICK}）`);
+});
+
 test('viewer tickSeconds 与引擎 TICK_SECONDS 同步（防手工漂移）', () => {
   // 两处是手工同步（引擎常量 ↔ viewer config）；没有任何测试守的话，一边改错仍全绿。
   const src = readFileSync(new URL('../engine/src/lib.rs', import.meta.url), 'utf8');

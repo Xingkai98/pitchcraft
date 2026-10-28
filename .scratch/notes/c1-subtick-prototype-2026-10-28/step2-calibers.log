@@ -1,13 +1,15 @@
 # step2 V5 (2Hz fill-to-tick rate 0.015 engage -4.50) calibers
-# git HEAD: 09efb24; wasm: 678f684ed5b0ebe63a1f615862608df81de43f83d2a43ff434de9fc2cf6cfa38  viewer/engine.wasm
+# git HEAD: 8f85f63（viewer 行为 = 8f85f63；工作树差异仅 note/test/注释，不改 viewer 行为）
+# wasm: 1ba8a76732ee33823f1cbaeac378de14ccdc7f734af6481d00bb3ec035e8a78d  viewer/engine.wasm
+# dirty:  M .scratch/notes/c1-subtick-prototype-2026-10-28.md  M .scratch/notes/c1-subtick-prototype-2026-10-28/l1-2hz-v5.log  M .scratch/notes/c1-subtick-prototype-2026-10-28/step2-calibers.log  M engine/src/lib.rs  M viewer/derive-audit-features.js  M viewer/interpretation.test.js 
 ## frame caliber: ball-travel 5 seeds 12s
 引擎 wasm=viewer/engine.wasm  seeds=5  窗数 2250
 真实 Metrica 2 场  窗数 953
   球总行程(m)        引擎     52.0  真实     60.7  E/R 0.86×
   快段(>=8m/s)     引擎     31.4  真实     40.6  E/R 0.77×
-  慢段             引擎     20.6  真实     20.1  E/R 1.02×
+  慢段             引擎     20.6  真实     20.1  E/R 1.03×
   平均球速(m/s)      引擎     4.33  真实     5.06  E/R 0.86×
-  球静止占比(%)       引擎     21.2%  真实     15.6%  E/R 1.36×
+  球静止占比(%)       引擎     21.0%  真实     15.6%  E/R 1.35×
 （报告项：不进 ratchet、不判 pass/fail。口径见文件头；原始球帧缺失处断开，不插值。）
 ## packet windows (blind-test 12 engine windows, 24s)
 mean base=71.5 now=106.8  min/max now=74.7/177.4

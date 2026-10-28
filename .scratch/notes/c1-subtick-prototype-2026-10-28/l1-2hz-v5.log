@@ -1,3 +1,5 @@
+# provenance: cargo test --release --test realism -- --ignored
+# engine source: 09efb24（8f85f63 只改注释/测试与 viewer，引擎行为不变）；2 Hz V5 配置
    Compiling fm-engine v0.1.0 (/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28/engine)
 warning: constant `FORM_MIX_X` is never used
     --> src/lib.rs:3637:7
