@@ -13,3 +13,8 @@ violating passes: 48
 --- packet windows ---
 mean base=71.5 now=101.0  min/max now=80.4/142.0
 real windows min/max/mean = 136.5 / 192.6 / 164.6
+## V1 regular (shots - header), 4 seeds
+seed 42: shots=31 header=3 regular=28
+seed 7: shots=33 header=4 regular=29
+seed 23: shots=32 header=3 regular=29
+seed 11: shots=27 header=3 regular=24

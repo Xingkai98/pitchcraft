@@ -134,6 +134,28 @@ test('tackle success: 持球→逼近→捅开→防守者拿球', () => {
   assert.ok(Math.abs(tacklerEnd.y - ballEnd.y) < 1e-6);
 });
 
+test('tackle 高亮终点 = t + tickSeconds（与引擎 t_end = t + TICK_SECONDS 同步）', () => {
+  // 引擎 `emit_tackle_highlight_impl` 的 t_end = t + TICK_SECONDS；viewer 不得写死 1 s。
+  // v2 事件（带 carrier）走 [t0, t0+tick] 分支；v1 旧格式仍用捡球演绎（不在当前事件流里）。
+  const e = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, carrier: 16, x2: 0.45, y2: 0.55,
+    result: 'success', carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.43, loose_y: 0.51,
+    subject_end_x: 0.45, subject_end_y: 0.55, carrier_end_x: 0.45, carrier_end_y: 0.58 };
+  const anchors = interpretEvent(e);
+  const tEnd = e.t + TICK;
+  const late = anchors.filter((a) => a.t > tEnd + 1e-9);
+  assert.equal(late.length, 0, `不应有锚点晚于 t+tick（TICK=${TICK}）：${JSON.stringify(late)}`);
+  const players = anchors.filter((a) => a.kind === 'player' && a.id === e.subject);
+  assert.ok(players.some((a) => Math.abs(a.t - tEnd) < 1e-9), `防守者应在 t+tick 到位（TICK=${TICK}）`);
+});
+
+test('viewer tickSeconds 与引擎 TICK_SECONDS 同步（防手工漂移）', () => {
+  // 两处是手工同步（引擎常量 ↔ viewer config）；没有任何测试守的话，一边改错仍全绿。
+  const src = readFileSync(new URL('../engine/src/lib.rs', import.meta.url), 'utf8');
+  const m = src.match(/pub const TICK_SECONDS: f64 = ([0-9.]+);/);
+  assert.ok(m, 'engine/src/lib.rs 应声明 pub const TICK_SECONDS');
+  assert.equal(Number(m[1]), TICK, `引擎 TICK_SECONDS=${m[1]} ≠ viewer config tickSeconds=${TICK}`);
+});
+
 test('tackle fail: 原持球人拿回球，防守者停在接触点', () => {
   const anchors = interpretEvent(TACKLE_FAIL);
   const balls = anchors.filter((a) => a.kind === 'ball');
@@ -309,7 +331,7 @@ test('tackle 结算分离: subject/carrier 各归引擎终点（不重叠）', (
     carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.4277, loose_y: 0.5053,
     subject_end_x: 0.45, subject_end_y: 0.55, carrier_end_x: 0.45, carrier_end_y: 0.58 };
   const anchors = interpretEvent(eSucc);
-  const endT = 28;
+  const endT = 27 + TICK;
   const tacklerEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.subject && Math.abs(a.t - endT) < 1e-6).pop();
   const victimEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.carrier && Math.abs(a.t - endT) < 1e-6).pop();
   assert.ok(tacklerEnd && victimEnd, 'v2 tackle 应有 subject/carrier 终态锚点');

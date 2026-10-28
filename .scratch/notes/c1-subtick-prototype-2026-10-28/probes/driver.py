@@ -1,9 +1,12 @@
+# ⚠️ 历史档位扫描器（原型期 S/D2/D2l/D3）。它还会引用 /tmp/c1proto/*.mjs（未入库）；
+# 当前构型（shot-rate-anchor + 2Hz）的可复核读数以同目录的 step1/step2/probe 日志为准。
+# TICK_RE 只锚常量本身（不再依赖注释文字），TICK/TPF 改动后仍可用。
 import re, subprocess, sys, os
 ROOT = '/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/in-box-shot-priority-2026-10-28'
 LIB = f'{ROOT}/engine/src/lib.rs'
 CFG = f'{ROOT}/viewer/config.js'
 
-TICK_RE = re.compile(r'/// C1 原型：[^\n]*\n(pub const TICK_SECONDS: f64 = )[^;]+;\n(/// 每 1 秒的拍数[^\n]*\nconst TPF: u32 = )\d+;')
+TICK_RE = re.compile(r'(pub const TICK_SECONDS: f64 = )[^;]+;\n(/// 每 1 秒的拍数[^\n]*\nconst TPF: u32 = )\d+;')
 DRIB_RE = re.compile(r'(    \} else \{\n)(?:        // [^\n]*\n)?(        let dir = if home \{ 1\.0 \} else \{ -1\.0 \};\n)(?:.*?)(        \(clamp01\(x\), y\)\n    \};)', re.S)
 
 VARIANTS = {
@@ -28,7 +31,7 @@ VARIANTS = {
 
 def patch(v):
     s = open(LIB).read()
-    s, n1 = TICK_RE.subn(lambda m: f'/// C1 原型：TICK={v["tick"]}（{round(1/float(v["tick"]))} Hz 决策节拍）。`TPF` 与 `TICK_SECONDS` 必须手工同步。\n{m.group(1)}{v["tick"]};\n{m.group(2)}{v["tpf"]};', s, count=1)
+    s, n1 = TICK_RE.subn(lambda m: f'{m.group(1)}{v["tick"]};\n{m.group(2)}{v["tpf"]};', s, count=1)
     s, n2 = DRIB_RE.subn(lambda m: m.group(1) + '        // C1 原型带球变体\n' + m.group(2) + v['body'] + m.group(3), s, count=1)
     assert n1 == 1 and n2 == 1, (n1, n2)
     open(LIB, 'w').write(s)

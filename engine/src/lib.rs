@@ -748,11 +748,14 @@ const OPEN_BOX_SHOT_CLEAR_M: f64 = 8.0;
 /// 秒数 ⇒ 射门/90min ≈ 率 × 可起脚时长，而不是率 × 机会次数（读数与斜率见
 /// `.scratch/notes/c1-subtick-prototype-2026-10-28.md` 的 shot-rate-anchor 节）。
 ///
-/// **重锚**：旧「0.30/机会」是低球程基线留下的校准债——1 Hz 基线普通射门 39–47/场，
-/// 已高于真实带 `[14,29]`（带与真实锚出处：`engine/tests/realism.rs` 的
-/// `l1_shot_result_distributions`，StatsBomb 大五 n=170 mean 21.64 / sd 5.03；Metrica 参照 16.51
-/// 见 `.scratch/notes/team-shape-2026-10-25/current-engine-anatomy.md`）。0.015/s 把 1 Hz
-/// 基线重锚到普通射门 ~20/场、禁区内占比 ~0.66（读数见同一 note 节）。
+/// **重锚**：旧「0.30/机会」是低球程基线留下的校准债——1 Hz 基线**射门** 39–47/场
+/// （`fast-ballprobe` 的总射门口径，含头球），已高于真实带 `[14,29]`。⚠️ 带定义在
+/// **regular**（扣头球，`engine/tests/realism.rs` 的 `l1_shot_result_distributions`；
+/// StatsBomb 大五 n=170 mean 21.64 / sd 5.03；Metrica 参照 16.51 见
+/// `.scratch/notes/team-shape-2026-10-25/current-engine-anatomy.md`）。0.015/s 把 1 Hz 基线
+/// 重锚到 **regular 15–25/场（四 seed 均值 18.25，带内）**；同口径总射门 16–30。
+/// 读数与口径：`.scratch/notes/c1-subtick-prototype-2026-10-28/step1-post-anchor-wasm.log`
+/// 与 `probe-opportunity-rates.log`。
 const OPEN_BOX_SHOT_RATE_PER_S: f64 = 0.015;
 const OPEN_BOX_SHOT_MAX_DIST_M: f64 = 12.0;
 const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
@@ -3241,7 +3244,7 @@ fn match_events(
     st.carrier_from = (0.55, 0.5);
     // P15（开球专线 1）：**首开球在引擎里没有飞行**。`MatchState::new` 已经把
     // `carrier = 10` / `possession = 0` / `ball_pos = (0.55,0.5)` 提交好了，上面的 `pos[10]`
-    // 又把球与接收者放同位——首个 tick 的 beat 直接给 10 号 `main`（实测 `t=1.0 main.subject=10`）。
+    // 又把球与接收者放同位——首个 tick 的 beat 直接给 10 号 `main`（1 Hz 下 `t=1.0`、2 Hz 下 `t=0.5`）。
     // kickoff 事件的 `speed = 14.0` 只是装饰：拨球距离 5.25m / 14.0 = 0.375s < `TICK_SECONDS`，
     // 引擎从未进入飞行态。故 `restart_taken` 与 `control_established` **同在 t=0**，
     // basis 用 `EngineState`（没有高亮 finalize）。**不要**为它等 `kickoff_end`、也不要记
@@ -3557,15 +3560,15 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 /// `last_emitted`**（重构前直接写这三处 + 返回 main）。RNG 消费顺序与位置**逐位不变**——
 /// 随机数仍在本函数内抽取，故 golden 只在分离推移处漂移，不因重排而漂。
 /// 提交（写入 st.pos 并回填 main.x2/y2）由调用方在统一分离后完成。
-/// C3（R2）：让**传球飞行时长**填满本 tick（`TICK_FILL_FLIGHT_S` = 0.95s）。
+/// C3（R2）：让**传球飞行时长**填满本 tick（填充时长 = 0.95 拍；1 Hz = 0.95 s、2 Hz = 0.475 s）。
 ///
 /// 背景：事件 `speed` 同时驱动两处——引擎 `t_end`（高亮结束 / finalize tick）与 viewer 的
 /// 球飞行动画（`duration = 距离 / speed`）。实测引擎一次传球的飞行只有 0.2–0.8s，球到落点后
 /// 到下一拍（1s 边界）之间**静止干等**（盲测选窗里占总静止时间约 15%）。
 ///
-/// 规则：原飞行 `< 0.95s` 时改写到 0.95s（`speed = 距离 / 0.95`，RNG 抽取次数不变，
-/// **不动任何决策输入**；finalize tick 仍是 t+1，动力学逐位不变——由事件流哈希（掩掉 speed）
-/// 守卫）；原飞行 ≥ 0.95s 的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
+/// 规则：原飞行 `< 填充时长` 时改写到填充时长（`speed = 距离 / 填充时长`，RNG 抽取次数不变，
+/// **不动任何决策输入**；finalize tick = t + 填充时长，动力学逐位不变——由事件流哈希（掩掉 speed）
+/// 守卫）；原飞行 ≥ 填充时长的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
 /// 返回 `(speed, flight)`：调用方必须同时用这两项的返回值（事件与 `t_end` 一致）。
 ///
 /// **C1 2 Hz 决策（fill-to-tick，A 案）**：填充时长 = `0.95 × TICK_SECONDS`（2 Hz 下
@@ -10684,13 +10687,15 @@ mod tests {
             BASE_ACTION_DEADLINE_TICKS as f64 * TICK_SECONDS,
             "无机会（防御性兜底）→ 基线 deadline 的秒数"
         );
+        // age ≠ deadline：Δt 必须取 deadline（到期前它可能被重置/继承），不是已走拍数。
+        // 这条 fixture 让「改成读 age」的变异必红（age=1、deadline=4）。
         st.action_opportunity = Some(ActionOpportunity {
             carrier: 5,
-            age_ticks: 3,
-            deadline_ticks: 3,
+            age_ticks: 1,
+            deadline_ticks: 4,
             reason: OpportunityReason::DeadlineElapsed,
         });
-        assert_eq!(natural_deadline_dt_s(&st), 3.0 * TICK_SECONDS);
+        assert_eq!(natural_deadline_dt_s(&st), 4.0 * TICK_SECONDS);
     }
 
     /// P29 D2：背向球门 → 禁止 Shoot 候选（`facing_goal` 为假）。

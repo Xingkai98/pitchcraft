@@ -1,0 +1,25 @@
+# step1 post-anchor (4e94614 engine, 1 Hz)
+# source commit: 4e94614; tick=1.0 tpf=1; OPEN_BOX_SHOT_RATE_PER_S=0.015; ENGAGE_SHIFT=-4.15
+# wasm sha256: 7664dc0d5f837788446fb36c19f95d97adbe2a8c71c033236de9229a67303f5d  viewer/engine.wasm
+## base
+seed 42: ballPath/24s=76.6  per24={"pass":3.808888888888889,"dribble":17.05777777777778,"shot":0.08888888888888889,"tackle":0.16,"foul":0.08444444444444445,"loose":1.7111111111111112}  per90={"pass":857,"shot":20,"tackle":36,"foul":19}  passSucc=0.8611
+seed 7: ballPath/24s=79.4  per24={"pass":3.8133333333333335,"dribble":16.56,"shot":0.08,"tackle":0.13777777777777778,"foul":0.10222222222222223,"loose":1.9155555555555555}  per90={"pass":858,"shot":18,"tackle":31,"foul":23}  passSucc=0.8345
+seed 23: ballPath/24s=76.9  per24={"pass":3.888888888888889,"dribble":17.28,"shot":0.07111111111111111,"tackle":0.12,"foul":0.12444444444444444,"loose":1.3822222222222222}  per90={"pass":875,"shot":16,"tackle":27,"foul":28}  passSucc=0.8229
+seed 11: ballPath/24s=79.0  per24={"pass":3.7644444444444445,"dribble":16.64,"shot":0.13333333333333333,"tackle":0.09333333333333332,"foul":0.09777777777777777,"loose":1.848888888888889}  per90={"pass":847,"shot":30,"tackle":21,"foul":22}  passSucc=0.8229
+seed 42: shots=20 box=13 arc=6 far=1 header=3
+seed 7: shots=18 box=11 arc=5 far=2 header=2
+## movement lever (step 0.045)
+seed 42: ballPath/24s=87.0  per24={"pass":3.6933333333333334,"dribble":16.617777777777775,"shot":0.09777777777777777,"tackle":0.13333333333333333,"foul":0.06222222222222222,"loose":2.151111111111111}  per90={"pass":831,"shot":22,"tackle":30,"foul":14}  passSucc=0.8207
+seed 7: ballPath/24s=86.4  per24={"pass":3.786666666666666,"dribble":17.10222222222222,"shot":0.07555555555555556,"tackle":0.11555555555555556,"foul":0.09777777777777777,"loose":1.6044444444444446}  per90={"pass":852,"shot":17,"tackle":26,"foul":22}  passSucc=0.8216
+seed 23: ballPath/24s=86.4  per24={"pass":3.7555555555555555,"dribble":17.004444444444445,"shot":0.06222222222222222,"tackle":0.14666666666666667,"foul":0.09333333333333332,"loose":1.7333333333333332}  per90={"pass":845,"shot":14,"tackle":33,"foul":21}  passSucc=0.8391
+seed 11: ballPath/24s=84.8  per24={"pass":3.7955555555555556,"dribble":17.013333333333335,"shot":0.09333333333333332,"tackle":0.10666666666666666,"foul":0.08,"loose":1.6311111111111112}  per90={"pass":854,"shot":21,"tackle":24,"foul":18}  passSucc=0.8443
+## E1 (deadline 1)
+seed 42: ballPath/24s=86.3  per24={"pass":4.866666666666667,"dribble":16.06222222222222,"shot":0.06222222222222222,"tackle":0.13777777777777778,"foul":0.13333333333333333,"loose":1.431111111111111}  per90={"pass":1095,"shot":14,"tackle":31,"foul":30}  passSucc=0.8612
+seed 7: ballPath/24s=84.6  per24={"pass":4.768888888888889,"dribble":15.377777777777776,"shot":0.09333333333333332,"tackle":0.14666666666666667,"foul":0.12444444444444444,"loose":2.1466666666666665}  per90={"pass":1073,"shot":21,"tackle":33,"foul":28}  passSucc=0.8574
+seed 23: ballPath/24s=86.9  per24={"pass":4.786666666666667,"dribble":15.711111111111112,"shot":0.05333333333333333,"tackle":0.16444444444444445,"foul":0.1511111111111111,"loose":1.76}  per90={"pass":1077,"shot":12,"tackle":37,"foul":34}  passSucc=0.8412
+seed 11: ballPath/24s=86.9  per24={"pass":4.7555555555555555,"dribble":15.551111111111112,"shot":0.07111111111111111,"tackle":0.16444444444444445,"foul":0.12,"loose":1.9733333333333334}  per90={"pass":1070,"shot":16,"tackle":37,"foul":27}  passSucc=0.8561
+## base regular (shots - header), 4 seeds
+seed 42: shots=20 header=3 regular=17
+seed 7: shots=18 header=2 regular=16
+seed 23: shots=16 header=1 regular=15
+seed 11: shots=30 header=5 regular=25
