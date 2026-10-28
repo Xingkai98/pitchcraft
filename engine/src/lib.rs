@@ -736,9 +736,9 @@ const CIRCULATION_PASS_P: f64 = 0.15;
 const OPEN_PLAY_PASS_PRESSURE_M: f64 = 4.0;
 /// In-box clear radius (m): no goal-side defender within this distance => shoot first.
 const OPEN_BOX_SHOT_CLEAR_M: f64 = 8.0;
-const OPEN_BOX_SHOT_P: f64 = 0.60;
-const OPEN_BOX_SHOT_MAX_DIST_M: f64 = 14.0;
-const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 12.0;
+const OPEN_BOX_SHOT_P: f64 = 0.30;
+const OPEN_BOX_SHOT_MAX_DIST_M: f64 = 12.0;
+const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
 /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
 ///
@@ -790,7 +790,7 @@ fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
 /// 通道① 机会把握：射门/头球判定 goal 阈值。**主队单向更强**（home +2pp / away 不压）——
 /// 真实主场优势主要体现为主队把握更多机会，客队进球不被机械压低（任务约束：避免只靠宏观系数压客队）。
 /// saved 窗口宽不变 → 门将扑救表现不随主客变化。画面：主队同位置攻门更常进。
-pub const CLINICAL_GOAL_PP_HOME: i64 = 2;
+pub const CLINICAL_GOAL_PP_HOME: i64 = 0;
 pub const CLINICAL_GOAL_PP_AWAY: i64 = 0;
 /// 通道② 二点争顶：角球 battle 攻方胜率（攻/防基线 55/45）。攻方 home 58（助威争顶更拼）、
 /// 攻方 away 52（主队防守更稳——home 防守胜率 = 100−52 = 48 > 基线 45）——主队无论攻防在
@@ -6962,7 +6962,7 @@ fn dist_to_goal_m(st: &MatchState, id: i32) -> f64 {
 fn shot_bucket(dist_m: f64) -> (u64, u64) {
     // EXP1 标定：禁区内 saved 30→27（L1 射正率带内余量）；禁区弧 3/22→3/23（本实验：横向结构改动后射门构成偏移，收 1pp 命中率）。
     if dist_m <= BOX_DIST_M {
-        (9, 45)
+        (7, 48)
     } else if dist_m <= ARC_DIST_M {
         (2, 32)
     } else {
@@ -8147,9 +8147,10 @@ mod tests {
         let (a_lo, a_hi) = clinical_goal_window(1, 15, 30);
         assert_eq!(h_hi - h_lo, 30, "home saved 窗口宽应保持 30");
         assert_eq!(a_hi - a_lo, 30, "away saved 窗口宽应保持 30");
-        assert_eq!(h_lo, 17, "home 禁区 goal 阈值应上移 CLINICAL_GOAL_PP_HOME(2)");
-        assert_eq!(a_lo, 15, "away goal 阈值不应被压低");
-        assert!(CLINICAL_GOAL_PP_HOME >= CLINICAL_GOAL_PP_AWAY, "主队把握 ≥ 客队");
+        // 2026-10-26 标定：关闭主队把握优势通道（本分支去荒谬化：主客转化补充相等）。
+        assert_eq!(h_lo, 15, "home 禁区 goal 阈值不上移（CLINICAL_GOAL_PP_HOME=0）");
+        assert_eq!(a_lo, 15, "away goal 阈值同样为 15（主客对称）");
+        assert_eq!(CLINICAL_GOAL_PP_HOME, CLINICAL_GOAL_PP_AWAY, "本标定关闭主队转化优势（主客相等）");
         // 通道② 二点争顶：攻方 home 胜率 ≥ 攻方 away（主队无论攻防争顶更拼），都以 55 为中心对称。
         assert!(BATTLE_ATTACK_WIN_HOME >= BATTLE_ATTACK_WIN_AWAY, "攻方 home 争顶不应弱于攻方 away");
         assert!(BATTLE_ATTACK_WIN_HOME > 50 && BATTLE_ATTACK_WIN_AWAY > 50, "攻方胜率基线应 >50%");
