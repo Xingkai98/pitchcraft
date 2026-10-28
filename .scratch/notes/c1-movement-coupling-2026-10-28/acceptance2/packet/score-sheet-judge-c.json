@@ -1,0 +1,226 @@
+{
+  "version": "replay-blind-v1",
+  "judge_id": "c-opus-4-8",
+  "judged_at": "2026-10-29",
+  "instructions": "对每个 item 独立回答 A/B；不要根据文件名或元数据推断。controls 回答同源/不同源；mixed 另答哪侧更像真实。",
+  "items": [
+    {
+      "order": 1,
+      "id": "rb-2abf90ef3e",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "球路较长、跨多帧位移大;球员跑位有机"
+    },
+    {
+      "order": 2,
+      "id": "rb-330f91acf8",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "跨帧球位移大;整体移动充分"
+    },
+    {
+      "order": 3,
+      "id": "rb-081b85efba",
+      "A_guess": "real",
+      "A_confidence": 5,
+      "B_score": 5,
+      "cues": "黄球轨迹最长(全场墨量最高)、大范围横贯"
+    },
+    {
+      "order": 4,
+      "id": "rb-9095a080f5",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 2,
+      "cues": "球路偏短、位移小"
+    },
+    {
+      "order": 5,
+      "id": "rb-3cae462159",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 2,
+      "cues": "球路短、纵向折返局限"
+    },
+    {
+      "order": 6,
+      "id": "rb-ddb7188586",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "球路中等偏长、位移充分"
+    },
+    {
+      "order": 7,
+      "id": "rb-c136fdc874",
+      "A_guess": "real",
+      "A_confidence": 4,
+      "B_score": 4,
+      "cues": "黄球轨迹长、纵向延展大"
+    },
+    {
+      "order": 8,
+      "id": "rb-73dcb76032",
+      "A_guess": "real",
+      "A_confidence": 4,
+      "B_score": 4,
+      "cues": "球路长、往返覆盖大"
+    },
+    {
+      "order": 9,
+      "id": "rb-2b02692795",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球路长、横贯充分"
+    },
+    {
+      "order": 10,
+      "id": "rb-9a1153fbb4",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球路横向延展大、多段传球"
+    },
+    {
+      "order": 11,
+      "id": "rb-35b1e54089",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "球路偏短"
+    },
+    {
+      "order": 12,
+      "id": "rb-6c29fa8c66",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "球路短、覆盖小"
+    },
+    {
+      "order": 13,
+      "id": "rb-6289a5792e",
+      "A_guess": "real",
+      "A_confidence": 4,
+      "B_score": 5,
+      "cues": "黄球轨迹很长、位移大"
+    },
+    {
+      "order": 14,
+      "id": "rb-d6c7c59cdf",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "跨帧球位移大、横向覆盖"
+    },
+    {
+      "order": 15,
+      "id": "rb-f4b7a05caa",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 2,
+      "cues": "球路短、纵向局限"
+    },
+    {
+      "order": 16,
+      "id": "rb-137b7be903",
+      "A_guess": "engine",
+      "A_confidence": 5,
+      "B_score": 2,
+      "cues": "黄球轨迹最短、几乎原地折返"
+    },
+    {
+      "order": 17,
+      "id": "rb-f21d73a957",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "球路短、位移小"
+    },
+    {
+      "order": 18,
+      "id": "rb-290529fe61",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 2,
+      "cues": "球路偏短、位移有限"
+    },
+    {
+      "order": 19,
+      "id": "rb-2fc20b6baf",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "球路短、覆盖小"
+    },
+    {
+      "order": 20,
+      "id": "rb-60392def09",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "球路短、纵向延展小"
+    },
+    {
+      "order": 21,
+      "id": "rb-7fb9c559b3",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "球路中等、位移充分"
+    },
+    {
+      "order": 22,
+      "id": "rb-20256629c8",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "球路偏短、位移小"
+    },
+    {
+      "order": 23,
+      "id": "rb-c6b928deae",
+      "A_guess": "real",
+      "A_confidence": 4,
+      "B_score": 4,
+      "cues": "黄球轨迹长、横向覆盖大"
+    },
+    {
+      "order": 24,
+      "id": "rb-98669b7e47",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "球路短、红队路径偏水平细线"
+    }
+  ],
+  "controls": [
+    {
+      "order": 1,
+      "id": "ctl-6d08eb2c62",
+      "same_source": "same",
+      "confidence": 4,
+      "more_real": null,
+      "notes": "两侧球路都长(黄墨量接近)、风格一致"
+    },
+    {
+      "order": 2,
+      "id": "ctl-1c1d944cae",
+      "same_source": "different",
+      "confidence": 4,
+      "more_real": "A",
+      "notes": "A 球路明显更长/位移更大"
+    },
+    {
+      "order": 3,
+      "id": "ctl-efb530ff5f",
+      "same_source": "same",
+      "confidence": 3,
+      "more_real": null,
+      "notes": "两侧球路都短、局限折返"
+    }
+  ]
+}

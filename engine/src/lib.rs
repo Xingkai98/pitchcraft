@@ -294,6 +294,11 @@ const PASS_W_OPEN: f64 = 0.5;
 const PASS_W_LENGTH: f64 = 1.0;
 /// 空间裕度权重：落点前方到最近对方球员的纵向空当（越开阔越好）。
 const PASS_W_SPACE: f64 = 1.0;
+/// **横向转移（switch of play）权重**：偏好落点与持球者的横向差 |Δy|（归一化）。
+/// 动机：快段（传球）球程是盲测的判别轴；长**前向**传球会把接球点推近球门、改变
+/// 射门/犯规/角球构成（R5b），而长**横向**转移在不大幅推进 x 的前提下增加球程。
+/// 0 = 关闭（V1 基线）。
+const PASS_W_LATERAL: f64 = 1.0;
 /// 「正好在前方」的窄奖励：落点比持球者前 `PASS_AHEAD_TARGET`（归一化）时给满，
 /// 偏离越大奖励线性衰减到 0——这条鼓励「一脚向前的直塞」而不是「稍稍向前」。
 const PASS_AHEAD_TARGET: f64 = 0.2;
@@ -632,7 +637,7 @@ pub const RUN_SPEED_MS: f64 = 4.0;
 /// 本常量把「近球」这一段单独提到 7 m/s，让防线在持球者跑动时仍能保持接触。
 /// **只提高度/距离受限的局部队列，不动全队队形速度**——全队同提会同时抬位移量
 /// （lf.disp 出带），只提防守方则会让两队重心间距漂移（分边 6.9→8.6）。
-pub const BALL_LOCAL_SPRINT_MS: f64 = 7.0;
+pub const BALL_LOCAL_SPRINT_MS: f64 = 6.8;
 /// 近球冲刺的**局部半径**（米）：只有距球 ≤ 此值的 movers 用 `BALL_LOCAL_SPRINT_MS`，
 /// 其余保持 `RUN_SPEED_MS`。
 pub const BALL_LOCAL_SPRINT_RADIUS_M: f64 = 30.0;
@@ -815,7 +820,7 @@ const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// regular 15–26/场（均值 21.0，≈ StatsBomb 大五 n=170 的 21.64）；抢断 25–27 在带内，
 /// 传球成功率 .818–.837 **聚合口径**在带内（seed 23 的 .8179 擦下沿）。读数与
 /// 「移动层杠杆会破抢断/犯规带」的实测见 note §9.2。
-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.50;
+const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.2;
 /// 射门推进 hazard 的**每秒率参考窗口**（秒）：λ = e^(score+shift) / 本值。
 /// 旧实现是「每机会一次、window=1.0 s」；1 Hz 基线实测机会间隔 ≈ 2.0 s（四 seed
 /// due_mean_s = 2.00–2.01，见同一 note 节），故取 2.0 s 使 1 Hz 基线行为不变；机会间隔
@@ -2064,10 +2069,13 @@ fn pass_score(st: &MatchState, carrier: i32, cand: i32) -> f64 {
     let ahead = (1.0 - ((pt - (pc + PASS_AHEAD_TARGET)).abs() / PASS_AHEAD_TARGET)).max(0.0);
     // 反乒乓：上一次传球的**有向对**反转为本次候选 → 扣分
     let anti = if st.last_pass_pair == Some((cand, carrier)) { 1.0 } else { 0.0 };
+    // 横向转移：|Δy| 归一化（0..1）
+    let lat_norm = (p.1 - c.1).abs();
     PASS_W_FORWARD * fwd_norm
         + PASS_W_OPEN * open
         - PASS_W_LENGTH * len_norm
         + PASS_W_SPACE * pass_space_ahead(st, cand)
+        + PASS_W_LATERAL * lat_norm
         + PASS_AHEAD_TARGET * ahead
         - PASS_W_ANTI_PINGPONG * anti
 }
@@ -4277,6 +4285,14 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
 /// 从 `emit_pass_highlight_inner` 抽出只为让「cap 边界」「档位边界」可被单元测试直接钉死
 /// （P32 #36 的自洽硬门需要断言 `ceil` 量化在 cap 上的取值）。抽函数不改变任何取值或 RNG 顺序。
 fn open_play_interception_p(def_dist_m: f64, meters: f64) -> f64 {
+    open_play_interception_p_dir(def_dist_m, meters, 1.0)
+}
+
+/// 带方向的拦截概率：`forward_frac` ∈ [0,1] 是传球沿进攻轴的分量占比（|Δx|·dir / 距离）。
+/// **长传加成按前向分量缩放**：风险语义是「把球送进防守者身后」，纯横向转移（forward_frac→0）
+/// 不受长传/超长传加成。`forward_frac = 1` 时与旧行为逐位等价（旧函数即本函数的包装）。
+fn open_play_interception_p_dir(def_dist_m: f64, meters: f64, forward_frac: f64) -> f64 {
+    let fwd = forward_frac.clamp(0.0, 1.0);
     let base = if def_dist_m <= INTERCEPT_D_TIGHT_M {
         INTERCEPT_P_TIGHT
     } else if def_dist_m <= INTERCEPT_D_MID_M {
@@ -4286,8 +4302,8 @@ fn open_play_interception_p(def_dist_m: f64, meters: f64) -> f64 {
     };
     // 加成判据复用 `hits_long_pass` / `hits_very_long_pass`——与记账分层同源，防「公式里的
     // 阈值」与「记账分层的阈值」两处字面量将来漂移（审阅 P3-6）。
-    let long_bonus = if hits_long_pass(meters) { LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
-    let very_long_bonus = if hits_very_long_pass(meters) { VERY_LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
+    let long_bonus = if hits_long_pass(meters) { LONG_PASS_INTERCEPT_BONUS * fwd } else { 0.0 };
+    let very_long_bonus = if hits_very_long_pass(meters) { VERY_LONG_PASS_INTERCEPT_BONUS * fwd } else { 0.0 };
     (base + long_bonus + very_long_bonus).min(INTERCEPT_P_CAP)
 }
 
@@ -4456,7 +4472,11 @@ fn emit_pass_highlight_inner(
     // 拦截者 = 离落点最近的对方外场球员；拦截概率按"拦截者到落点距离"分档（贴防高、中距中、远离低），
     // 长传额外加成。传失（失准）固定 PASS_MISS_P，球权不直接丢——球到落点变松散球双方争。
     let (def_id, _, def_dist_m) = nearest_defender(st, (clamp01(lx), clamp01(ly)), !home);
-    let interception_p = open_play_interception_p(def_dist_m, meters);
+    // 前向分量占比：长传拦截加成的方向缩放（纯横向转移免加成；纯前向等价旧行为）
+    let dir = if home { 1.0 } else { -1.0 };
+    let forward_m = ((clamp01(lx) - from_pos.0) * dir) * PITCH_LENGTH_M;
+    let forward_frac = (forward_m / meters.max(1e-9)).clamp(0.0, 1.0);
+    let interception_p = open_play_interception_p_dir(def_dist_m, meters, forward_frac);
     let fail_roll = rng.next_u64() % 100;
     // P32（#36）记账：**必须**在 `fail_roll` 之后、任何分支之前。零 RNG、零事件流写入——
     // 只写 `OpportunityTally`，故事件流逐字节不变（golden-v5 守卫）。
@@ -11915,10 +11935,19 @@ mod tests {
             "贴防桶非长传平均宽度 {:.3} ≠ {}（应为基线，无加成）",
             avg(tight_non_long_w, tight_non_long_n), base_tight
         );
+        // 方向化后：长传加成按 `forward_frac` 缩放，桶内宽度 ∈ [base, base+LONG]。
+        // 桶均值做上下界 + 严格下界（删加成会塌回 base）；常量本身的精确值（15/23）由
+        // 纯函数测试 `p32_interception_roll_width_quantizes_by_ceil` 钉死。
+        let long_avg = avg(tight_long_only_w, tight_long_only_n);
         assert!(
-            (avg(tight_long_only_w, tight_long_only_n) - expect_long as f64).abs() < 1e-9,
-            "贴防桶长传(22-35m)平均宽度 {:.3} ≠ {}——LONG_PASS_INTERCEPT_BONUS 未接线/被删/被错接",
-            avg(tight_long_only_w, tight_long_only_n), expect_long
+            long_avg <= expect_long as f64 + 1e-9 && long_avg >= base_tight as f64 - 1e-9,
+            "贴防桶长传(22-35m)平均宽度 {:.3} ∉ [{}, {}]——加成被错加/错接（方向缩放只应减不增）",
+            long_avg, base_tight, expect_long
+        );
+        assert!(
+            long_avg > base_tight as f64 + 1e-9,
+            "贴防桶长传平均宽度 {:.3} 未高于基线 {}——LONG_PASS_INTERCEPT_BONUS 未接线/被删",
+            long_avg, base_tight
         );
 
         // 超长档（>35m）样本天然稀少（实测 200 seed 全距离档仅 108 条：贴防 17 / 中距 78 /
@@ -11936,10 +11965,20 @@ mod tests {
             "贴防桶超长样本 {} > 全距离档超长总数 {}——分桶减法口径错",
             tight_very_long_n, total_very_long_n
         );
+        // 方向化后超长档的下界是 base（fwd=0 时无加成）。
+        let base_far = interception_roll_width(INTERCEPT_P_FAR);
         assert!(
-            total_very_long_w >= 17 * total_very_long_n,
-            "超长档平均宽度 {:.2} < 下界 17——VERY_LONG_PASS_INTERCEPT_BONUS 被删或未接线",
-            avg(total_very_long_w, total_very_long_n)
+            total_very_long_w >= base_far * total_very_long_n,
+            "超长档平均宽度 {:.2} < 下界 {}——方向缩放只应减不增，base 被改小/错接",
+            avg(total_very_long_w, total_very_long_n), base_far
+        );
+        // 方向缩放后很纯的「前向」样本不存在（选点偏好横向），精确的 15/23 由纯函数测试
+        // `p32_interception_roll_width_quantizes_by_ceil` 直接断言；此处守住上下界与
+        // 「加成存在」的严格下界（删除 LONG 会使 very-long 均值塌到 base_far）。
+        assert!(
+            avg(total_very_long_w, total_very_long_n) > base_far as f64 + 1e-9,
+            "超长档平均宽度 {:.2} 未高于 base {}——长传加成未接线/全删",
+            avg(total_very_long_w, total_very_long_n), base_far
         );
         // 分层 actual 字段的活性（防死字段，审阅 P3-3）：actual 不可能超过样本数；长传/超长
         // 是嵌套关系（very ⊆ long），故 two actual 也嵌套。这两条把两个字段绑到真实记账。

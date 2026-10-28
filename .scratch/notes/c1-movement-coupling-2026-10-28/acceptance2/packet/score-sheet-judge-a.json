@@ -1,0 +1,226 @@
+{
+  "version": "replay-blind-v1",
+  "judge_id": "a-sonnet-5",
+  "judged_at": "2026-10-29",
+  "instructions": "对每个 item 独立回答 A/B；不要根据文件名或元数据推断。controls 回答同源/不同源；mixed 另答哪侧更像真实。",
+  "items": [
+    {
+      "order": 1,
+      "id": "rb-2abf90ef3e",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "trajectories knot in a ~30m box right of centre, players loop back over the same ground; ball path is a tall zig-zag polygon with very acute bends"
+    },
+    {
+      "order": 2,
+      "id": "rb-330f91acf8",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "many long, near-straight radiating strokes with the same orientation (high large-scale parallelism); ball path crosses the whole middle with huge acute zig-zag"
+    },
+    {
+      "order": 3,
+      "id": "rb-081b85efba",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 1,
+      "cues": "textbook horizontal lanes spanning the full width; contact sheets show red/blue alternating at even spacing along a smooth arc (formation-template band); whole band slides sideways together"
+    },
+    {
+      "order": 4,
+      "id": "rb-9095a080f5",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "long parallel horizontal red/blue lanes; ball path a sharp-cornered zig-zag up top; uniform speed feel"
+    },
+    {
+      "order": 5,
+      "id": "rb-3cae462159",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "everyone confined to a narrow vertical column right of centre, looping in place; ball traces one big loop around the same patch"
+    },
+    {
+      "order": 6,
+      "id": "rb-ddb7188586",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "curvy but repetitive loops around a small area; ball path is a big closed perimeter loop with long perfectly straight chords"
+    },
+    {
+      "order": 7,
+      "id": "rb-c136fdc874",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "long sweeping organic curves with varied orientations, an isolated jogger far from play on the right; no consistent lane structure"
+    },
+    {
+      "order": 8,
+      "id": "rb-73dcb76032",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "left-side knot dominated by long straight strokes; ball path a large angular polygon; isolated jogger right"
+    },
+    {
+      "order": 9,
+      "id": "rb-2b02692795",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "broad but populated by many long nearly-parallel straight diagonals; ball path huge straight-chord polygon with acute corners"
+    },
+    {
+      "order": 10,
+      "id": "rb-9a1153fbb4",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "broad web of smooth C-shaped individual curves in diverse directions; players hold their own zones; no shared flow direction"
+    },
+    {
+      "order": 11,
+      "id": "rb-35b1e54089",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "broad but dominated by long straightish strokes with small kinks; ball big angular polygon right"
+    },
+    {
+      "order": 12,
+      "id": "rb-6c29fa8c66",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "dense knot with many horizontal lanes on the right; ball path has a very long horizontal straight chord along the top"
+    },
+    {
+      "order": 13,
+      "id": "rb-6289a5792e",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "broad, smooth loopy arcs with varied orientations; organic clustering and gaps; ball oval rather than angular polygon"
+    },
+    {
+      "order": 14,
+      "id": "rb-d6c7c59cdf",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "long horizontal parallel lanes on the left half; ball path long straight chords with sharp corners"
+    },
+    {
+      "order": 15,
+      "id": "rb-f4b7a05caa",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "horizontal lanes across the full width; ball path a vertical zig-zag polygon with very sharp bends"
+    },
+    {
+      "order": 16,
+      "id": "rb-137b7be903",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "whole team squeezed into a small left-side patch with jagged, sharp-kinked short zig-zags; ball small angular polygon"
+    },
+    {
+      "order": 17,
+      "id": "rb-f21d73a957",
+      "A_guess": "engine",
+      "A_confidence": 4,
+      "B_score": 1,
+      "cues": "strongest parallel flow: nearly all red/blue strokes are long straight near-parallel lines converging to one point; whole-unit drift across frames"
+    },
+    {
+      "order": 18,
+      "id": "rb-290529fe61",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "contact sheet shows the whole block translating rigidly left-to-centre; trajectories mostly horizontal-ish lanes with long straight ball chords"
+    },
+    {
+      "order": 19,
+      "id": "rb-2fc20b6baf",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "dense right-side knot with horizontal lanes; ball large angular polygon; spacing looks evenly regular"
+    },
+    {
+      "order": 20,
+      "id": "rb-60392def09",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "the broadest, curviest web of the set (lowest straight-segment fraction); soft loops, varied directions, organic gaps"
+    },
+    {
+      "order": 21,
+      "id": "rb-7fb9c559b3",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "very dense confined knot right of centre plus horizontal lanes; ball a tight rectangular polygon"
+    },
+    {
+      "order": 22,
+      "id": "rb-20256629c8",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "broad but shot through with long straight near-parallel diagonals; ball mid-size angular polygon"
+    },
+    {
+      "order": 23,
+      "id": "rb-c6b928deae",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 1,
+      "cues": "extremely jagged zig-zag tangle with many acute-angle reversals; ball polygon with sharp spikes"
+    },
+    {
+      "order": 24,
+      "id": "rb-98669b7e47",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "both teams' strokes stream diagonally in the same direction (parallel vortex), highest large-scale parallelism; ball long angular polygon"
+    }
+  ],
+  "controls": [
+    {
+      "order": 1,
+      "id": "ctl-6d08eb2c62",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "B",
+      "notes": "A has many long near-parallel straight strokes and a straight-chord ball zig-zag (engine-like); B is loopier and more organic with smooth curves"
+    },
+    {
+      "order": 2,
+      "id": "ctl-1c1d944cae",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "B",
+      "notes": "A's trajectories are confined to the left third with several long straight diagonals and a big angular ball triangle; B spreads organically across most of the pitch with smooth curves"
+    },
+    {
+      "order": 3,
+      "id": "ctl-efb530ff5f",
+      "same_source": "different",
+      "confidence": 2,
+      "more_real": "B",
+      "notes": "A shows wide parallel horizontal lanes across the full width; B is more compact with rounder, less uniform strokes — but the gap is smaller than in the other pairs"
+    }
+  ]
+}

@@ -1,0 +1,226 @@
+{
+  "version": "replay-blind-v1",
+  "judge_id": "b-fable-5",
+  "judged_at": "2026-10-29",
+  "instructions": "对每个 item 独立回答 A/B；不要根据文件名或元数据推断。controls 回答同源/不同源；mixed 另答哪侧更像真实。",
+  "items": [
+    {
+      "order": 1,
+      "id": "rb-2abf90ef3e",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "全队挤成一个小团(约25x20m)紧跟球；球员轨迹短促卷曲反复；球路折线困在团内，无远离球群的直飞段"
+    },
+    {
+      "order": 2,
+      "id": "rb-330f91acf8",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "球员纵向铺满整场，长多向连续弧线；球有贯穿全场的长直线段（长传/推进），多股独立流动"
+    },
+    {
+      "order": 3,
+      "id": "rb-081b85efba",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "strokes 横向长带多折返但覆盖全场；球有跨半场斜长线到右边；红蓝两向流动并存，非同向锁步"
+    },
+    {
+      "order": 4,
+      "id": "rb-9095a080f5",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "左下半场向右的扇形长弧平滑连续；球长直线斜穿全场；门将孤立点远在边角"
+    },
+    {
+      "order": 5,
+      "id": "rb-3cae462159",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "右半场一团紧密纠缠，轨迹小幅卷曲循环；球椭圆环路困在团内；左端孤立门将小抖动"
+    },
+    {
+      "order": 6,
+      "id": "rb-ddb7188586",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "20人挤在中圈附近小团；球大套索状环路缠绕球员轨迹；右侧孤立点近乎静止"
+    },
+    {
+      "order": 7,
+      "id": "rb-c136fdc874",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 3,
+      "cues": "宽范围平滑大环 + 互相独立的多向流动；球有多段长直线（传递）离开球员团；两端门将孤立"
+    },
+    {
+      "order": 8,
+      "id": "rb-73dcb76032",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "中左一团纠缠，轨迹在此反复折返；球角状多边形长直段从团心甩到右缘；右端门将小颤动"
+    },
+    {
+      "order": 9,
+      "id": "rb-2b02692795",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "轨迹呈去而复返的楔形（冲刺+回撤），覆盖宽；球长直线斜向远角+折返；整体多向而非单团漂移"
+    },
+    {
+      "order": 10,
+      "id": "rb-9a1153fbb4",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "大量平滑大弧从左下扫向右上、覆盖近全场；球为长直线多边折线（连续长传转移）；左端孤立门将"
+    },
+    {
+      "order": 11,
+      "id": "rb-35b1e54089",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 4,
+      "cues": "球员长跑动直达边线，轨迹带细小追踪抖动；上下两端都有球员活动，非单团；球长边多边形"
+    },
+    {
+      "order": 12,
+      "id": "rb-6c29fa8c66",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "上中区一团密集缠绕，幅度小转折多；球短折线困于团内；左端孤立点"
+    },
+    {
+      "order": 13,
+      "id": "rb-6289a5792e",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 4,
+      "cues": "大范围平滑曲线多股流动；球走出大椭圆形长环（连续侧翼传递/推进）；右端静止门将"
+    },
+    {
+      "order": 14,
+      "id": "rb-d6c7c59cdf",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "长平滑曲线覆盖全场，方向各异；球尖锐长三角折线=连续长传对角转移；右端门将"
+    },
+    {
+      "order": 15,
+      "id": "rb-f4b7a05caa",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "大量横向长带冲刺到两侧，红蓝相反方向流动并存；球长边多边形高位转移；两端门将"
+    },
+    {
+      "order": 16,
+      "id": "rb-137b7be903",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "全部球员挤在左上角小块区域里小幅度折返涂鸦；球角状折线困在同一小块；右侧孤立门将"
+    },
+    {
+      "order": 17,
+      "id": "rb-f21d73a957",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "轨迹呈近水平平行长带、同向锁步感强（整队一起平移）；球V形折线留在团中央，缺少离群直飞"
+    },
+    {
+      "order": 18,
+      "id": "rb-290529fe61",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 2,
+      "cues": "左上密集纠缠团；球大环路连接团与左下；大量轨迹在同一小块往返；右端孤立门将"
+    },
+    {
+      "order": 19,
+      "id": "rb-2fc20b6baf",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "中线右侧一个小团内全部纠缠；球角状折线在团内反复；左端孤立点静止（与item1同型）"
+    },
+    {
+      "order": 20,
+      "id": "rb-60392def09",
+      "A_guess": "real",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "球员平滑多向长弧、覆盖中区；球沿两边两底构成闭合矩形=围绕阵型的连续传递；两端门将孤立"
+    },
+    {
+      "order": 21,
+      "id": "rb-7fb9c559b3",
+      "A_guess": "engine",
+      "A_confidence": 3,
+      "B_score": 2,
+      "cues": "与紧凑团型同款：20人一团纠缠、球折线困团内、左端孤立点、轨迹短促卷曲"
+    },
+    {
+      "order": 22,
+      "id": "rb-20256629c8",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "宽范围平滑波浪轨迹多向流动；球大环横穿中区；底部有独立的远端球员长跑动；左端门将"
+    },
+    {
+      "order": 23,
+      "id": "rb-c6b928deae",
+      "A_guess": "engine",
+      "A_confidence": 2,
+      "B_score": 3,
+      "cues": "中右一团纠缠折返；球虽有长直段甩向右缘但整体仍以团为中心；左端孤立点"
+    },
+    {
+      "order": 24,
+      "id": "rb-98669b7e47",
+      "A_guess": "real",
+      "A_confidence": 3,
+      "B_score": 4,
+      "cues": "对角往返的优雅长弧摆荡、多向独立；球长波浪线纵贯中区；门将孤立在两端"
+    }
+  ],
+  "controls": [
+    {
+      "order": 1,
+      "id": "ctl-6d08eb2c62",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "B",
+      "notes": "A: 中上紧凑纠缠团+球三角形环路困在团内，两端孤立小抖动 → 引擎型。B: 覆盖全场的平滑长多向曲线+球超长折返直线 → 真实型。"
+    },
+    {
+      "order": 2,
+      "id": "ctl-1c1d944cae",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "B",
+      "notes": "A: 左侧紧凑一团、球角状折线在团内反复、两端孤立门将 → 引擎型。B: 更宽的多向平滑流+球长直段 → 真实型。"
+    },
+    {
+      "order": 3,
+      "id": "ctl-efb530ff5f",
+      "same_source": "different",
+      "confidence": 3,
+      "more_real": "A",
+      "notes": "A: 横向长带多向流动、球长多边形几乎贯穿全宽 → 真实型。B: 中线右侧小团缠绕、球折线困团内、左端孤立门将 → 引擎型。"
+    }
+  ]
+}
