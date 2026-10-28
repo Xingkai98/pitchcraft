@@ -373,10 +373,11 @@ function leakAudit(imageChecks, items) {
 
 const METRIC_KEYS = ['hd', 'ad', 'spread', 'gap', 'width', 'ballDist', 'disp', 'lat', 'mix', 'commonX', 'commonY'];
 function metricValue(m, k) {
-  if (['disp', 'dir', 'still', 'lat', 'mix'].includes(k)) return m.motion[k];
+  if (!m) return null; // 窗口 primary 全空（如 SkillCorner 外推点过多）→ 诊断行记 null，不让聚合崩溃
+  if (['disp', 'dir', 'still', 'lat', 'mix'].includes(k)) return m.motion ? m.motion[k] : null;
   if (k === 'commonX') return m.common?.x;
   if (k === 'commonY') return m.common?.y;
-  return m.shape[k];
+  return m.shape ? m.shape[k] : null;
 }
 function aggregate(rows) {
   const out = {};
