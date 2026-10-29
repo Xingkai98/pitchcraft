@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MockCanvas } from './mock-canvas.js';
 import { renderFrame } from './renderer.js';
-import { config } from './config.js';
+import { config } from './config.js?v=20261029-1';
 import { hashPlayer, microMotionOffset, microMotionFade, resetMicroMotion } from './micro-motion.js';
 
 const W = config.canvas.width;

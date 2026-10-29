@@ -98,7 +98,8 @@ const TACKLE_FAR_EPS_M: f64 = 0.05;
 const PASS_FLIGHT_QUANT_EPS_M: f64 = 0.04;
 
 /// 本引擎的传球飞行填拍时长（秒）：`0.95 × TICK_SECONDS`（见 `lib.rs::tick_filling_flight`）。
-/// 测试侧显式写死并在 `l2` 断言与引擎常量同步——拍频改动时这里会红，不会静默漂移。
+/// 测试侧显式写死，并由 `l2_pass_fill_constant_matches_engine_tick` 与**引擎导出的**
+/// `TICK_SECONDS` 断言同步——拍频改动时该测试会红，不会静默漂移。
 const PASS_FILL_FLIGHT_S: f64 = 0.95 * 0.5;
 
 /// 填拍门检查的最小序列化距离（米）。低于 0.52m 跳过：坐标量化（±0.0126m）使「内部距离
@@ -625,7 +626,10 @@ fn aggregate(seed: u64) -> MatchStats {
                 // （即是否该填拍）」在 0.5m 边界上不可判。
                 // 1 Hz 时代的实测余量与修复记录（出界分支未填拍 = 300 seed 2,932 条残余）仍在
                 // `.scratch/notes/c3-render-fixes-to-main-2026-10-29/`；本树只是把 FILL 从 0.95
-                // 换成 0.475，容差按同法重推（0.06 → 0.04），实测余量见 `.scratch/notes/RECORD.md`。
+                // 换成 0.475，容差按同法重推（0.06 → 0.04）。**2 Hz 实测余量**（8 seed × 5400s，
+                // 7155 条可验 pass，同一序列化口径）：最坏残余 **−0.0282m**（seed 11），
+                // 距 0.04 容差余量 0.0118m；真违例（<−0.04）0 条。
+                // 读数出处：`.scratch/notes/RECORD.md` R6「填拍门余量」行；探针 `/tmp/probe-fillres.mjs`。
                 if spd >= 0.0 {
                     if spd >= 25.0 {
                         st.speed_violations
@@ -1320,6 +1324,25 @@ fn p13_side_effect_snapshot() {
 // L2/golden 不 `#[ignore]`：只有 15+10 场，debug 下 ~3s，是「应处处成立」的快速不变量，
 // 默认 `cargo test` 就该跑（L1 统计聚合才需要 ignore + release 显式跑）。
 
+/// 填拍门的填充时长必须与**引擎导出**的拍长同步（审阅 P2-3：此前只有注释声称同步，
+/// 没有断言——TICK 变 1.0 时 dist ≥ 0.475·speed 仍成立，门会静默失效/失准）。
+#[test]
+fn l2_pass_fill_constant_matches_engine_tick() {
+    assert_eq!(
+        PASS_FILL_FLIGHT_S,
+        0.95 * TICK_SECONDS,
+        "测试侧的填拍时长 {PASS_FILL_FLIGHT_S}s 与引擎 0.95×TICK_SECONDS={}s 不同步——\
+         改拍频时必须同步重推 L2 填拍门的填充时长与容差",
+        0.95 * TICK_SECONDS
+    );
+    // 填拍门的容差按同一填充时长推导（speed {:.1} 量化项 = FILL×0.05）。
+    assert!(
+        PASS_FLIGHT_QUANT_EPS_M >= PASS_FILL_FLIGHT_S * 0.05,
+        "填拍容差 {PASS_FLIGHT_QUANT_EPS_M} 未覆盖 speed 量化项 {:.4}",
+        PASS_FILL_FLIGHT_S * 0.05
+    );
+}
+
 #[test]
 fn l2_cross_event_invariants() {
     for seed in 1..=SEEDS_L2 {
@@ -1649,6 +1672,19 @@ fn gm_canary_seeds() {
         assert!(
             hash_ok,
             "seed {} 事件流哈希漂移（任何静默改动）",
+            seed
+        );
+        // v11 起：掩码流哈希也必须与 golden 一致——否则该列可以是任意固定值，
+        // `gm_v11_changes_behavior_not_just_speed` 用它做的「不是只改 speed」论证就失去出处
+        // （审阅 P2-2 的变异：只改 golden 的这一列，4 条 gm 测试全绿）。
+        assert_ne!(
+            gold.speed_masked_stream_hash, 0,
+            "seed {}：当前 MODEL_VERSION 的 golden 缺 `speed_masked_stream_hash`",
+            seed
+        );
+        assert_eq!(
+            gold.speed_masked_stream_hash, st.speed_masked_stream_hash,
+            "seed {}：掩码流哈希漂移（位置/时间戳/决策变化，或 golden 该列未被重生成）",
             seed
         );
     }

@@ -1,7 +1,7 @@
 // 端到端 v2：加载 engine.wasm → 产 v2 事件流 → viewer createGame → 步进无 snap
 // verify.sh 第 4 步调用。无视觉依赖：纯断言。
 import { readFileSync } from 'node:fs';
-import { config } from './config.js';
+import { config } from './config.js?v=20261029-1';
 import { parseEventStream } from './protocol.js';
 import { Game } from './game.js';
 

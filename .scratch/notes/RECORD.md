@@ -956,7 +956,10 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
 
 ## 读数（全口径）
 
-- **wasm**：`ca99edfdedc9399ed2093089ef85e9f1db80c66013ef499ab311842bd9133210`（lib `240f6900…`）。
+- **wasm（两代构建，行为同）**：验收包用 `ca99edfd…`（lib `240f6900…`，验收图由它渲染）；
+  审阅修复（仅注释/测试）后的终版构建 `e80dc134…`（lib `e822c2bb…`）。**文件哈希变、行为不变**：
+  同 seed 事件流 sha256 逐位相同（42 `14bccb4a…`、7 `813de9da…`、601 `c4871bf2…`）——
+  即 CLAUDE.md「注释行号会改 wasm 文件哈希，不是行为哨兵」的又一实例。
   与 R5c 的文档读数（帧口径 72.9 / 快段 1.17× / 慢段 1.26× / 静止 16.5%）**逐项一致** ⇒ 重放行为等价。
 - **帧口径**（ball-travel，5 seed × 12s）：球程 **72.9 vs 60.7（1.20×）**、快段 47.5 vs 40.6（1.17×）、
   慢段 25.4 vs 20.1（1.26×）、静止 16.5% vs 15.6%（1.06×）。
@@ -969,7 +972,9 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
   `l1_tackle_dilution_and_slot_mix`（角球 8.29 ∉ [1,7]）、`l1_shot_result_distributions`（禁区 goal 0.062）、
   `l3_shot_ratios`（射正 0.494）、`l1_home_away_goal_asymmetry`（主队 0.807）。传球成功率/犯规/抢断/射门体量带绿。
 - **默认 `cargo test --release --no-fail-fast`**：红集 = 谱系基线 ∪ 本轮修复后的子集（详见「地板」）。
-- **e2e-v2**：OK（11737 事件；无 snap：4 seed 球 max jump 0.0305、球员 0.0368）。
+- **e2e-v2**：OK（11737 事件；无 snap）。⚠️ 审阅 P2-1 修复后（e2e 与 Game 用同一 config 实例，
+  **skip 真正关闭、debug 真正关闭**）最大步进 **球 0.0161 / 球员 0.0301**——比修复前（0.0305/0.0368）
+  更小：此前 skip 开启会跨段、步进检查被稀释。修复同时把缓存说明符统一（含 renderer.js）。
 - **spacing-sweep**：8 seed × 2157 窗，**player_overlap findings = 0**（R5c 记录 4 findings）。
 - **viewer 单测 401 / tools 537 / visual-review 74：全绿**；`benchmark-baseline.test` 绿（D3 哨兵已按新结论更新）。
 - **验收包自检**：`allImagePass=true allPngPass=true calibration=true`、`leaks=none`、
@@ -978,8 +983,13 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
 ## 地板（R6 最终态）
 
 - **与谱系基线（R5c）比**：默认套件红集 **⊆** 基线红集，且本轮顺手修掉 4 条（l2 红牌照常绿、
-  p31×3、p53）：最终 lib 红 = observation×2（seed 覆盖随行为变化失效，与基线同）；p124 5 / p15 3 /
-  p16 3 / p17b 2（均 ≤ R5c 记录的 6/4/3/2）；p17a/p18 绿。realism target 绿（L2 填拍门 + 3 条 golden 测试）。
+  p31×3、p53）。**最终实测**（`cargo test --release --no-fail-fast`，冻结树）：
+  lib 201 passed / **2 failed**（observation×2）；p124 **5 failed**；p15 **3 failed**；p16 **2 failed**；
+  p17b **2 failed**；p17a / p18 **绿**；realism target **绿**（L2 填拍门 + 3 条 golden 测试）。
+  红名逐条 ⊆ 谱系基线日志 `.scratch/notes/c1-subtick-prototype-2026-10-28/cargo-default-suite-2hz.log`
+  的红名集（every_gap / gap_is / event_indexes / gate_rerun / instant_contest / loose_census /
+  phaseability / purification×2 / rust_shape / window_features / verdict_best / observation×2 全部在基线日志中）。
+  计数也 ≤ R5c 记录的 6/6/4/3/2（lib/p124/p15/p16/p17b）。
 - ⚠️ **与字面 main 比，这些研究门红是「新」的**——它们是 goal-loop 谱系自带（R2 起登记）。
   本轮没有把它们修绿：其中多数是**研究记录门**（p15/p16/p124/p17b 钉住历史实验读数/样本形态），
   行为改变后按设计应重扫/重写报告，属于出谱系的独立工作；observation×2 是 seed 覆盖门（需重扫，
@@ -1030,3 +1040,36 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
   与 R5c 的「轨迹形态学」残余一致。
 
 - **确定性**：同 seed 连跑两次事件流 sha256 逐位相同（seed 42/7/601；探针 `/tmp/probe-determinism.mjs`）。
+
+- **填拍门余量（L2，2 Hz）**：8 seed × 5400s，7155 条可验 pass（同序列化口径，探针 `/tmp/probe-fillres.mjs`），
+  `dist − 0.475·speed` 最坏残余 **−0.02823m**（seed 11）；距容差 0.04m 余量 0.0118m；真违例 0 条。
+  硬上界推导：坐标重算 0.0126m + speed `{:.1}` 量化 0.475×0.05=0.02375m ⇒ 0.0364m → 取 0.04。
+
+## 审阅闭环 Round 1（2026-10-29，独立零上下文审阅）
+
+- 报告：`.scratch/notes/c1-ballpath-pass-2026-10-29/review-round1.md`（P1 0 / P2 4 / P3 8）。
+- 修复（本轮的「审阅修复」提交）：
+  - **P2-1** e2e 与 Game 的 config 双实例：把 viewer 全部 config 说明符统一为 `?v=20261029-1`
+    （renderer/tests/e2e 一并改；app.js 对 renderer 的版本也 bump），e2e 的两条设置真正生效。
+  - **P2-2** `gm_canary_seeds` 增加 `speed_masked_stream_hash` 对当前引擎的比较（此前该列可被任意伪造）。
+  - **P2-3** 新增 `l2_pass_fill_constant_matches_engine_tick`：`PASS_FILL_FLIGHT_S == 0.95×TICK_SECONDS`
+    且容差覆盖 speed 量化项（此前注释声称同步、实际无断言）。
+  - **P2-4** 标定注释与代码对齐：`OPEN_PLAY_SHOT_ENGAGE_SHIFT −4.20`（R5c）、`BASE_DEF_TACKLE −1.47` /
+    `BASE_DEF_FOUL −0.30`（in-box 谱系）、`CLINICAL_GOAL_PP_HOME=0`、`shot_bucket (7,48)/(2,32)/(1,14)`；
+    新增 `c1_shot_bucket_probabilities_are_pinned` 钉值测试。
+  - **P3**：tick 单位注释（SHOT_DRIVE/PRESSURE_HOLD/DEADLINE/LIVENESS/FOUL_GAP/CARRIER_SPEED）、
+    fill 的 finalize 时刻注释、L2 余量读数落盘（7155 条 pass 最坏 −0.0282m）已修；P3-4 验收结果已补。
+- 复核：`gm_` 4 passed、`l2_pass_fill` 1 passed、`c1_shot_bucket` 1 passed、viewer 401/401、
+  benchmark sentinel 10/10、e2e OK（skip 关闭下读数见上）。Round 2 复审见下。
+
+## 残余缺口（R6，如实）
+
+1. **研究门红（谱系自带）**：lib observation×2、p124 5、p15 3、p16 2、p17b 2——研究记录/seed 覆盖门，
+   行为改变后按设计需重扫/重写；与字面 main 比是新增红（见「地板」）。
+2. **传球量未到真实**（0.79–0.84×）；乘积/球程达标，但「传球量×距离」里距离承担了主要份额。
+3. **2 Hz 视觉残差**：Catmull–Rom 邻窗 `[0.5,1.5]s` 是 1 Hz 标定；fill 锚点 0.475s 落窗外→线性插值
+   （`viewer/game.js` 注释；未做视觉验收）。抢断 `tContact/tLoose` 钳制在 `carrierMoveDur>0.45s` 时可造
+   同时间戳双锚点——当前 4 seed 不可达（审阅 P3-7）。
+4. **盲测结果的双读**：字面 ≤0.55 ×3；但 sonnet 系统性反转（33.3%）、opus 负控 mixed 判错（50%）——
+   「完全不可分」不成立，残余线索为轨迹形态学（贴球塌缩/闭环绕圈 vs 角色分化）。
+5. **ratchet noiseTol 的外推**：带内/上尾噪声的半差被用作「出带容差」，是近似（审阅 P3-8）。

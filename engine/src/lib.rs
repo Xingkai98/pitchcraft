@@ -481,6 +481,11 @@ const JOCKEY_FIT_GAIN: f64 = 0.45;
 /// （射门 17.8 → 23.7/场，新增射门不成比例来自禁区外），**与任何一条概率常量无关**。
 /// ⇒ 「−0.92 是刚清 ratio 且留在带内的最轻点」这个**取值**仍成立（ratio 轴的推理没错，
 /// 且单点复原证明 `cd42b0a` 的全部行为改动就是那两条常量）；**错的只是「它压低了 box-goal 占比」这个因果**。
+///
+/// ⚠️ **当前取值是 −1.47（C1 in-box 谱系，R6 重放）**：上文 −0.92 的论证解释的是**那一代**取值。
+/// `−0.92 → −1.47` 与 `BASE_DEF_FOUL −0.22 → −0.30` 配对，服务于门前优先档
+/// （`OPEN_BOX_SHOT_*`）落地后的抢断/犯规体量守带；出处：`.scratch/notes/RECORD.md` R0 节
+/// 「机制现状 #3」（in-box 谱系提交 `3cab5f9`）与 R2–R5c 的 L1 绿集（抢断/犯规带）。
 const BASE_DEF_TACKLE: f64 = -1.47;
 /// 抢断 closeness 增益：把「贴到脚下」放大到能压过 contain/jockey 的量级。必须**大于**
 /// `FOUL_CLOSENESS_GAIN`——两者形状相同，增益差决定「贴身且正面 → 抢断」的分界。
@@ -514,6 +519,10 @@ const TACKLE_PAIR_CD_PENALTY: f64 = 0.60;
 /// 还回来，故须同步压 FOUL 把这部分切回带中。−0.22/−0.92 是 T2 可行矩形
 /// （TACKLE∈[−0.92,−1.00] × FOUL∈[−0.23,−0.20]）里**最轻、且在本树过全部官方带**的一点
 /// （极值 b23 不迁移到 T3 修后树，见 `BASE_DEF_TACKLE` 注释）。
+///
+/// ⚠️ **当前取值是 −0.30（C1 in-box 谱系，R6 重放）**：与 `BASE_DEF_TACKLE −1.47` 配对；
+/// −0.22/−0.92 是**上一代**配对。出处：`.scratch/notes/RECORD.md` R0「机制现状 #3」
+/// （in-box 提交 `3cab5f9`）与 R5c 的犯规 L1 绿集（17–28/场 ∈ [16,30]）。
 const BASE_DEF_FOUL: f64 = -0.30;
 const FOUL_DANGER_GAIN: f64 = 0.40;
 /// 犯规的 closeness 增益：**小于** `TACKLE_CLOSENESS_GAIN`（见上）。
@@ -528,7 +537,8 @@ const FOUL_YELLOW_PENALTY: f64 = FOUL_YELLOWED_DETERRENCE;
 /// 全局犯规冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]，分母 `FOUL_MIN_GAP_TICKS`）。
 const FOUL_CD_PENALTY: f64 = 0.80;
 /// 持球者压迫状态的保持时长（tick，D5）：contain/jockey 结算时置满，每 tick 衰减 1。
-/// 取 8 ≈ 机会点平均间距（~7 tick），使「无事件防守」在两次机会之间保持生效但会衰减。
+/// 取 8 秒（= 8×TPF tick；2 Hz 下 16 tick）≈ 机会点平均间距（~7 秒），
+/// 使「无事件防守」在两次机会之间保持生效但会衰减。
 const PRESSURE_STATE_HOLD_TICKS: u32 = 8 * TPF;
 /// 压迫状态对射门 hazard `defensive_pressure` 因子的权重（D5 的唯一落点）。
 /// 取小值：它是几何压迫的**补充**（无事件防守的持续逼抢），不是替代。
@@ -635,7 +645,7 @@ pub const DEAD_ZONE_METERS: f64 = 2.0; // P7 观感：到位静止距离——�
 pub const PICKUP_RADIUS_METERS: f64 = 0.5;
 /// 松散球最长持续 tick 数；超时球 hold 等待（不瞬移）
 pub const LOOSE_MAX_TICKS: u32 = 2 * TPF;
-/// carrier 带球速度上限（m/s）：main 每拍推进 ≤ speed×1s
+/// carrier 带球速度上限（m/s）：main 每拍位移 ≤ speed×TICK_SECONDS（2 Hz 下 = 2.5 m/拍）
 pub const CARRIER_SPEED_MS: f64 = 5.0;
 /// 无球跑位速度（m/s）——**远端** movers 的队形追踪速度。
 pub const RUN_SPEED_MS: f64 = 4.0;
@@ -721,7 +731,8 @@ pub const HOLD_MIN_TICKS: u32 = 8 * TPF;
 pub const HOLD_MAX_TICKS: u32 = 15 * TPF;
 
 // ---- P9 射门质量（按起脚位置分桶 + 推进后射门）----
-/// 带球推进上限（tick）：carrier 向球门推进的步数上限（5 tick × 5m = 25m 覆盖，保证能推进到禁区）
+/// 带球推进上限（tick）：carrier 向球门推进的步数上限。**8 秒语义**（8×TPF tick；
+/// 2 Hz 下 16 tick × 2.5 m/拍 = 40 m 覆盖）——保证能推进到禁区（R0 机制现状 #3 的 8）。
 pub const SHOT_DRIVE_MAX_TICKS: u32 = 8 * TPF;
 /// 传球推进阈值（m）：dist > 此值先向前传球推进（复用 pass 高亮），再带球/射门
 pub const SHOT_PASS_ADVANCE_M: f64 = 40.0;
@@ -830,6 +841,10 @@ const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// regular 15–26/场（均值 21.0，≈ StatsBomb 大五 n=170 的 21.64）；抢断 25–27 在带内，
 /// 传球成功率 .818–.837 **聚合口径**在带内（seed 23 的 .8179 擦下沿）。读数与
 /// 「移动层杠杆会破抢断/犯规带」的实测见 note §9.2。
+///
+/// **R5c 重锚：−4.50 → −4.20（当前取值）**。横向转移（`PASS_W_LATERAL`）把接球点推远、
+/// 射门体量下滑，按 C1 的水平重锚拉回；R5c 读数 regular 19.6–23.1/场、L1 200 场 23.1 ∈ [14,29]。
+/// 出处：`.scratch/notes/RECORD.md` R5c 节 + `.scratch/notes/c1-movement-coupling-2026-10-28.md` §7。
 const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.2;
 /// 射门推进 hazard 的**每秒率参考窗口**（秒）：λ = e^(score+shift) / 本值。
 /// 旧实现是「每机会一次、window=1.0 s」；1 Hz 基线实测机会间隔 ≈ 2.0 s（四 seed
@@ -856,9 +871,13 @@ fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
 /// 机制取舍见 pilot 报告：真实主场优势多因子，但引擎槽位集锦模型下「客队保守/少压上」这类
 /// 持续段差异（如 carrier 前插率）会大幅改写持球段 RNG 流 → 射门归属统计噪声大，**不采用**。
 /// 采用两个落在"单点判定"上的通道（画面可感知且副作用干净）：
-/// 通道① 机会把握：射门/头球判定 goal 阈值。**主队单向更强**（home +2pp / away 不压）——
+/// 通道① 机会把握：射门/头球判定 goal 阈值。原设计「主队单向更强」（home +2pp / away 不压）——
 /// 真实主场优势主要体现为主队把握更多机会，客队进球不被机械压低（任务约束：避免只靠宏观系数压客队）。
 /// saved 窗口宽不变 → 门将扑救表现不随主客变化。画面：主队同位置攻门更常进。
+///
+/// ⚠️ **当前两通道均关闭（= 0）**：C1 in-box 谱系「去荒谬化」候选 B 把通道①的 `+2pp` 归零
+/// （`ca889fc`；出处 `.scratch/notes/RECORD.md` R0 节「机制现状 #3」）。常量保留为接口；
+/// 实测 L1 主场门 0.807 为已知无分辨力红（RECORD R6）。重新开启前须先证明该门有分辨力。
 pub const CLINICAL_GOAL_PP_HOME: i64 = 0;
 pub const CLINICAL_GOAL_PP_AWAY: i64 = 0;
 /// 通道② 二点争顶：角球 battle 攻方胜率（攻/防基线 55/45）。攻方 home 58（助威争顶更拼）、
@@ -1015,8 +1034,9 @@ fn move_toward(from: (f64, f64), to: (f64, f64), step: f64) -> (f64, f64) {
 /// **p143r-v4 重标定：8/12/16 → 2/4/7**（与 deadline 基线 7→2 同步）。依据：三档递进
 /// 是「球权停滞多久后迫使流动」的时钟，dealine 压到 2 tick 后，若档位阈值仍以 8/12/16 秒计，
 /// 则停滞段永远到不了二档（`stalled_unpressed` 恒假）→ 密度层一半的杠杆失效。
-/// 压到 2/4/7 后，档位与决策节奏同尺度：停滞 2 秒即开始介入、4 秒改选出球、7 秒强制前插。
-/// 注意：三档阈值（7）现在**大于** deadline 基线（2）——这是有意的，档位衡量的是
+/// 压到 2/4/7 **秒**（2 Hz 下 = 4/8/14 tick）后，档位与决策节奏同尺度：停滞 2 秒即开始介入、
+/// 4 秒改选出球、7 秒强制前插。
+/// 注意：三档阈值（7 秒）现在**大于** deadline 基线（2 秒）——这是有意的，档位衡量的是
 /// `ticks_since_meaningful_action`（真实行动间隔），不是 deadline。
 pub const LIVENESS_STAGE_1_TICKS: u32 = 2 * TPF;
 pub const LIVENESS_STAGE_2_TICKS: u32 = 4 * TPF;
@@ -1307,8 +1327,8 @@ fn nearest_any(st: &MatchState, target: (f64, f64)) -> i32 {
 ///
 /// **p143r-v4 重标定：7 → 2**（事件密度 ~2.1×，传球 394 → 830/场）。依据：真实比赛的
 /// 有球权流动远快于「每 7 秒一次决策」。下限同样 3 → 2（见 `MIN_ACTION_DEADLINE_TICKS`），
-/// 使压满档位也能到 2 tick/决策。DANGER/PRESSURE/ESCAPE 三个调制系数不变——deadline
-/// 现落在 `[2, 7]`（基线 2 + 最多 `ESCAPE_BONUS`(5) 的放宽）。
+/// 使压满档位也能到 2 秒/决策。DANGER/PRESSURE/ESCAPE 三个调制系数按同一秒语义 ×TPF——
+/// deadline 现落在 **2–7 秒**（= `[2×TPF, 7×TPF]` tick；基线 2 秒 + 最多 `ESCAPE_BONUS`(5 秒) 的放宽）。
 const BASE_ACTION_DEADLINE_TICKS: u32 = 2 * TPF;
 /// 危险度压缩系数（越接近球门，决策越急）。**C1 原型**：三个调制系数与 deadline 同量纲（tick），
 /// 须随拍频 ×TPF 才能保持「秒语义」（漏scale会让安全局面的 deadline 变短 → 决策次数虚增）。
@@ -2703,7 +2723,7 @@ struct MatchState {
 }
 
 /// 两犯规之间的最短间隔（tick）。犯规后哨停/任意球重开在槽位模型中表现为后续事件重排，
-/// 过度连发观感差且挤压槽位——>11 tick（≥11s）才允许下一次犯规。
+/// 过度连发观感差且挤压槽位——>11 秒（11×TPF tick；2 Hz 下 22 tick）才允许下一次犯规。
 pub const FOUL_MIN_GAP_TICKS: u32 = 11 * TPF;
 
 /// P9 射门推进（带球向球门推进）+ P29 起脚窗口。
@@ -3595,7 +3615,8 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     events.push(beat_event(t, Some(main), None, movers));
 }
 
-/// carrier 带球（main）**候选相**：多数 tick 零位移控球/短带，步进 ≤ speed×1s；transition 期间高速前插。
+/// carrier 带球（main）**候选相**：多数 tick 零位移控球/短带，步进 ≤ speed×TICK_SECONDS；
+/// transition 期间高速前插。
 ///
 /// **P34 重构（#53 D2）**：本函数只消费 RNG、产候选终点，**不写 `st.pos`/`carrier_from`/
 /// `last_emitted`**（重构前直接写这三处 + 返回 main）。RNG 消费顺序与位置**逐位不变**——
@@ -3608,7 +3629,8 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 /// 到下一拍边界（1 Hz 下 1 s、2 Hz 下 0.5 s）之间**静止干等**（盲测选窗里占总静止时间约 15%）。
 ///
 /// 规则：原飞行 `< 填充时长` 时改写到填充时长（`speed = 距离 / 填充时长`，RNG 抽取次数不变，
-/// **不动任何决策输入**；finalize tick = t + 填充时长，动力学逐位不变——由事件流哈希（掩掉 speed）
+/// **不动任何决策输入**；`t_end = t + 填充时长`，高亮在**其后第一个 tick 边界** finalize
+/// （2 Hz 下填充 0.475 s < 0.5 s ⇒ 仍是 t+1 拍），动力学逐位不变——由事件流哈希（掩掉 speed）
 /// 守卫）；原飞行 ≥ 填充时长的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
 /// 返回 `(speed, flight)`：调用方必须同时用这两项的返回值（事件与 `t_end` 一致）。
 ///
@@ -4702,7 +4724,7 @@ fn emit_shot_highlight(
     let shooter_pos = st.pos[shooter as usize];
     let home = st.possession == 0;
     let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
-    // P9 射门质量：按起脚距离分桶（禁区内 15/30、禁区弧 3/22、远射 2/11；见 `shot_bucket`）
+    // P9 射门质量：按起脚距离分桶（禁区内 7/48、禁区弧 2/32、远射 1/14；见 `shot_bucket`）
     // 主场优势通道①：判定窗口按射门方主客平移（home goal 上移 / away 不压，saved 宽不变）。
     let (goal_p, saved_p) = shot_bucket(dist_to_goal_m(st, shooter));
     let (goal_lo, saved_hi) = clinical_goal_window(st.possession, goal_p, saved_p);
@@ -7109,10 +7131,15 @@ fn dist_to_goal_m(st: &MatchState, id: i32) -> f64 {
 ///
 /// 实测校准自证：同 seed 窗探针逐桶把声明概率求和与实测进球比 —— **禁区内桶 445.0 期望 / 445 实测
 /// （逐位命中）**，禁区弧 +2σ、远射 +0.5σ（见 M5-READINGS「校准自证」）。
-/// 禁区内 `(15,30)` **不动**（真实禁区 14.7% vs 引擎实测 16.1%，本来就在真实之上）。
-/// 加权（70/20/10）：射正率 ~36%、转化 ~11%（见 design D1）。
+///
+/// ⚠️ **当前取值（C1 in-box 谱系「去荒谬化」B 版，R6 重放）**：
+///   禁区内 `(7,48)`、禁区弧 `(2,32)`、远射 `(1,14)`（goal_pp/saved_pp）。
+/// 与上文 M5 时代的 `(15,30)/(3,22)/(2,11)` 相比，门前把握被整体下调到现实转化率
+/// （原因：门前优先档落地后射门集中禁区，旧概率让禁区转化严重超真实）。
+/// 出处：`.scratch/notes/RECORD.md` R0 节「机制现状 #3」（in-box 提交 `3cab5f9`/`ca889fc`）；
+/// 当前 L1 实测禁区 goal 0.062（低于带 [0.10,0.20]，谱系已知红）见 RECORD R6。
+/// 取值由 `tests::c1_shot_bucket_probabilities_are_pinned` 钉死（防静默漂移）。
 fn shot_bucket(dist_m: f64) -> (u64, u64) {
-    // EXP1 标定：禁区内 saved 30→27（L1 射正率带内余量）；禁区弧 3/22→3/23（本实验：横向结构改动后射门构成偏移，收 1pp 命中率）。
     if dist_m <= BOX_DIST_M {
         (7, 48)
     } else if dist_m <= ARC_DIST_M {
@@ -10785,6 +10812,19 @@ mod tests {
                 second_defender_m: 30.0, cooldown_ticks: 0, pressure_state: 0.0 }.angle_quality(),
             0.0
         );
+    }
+
+    /// C1 in-box 谱系：`shot_bucket` 的三桶概率对**钉死**（审阅 P2-4 的补强——
+    /// 此前只有桶边界测试，goal/saved 概率改错不会红，而注释里的旧值 `(15,30)/(3,22)/(2,11)`
+    /// 已经和代码不符）。改这三个数 = 改射门水平，必须同时更新
+    /// `.scratch/notes/RECORD.md` 与 L1 读数，故这里显式钉值。
+    #[test]
+    fn c1_shot_bucket_probabilities_are_pinned() {
+        assert_eq!(shot_bucket(BOX_DIST_M), (7, 48), "禁区内 goal/saved 概率");
+        assert_eq!(shot_bucket(BOX_DIST_M + 0.1), (2, 32), "禁区弧 goal/saved 概率");
+        assert_eq!(shot_bucket(ARC_DIST_M + 0.1), (1, 14), "远射 goal/saved 概率");
+        // 边界是 ≤：恰在边界上属内桶。
+        assert_eq!(shot_bucket(ARC_DIST_M), (2, 32));
     }
 
     /// P29 D2：距离分段复用 `shot_bucket` 边界（6-16.5→0.9-1.0 / 16.5-25→0.45-0.9 /

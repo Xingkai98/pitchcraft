@@ -1,7 +1,7 @@
 // 画面渲染层：Canvas 绘制球场、球员、球
 // 暴露 renderFrame 测试钩子（tasks 6.2 像素断言用）与调试日志（6.3）。
 
-import { config } from './config.js';
+import { config } from './config.js?v=20261029-1';
 import { normalizedToPixels, pitchLines } from './geometry.js';
 import { microMotionOffset, microMotionFade } from './micro-motion.js';
 
