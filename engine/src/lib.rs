@@ -220,7 +220,7 @@ impl Event {
     }
 }
 
-/// 当前引擎/协议模型版本（**当前 = 9**）。
+/// 当前引擎/协议模型版本（**当前 = 11**）。
 /// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
 /// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
 /// v3：P29 射门机会迁移（射门由 hazard 五因子涌现，非槽强制；`shot_setup` 可被抢断打断）——
@@ -239,16 +239,26 @@ impl Event {
 /// v9：M5 射门分桶重标定（禁区弧 `7/22`→`3/22`、远射 `4/11`→`2/11`）+ `sample_shot_target`
 ///     禁区内体量 58%→70% + `l3_shot_ratios` 尺子口径由板条改罚球区矩形——事件流改变
 ///     （golden 重基线）。**同一版本内并入 M1b（门将出/退目标，见常量 `GK_COME_OUT_SLOPE`）**。
+/// v10：C3 传球飞行填拍——`tick_filling_flight` 在「原飞行 < 0.95s 且距离 ≥ 0.5m」时把上报
+///     `speed` 改写为 `距离 / 0.95`（viewer 的球飞行动画据此填满一拍；出界 pass 同样填拍）。
+///     **位置/决策/时间戳逐位不变，只有 `speed` 字段值与 `stream_hash` 变**——机器判据是
+///     `tests/realism.rs::gm_v10_is_v9_plus_speed_field_only`（掩掉 `"speed"` 后 v9/v10 逐 seed
+///     同哈希；该测试比对的是**两份冻结 golden 文件**，不依赖当前引擎行为）。
+/// v11：C1 子拍 + 球程快段（2026-10-28/29 的 goal 循环）——决策拍 1 Hz→2 Hz（全部 tick 常量按
+///     `TPF` 重标为秒语义）、射门掷定改每秒率（`per_second_hazard`）并水平重锚、fill 改为
+///     `0.95 × TICK_SECONDS`、移动层近球冲刺 + `FOUL_BEATEN_GAIN`、传球价值加横向转移项、
+///     长传拦截加成按前向分量缩放、`OPEN_BOX_SHOT_*` 门前优先档。**行为与事件流全量改变**
+///     （golden 重基线到 `tests/golden-v11/`）；逐项出处见 `.scratch/notes/RECORD.md` 的 R2–R5c 节。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 9;
+pub const MODEL_VERSION: u32 = 11;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
 /// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起，
 /// v3 = P29 射门机会迁移起，v4 = P30 防守接触竞争起，v5 = P31 删槽位 + 涌现频率起，
 /// v6 = P34 同队米制间距分离起）。
-/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v5 `tests/golden-v5/`、
-/// v6 `tests/golden-v6/`，旧基线保留不覆盖），
+/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v10 `tests/golden-v10/`、
+/// v11 `tests/golden-v11/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
@@ -4427,7 +4437,12 @@ fn emit_pass_highlight_inner(
                 OutSide::Sideline => st.opportunity_tally.exec_pass_out_throw_in += 1,
             }
             let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-            let flight = distance_meters(from_pos, (x2, y2)) / speed;
+            // C3 补齐（2026-10-29 独立审阅 P1.1）：出界 pass 也走填拍。此前这一支是唯一没接
+            // `tick_filling_flight` 的 pass 分支——短出界球的 `speed` 与其他 pass 语义不一致，
+            // 且 L2 的填拍门会把它当成「未填拍的短传」。填拍不消耗 RNG、不改任何决策输入；
+            // 填后 `t_end` 仍在 [t, t+TICK) 内，finalize tick 照旧是下一个 tick 边界
+            // （与 C3 其余分支同一论证）。
+            let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (x2, y2)), speed);
             let t_end = t + flight;
             events.push(Event {
                 t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
@@ -9357,17 +9372,17 @@ mod tests {
             (f, t)
         };
         let near = mk(2, 0.405); // 同队 mover 终点贴着落点（≈0.5m < 2.0）
-        set_end(&mut st, 10.5); // t_rem = 0.5 < TICK：本拍内完成（有保持段）
+        set_end(&mut st, 10.0 + 0.5 * TICK_SECONDS); // t_rem = 0.25 < TICK：本拍内完成（有保持段）
         let (f, t) = seg_of(&st, &[near.clone()]);
         assert!(f == landing && t == landing, "破阈+本拍内完成应退化为落点一点（f={:?} t={:?}）", f, t);
-        set_end(&mut st, 11.5); // t_rem = 1.5 ∈ (TICK, 2·TICK)：下一拍内完成
+        set_end(&mut st, 10.0 + 1.5 * TICK_SECONDS); // t_rem ∈ (TICK, 2·TICK)：下一拍内完成
         let (_, t) = seg_of(&st, &[near.clone()]);
         assert!(t == landing, "破阈+下一拍内完成应把终点钉在落点");
         let far = mk(2, 0.1); // 同队但 mover 远离落点
         assert!(seg_of(&st, &[far]).1 != landing, "未破阈应保持原口径（终点 = lerp(u(t+1)) ≠ 落点）");
         let cross = mk(12, 0.405); // 同坐标但跨队
         assert!(seg_of(&st, &[cross]).1 != landing, "跨队 mover 不应触发同队约束");
-        set_end(&mut st, 11.0); // t_rem = TICK（抢断式满拍，无保持段）
+        set_end(&mut st, 10.0 + TICK_SECONDS); // t_rem = TICK（抢断式满拍，无保持段）
         // 此档 `to` 恰等于 lerp(u(t+1)) = 落点（数值上不可区分），改看 `from`：原口径 from = 动作前位置。
         assert!(seg_of(&st, &[near]).0 == (0.5, 0.5), "t_rem==TICK 应走原口径（严格 <，from=动作前位置）");
     }
@@ -12565,9 +12580,12 @@ mod tests {
     /// （p143r-v4 重标定：阈值 8/12/16 → 2/4/7，与 deadline 基线 7→2 同尺度——见常量注释。）
     #[test]
     fn p31_liveness_profile_three_stages_monotone() {
-        assert_eq!(LIVENESS_STAGE_1_TICKS, 2, "一档阈值应为 2s（p143r-v4 重标定）");
-        assert_eq!(LIVENESS_STAGE_2_TICKS, 4, "二档阈值应为 4s（p143r-v4 重标定）");
-        assert_eq!(LIVENESS_STAGE_3_TICKS, 7, "三档阈值应为 7s（p143r-v4 重标定）");
+        // 档位是**秒语义**（2/4/7 s）。v11 起拍长 0.5s ⇒ tick 常量是秒数 / TICK_SECONDS；
+        // 断言按秒换算，拍频再变时这里自动跟随（写死 tick 数会在换拍频时误红）。
+        let ticks_per_sec = (1.0 / TICK_SECONDS) as u32;
+        assert_eq!(LIVENESS_STAGE_1_TICKS, 2 * ticks_per_sec, "一档阈值应为 2s");
+        assert_eq!(LIVENESS_STAGE_2_TICKS, 4 * ticks_per_sec, "二档阈值应为 4s");
+        assert_eq!(LIVENESS_STAGE_3_TICKS, 7 * ticks_per_sec, "三档阈值应为 7s");
 
         // 未达一档：全零（护栏不介入）
         for t in 0..LIVENESS_STAGE_1_TICKS {
@@ -12925,11 +12943,15 @@ mod tests {
             "6 场里停滞从未达到一档（{}）——护栏无触发机会",
             max_seen
         );
+        // 余量是**秒语义**（1 Hz 时代写死 +12 tick = 12 s）；按拍频换算，避免 2 Hz 下
+        // 门槛被意外收紧 2 倍。
+        let margin_ticks = (12.0 / TICK_SECONDS) as u32;
         assert!(
-            max_seen <= LIVENESS_STAGE_3_TICKS + 12,
-            "停滞上限 {} 远超三档({})——护栏未真正拉回比赛",
+            max_seen <= LIVENESS_STAGE_3_TICKS + margin_ticks,
+            "停滞上限 {} 远超三档({})+{}s——护栏未真正拉回比赛",
             max_seen,
-            LIVENESS_STAGE_3_TICKS
+            LIVENESS_STAGE_3_TICKS,
+            12
         );
     }
 
@@ -12955,11 +12977,14 @@ mod tests {
         assert!(reached_1, "40 场里停滞从未达到一档——护栏无触发机会（常量空转）");
         assert!(reached_2, "40 场里停滞从未达到二档——「无压久持→出球」档无触发机会");
         // 拉回有效：全场停滞上限应显著低于「无止境」（实测三档 16 是储备；上限应在二档量级）
+        // 余量秒语义（1 Hz 写死 +8 tick = 8 s）——按拍频换算。
+        let margin_ticks = (8.0 / TICK_SECONDS) as u32;
         assert!(
-            max_seen <= LIVENESS_STAGE_3_TICKS + 8,
-            "停滞上限 {} 远超三档({})——出球档未把比赛拉回",
+            max_seen <= LIVENESS_STAGE_3_TICKS + margin_ticks,
+            "停滞上限 {} 远超三档({})+{}s——出球档未把比赛拉回",
             max_seen,
-            LIVENESS_STAGE_3_TICKS
+            LIVENESS_STAGE_3_TICKS,
+            8
         );
     }
 
