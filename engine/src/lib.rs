@@ -845,7 +845,7 @@ const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// **R5c 重锚：−4.50 → −4.20（当前取值）**。横向转移（`PASS_W_LATERAL`）把接球点推远、
 /// 射门体量下滑，按 C1 的水平重锚拉回。regular 射门：**V1 19.6/场（贴下沿）→ R5c 23.1/场**
 /// （L1 200 场 23.1 ∈ [14,29]）——**两个数属于两个树，不是一个区间**。
-/// 出处：`.scratch/notes/RECORD.md` R5 节（19.40）与 R5c 节（23.1）+
+/// 出处：`.scratch/notes/RECORD.md` R5 节（19.6；同节的 19.40 是 ratchet `p38.shotsReg`，不是射门）与 R5c 节（23.1）+
 /// `.scratch/notes/c1-movement-coupling-2026-10-28.md` §7。
 const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.2;
 /// 射门推进 hazard 的**每秒率参考窗口**（秒）：λ = e^(score+shift) / 本值。
