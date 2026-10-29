@@ -611,10 +611,11 @@ pub fn card_of(
 /// 同刻多条时取**最早**一条（与 P16 `caliber.rs` 的 `closing_fact` 同款理由：
 /// `t == end_t` 上「最后一条」会选到下一个 episode 的开启事实）。
 ///
-/// ⚠️ **不是每条争抢都收束了一段 episode**：实测 300 seed，`contest_started` 事实
-/// 20053 条，其中**同刻是某个 episode 的 `end_t`** 的只有约 70%（见
-/// `by_contest_start` 的分母栏）。余下 30% 发生在「控制已释放、球还在飞」的
+/// ⚠️ **不是每条争抢都收束了一段 episode**：R6 300 seed 实测 `contest_started` 事实
+/// **37401** 条（P17A 时代为 20053），其中**同刻是某个 episode 的 `end_t`** 的
+/// **25078（67.1%）**；余下 **32.9%** 发生在「控制已释放、球还在飞」的
 /// **两段 episode 之间**——它们数得到成因，但挂不到任何一张卡上。
+/// （此处是**全部争抢**的分母；`instant_contest` 的 90.4% 是**零时长子集**的分母，两者不可互换。）
 pub fn closing_contest_fact<'a>(
     dm: &'a DiagnosticMatch,
     ep: &PossessionEpisode,

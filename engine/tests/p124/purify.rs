@@ -176,14 +176,18 @@ pub fn counter_proof_final_third(p: &Pooled) -> RateAuc {
 /// 本常量只对 [`crate::pool::GATE_SEEDS`]（30 seed）成立。
 ///
 /// ⚠️ **P143r-v4 引擎版本重锚**：原值 0.855 是 **P16 时点引擎**（`MODEL_VERSION≤7`）的
-/// `forward_m/s` 读数；四层（移动 v3 为主）**改变了这个特征的形态** → 同一探针在新引擎上给出
-/// 0.764。这**不是「结论变了」**（`final_third` 仍显著可分：0.764 ≫ 0.5），而是**探针的参照锚
-/// 随引擎版本失效**，按新引擎重锚。判别力不变：任何把读数摊平到 ≈0.5 的 join bug 仍判红
-/// （0.764−0.05 = 0.714 ≫ 0.5）。
-pub const COUNTER_PROOF_EXPECTED: f64 = 0.764;
-/// 反证条的容差。取 ±0.05：够松以容纳「池化顺序/浮点」的极小扰动，
-/// 够紧以让**任何把它摊平到 0.5 的 join bug** 判红（0.764−0.05 = 0.714 ≫ 0.5）。
-pub const COUNTER_PROOF_TOL: f64 = 0.05;
+/// `forward_m/s` 读数；四层（移动 v3 为主）改变了这个特征的形态 → v4 时同一探针给出 0.764。
+/// **R6（2026-10-29，C1 子拍/移动层/横向转移重放到 main）再重锚为 0.729**——与 p16
+/// `phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled` 的
+/// `R6_RECORDED_AUC_FINAL` 是同一管线、同一读数（该测试用 ±0.03 钉住）。
+/// 这**不是「结论变了」**（`final_third` 仍显著可分：0.729 ≫ 0.5），而是**探针的参照锚
+/// 随引擎版本失效**。判别力不变：任何把读数摊平到 ≈0.5 的 join bug 仍判红
+/// （0.729−0.03 = 0.699 ≫ 0.5）。
+pub const COUNTER_PROOF_EXPECTED: f64 = 0.729;
+/// 反证条的容差。R6 起与 p16 同用 **±0.03**（同管线同钉值，两个数必须一起漂）：
+/// 够松以容纳池化顺序/浮点的极小扰动，够紧以让**任何把它摊平到 0.5 的 join bug** 判红
+/// （0.729−0.03 = 0.699 ≫ 0.5）。
+pub const COUNTER_PROOF_TOL: f64 = 0.03;
 
 /// 判反证条是否落在期望带内（**不 panic**，由调用侧决定怎么报）。
 pub fn counter_proof_is_intact(r: &RateAuc) -> bool {

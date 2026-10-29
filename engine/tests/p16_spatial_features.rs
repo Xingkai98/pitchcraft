@@ -1468,15 +1468,17 @@ fn phaseability_separability_is_measured() {
 ///
 /// 30 seed / 5364 episode：
 ///
-/// | 量 | P16（v7） | P143r-v4 | **R6** |
+/// | 量（**同一口径：one-vs-rest 的 AUC，除注明者**） | P16（v7） | P143r-v4 | **R6** |
 /// |---|---|---|---|
-/// | `final_third` vs 其余 `forward_m/s` | 0.855 | 0.88–0.92（两两） | **0.729**（钉值 ±0.03） |
+/// | `final_third` vs 其余 `forward_m/s` | 0.855 | *未记录同口径*（两两 0.88–0.92 是**另一个量**） | **0.729**（钉值 ±0.03） |
 /// | `build_up` vs `progression` `forward_m/s` | 0.461 | 0.382 | **0.301**（钉值 ±0.03） |
 /// | 未归一 `forward_m`（build vs prog） | — | — | **0.616**（时长混淆记录） |
 /// | 时长中位数（build / prog / final） | 78 / 45 / 40 s | — | **36.5 / 24.5 / 19.5 s** |
 ///
 /// 方向全部不变：`final_third` 仍显著可分；`build_up` 的推进速率仍**低于** `progression`
-/// （AUC < 0.5）。变的是基数——移动层压缩了推进速率分布，两档之间的差距被拉得更大。
+/// （AUC < 0.5）。R6 把两个读数都进一步推离 0.5——**原因本轮未逐条归因**（移动层改变了
+/// 位置形态是一个候选解释，但「哪一项改动、经哪条路径」未验证）；能确定的是读数与
+/// 判据都出自本树实跑。
 ///
 /// ## 本测试的判别力（为什么它不会静默漂移）
 ///
@@ -1560,10 +1562,11 @@ fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
     let auc_final = auc(&fwd_final, &fwd_other).expect("final_third 的 AUC 应可算");
     println!("final_third vs 其余（forward_m/s）AUC = {auc_final:.3}");
     // **R6 基数重标定（2026-10-29）**：C1 子拍/移动层/横向转移重放到 main 后，本量由
-    // P16 的 0.855 / P143r-v4 两两 0.88–0.92 移到 **0.729**（30 seed，join 未断）。
+    // P16 的 0.855 移到 **0.729**（30 seed，join 未断）。
     // 判据方向不变（final_third 仍与其余显著可分，AUC 远高于 0.5）；改为**钉值 ±0.03**
     // 防静默漂移——join bug 复发仍会把它打到 ~0.5 而红，且任何进一步的形态漂移也会红。
-    // 这不是放宽：阈值跟随实测基数收紧成窄带（旧写法只挡「<0.75」一侧）。
+    // ⚠️ **如实**：新带 `[0.699, 0.759]` 的下限比旧写法（`>0.75` 单侧）低 0.051，换来
+    // 一个**上限**；判别力的实质来源是「偏离记录值即红 + 下限仍远高于 0.5」，不是「带更紧」。
     const R6_RECORDED_AUC_FINAL: f64 = 0.729;
     assert!(
         (auc_final - R6_RECORDED_AUC_FINAL).abs() <= 0.03,

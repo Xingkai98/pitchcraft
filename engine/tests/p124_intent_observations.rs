@@ -1252,13 +1252,18 @@ fn def_none_signal_is_mechanically_tied_to_shots() {
 
 /// **重跑 gate：与 P16 基线并列对照**（Slice 4 的主产出）。
 ///
-/// 断言三件事：
-/// ① **P16 基线复现**——`forward_m/s` 对 `final_third` 仍 ≈0.855、
-///    对 `build_up` vs `progression` 仍 ≈0.461（否则对照表不可比）；
+/// 断言三件事（**R6 重锚后的当前值**，括号内为历史值）：
+/// ① **P16 基线复现**——`forward_m/s` 对 `final_third` = **0.729**（P16 0.855 / v4 0.764）、
+///    对 `build_up` vs `progression` = **0.301**（P16 0.461 / v4 0.382）；两者都用
+///    `|实测 − 记录值| ≤ 0.03` 钉住（与 p16 测试同管线、同钉值）；
 /// ② **意图特征不足以分开 `build_up` / `progression`**——所有**非循环**意图特征的
 ///    `|AUC−0.5|` 都 ≤ 0.15（干净战场：两档都含 `!has_shot`，不受 `def_none` 循环影响）；
-/// ③ **`final_third` 的意图信号**：`window_opened` / `setup_share` 应强
-///    （起脚窗口是射门的前置），但 `def_none` 除外（`[循环·仅对照]`）。
+///    唯一例外是 R6 记录的弱信号 `drop_passcount/pressure_share = 0.334`（钉值 ±0.03）。
+/// ③ **`final_third` 的意图侧没有非循环证据**——`window_opened` / `window_share` /
+///    `setup_share` / `first_window_frac` / `max_window_ticks` 与 `def_none` 共 **6** 条
+///    是 `[循环·仅对照]`（窗口由射门消费，末个窗口拍恒为射门前一拍）；剔除循环行后，
+///    样本充足的意图量都只有弱值（R6：`def_per_s` 0.592 / `pressure_share` 0.404，
+///    均 |Δ|<0.25）。「`final_third` 可判」的证据是**空间**的，不是意图的。
 ///
 /// ⚠️ 容差 0.15 的依据：P16 的空间侧最强非循环量 0.634（`|Δ|=0.134`），
 /// 故 0.15 是「不比 P16 已知的最强空间量更弱」的**同尺度**门槛。
@@ -1280,19 +1285,21 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
             println!("   {:<34} AUC={:.3} [{:?}]", r.feature, r.auc.unwrap(), r.provenance);
         }
     }
-    // ① P16 基线复现。⚠️ **P143r-v4 引擎版本重锚**：0.855 是 P16 时点引擎的 `forward_m/s`
-    //    读数；四层（移动 v3）改变了该特征形态 → 新引擎给出 0.764。`final_third` 仍显著可分
-    //    （0.764 ≫ 0.5），故这是**探针参照锚随版本失效**，按新引擎重锚（同 `purify.rs`）。
+    // ① P16 基线复现。锚点随引擎版本重锚：P16 0.855 → v4 0.764 → **R6 0.729**
+    //    （与 p16 测试的 `R6_RECORDED_AUC_FINAL` 同管线、同读数；两处都用 ±0.03 钉住，
+    //    一起漂才不红）。`final_third` 仍显著可分（0.729 ≫ 0.5），join bug 仍会把它打到
+    //    ~0.5 而红（0.729−0.03 = 0.699 ≫ 0.5）。
     let p16_final = t
         .final_vs_rest
         .iter()
         .find(|r| r.feature == "forward_m/s[空间]")
         .and_then(|r| r.auc)
         .expect("final_third 的 forward_m/s AUC 应可算");
+    const R6_RECORDED_AUC_FINAL: f64 = 0.729;
     assert!(
-        (p16_final - 0.764).abs() <= 0.05,
-        "P16 基线（v4 重锚值 0.764）未复现：forward_m/s 对 final_third AUC = {p16_final:.3}——\
-         对照表不可比，先查池化/参考集是否与基线同源"
+        (p16_final - R6_RECORDED_AUC_FINAL).abs() <= 0.03,
+        "P16 基线（R6 重锚值 {R6_RECORDED_AUC_FINAL:.3}；P16 0.855 / v4 0.764）未复现：\
+         forward_m/s 对 final_third AUC = {p16_final:.3}——对照表不可比，先查池化/参考集是否与基线同源"
     );
     // ② ⚠️⚠️ **裁决已变 —— 待用户拍板（P143r-v4，2026-10-11）** ⚠️⚠️
     //    原断言：`forward_m/s` 对 build_up vs progression ≈ 0.461（P16：空间量**分不开**两档）。
@@ -2195,19 +2202,23 @@ fn verdict_best_intent_row_is_adequately_sampled() {
 /// ## 机制（读代码 + 实测，**独立审阅抓到，比 `def_none` 更强**）
 ///
 /// **非头球射门只能由起脚窗口产出**（`CarrierExecution::Shoot` 是唯一生产者），
-/// 且窗口被射门**消费**：`SHOT_WINDOW_TICKS = 2 × TPF`（`lib.rs`，即 **2 秒**预算），
-/// 提交射门的那一拍之后不再有窗口拍 ⇒ **末个 `in_window` 拍恒是射门前一拍**。
+/// 且窗口被射门**消费**：`SHOT_WINDOW_TICKS` 在 origin/main 是字面 `2`（1 Hz 下 2 拍），
+/// R6 改为 `2 × TPF`（2 Hz 下 4 拍）——**两种口径都是 2 秒**（单窗口上限）。提交射门的
+/// 那一拍之后不再有窗口拍 ⇒ **末个 `in_window` 拍恒是射门前一拍**。
 /// R6（2 Hz）实测 30 seed：`final_third` episode 的 `in_window` 拍数分布
-/// `{0: 64, 1: 464, 2: 116, 3: 63, 4: 25, 5: 13, 6: 2, 7: 3, 8: 1}`，
-/// **末拍为射门前一拍 = 687/687（100%）**；单拍窗口 464/687（67.5%）为多数
-/// （1 Hz 时窗口预算 2 拍，故旧注释写「~1 拍」——那是尺子口径，不是机制）。
+/// `{0: 64, 1: 464, 2: 116, 3: 63, 4: 25, 5: 13, 6: 2, 7: 3, 8: 1}`
+/// （>4 拍的 episode 含多个窗口），**末拍为射门前一拍 = 687/687（100%）**；
+/// 单拍窗口 464/687（67.5%）为多数。
+/// ⚠️ 旧注释写「窗口时长预算只有 ~1 拍」——它描述的是**当时的观测分布**（多数窗口在
+/// 首个决策拍就提交），不是预算；预算一直是 2 秒。那是「观测当机制」的笔误，R6 更正。
 /// ⇒ `window_opened` 在 `final_third` 上 ≈「本 episode 以射门收尾」的另一写法，
 /// 而参考集谓词 `ends_shot` 的**定义就是这个**。窗口派生的 **5** 条特征
 /// （`window_opened`/`window_share`/`setup_share`/`first_window_frac`/`max_window_ticks`）
 /// 在该表里都是循环量。
 ///
-/// 0 个窗口拍的 64 个 `ends_shot` episode 是**不经窗口的射门**（如头球），
-/// 不参与「末拍」比例（分母 `with_window`）。
+/// 0 个窗口拍的 64 个 `ends_shot` episode 不参与「末拍」比例（分母 `with_window`）。
+/// 它们为何没有窗口拍（头球等不经窗口的射门 / 采样点错过）**本轮未逐条归因**——
+/// 本测试只需要「有窗口的 episode 末拍恒接射门」这条机制。
 ///
 /// ## 本测试钉住两件事
 ///

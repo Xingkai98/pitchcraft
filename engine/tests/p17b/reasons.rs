@@ -190,7 +190,8 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
                （实测 15434 = 90.4%）；余下约 10% 发生在「控制已释放、球还在飞」的**两段 episode 之间**，\n\
                在 L2 的争抢成因表里数得到，但没有 card 可挂；\n\
                （b）A2 关心的**追逐过程**在其主因 `interception_loose` 上**落在盲区**——\n\
-               P17A 300 seed 实测该成因 729/729 不产 loose beat（机制未变；R6 未复测该计数），\n\
+               P17A **30 seed** 实测该成因 729/729 不产 loose beat；R6 **300 seed** 复核机制\n\
+               仍成立（15364/15364 追逐不可见，见本产物「按争抢成因」表），\n\
                诊断卡的【丢球后】一节只能记「追逐不可见」",
     },
     AnomalyCoverageRow {
