@@ -1200,6 +1200,12 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
 - ⚠️ **CI 首跑（4db6162）红在 p15 截断覆盖门（1/1/0）**：本机 1.97/1.99、release/debug 都
   命中 seed 253 的形态③，CI runner 上不命中 ⇒ 已改为候选表 + 运行时扫描（见 §1 的 CI 教训
   与 `1c6c649`）。这是**跨环境 knife-edge**，不是判据放宽。
+- **CI 二跑（`0a3402f`，run 40953371481）**：**step 1–6 全绿**（step 1 debug 套件 33 分钟；
+  viewer/tools/e2e/spacing/标尺全过），**step 7 L1 红 5/4**——红名恰为谱系基线四门：
+  `l1_shot_result_distributions`（禁区 goal 0.062）、`l1_tackle_dilution_and_slot_mix`
+  （角球 8.29 ∉ [1,7]）、`l3_shot_ratios`（射正 0.494）、`l1_home_away_goal_asymmetry`
+  （主队 0.807）。本地同命令复跑确认同一集合（524s）。⇒ **CI 唯一红 = 已登记的 L1 四门**；
+  红线是移动层/体量重锚的行为结果，重标定属研究裁决（用户级动作），本轮不动。
 - ⚠️ **p124 的 `on_disk_artifacts_*` 有一条环境前提**：它把产物的 `worktree_dirty=false`
   与**实时** `git status --porcelain` 比对。本 worktree 带有**预先存在**的 `.gitignore` 修改
   与 4 项未跟踪笔记（非本分支产物），裸跑会因「实时脏」判红。产物是在**干净视口**
