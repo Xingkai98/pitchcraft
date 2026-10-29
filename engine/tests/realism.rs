@@ -1335,10 +1335,13 @@ fn l2_pass_fill_constant_matches_engine_tick() {
          改拍频时必须同步重推 L2 填拍门的填充时长与容差",
         0.95 * TICK_SECONDS
     );
-    // 填拍门的容差按同一填充时长推导（speed {:.1} 量化项 = FILL×0.05）。
+    // 填拍门的容差按同一填充时长推导：坐标 4 位小数的距离重算误差 ≤0.0126m +
+    // speed `{:.1}` 的量化项 FILL×0.05。两项之和才是硬上界（审阅 P3-R2-3：
+    // 只判 speed 项会让 EPS 落在 0.03 时本测试仍绿、而门会误红）。
+    let quant_bound = 0.0126 + PASS_FILL_FLIGHT_S * 0.05;
     assert!(
-        PASS_FLIGHT_QUANT_EPS_M >= PASS_FILL_FLIGHT_S * 0.05,
-        "填拍容差 {PASS_FLIGHT_QUANT_EPS_M} 未覆盖 speed 量化项 {:.4}",
+        PASS_FLIGHT_QUANT_EPS_M >= quant_bound,
+        "填拍容差 {PASS_FLIGHT_QUANT_EPS_M} 未覆盖硬上界 {quant_bound:.4}m（坐标 0.0126 + speed 量化 {:.4}）",
         PASS_FILL_FLIGHT_S * 0.05
     );
 }

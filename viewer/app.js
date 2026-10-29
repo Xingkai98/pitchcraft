@@ -3,9 +3,10 @@
 // 注意：需通过本地 HTTP server 打开（file:// 下 fetch .wasm 会失败）。
 
 // 版本号：改 JS 后统一更新（index.html 的 ?v= 也同步改）
-// 传递依赖也带 `?v=`（v11 起统一）：裸路径与带查询串在浏览器/Node 里是**两个模块实例**
-// （e2e 曾因此在错误的 config 实例上改设置——审阅 P2-1）。改任何子模块 → 把它每一处
-// import specifier 的版本号一起改。
+// **config 链**（config / game / interpretation / observation / derive-audit-features / renderer）
+// 的 import specifier 全部带 `?v=`：裸路径与带查询串在浏览器/Node 里是**两个模块实例**
+// （e2e 曾因此在错误的 config 实例上改设置——审阅 P2-1）。未改动的 geometry/micro-motion/
+// protocol 等仍是裸路径。改任何子模块 → 把它每一处 import specifier 的版本号一起改。
 import { config } from './config.js?v=20261029-1';
 import { createRenderer, drawPitch, renderFrame } from './renderer.js?v=20261029-1';
 import { createGame } from './game.js?v=20261029-1';
