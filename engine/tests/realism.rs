@@ -89,6 +89,18 @@ const SEEDS_HA: u32 = 600;
 /// **不得**用「浮点不可避免」把这条冗余断言长期合理化（注释原话）——此处 ε 有可证上界。
 const TACKLE_FAR_EPS_M: f64 = 0.05;
 
+/// C3 填拍门（L2 pass 分支）的量化容差（米，距离空间）。
+///
+/// 硬上界推导：序列化坐标 4 位小数 ⇒ 距离重算误差 ≤0.0126m；`speed` 是 `{:.1}`（±0.05）⇒
+/// 在 `距离 = 0.95·speed` 上放大约 0.0475m。合计 **≤0.06m**（2026-10-29 审阅 P2.1：
+/// 旧版按 0.03s 飞行容差推导时漏了 speed 自身的量化项，且在最小 speed 上推导——那个推导
+/// 不成立，但实测最坏 0.0247s≈0.0395m 仍在 0.06m 内）。
+const PASS_FLIGHT_QUANT_EPS_M: f64 = 0.06;
+
+/// 填拍门检查的最小序列化距离（米）。低于 0.52m 跳过：坐标量化（±0.0126m）使「内部距离
+/// 是否真的 ≥0.5m（= 是否进入填拍域）」在 0.5m 边界上不可判；0.52 = 0.5 + 0.0126 向上取整。
+const PASS_FILL_MIN_CHECK_M: f64 = 0.52;
+
 fn ha_stats() -> &'static Vec<MatchStats> {
     static STATS: std::sync::OnceLock<Vec<MatchStats>> = std::sync::OnceLock::new();
     STATS.get_or_init(|| {
@@ -237,6 +249,35 @@ fn parse_score(s: &str) -> Option<(u32, u32)> {
     Some((h.parse().ok()?, a.parse().ok()?))
 }
 
+/// 掩掉事件流 JSON 里**所有** `"speed":<num>` 的数值（替换为 `0`），返回掩码后文本。
+///
+/// 用途：golden 的 `speed_masked_stream_hash`——C3（v10）只改 `speed` 字段，掩码后 v9/v10 的
+/// 事件流必须逐字节相同。掩码只抹数值本身（字段名、分隔符、其它字段全部保留），因此
+/// **任何 speed 以外的字段漂移**（位置 `x/y/x2/y2/receiver_x…`、时间戳 `t`、`detail`/`result`、
+/// 事件条数/顺序）都会改变掩码流哈希。2026-10-29 审阅用 `receiver_x + 0.0007` 变异反证：
+/// 旧守卫（只比计数）绿，本哈希红。
+///
+/// 数值语法：`to_json` 里 speed 一律是 `{:.1}`，只含 `-`、数字、`.`；跳出字符为 `,`/`}`。
+fn mask_speed_fields(s: &str) -> String {
+    const NEEDLE: &str = "\"speed\":";
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find(NEEDLE) {
+        out.push_str(&rest[..i + NEEDLE.len()]);
+        out.push('0');
+        let after = &rest[i + NEEDLE.len()..];
+        let skip = after
+            .char_indices()
+            .take_while(|(_, c)| c.is_ascii_digit() || matches!(c, '.' | '-' | '+' | 'e' | 'E'))
+            .last()
+            .map(|(j, c)| j + c.len_utf8())
+            .unwrap_or(0);
+        rest = &after[skip..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// FNV-1a 64（事件流哈希，golden master 防漂移）。
 fn fnv1a(s: &str) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
@@ -332,6 +373,10 @@ struct MatchStats {
     kickoff_self_pass: usize,
     // golden
     stream_hash: u64,
+    /// 掩掉所有 `"speed":<num>` 数值后的事件流哈希（见 `mask_speed_fields`）。
+    /// C3 的「只有 speed 变」由 v9/v10 的这一列逐 seed 相同来守；旧 golden 目录没有该字段，
+    /// 读出为 0（只有 v9/v10 需要非 0，`gm_v10…` 断言里点名检查）。
+    speed_masked_stream_hash: u64,
 }
 
 /// 跑一场 90 分钟比赛并聚合统计 + 收集 L2 违例。
@@ -342,6 +387,7 @@ fn aggregate(seed: u64) -> MatchStats {
     let mut st = MatchStats {
         seed,
         stream_hash: fnv1a(&json),
+        speed_masked_stream_hash: fnv1a(&mask_speed_fields(&json)),
         max_beat_gap: 0.0,
         ..Default::default()
     };
@@ -554,37 +600,71 @@ fn aggregate(seed: u64) -> MatchStats {
                     Some("free_kick") => st.n_free_kick += 1,
                     _ => {}
                 }
-                // pass 速度区间（C3 起分两支）：
-                //   - 未改写：生成器原始速度，普通 12-24.9 / 角球 18-21.9 / 界外 12-13.9 /
-                //     门球 16-19.9 / 头球摆渡 10-13.9 / 解围 14-17.9 → 统一 [10, 25)；
-                //   - 改写（tick-fill）：`tick_filling_flight` 在「原飞行 < 0.95s 且距离 ≥ 0.5m」
-                //     时把 speed 改为 `距离/0.95`（viewer 让球飞满一拍）⇒ 短传的 speed 必然 < 10。
-                // 判据**不是**把下界放宽（那会让随机掉速溜过去），而是守住改写自身的语义：
-                // 凡 speed < 10 的 pass，其由序列化字段复算的飞行时长必须 ≈ 0.95s。
-                // 容差 0.03s：x/y/x2/y2 各含 ≤5e-5 归一化量化（105m/68m → 距离误差 ≤0.0125m），
-                // 除以最小 speed（≈0.53）后放大约 0.024s；改错填拍常量（如 0.5/0.8）仍会红。
+                // pass 速度/飞行不变量（C3 改写后的口径；2026-10-29 审阅 P2.1/P2.2 重写）：
+                //
+                // 生成器原始速度按来源不同（普通 12-24.9 / 角球 18-21.9 / 界外 12-13.9 /
+                // 门球 16-19.9 / 头球摆渡 10-13.9 / 解围 14-17.9 / 出界 pass 12-24.9），
+                // 统一上界 < 25。`tick_filling_flight` 再在「原飞行 < 0.95s 且距离 ≥ 0.5m」时
+                // 把 speed 改写为 `距离/0.95`（只降不升：改写值 < 原速）。
+                //
+                // 因此对**任何**落点可验、内部距离 ≥ 0.5m 的 pass，都有统一不变量：
+                //     speed ≤ 距离 / 0.95   ⇔   距离 / speed ≥ 0.95
+                // （填拍的取等；未填拍的原飞行就 ≥ 0.95s）。这不只守「短传填拍」，也守
+                // 「≥9.5m 的快速传球该填却未填」——旧版只查 speed<10 的分支，距填拍门
+                // ≥9.5m 的传球完全没验（审阅 P2.2 的覆盖盲区）。
+                //
+                // 容差（距离空间，硬上界可证）：测试读的是**序列化后**字段——
+                //   - x/y/x2/y2 各 4 位小数 ⇒ 每端点 ≤0.00626m ⇒ 距离重算误差 ≤0.0126m
+                //     （推导同 `TACKLE_FAR_EPS_M` 注释）；
+                //   - speed 是 `{:.1}`（±0.05）⇒ 0.95×0.05 = 0.0475m；
+                //   ⇒ |距离_ser − 0.95·speed_ser| ≤ 0.06m（= `PASS_FLIGHT_QUANT_EPS_M`）。
+                // 距离 < 0.52m 的事件跳过：坐标量化（±0.0126m）让「内部距离是否真 ≥0.5m
+                // （即是否该填拍）」在 0.5m 边界上不可判。
+                // 实测余量（300 seed）：
+                //   - 审阅（speed<10 子集）最坏 |flight−0.95| = 0.0247s（seed 48）≈0.0395m
+                //     ——出处在 `.scratch/notes/c3-render-fixes-to-main-2026-10-29/
+                //     review-independent-2026-10-29.md` §2.5；
+                //   - 修复后复测（全 pass）最坏 0.0233s（seed 187），真违例 0
+                //     ——见同目录 `pass-flight-residuals-fixed-300seeds.json`。
+                // 两者都 < 0.06m。出界分支未接填拍时（修复前）300 seed 有 2,932 条
+                // flight<0.945s 的 pass 残余，其中 932 条来自该分支（同目录
+                // `pass-flight-residuals-prefix-300seeds.json`）。
                 if spd >= 0.0 {
                     if spd >= 25.0 {
                         st.speed_violations
                             .push(format!("pass speed {:.2} (want <25)", spd));
-                    } else if spd < 10.0 {
-                        let x1 = field_num(e, "x").unwrap_or(-1.0);
-                        let y1 = field_num(e, "y").unwrap_or(-1.0);
+                    } else {
                         let x2 = field_num(e, "x2");
                         let y2 = field_num(e, "y2");
-                        let flight = match (x2, y2) {
-                            (Some(x2), Some(y2)) if spd > 0.0 => {
+                        match (x2, y2) {
+                            (Some(x2), Some(y2)) => {
+                                let x1 = field_num(e, "x").unwrap_or(-1.0);
+                                let y1 = field_num(e, "y").unwrap_or(-1.0);
                                 let dx = (x2 - x1) * PITCH_LENGTH_M;
                                 let dy = (y2 - y1) * PITCH_WIDTH_M;
-                                (dx * dx + dy * dy).sqrt() / spd
+                                let dist = (dx * dx + dy * dy).sqrt();
+                                if dist >= PASS_FILL_MIN_CHECK_M
+                                    && dist - 0.95 * spd < -PASS_FLIGHT_QUANT_EPS_M
+                                {
+                                    let flight = if spd > 0.0 {
+                                        dist / spd
+                                    } else {
+                                        f64::INFINITY
+                                    };
+                                    st.speed_violations.push(format!(
+                                        "pass speed {:.2} 未填拍（复算 flight {:.3}s < 0.95s，\
+                                         距离 {:.2}m，量化容忍 {:.2}m）",
+                                        spd, flight, dist, PASS_FLIGHT_QUANT_EPS_M
+                                    ));
+                                }
                             }
-                            _ => f64::INFINITY, // 无落点可验 → 按违例处理
-                        };
-                        if (flight - 0.95).abs() > 0.03 {
-                            st.speed_violations.push(format!(
-                                "pass speed {:.2} <10 但不是 tick-fill（复算 flight {:.3}s，want 0.95±0.03）",
-                                spd, flight
-                            ));
+                            // 无落点可验：只有 speed<10（必属填拍域）才记违例；
+                            // ≥10 的传球无法从字段判断它是否该填拍。
+                            _ if spd < 10.0 => st.speed_violations.push(format!(
+                                "pass speed {:.2} <10 但无落点可验（x2/y2 缺失）",
+                                spd
+                            )),
+                            _ => {}
                         }
                     }
                 }
@@ -1379,8 +1459,10 @@ fn l2_sent_off_kickoff_seeds() {
 //
 // C3：v10 = 传球飞行填拍（`tests/golden-v10/`）。这是**协议字段值变化、不是行为变化**：
 // `tick_filling_flight` 把原飞行 < 0.95s 的传球 `speed` 改写为 `距离/0.95`（viewer 动画填拍），
-// 位置/决策/时间戳逐位不变——由 `gm_v10_is_v9_plus_speed_field_only`（v9/v10 计数全同、只哈希
-// 不同）与实施期的「掩掉 speed 后事件流逐字节相同」证明。v9 保留不覆盖。
+// 位置/决策/时间戳逐位不变。机器自证 = `gm_v10_is_v9_plus_speed_field_only`：v9/v10 的 28 个
+// 计数全同、原始哈希不同、**`speed_masked_stream_hash`（掩掉 `"speed":<num>` 后的流哈希）
+// 逐 seed 相同**。v9 目录保留不覆盖（只是补了 `speed_masked_stream_hash` 一列——由 1c5729d 的
+// 引擎生成，其余列逐位不变；见 2026-10-29 修复记录）。
 //
 // 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 10）落 v10；需要对比旧版本时读旧目录。
 // p143r-v4：四层机制（球导向跑位/开放局逼抢/事件密度/传球选择+对抗几何）改变可观测行为 → MODEL_VERSION 7→8。
@@ -1410,7 +1492,7 @@ fn golden_path(model_version: u32, seed: u64) -> std::path::PathBuf {
 
 fn golden_summary_json(st: &MatchStats) -> String {
     format!(
-        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_goal_home\": {},\n  \"n_goal_away\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_box\": {},\n  \"n_arc\": {},\n  \"n_far\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_pass_success\": {},\n  \"n_pass_intercepted\": {},\n  \"n_pass_lost\": {},\n  \"n_corner_kick\": {},\n  \"n_gk_pass\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"n_foul\": {},\n  \"n_foul_yellow\": {},\n  \"n_foul_red\": {},\n  \"n_free_kick\": {},\n  \"stream_hash\": {}\n}}",
+        "{{\n  \"seed\": {},\n  \"home_score\": {},\n  \"away_score\": {},\n  \"n_goal_home\": {},\n  \"n_goal_away\": {},\n  \"n_events\": {},\n  \"n_beats\": {},\n  \"n_shot\": {},\n  \"n_shot_goal\": {},\n  \"n_shot_saved\": {},\n  \"n_shot_off\": {},\n  \"n_box\": {},\n  \"n_arc\": {},\n  \"n_far\": {},\n  \"n_header\": {},\n  \"n_tackle\": {},\n  \"n_tackle_success\": {},\n  \"n_pass\": {},\n  \"n_pass_success\": {},\n  \"n_pass_intercepted\": {},\n  \"n_pass_lost\": {},\n  \"n_corner_kick\": {},\n  \"n_gk_pass\": {},\n  \"n_out_goal_line\": {},\n  \"n_out_sideline\": {},\n  \"n_foul\": {},\n  \"n_foul_yellow\": {},\n  \"n_foul_red\": {},\n  \"n_free_kick\": {},\n  \"stream_hash\": {},\n  \"speed_masked_stream_hash\": {}\n}}",
         st.seed,
         st.home_score,
         st.away_score,
@@ -1441,6 +1523,7 @@ fn golden_summary_json(st: &MatchStats) -> String {
         st.n_foul_red,
         st.n_free_kick,
         st.stream_hash,
+        st.speed_masked_stream_hash,
     )
 }
 
@@ -1477,6 +1560,10 @@ fn golden_from_str(s: &str) -> MatchStats {
     st.n_free_kick = field_num(s, "n_free_kick").unwrap_or(-1.0) as usize;
     // stream_hash 是 u64，>2^53 用 f64 解析会丢精度 → 必须字符串解析
     st.stream_hash = field_str(s, "stream_hash")
+        .and_then(|v| v.parse::<u64>().ok())
+        .unwrap_or(0);
+    // v1..v8 的 golden 没有这一列 → 0（只有 v9/v10 的守卫会检查非 0）。
+    st.speed_masked_stream_hash = field_str(s, "speed_masked_stream_hash")
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
     st
@@ -1630,11 +1717,19 @@ fn gm_legacy_baselines_preserved_and_differs() {
     assert!(seeds_with_out > 0, "10 个 canary seed 里应有 seed 产出出界 pass（否则假设不成立）");
 }
 
-/// C3 重基线纪律：v10 与 v9 的**计数全同、只有流哈希不同**。
+/// C3 重基线纪律：v10 与 v9 **计数全同、原始流哈希不同、掩掉 speed 后流哈希相同**。
 ///
 /// C3 只改上报 `speed`（`tick_filling_flight`），不动位置/决策——若 v10 的任一计数与 v9 不同，
 /// 说明重基线把行为漂移洗进了基线（不是「只有字段值变」）。这是 golden 重基线的**自证条**，
 /// 同时给 `MODEL_VERSION` 9→10 的注释提供仓内出处（不是单方面的叙事）。
+///
+/// **2026-10-29 审阅 P1.2 加固**：原版只比 28 个计数 + 哈希不同 ⇒ 看不见位置类字段漂移
+/// （审阅实测 `receiver_x + 0.0007` 时本测试照绿）。现在再加一条**掩码流哈希**：
+/// `speed_masked_stream_hash` 把事件流里所有 `"speed":<num>` 的数值抹成 `0` 后做 FNV-1a
+/// （见 `mask_speed_fields`），v9 与当前（v10）必须**逐 seed 相同**。掩码流保留了位置、
+/// 时间戳、决策、detail/result 与事件序列——它们任一漂移都会让本断言红。
+/// v9 黄金的这一列由 `1c5729d` 的引擎重新生成（计数与 `stream_hash` 与旧文件逐位相同，
+/// 只多一列；证据见 `.scratch/notes/c3-render-fixes-to-main-2026-10-29/review-fixes-2026-10-29.md`）。
 #[test]
 fn gm_v10_is_v9_plus_speed_field_only() {
     for seed in GOLDEN_SEEDS {
@@ -1644,6 +1739,17 @@ fn gm_v10_is_v9_plus_speed_field_only() {
         assert!(
             !hash_same,
             "seed {}：v10 与 v9 流哈希相同——C3 的 speed 改写没有落到事件流（重基线未生效？）",
+            seed
+        );
+        assert_ne!(
+            gold_v9.speed_masked_stream_hash, 0,
+            "seed {}：v9 golden 缺 `speed_masked_stream_hash`（用 1c5729d 的引擎重生成该列）",
+            seed
+        );
+        assert_eq!(
+            gold_v9.speed_masked_stream_hash, st.speed_masked_stream_hash,
+            "seed {}：掩掉 speed 后 v10 与 v9 的事件流不同——出现了 speed 以外的字段漂移\
+             （位置/时间戳/决策/事件序列；C3 只允许 speed 字段变）",
             seed
         );
     }

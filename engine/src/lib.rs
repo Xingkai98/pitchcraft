@@ -220,7 +220,7 @@ impl Event {
     }
 }
 
-/// 当前引擎/协议模型版本（**当前 = 9**）。
+/// 当前引擎/协议模型版本（**当前 = 10**）。
 /// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
 /// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
 /// v3：P29 射门机会迁移（射门由 hazard 五因子涌现，非槽强制；`shot_setup` 可被抢断打断）——
@@ -240,10 +240,13 @@ impl Event {
 ///     禁区内体量 58%→70% + `l3_shot_ratios` 尺子口径由板条改罚球区矩形——事件流改变
 ///     （golden 重基线）。**同一版本内并入 M1b（门将出/退目标，见常量 `GK_COME_OUT_SLOPE`）**。
 /// v10：C3 传球飞行填拍——`tick_filling_flight` 在「原飞行 < 0.95s 且距离 ≥ 0.5m」时把上报
-///     `speed` 改写为 `距离 / 0.95`（viewer 的球飞行动画据此填满一拍）。**位置/决策/时间戳
-///     逐位不变，只有 `speed` 字段值与 `stream_hash` 变**——证据是
-///     `tests/realism.rs::gm_v10_is_v9_plus_speed_field_only`（v9/v10 基线逐字段相同、只哈希不同）
-///     与掩掉 speed 后的事件流逐字节比对（同 change 的实施记录）。
+///     `speed` 改写为 `距离 / 0.95`（viewer 的球飞行动画据此填满一拍；出界 pass 同样填拍）。
+///     **位置/决策/时间戳逐位不变，只有 `speed` 字段值与 `stream_hash` 变**。
+///     机器判据：`tests/realism.rs::gm_v10_is_v9_plus_speed_field_only`——它断言 v9/v10 的
+///     28 个计数字段全同、原始流哈希不同，且 **golden 记录的 `speed_masked_stream_hash`
+///     （掩掉所有 `"speed":<num>` 后的事件流哈希）v9 与 v10 逐 seed 相同**。掩码只抹 speed
+///     的数值，位置/时间戳/决策/其它字段任一漂移都会改变掩码哈希（2026-10-29 审阅用
+///     `receiver_x + 0.0007` 变异反证过：旧守卫绿、新守卫红）。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
 pub const MODEL_VERSION: u32 = 10;
 
@@ -3469,7 +3472,8 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 ///
 /// 背景：事件 `speed` 同时驱动两处——引擎 `t_end`（高亮结束 / finalize tick）与 viewer 的
 /// 球飞行动画（`duration = 距离 / speed`）。实测引擎一次传球的飞行只有 0.2–0.8s，球到落点后
-/// 到下一拍（1s 边界）之间**静止干等**（盲测选窗里占总静止时间约 15%）。
+/// 到下一拍（1s 边界）之间**静止干等**（盲测选窗里占总静止时间约 15%——**本仓内不可自证**：
+/// 该读数出自 commit 6105407 的实施期盲测选窗统计，未落盘为可复算的 note/脚本）。
 ///
 /// 规则：原飞行 `< 0.95s` 时改写到 0.95s（`speed = 距离 / 0.95`，RNG 抽取次数不变，
 /// **不动任何决策输入**；finalize tick 仍是 t+1，动力学逐位不变——由事件流哈希（掩掉 speed）
@@ -4003,7 +4007,11 @@ fn emit_pass_highlight_inner(
                 OutSide::Sideline => st.opportunity_tally.exec_pass_out_throw_in += 1,
             }
             let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-            let flight = distance_meters(from_pos, (x2, y2)) / speed;
+            // C3 补齐（2026-10-29 独立审阅 P1.1）：出界 pass 也走填拍。此前这一支是唯一没接
+            // `tick_filling_flight` 的 pass 分支——短出界球的 `speed` 与其他 pass 语义不一致，
+            // 且 L2 的填拍门会把它当成「未填拍的短传」。填拍不消耗 RNG、不改任何决策输入；
+            // 填后 `t_end` 仍落在 [t, t+1)，finalize tick 照旧是 t+1（与 C3 其余分支同一论证）。
+            let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (x2, y2)), speed);
             let t_end = t + flight;
             events.push(Event {
                 t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
@@ -5944,7 +5952,14 @@ fn advance_dead_ball(
     let kickoff_t = observation::ObservedTime::event_emit(t);
     obs.restart_taken(kickoff_t, observation::ControlFactBasis::RestartRule);
     obs_bind(events, obs, obs_last_event(events));
-    // kickoff 球飞行结束时刻：main 在其后首个 tick 边界恢复（避免 beat-main 在球未到落点就开始）
+    // 开球球飞行结束时刻：main 在其后首个 tick 边界恢复（避免 beat-main 在球未到落点就开始）。
+    // ⚠️ 归因边界（2026-10-29 审阅 P1.1/P2.4）：`kickoff` 事件类型是 `"kickoff"`（**不是 pass**），
+    // 它的 `speed` 字段保持 12.0，`kickoff_end` 也不序列化；这里算出的填拍只用于两处——
+    //   ① `advance_dead_ball` 的恢复判定：`t < kickoff_end` 时该 tick 不产 main。判定在**整数
+    //      tick**上做；填拍只作用于「原飞行 < 0.95s」的那一类，此时原飞行与 0.95s 都 < 1s
+    //      ⇒ 恢复 tick 两版都是 t+1（原飞行 ≥0.95s 的保持原值，本就不变），事件流不变；
+    //   ② observation 的 `resumed_t`（`ObservedTime::flight_end(kickoff_end)`）——这是唯一可见差异。
+    // ⇒ 对 viewer 球动画零效果（动画读事件 `speed`=12.0）。不要用这里论证「填拍已覆盖开球」。
     let (kickoff_speed, kickoff_flight) = tick_filling_flight(distance_meters((0.5, 0.5), (kx2, ky2)), 12.0);
     let _ = kickoff_speed; // 事件 speed 字段保持 12.0（开球拨球不按飞行改写，仅拉长飞行时长）
     let kickoff_end = t + kickoff_flight;
