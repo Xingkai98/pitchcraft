@@ -62,7 +62,8 @@ if (beatWithMovers.length === 0) throw new Error('beat 应带 movers');
 const beatWithLoose = beats.filter((e) => e.ball && e.ball.loose);
 // 松散球可选（某些 seed 可能少），不强制非零
 const firstBeat = beats[0];
-if (firstBeat.t < 1 || firstBeat.t > 2) throw new Error(`beat 应从 tick 1 开始: ${firstBeat.t}`);
+// v11：决策拍 2 Hz（TICK_SECONDS=0.5）⇒ 首个 beat 在 t=0.5；旧 1 Hz 断言是 [1,2]。
+if (firstBeat.t < 0.5 - 1e-9 || firstBeat.t > 1.0) throw new Error(`beat 应从 tick 1（2 Hz 下 0.5s）开始: ${firstBeat.t}`);
 
 // 球所有权唯一：同一 beat 不同时含 main 和 ball
 for (const b of beats) {
@@ -94,6 +95,10 @@ function checkNoSnap(seed, duration) {
   // 3) 门球开大脚（pass subject=门将、to=None）→ 球瞬移到门将
   // 界外球无瞬移（出界落点=边线出界点，球停那连续到掷球），不需豁免。
   const allowedTeleportTimes = new Set();
+  // 设计性的「时刻区间豁免」（v11：2 Hz 下角球准备期从整数秒变成半秒拍——
+  // 旧实现按 `e.t - k`（整秒步长）生成豁免时刻，跳变发生在 1028.0 而豁免只有 1028.5，
+  // 造成假红。豁免的**语义**是「准备期区间」，不是整秒采样，故改为显式区间。
+  const allowedRanges = [];
   for (let i = 0; i < parsed.length; i++) {
     if (parsed[i].type === 'whistle') {
       allowedTeleportTimes.add(parsed[i].t);
@@ -107,7 +112,7 @@ function checkNoSnap(seed, duration) {
       let j = i - 1;
       while (j >= 0 && parsed[j].type === 'beat') j--;
       const startT = j >= 0 ? parsed[j].t : parsed[i].t - 20;
-      for (let k = 0; parsed[i].t - k >= startT; k++) allowedTeleportTimes.add(parsed[i].t - k);
+      allowedRanges.push([startT, parsed[i].t]);
     } else if (parsed[i].type === 'pass' && parsed[i].to === undefined
         && (parsed[i].subject === 0 || parsed[i].subject === 21)) {
       allowedTeleportTimes.add(parsed[i].t);
@@ -116,6 +121,9 @@ function checkNoSnap(seed, duration) {
   const isAllowedTeleport = (t) => {
     for (const at of allowedTeleportTimes) {
       if (Math.abs(at - t) < 0.1) return true;
+    }
+    for (const [lo, hi] of allowedRanges) {
+      if (t >= lo - 0.1 && t <= hi + 0.1) return true;
     }
     return false;
   };
