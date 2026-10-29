@@ -1161,8 +1161,22 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
     **69.7%→90.4%**（15434/17074），缺口从 ~30% 缩到 ~9.6%；类定义与 A2 覆盖注记同步改写
     （`episode.rs` `EXCEPTION_CLASSES`、`reasons.rs` 的 A2 note）。
 
-### 4. 结果
+### 4. 验证记录（2026-10-30，冻结树 `f58d37a`；后续仅 notes 提交）
 
-- 默认套件 `cargo test --release --no-fail-fast`：**0 红**（9 target 全 ok；见文末验证记录）。
-- 产物门（`#[ignore]`）在最终提交上以 `P124/P16/P17B_SOURCE_COMMIT=<HEAD>` 重跑；
-  产物落 `engine/target/p*-*/`（gitignored），默认套件的 `on_disk_artifacts_*` 与指纹一致。
+- 默认套件 `cargo test --release --no-fail-fast`：**0 红**。9 target：
+  lib **204** / p124 **35** / p15 **11** / p16 **36** / p17a **24** / p17b **33** / p18 **6** /
+  realism **7** / doc **0**（各 target 的 `ignored` 分别为 1/2/1/2/2/2/2/9/0）。
+- 产物门（`#[ignore]`）以 `P124/P16/P17B_SOURCE_COMMIT=<HEAD>` 重跑，全部 ok：
+  p15 `l3_300_seed…`（66.8s）、p16 canary+baseline（89.2s）、p17b canary+baseline（113.8s）、
+  p124 canary+baseline（156.6s）。p124 产物记 `worktree_dirty=false`、`source_commit=f58d37a…`；
+  p16/p17b 同源（p16 记 `c1c9ed5…`，测试源码未再变、`source_commit` 是其祖先）。
+- verify 关键步：viewer **401/401**、tools **537/537**、visual-review **74/74**、
+  baseline sentinel **10/10**、e2e-v2 OK（11737 事件，无 snap：球 0.0161 / 球员 0.0301）、
+  spacing-sweep 8 seed × 2157 窗 **player_overlap findings=0**。
+- 确定性：同 seed 连跑两次事件流 sha256 逐位相同（seed 42 `14bccb4a…`、7 `813de9da…`、
+  601 `c4871bf2…`，与 R6 验收包哈希一致）。
+- ⚠️ **p124 的 `on_disk_artifacts_*` 有一条环境前提**：它把产物的 `worktree_dirty=false`
+  与**实时** `git status --porcelain` 比对。本 worktree 带有**预先存在**的 `.gitignore` 修改
+  与 4 项未跟踪笔记（非本分支产物），裸跑会因「实时脏」判红。产物是在**干净视口**
+  （`assume-unchanged .gitignore` + `status.showUntrackedFiles=no`，全程未改文件）下生成的，
+  最终全量验证也用同一视口跑；CI/干净 clone 上无此问题（产物不存在时该守卫整段跳过）。
