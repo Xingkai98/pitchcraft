@@ -70,7 +70,8 @@ pub const CONTEST_COVERAGE: &[ContestCoverageRow] = &[
         reason: ContestStartReason::InterceptionLoose,
         visibility: ContestVisibility::Invisible,
         mechanism: "拦截路径把拦截者对账到拦截点（创建松散球时距离即 0）⇒ 同拍拾取，无跑动阶段 ⇒ \
-                    **不产 loose beat**。实测 729/729。这是 P17A 的 A2（同拍收束）主因所在",
+                    **不产 loose beat**。P17A 30 seed 实测 729/729；R6 300 seed 见下表（15364/15364）。\
+                    这是 P17A 的 A2（同拍收束）主因所在",
     },
     ContestCoverageRow {
         reason: ContestStartReason::TackleLoose,
