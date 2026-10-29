@@ -394,7 +394,7 @@ fn purification_records_the_v4_verdict_pending_review() {
         ctrl.auc
     );
 
-    // ③ 方向仍是反向（P16 实测 0.461 / 300 seed 0.431 都 < 0.5）。
+    // ③ 方向仍是反向（P16 实测 0.461 / 300 seed 在 P16 时代 0.431、R6 重跑 0.296，都 < 0.5）。
     let cur = rows
         .iter()
         .find(|r| r.name == ARM_CURRENT.name)
@@ -1963,9 +1963,11 @@ fn p124_baseline() {
         pw.pool.len()
     );
     // 与 30 seed 口径的对照（**两条都在，别互相替代**）。
+    // **R6（2026-10-29）重跑**：300 seed 的 P16 基线由 **0.431**（P16 记录）移到 **0.296**
+    // （30 seed 同口径为 0.301——两口径差 0.005，量级一致）。方向仍 <0.5，裁决推翻结论不变。
     assert!(
-        (p16_bp - 0.431).abs() <= 0.06,
-        "300 seed 的 P16 基线应 ≈0.431（P16 记录值）——实测 {p16_bp:.3}"
+        (p16_bp - 0.296).abs() <= 0.03,
+        "300 seed 的 P16 基线应 ≈0.296（R6 重跑记录；P16 时代为 0.431）——实测 {p16_bp:.3}"
     );
     let dir = write_artifacts("baseline");
     println!("[p124:baseline] 产物写入 {dir}");
