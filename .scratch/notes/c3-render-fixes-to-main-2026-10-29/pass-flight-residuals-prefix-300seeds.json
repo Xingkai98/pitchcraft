@@ -1,0 +1,43 @@
+{
+  "wasmSha256": "6ad3542070b77c3d12438b59993f6f620d43ababd4a4f4dbe2bc08110f705c9b",
+  "wasm": "/tmp/review-branch.wasm",
+  "seeds": 300,
+  "duration": 5400,
+  "nPass": 253813,
+  "nResidual": 2932,
+  "nViolation": 938,
+  "nShortUnfillable": 0,
+  "residualByDetail": {
+    "(none)": 1643,
+    "out_sideline": 821,
+    "free_kick": 287,
+    "out_goal_line": 111,
+    "throw_in": 70
+  },
+  "violationByDetail": {
+    "out_sideline": 826,
+    "out_goal_line": 112
+  },
+  "residualDistanceM": {
+    "min": 1.369,
+    "q01": 2.053,
+    "q50": 6.327,
+    "max": 23.203
+  },
+  "worst": {
+    "abs": 0.8889,
+    "seed": 291,
+    "detail": "out_goal_line",
+    "speed": 22.4,
+    "dist": 1.369,
+    "flight": 0.0611
+  },
+  "worstGap": {
+    "gap": 20.116,
+    "seed": 264,
+    "detail": "out_sideline",
+    "speed": 23.2,
+    "dist": 1.924,
+    "flight": 0.0829
+  }
+}

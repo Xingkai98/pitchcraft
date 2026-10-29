@@ -29,7 +29,7 @@ function simulate(wasm, seed) {
 }
 
 const SPEED_RE = /"speed":-?\d+(?:\.\d+)?/g;
-const mask = (s) => s.replace(SPEED_RE, '"speed":MASK');
+const mask = (s) => s.replace(SPEED_RE, '"speed":0'); // 与 realism.rs::mask_speed_fields 逐字一致（2026-10-29 审阅修复后）
 
 function fnv1a(str) {
   let h = 0xcbf29ce484222325n;
