@@ -34,10 +34,14 @@
 //! `def_none_signal_is_mechanically_tied_to_shots` 与
 //! `window_features_are_mechanically_tied_to_shots` 钉住。
 //!
-//! ⚠️ **`final_third` 的意图侧因此没有可用证据**：剔除循环行后，只剩 `def_per_s` 0.694（弱）
-//! 与 `first_window_frac` 0.850（neg 样本不足）——**没有任何样本充足的、非循环的意图特征
-//! 能判 `final_third`**。「`final_third` 可判」仍然成立，但它的证据是**空间**的
-//! `forward_m/s` = 0.855（P16），**不是**意图。
+//! **R6（2026-10-29，2 Hz）补记**：`first_window_frac` / `max_window_ticks` 也是窗口派生量，
+//! 在 `final_vs_rest` 表里同属循环；1 Hz 时它们样本不足（pos=4/neg=8）而未触发，2 Hz 抬过
+//! 样本门槛后必须一并标循环（`gate_rows` 按表判定，见那里的注释）。于是循环行 4 → 6。
+//!
+//! ⚠️ **`final_third` 的意图侧因此没有可用证据**：剔除循环行后，只剩弱值
+//! （R6：`def_per_s` 0.592 / `pressure_share` 0.404，均 |Δ|<0.25）——**没有任何样本充足的、
+//! 非循环的意图特征能判 `final_third`**。「`final_third` 可判」仍然成立，但它的证据是
+//! **空间**的 `forward_m/s`（P16 0.855 → R6 0.729），**不是**意图。
 //!
 //! `build_up` vs `progression` 那一对**不受此循环影响**（两档 motif 都含 `!has_shot`），
 //! 故它是本 change 检验意图信号的**干净战场**。
@@ -72,6 +76,10 @@ pub struct FeatureSpec {
 /// ⚠️ **三条窗口特征 + `def_none` 标 [`Provenance::Circular`]**（见模块头的两条机制）：
 /// `window_opened` / `window_share` / `setup_share` 与 `def_none` 在 `final_third` 上
 /// 与参考集谓词 `ends_shot` **机制同源**，其 AUC 是同义反复。
+///
+/// **R6 补记**：`first_window_frac` / `max_window_ticks` 也是窗口派生量，同样循环，
+/// 但它们只在 `final_vs_rest` 表里循环（`build_vs_prog` 两档都不由射门定义）⇒ 由
+/// [`gate_rows`] **按表**把这两行升级为 `Circular`，不改此处的全局种类。
 pub const INTENT_FEATURES: &[FeatureSpec] = &[
     FeatureSpec {
         name: "window_opened[循环·仅对照]",
@@ -195,6 +203,11 @@ pub struct GateRow {
 ///
 /// 取 `50`：n₁=n₂=50 时 AUC 的 2σ ≈ 0.116 < 0.15 的容差，「分不开」这个断言才立得住。
 /// 样本不足的行**不被断言**，但**必须被打印**（见 `GateRow::is_adequately_sampled` 的用途）。
+///
+/// **R6（2026-10-29）补记**：2 Hz 采样把拍数翻倍，上面「pos=4 / neg=8」的极稀样本不复存在
+/// （实测 `first_window_frac` 在 current 臂为 pos=86 / neg=91）。门槛**保留**——它是防止
+/// 「小样本 AUC 被读成新发现」的机制；但依赖「数据集里一定存在样本不足行」的**防空转断言**
+/// 必须改写（已改为构造行 49/50 判据，见 p124 主文件的对应测试）。
 pub const MIN_SIDE_FOR_SEPARABILITY: usize = 50;
 
 impl GateRow {
@@ -239,9 +252,18 @@ pub fn gate_rows(
     }
     for spec in INTENT_FEATURES {
         let r = rate_auc_intent(p, intents, set_a, set_b, &format!("{label}:{}", spec.name), spec.value);
+        // **R6（2026-10-29，2 Hz 采样）**：`first_window_frac` / `max_window_ticks` 与三条
+        // `window_*` 一样由 `in_window` 派生——在 `final_third vs 其余` 里参考集谓词是
+        // `ends_shot`，窗口由射门消耗（末个窗口拍恒为射门前一拍），故它们在该表里**也是
+        // 循环量**。1 Hz 时它们样本不足（pos=4/neg=8）而从未触发；2 Hz 把样本量抬过门槛后，
+        // 若仍按 `Intent` 计入就会把同义反复读成「强证据」（实测 AUC 0.917 / 0.059）。
+        // 在 `build_vs_prog` 表里两档都不由射门定义，它们仍是真意图量 ⇒ 循环性**按表**判定，
+        // 不改 `FeatureSpec` 的全局种类。
+        let circular_here = label == "final_vs_rest"
+            && matches!(spec.name, "first_window_frac" | "max_window_ticks");
         rows.push(GateRow {
             feature: spec.name,
-            provenance: spec.provenance,
+            provenance: if circular_here { Provenance::Circular } else { spec.provenance },
             auc: r.auc,
             pos_n: r.pos_n,
             neg_n: r.neg_n,
@@ -360,10 +382,13 @@ impl VerdictTable {
     /// ## 过滤条件（三选一都会让「最强」变成误导）
     ///
     /// ① **排除循环量**（`def_none`）：它高是因为与 `ends_shot` 机制同源，不是判别力；
-    /// ② **排除样本不足的行**：实测 `first_window_frac` 的 `|Δ|` 最大（0.219），
+    /// ② **排除样本不足的行**：v7 时实测 `first_window_frac` 的 `|Δ|` 最大（0.219），
     ///    但它只有 pos=4 / neg=8 ⇒ **不作证据**。若不排除，产物会写出
     ///    「最强意图特征 AUC=0.281」——读者会以为「有信号只是不够强」，
-    ///    而真相是「**这条特征在这两档间几乎没有样本**」；
+    ///    而真相是「**这条特征在这两档间几乎没有样本**」。
+    ///    （R6/2 Hz 后该行样本已过门槛（pos=86/neg=91），过滤仍然保留——门槛是机制，
+    ///    不是针对某一行的补丁；[`verdict_best_intent_row_is_adequately_sampled`] 用构造行
+    ///    证明它在 49/50 处仍有区分度。）
     /// ③ 要求 `auc.is_some()`。
     pub fn best_intent_for_build_vs_prog(&self) -> Option<&GateRow> {
         self.build_vs_prog

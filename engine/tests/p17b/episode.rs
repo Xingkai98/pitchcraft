@@ -776,7 +776,7 @@ pub const EXC_EMPTY_POSSESSION_SECONDS: f64 = 20.0;
 /// 故 [`classify`] 返回**切片**而不是 `Option`——把多类压成一类会丢信息，
 /// 而 L2 的按类计数会因此**少算**（本仓「假覆盖」的又一种形态）。
 pub const EXCEPTION_CLASSES: &[(&str, &str)] = &[
-    ("instant_contest", "同拍收束：**争抢**时长为 0（口径是 `contest_started`→`contest_ended`，**不是** possession 时长）。\n     ⚠️ **本类只覆盖 P17A A2 母体的 ~70%**：A2 数的是**全部**零时长争抢\n     （300 seed 实测 10564/20053），而诊断卡逐 episode 展开，只能看见其中\n     **收束了一段 episode 的那部分**（实测 7364 = 69.7%）。剩下的约 30% 发生在\n     「控制已释放、球还在飞」的**两段 episode 之间**——它们在 L2 的争抢成因表里\n     数得到，但没有 card 可以挂。**不得**把本类的卡数读成 A2 的全量"),
+    ("instant_contest", "同拍收束：**争抢**时长为 0（口径是 `contest_started`→`contest_ended`，**不是** possession 时长）。\n     ⚠️ **本类只覆盖 P17A A2 母体的一部分**：A2 数的是**全部**零时长争抢\n     （R6 300 seed 实测 17074/37401 = 45.7%，2 Hz 后不再过半，但仍是最大单一类），\n     而诊断卡逐 episode 展开，只能看见其中 **收束了一段 episode 的那部分**\n     （实测 15434 = 90.4%）。剩下的约 10% 发生在「控制已释放、球还在飞」的\n     **两段 episode 之间**——它们在 L2 的争抢成因表里数得到，但没有 card 可以挂。\n     **不得**把本类的卡数读成 A2 的全量"),
     ("empty_possession", "空 possession：时长超过阈值却几乎没有决策动作（P17A A6）"),
     ("long_dwell", "长持球：链内相邻决策动作最大间隔超阈值（P17A A1）"),
     ("shot_rebound_end", "射门被扑/中框后弹回场内收束（P17A A4 关注的过程）"),

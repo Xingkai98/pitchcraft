@@ -184,9 +184,9 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
         topic: "争抢时长退化：多数松散球同 tick 被拾回",
         per_episode_samples: true,
         note: "**部分覆盖，有两层缺口**：\n\
-               （a）本层的 `instant_contest` 只覆盖 A2 母体的 **~70%**——A2 数**全部**零时长争抢\n\
-               （300 seed 实测 10564/20053），而诊断卡只能展开**收束了一段 episode 的**那些\n\
-               （实测 7364）；余下约 30% 发生在「控制已释放、球还在飞」的**两段 episode 之间**，\n\
+               （a）本层的 `instant_contest` 只覆盖 A2 母体的 **~90%**——A2 数**全部**零时长争抢\n\
+               （R6 300 seed 实测 17074/37401 = 45.7%），而诊断卡只能展开**收束了一段 episode 的**那些\n\
+               （实测 15434 = 90.4%）；余下约 10% 发生在「控制已释放、球还在飞」的**两段 episode 之间**，\n\
                在 L2 的争抢成因表里数得到，但没有 card 可挂；\n\
                （b）A2 关心的**追逐过程**在其主因 `interception_loose` 上**落在盲区**——\n\
                该成因 729/729 不产 loose beat，诊断卡的【丢球后】一节只能记「追逐不可见」",

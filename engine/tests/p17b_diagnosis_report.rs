@@ -35,7 +35,7 @@
 //! | [`action_tokens_match_the_p17a_reference`] | 同源（行为层：token 序列一致） | ✅ |
 //! | [`every_p17a_anomaly_rule_is_declared_in_the_per_episode_map`] | 覆盖 P17A 异常（**逐条声明**） | ✅ |
 //! | [`instant_contest_uses_the_contest_duration_not_the_possession_duration`] | 异常口径（**争抢时长 vs possession 时长**） | ✅ |
-//! | [`instant_contest_covers_only_the_episode_closing_share_of_a2`] | 异常口径（**只覆盖 A2 母体的 ~70%**） | ✅ |
+//! | [`instant_contest_covers_only_the_episode_closing_share_of_a2`] | 异常口径（**只覆盖 A2 母体的 ~90%**，R6） | ✅ |
 //! | [`pursuit_window_spans_the_whole_contest_not_just_the_closing_tick`] | 追球段口径（**争抢窗 vs 收束拍**） | ✅ |
 //! | [`match_gap_count_probe_actually_counts`] | 观察可信度（`gap_count()` 行为被钉住） | ✅ |
 //! | [`loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber`] | 普查口径（**与 design 同分母 / 两口径可分**） | ✅ |
@@ -1303,16 +1303,23 @@ fn instant_contest_uses_the_contest_duration_not_the_possession_duration() {
 /// 本 change 的立身之本是「不得给笼统的『可答』」。把同一把尺子拿来量自己也发现了一处：
 /// `instant_contest` 的类定义那时写「P17A A2 的逐 episode 化身」——**读起来像全量**，而实测：
 ///
-/// | 量 | 300 seed 实测 |
+/// | 量 | 300 seed 实测（R6，2026-10-29） |
 /// |---|---|
-/// | A2 的母体：**全部**零时长争抢 | **10564** / 20053 个争抢（52.7%，与 P17A 的 52.7% 一致） |
-/// | 诊断卡能展开的：其中**收束了一段 episode** 的 | **7364**（占母体 69.7%） |
-/// | 缺口：发生在「控制已释放、球还在飞」的**两段 episode 之间** | **约 3200（30%）** |
+/// | A2 的母体：**全部**零时长争抢 | **17074** / 37401 个争抢（**45.7%**，仍是最大单一类；P17A 1 Hz 时为 52.7%） |
+/// | 诊断卡能展开的：其中**收束了一段 episode** 的 | **15434**（占母体 **90.4%**；P17A 时 69.7%） |
+/// | 缺口：发生在「控制已释放、球还在飞」的**两段 episode 之间** | **1640（9.6%）** |
+///
+/// ⚠️ **R6 口径变更**：2 Hz 把争抢起止的量化步长减半 ⇒ ① 零时长**不再过半**（44.6%
+/// @30 seed / 45.7% @300 seed），但仍是最大单一类（次高 2.5 s 档 1404 @30 seed / 13331
+/// @300 seed）；② 零时长里的「收束了一段 episode」占比由 69.7% **升到 90.4%**（缺口的
+/// 绝对量从 ~30% 缩到 ~10%）。判据随之从「过半」改成「最大单一类」，从「约七成」改成
+/// 「九成」——两者都是**结构判据**（零时长被别的时长档反超 / 缺口消失都会红），
+/// 不是按数值放宽。
 ///
 /// 缺口那部分在 L2 的**争抢成因表**里数得到（它们也有 `contest_started` 事实），
 /// 但**没有 card 可以挂**——诊断卡的结构是「一段 possession 一张卡」。
 ///
-/// ⇒ 本测试把**两个量都算出来**并断言：① 母体确实远大于可展开的部分（缺口真实存在，
+/// ⇒ 本测试把**两个量都算出来**并断言：① 母体确实大于可展开的部分（缺口真实存在，
 /// 不是被断言掉的）；② 可展开部分是**多数**（因为 `instant_contest` 定义在 episode 收束上，
 /// 而收束侧面确实以争抢为主）。两个方向都钉住，使「缺口在缩小/消失」也能被看见。
 #[test]
@@ -1320,6 +1327,8 @@ fn instant_contest_covers_only_the_episode_closing_share_of_a2() {
     let mut zero_contests = 0usize;
     let mut all_contests = 0usize;
     let mut zero_closing_an_episode = 0usize;
+    // 争抢时长分布（毫秒取整）——R6 用它回答「零时长还是不是最大单一类」。
+    let mut dur_hist: std::collections::BTreeMap<i64, usize> = Default::default();
     for seed in CANARY_SEEDS.0..=CANARY_SEEDS.1 {
         let dm = observe(seed);
         let ends: std::collections::BTreeSet<String> = dm
@@ -1338,7 +1347,9 @@ fn instant_contest_covers_only_the_episode_closing_share_of_a2() {
             else {
                 continue;
             };
-            if e.t.value - f.t.value != 0.0 {
+            let dur_ms = ((e.t.value - f.t.value) * 1000.0).round() as i64;
+            *dur_hist.entry(dur_ms).or_insert(0) += 1;
+            if dur_ms != 0 {
                 continue;
             }
             zero_contests += 1;
@@ -1348,21 +1359,34 @@ fn instant_contest_covers_only_the_episode_closing_share_of_a2() {
         }
     }
     assert!(all_contests > 500, "争抢样本过少（{all_contests}）——防空转");
-    // ① A2 的口径**是**争抢时长（与 P17A 同源）：零时长占比应过半。
-    assert!(
-        zero_contests * 2 > all_contests,
-        "零时长争抢应过半（实测 30 seed 53.4%）：{zero_contests}/{all_contests}"
+    // ① A2 的口径**是**争抢时长（与 P17A 同源）：零时长必须仍是**最大单一类**。
+    //
+    // **R6（2026-10-29，2 Hz）口径变更**：旧断言要求「零时长**过半**」（v4/P17A 基线 52.7%）。
+    // 2 Hz 把争抢起止的量化步长减半后，一部分原本同拍的争抢跨了 tick 边界 ⇒ 实测 30 seed
+    // 零时长只剩 **44.6%**（1689/3786），不再是多数；但仍是**最大单一类**（次高 2.5 s 档
+    // 1404 = 37.1%，其余各档 ≤3.7%）。故把判据从「过半」改成「最大类」——这仍是结构判据
+    // （零时长若被别的时长档反超，A2 的口径解释就须重写），不是按数值放宽。
+    let (max_dur, max_n) = dur_hist
+        .iter()
+        .max_by_key(|(_, n)| **n)
+        .map(|(d, n)| (*d, *n))
+        .unwrap_or((0, 0));
+    assert_eq!(
+        max_dur, 0,
+        "零时长的计数 {} 不是最大单一类（最大的是 {max_dur} ms 档 = {max_n}）——\
+         A2「同拍收束」的口径解释须重写（R6 实测分布 {dur_hist:?}）",
+        zero_contests
     );
     // ② 缺口**真实存在**：可展开的部分**严格小于**母体（否则说明缺口被静默吞掉了）。
     assert!(
         zero_closing_an_episode < zero_contests,
         "所有零时长争抢都收束了一段 episode ⇒ 缺口消失（{zero_closing_an_episode}/{zero_contests}）——\
-         若真是如此，本类确实等于 A2 全量，那时应**更新**类定义里的 ~70% 说法"
+         若真是如此，本类确实等于 A2 全量，那时应**更新**类定义里的 ~90% 说法"
     );
-    // ③ 但仍是**多数**：`instant_contest` 的卡不是边角料。
+    // ③ 但仍是**多数**：`instant_contest` 的卡不是边角料（R6 实测 30 seed 89.6%）。
     assert!(
         zero_closing_an_episode * 2 > zero_contests,
-        "可展开的部分应占母体多数（实测 30 seed 69.7%）：{zero_closing_an_episode}/{zero_contests}"
+        "可展开的部分应占母体多数（R6 30 seed 实测 89.6%）：{zero_closing_an_episode}/{zero_contests}"
     );
     // ④ 类定义里必须**写明这个缺口**（防「读起来像全量」的措辞回归）。
     let def = EXCEPTION_CLASSES
@@ -1370,9 +1394,11 @@ fn instant_contest_covers_only_the_episode_closing_share_of_a2() {
         .find(|(k, _)| *k == "instant_contest")
         .map(|(_, d)| *d)
         .expect("`instant_contest` 应有类定义");
+    // ⚠️ R6 更新：旧的判别串是「70% / 69.7」（P17A 数值）。2 Hz 后记录值变为 90.4%，
+    // 判别串随之更新为「只覆盖 + 90.4」——仍是「类定义必须写明它不是全量」的同一判据。
     assert!(
-        def.contains("70%") || def.contains("69.7"),
-        "`instant_contest` 的类定义必须写明它只覆盖 A2 母体的一部分——\
+        def.contains("只覆盖") && def.contains("90.4"),
+        "`instant_contest` 的类定义必须写明它只覆盖 A2 母体的一部分（R6 记录值 90.4%）——\
          否则读者会把它的卡数当成 A2 的全量"
     );
 }
@@ -1498,10 +1524,17 @@ fn loose_census_reproduces_the_design_caliber_and_differs_from_the_card_caliber(
         (1500..=2100).contains(&runs),
         "普查段数 {runs} 偏离 v4 基数 ~1801 太多——口径可能变了"
     );
+    // **口径换算（R6，2 Hz）**：段长以 **beat** 计，而 beat 是逐 tick 的 `Beat` 事件——
+    // design §4.4.1 的 **3.02** 是在 **1 Hz**（1 beat = 1 s）下量的。R6 把 tick 改成 0.5 s，
+    // 同一物理段长变成 **6.43 beat**；换算回秒 = 6.43 × TICK_SECONDS = **3.215 s**，
+    // 与 design 的 3.02 s 同量级（+6.5%）。故这里按**秒**判，不再按 beat——判据（同量级、
+    // 同口径）未变，变的是单位换算（不是放宽：带宽仍是 2.8–3.3 s 的 ±10%）。
     let mean = beats as f64 / runs as f64;
+    let mean_s = mean * fm_engine::TICK_SECONDS;
     assert!(
-        (2.8..=3.3).contains(&mean),
-        "普查均长 {mean:.2} 偏离 design §4.4.1 的 3.02 太多"
+        (2.8..=3.3).contains(&mean_s),
+        "普查均长 {mean_s:.2} s（{mean:.2} beat × {:.1} s）偏离 design §4.4.1 的 3.02 s 太多",
+        fm_engine::TICK_SECONDS
     );
     // **任一 mover** 口径应与 design 的 57.2% 同量级（这才是设计那个数的口径）。
     let both_p = *presence.get("both").unwrap_or(&0) as f64 / runs as f64;

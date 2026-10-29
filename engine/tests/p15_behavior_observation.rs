@@ -1083,7 +1083,11 @@ fn event_indexes_are_non_empty_monotonic_and_in_range() {
     // M1b（2026-10-17，门将出/退目标）又改一次事件流：[74,43,13] 不再命中。按同一判据再扫
     // seed 1..=600：形态① [61,68,73,91,108,…]、形态② [79,401,462]、形态③ [102,337,404,437,440]，
     // 取 [61,79,102]（计数 1/1/1）。仍换样本、不换判据。
-    const TRUNCATION_FORM_SEEDS: [u64; 3] = [61, 79, 102]; // ① episode / ② restart 未 taken / ③ restart 已 taken
+    // **R6（2026-10-29，C1 子拍/移动层/横向转移重放到 main）**再改一次事件流：[61,79,102]
+    // **一种形态都不命中**。按同一判据在 5400 下重扫 seed 1..=600：形态① [18,232,456,529,…]、
+    // 形态② [428,508]、形态③ [253,87,109,492,…]，取 [18,428,253]（计数 1/1/1）。仍换样本、
+    // 不换判据。（与 lib `observation::tests::every_episode_...` 的 `SEEDS` 同一次扫描。）
+    const TRUNCATION_FORM_SEEDS: [u64; 3] = [18, 428, 253]; // ① episode / ② restart 未 taken / ③ restart 已 taken
     for seed in CANARY_SEEDS.iter().chain(TRUNCATION_FORM_SEEDS.iter()).copied() {
         let dm = observed(seed);
         let whistle_t = tail_whistle_t(&dm);
@@ -1231,8 +1235,13 @@ fn gap_is_a_classified_outcome_not_a_failure() {
     //    换掉 347@300。仍是**换样本，不换判据**。
     //    M1b（2026-10-17，门将出/退目标）再改一次事件流：复扫 seed 1..=800 × dur∈{120,300,400,700}
     //    仍只剩同样三个命中（139@700 / 441@700 / 562@120）⇒ **本条样本无需再换**。
+    //    **R6（2026-10-29，C1 子拍/移动层/横向转移重放到 main）**再改事件流：上述两个样本
+    //    都**不再产 gap**（末尾没有「进球 → 开球 → 开球飞行撞哨」的时序）。按同一判据复扫
+    //    seed 1..=800 × dur∈{120,300,400,700}：命中只剩 **360@400**；扩展扫
+    //    dur∈{200,250,350,450,500,600,900,1200,1800,2700} 再得 **225@450 / 103@900**。
+    //    取 **360@400 与 103@900**（一短一长，覆盖两种时长档）。仍是**换样本，不换判据**。
     let mut classified = 0usize;
-    for (seed, dur) in [(562u64, 120.0), (441u64, 700.0)] {
+    for (seed, dur) in [(360u64, 400.0), (103u64, 900.0)] {
         let dm = simulate_with_behavior_observations(seed, cfg(dur));
         assert!(
             dm.gap_count() >= 1,
@@ -1319,7 +1328,8 @@ fn gap_is_a_classified_outcome_not_a_failure() {
 /// **红**（fail-closed）而不是静默放行，故不构成缺陷信号被漏掉的风险；但它确实是一个漂移面，
 /// 改允许集时要连它一起看。
 ///
-/// **样本含已知产 gap 的流**（`seed 470 @ 120`、`seed 1228 @ 400`，2026-09-25 复核），
+/// **样本含已知产 gap 的流**（R6 重扫：`seed 360 @ 400`、`seed 103 @ 900`；旧样本
+/// `470@120 / 1228@400 / 562@120 / 347@300` 均已在后续事件流改动中失效），
 /// 因此不是在空集上空转；末尾的防空转断言把这一点钉死。
 #[test]
 fn every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect() {
@@ -1332,7 +1342,9 @@ fn every_gap_on_the_canary_streams_is_a_designed_truncation_not_a_defect() {
     let mut observed_gaps = 0usize;
     // canary（含短时长） + 两个已复核的截断样本（保证本门真的扫到 gap）。
     // TACKLE/FOUL 重标定后 348@400 失效 → 换 347@300（同上，换样本不换判据）。
-    let truncated: [(u64, f64); 2] = [(562, 120.0), (347, 300.0)];
+    // R6（2026-10-29）再改事件流：562@120 / 347@300 都不再产 gap → 按同一判据复扫得
+    // 360@400 与 103@900（见 `gap_is_a_classified_outcome_not_a_failure` 的重扫记录）。
+    let truncated: [(u64, f64); 2] = [(360, 400.0), (103, 900.0)];
     for seed in CANARY_SEEDS {
         for dur in [DUR, 300.0, 120.0] {
             let dm = simulate_with_behavior_observations(seed, cfg(dur));

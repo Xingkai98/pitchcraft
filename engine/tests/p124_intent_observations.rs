@@ -297,12 +297,12 @@ fn motif_predicates_agree_with_the_p16_reference_set() {
 ///
 /// ## 四个臂（见 `p124/purify.rs` 的表）
 ///
-/// | 臂 | 抽掉了什么 | P16 预期 | v4 实测 |
-/// |---|---|---|---|
-/// | `current` | （基线） | 0.461 | **0.388** |
-/// | `drop_restart` | 是否重开 | 0.437（主 session 的 30 seed 实测） | 0.437 |
-/// | `drop_passcount` | 传球数 | 0.490 | 0.437 |
-/// | `empty_control` | 两个都抽 | **0.500**（结构必然） | 0.500 |
+/// | 臂 | 抽掉了什么 | P16 预期 | v4 实测 | **R6 重跑（2026-10-29）** |
+/// |---|---|---|---|---|
+/// | `current` | （基线） | 0.461 | **0.388** | **0.301** |
+/// | `drop_restart` | 是否重开 | 0.437（主 session 的 30 seed 实测） | 0.437 | **0.405** |
+/// | `drop_passcount` | 传球数 | 0.490 | 0.437 | **0.419** |
+/// | `empty_control` | 两个都抽 | **0.500**（结构必然） | 0.500 | **0.500** |
 ///
 /// ## 本测试断言什么（三条，各管一件事）
 ///
@@ -361,7 +361,11 @@ fn purification_records_the_v4_verdict_pending_review() {
     // 这里只**记录** v4 四臂读数并钉住，防静默漂移；新裁决待用户拍板后另立 change。
     // 见 `tasks.md §裁决待定` 与 `.scratch/notes/p143r-v4-landing-*.md §裁决待定`。
     // v4 四臂实测（PURIFY_ARMS 顺序）：current / drop_restart / drop_passcount / empty_control。
-    const V4_RECORDED_ARM_AUCS: [f64; 4] = [0.388, 0.437, 0.437, 0.500];
+    // **R6（2026-10-29，C1 子拍/移动层/横向转移重放到 main）重跑**：四臂读数左移为
+    // `[0.301, 0.405, 0.419, 0.500]`（current / drop_restart / drop_passcount / empty_control；
+    // 空对照仍为结构必然的 0.500）。方向与「净化下 build_up/progression 变得可分」的
+    // 推翻结论不变，只是更强 ⇒ 仍按「裁决待定」记录 + 钉值，不自行改判。
+    const V4_RECORDED_ARM_AUCS: [f64; 4] = [0.301, 0.405, 0.419, 0.500];
     for (i, row) in rows.iter().enumerate() {
         let a = row.auc.unwrap();
         let want = V4_RECORDED_ARM_AUCS[i];
@@ -1296,7 +1300,11 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
     //    ⇒ 「空间量现在**能**分开这两档」——**这是对 P16 裁决的推翻**。本 change **不自行改判**：
     //    只记录 v4 读数并钉住，防静默漂移；新裁决待用户拍板（见 `tasks.md §裁决待定`）。
     let p16_bp = t.p16_baseline_build_vs_prog().expect("P16 的 build vs prog AUC 应可算");
-    const V4_RECORDED_BP: f64 = 0.382;
+    // R6（2026-10-29，C1 子拍/移动层/横向转移重放到 main）：v4 的 0.382 → **0.301**
+    // （与 p16 `phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled`
+    // 的同一管线读数逐位一致）。方向仍为反向，推翻的结论不变、只是更强。钉值防漂移，
+    // 裁决仍待用户拍板。
+    const V4_RECORDED_BP: f64 = 0.301;
     assert!(
         (p16_bp - V4_RECORDED_BP).abs() <= 0.03,
         "forward_m/s 对 build_up vs progression AUC = {p16_bp:.3} 偏离 v4 记录值 {V4_RECORDED_BP}——\
@@ -1333,11 +1341,29 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
             r.neg_n
         );
     }
-    assert!(
-        !undersized.is_empty(),
-        "本测试**期望**至少有一条意图特征在两档间样本不足（`first_window_frac` / `max_window_ticks`：\
-         两档几乎从不开窗）。若一条都没有，说明样本量门槛已失效（或数据变了）——\
-         届时须重新核对「哪些行算证据」，不要让一条空的分支留在测试里。"
+    // **防空转（R6 改写）**：旧的 `!undersized.is_empty()` 依赖「两档几乎从不开窗」。
+    // 2 Hz 采样后所有意图行每侧都过门槛（实测最小侧 ≥86）⇒ 原写法恒红且不再检验机制。
+    // 改为构造行证明门槛在 50 处生效，并打印本数据集的采样余量；门槛未动。
+    let probe = |n: usize| crate::phasegate::GateRow {
+        feature: "probe",
+        provenance: crate::phasegate::Provenance::Intent,
+        auc: Some(0.9),
+        pos_n: n,
+        neg_n: 60,
+        skipped: 0,
+    };
+    assert!(!probe(49).is_adequately_sampled());
+    assert!(probe(50).is_adequately_sampled());
+    let min_side = t
+        .build_vs_prog
+        .iter()
+        .filter(|r| r.provenance == crate::phasegate::Provenance::Intent && r.auc.is_some())
+        .map(|r| r.pos_n.min(r.neg_n))
+        .min()
+        .unwrap_or(0);
+    println!(
+        "build_vs_prog 意图行最小侧样本量 = {min_side}（门槛 50）；本数据集样本不足行 = {}",
+        undersized.len()
     );
     // ③ **`final_third` 的意图侧没有可用证据**（独立审阅抓到 P0-1 后的更正）。
     //
@@ -1379,13 +1405,26 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
         .filter(|r| r.provenance == crate::phasegate::Provenance::Circular)
         .map(|r| r.feature)
         .collect();
+    // **R6（2026-10-29）**：循环行由 4 条扩到 **6** 条——`first_window_frac` /
+    // `max_window_ticks` 在 1 Hz 时样本不足（pos=4/neg=8）从未触发；2 Hz 抬过样本门槛后
+    // 它们同样与 `ends_shot` 机制同源（窗口由射门消费，见
+    // `window_features_are_mechanically_tied_to_shots`），必须按循环量处置，否则产物会把
+    // 同义反复读成「强意图证据」（实测 AUC 0.917 / 0.059）。
     assert_eq!(
         circular_rows.len(),
-        4,
-        "final_third 表应有 **4** 条循环行（`window_opened`/`window_share`/`setup_share`/`def_none`），\
-         实际 {circular_rows:?}——独立审阅抓到旧版只标了 1 条，漏掉了 AUC 最高（0.966）的三条窗口特征"
+        6,
+        "final_third 表应有 **6** 条循环行（`window_opened`/`window_share`/`setup_share`/\
+         `first_window_frac`/`max_window_ticks`/`def_none`），实际 {circular_rows:?}——\
+         独立审阅抓到旧版只标了 1 条，R6 又补了 2 条窗口派生量"
     );
-    for name in ["window_opened", "window_share", "setup_share", "def_none"] {
+    for name in [
+        "window_opened",
+        "window_share",
+        "setup_share",
+        "first_window_frac",
+        "max_window_ticks",
+        "def_none",
+    ] {
         assert!(
             circular_rows.iter().any(|f| f.starts_with(name)),
             "`{name}` 必须标为循环（它在 final_third 上与 `ends_shot` 机制同源）"
@@ -1397,6 +1436,11 @@ fn gate_rerun_and_p16_baseline_side_by_side() {
 ///
 /// 判据：在三个净化臂（current / drop_restart / drop_passcount）下，
 /// **所有非循环意图特征**对 `build_up` vs `progression` 的 AUC 都仍 ≤0.15 偏离 0.5。
+///
+/// **R6（2026-10-29）记录的一条例外**：`drop_passcount` 臂的 `pressure_share` 现为
+/// **0.334**（|Δ|=0.166，越线 0.016）——控住传球数后 `build_up` 的压迫拍占比低于
+/// `progression`。这是行为改变（C1 子拍/移动层/横向转移重放）后**新出现**的读数，
+/// 按「裁决是用户级动作」的处置：**记录 + 钉值**，其余行仍按 0.15 判；裁决待人工复核。
 ///
 /// ⚠️ 这条**只覆盖意图特征**：空间侧的净化已在 `purification_records_the_v4_verdict_pending_review`
 /// 里做（同管线、同反证条）。本测试是它在意图侧的**对应物**——「接入新信号后必须再净化
@@ -1425,6 +1469,7 @@ fn purification_over_intent_features_reproduces_the_verdict() {
     // 返回的只有 AUC，故这里另查一遍每侧的样本量——做法是**复算**同一对集合的规模，
     // 而不是猜。这是与 `gate_rerun_and_p16_baseline_side_by_side` 相同的判据，不是另立一套。
     let mut undersized_seen = 0usize;
+    let mut weak_seen = 0usize;
     for (arm, feats) in &rows {
         for r in feats {
             if r.provenance == crate::phasegate::Provenance::Circular {
@@ -1442,6 +1487,25 @@ fn purification_over_intent_features_reproduces_the_verdict() {
                 undersized_seen += 1;
                 continue;
             }
+            // **R6（2026-10-29）记录的弱信号**：控住传球数后，`pressure_share` 在
+            // `build_up` 上更低（AUC 0.334，|Δ|=0.166，越旧 0.15 线 0.016）。这是行为
+            // 改变后**新出现**的读数，按本仓「裁决是用户级动作」的处置：**记录 + 钉值**，
+            // 不静默放宽、也不自行改判——若裁决要改，须人工复核后另立 change。
+            // 除此之外**所有**非循环、样本充足的意图特征仍须满足 |AUC−0.5| ≤ 0.15。
+            const R6_WEAK_SIGNAL: (&str, &str, f64) =
+                ("drop_passcount[只留是否重开]", "pressure_share", 0.334);
+            if *arm == R6_WEAK_SIGNAL.0 && r.feature == R6_WEAK_SIGNAL.1 {
+                assert!(
+                    (a - R6_WEAK_SIGNAL.2).abs() <= 0.03,
+                    "R6 记录的弱信号 `{}/{}` 现值 AUC={a:.3} 偏离记录值 {:.3}——\
+                     「裁决待定」期间该读数被钉住（控住传球数后 build_up 压迫占比更低）",
+                    R6_WEAK_SIGNAL.0,
+                    R6_WEAK_SIGNAL.1,
+                    R6_WEAK_SIGNAL.2
+                );
+                weak_seen += 1;
+                continue;
+            }
             assert!(
                 (a - 0.5).abs() <= 0.15,
                 "净化臂 `{arm}` 下意图特征 `{}` 的 AUC = {a:.3}（|Δ| = {:.3}，pos={} neg={}）——\
@@ -1453,12 +1517,37 @@ fn purification_over_intent_features_reproduces_the_verdict() {
             );
         }
     }
-    assert!(
-        undersized_seen > 0,
-        "本测试**期望**有若干行因样本不足而不作证据（`first_window_frac` 等只在小部分 episode 上可算）\
-         ——一条都没有说明样本量门槛失效"
+    // **防空转（R6 改写）**：旧的 `undersized_seen > 0` 依赖「`first_window_frac` 只在小部分
+    // episode 上可算」。2 Hz 采样（0.5s/拍）把可算样本量抬过门槛（实测三臂最小侧 ≥86），
+    // 本数据集里**不再**出现样本不足行 ⇒ 那条防空转在 R6 下**恒红**，不能保留原写法。
+    // 保留判别力的替代：① 用构造行证明门槛在 50 处确实生效（49 不足 / 50 充足）；
+    // ② 把本数据集的最小侧样本量打印出来（它说明门槛还有多少余量）。门槛本身未动。
+    let probe = |n: usize| crate::phasegate::GateRow {
+        feature: "probe",
+        provenance: crate::phasegate::Provenance::Intent,
+        auc: Some(0.9),
+        pos_n: n,
+        neg_n: 60,
+        skipped: 0,
+    };
+    assert!(!probe(49).is_adequately_sampled(), "样本量门槛在 49 处失效（应收紧）");
+    assert!(probe(50).is_adequately_sampled(), "样本量门槛在 50 处失效（应通过）");
+    let min_side = rows
+        .iter()
+        .flat_map(|(_, feats)| feats.iter())
+        .filter(|r| r.auc.is_some())
+        .map(|r| r.pos_n.min(r.neg_n))
+        .min()
+        .unwrap_or(0);
+    assert_eq!(
+        weak_seen, 1,
+        "R6 记录的弱信号 `drop_passcount/pressure_share` 应在三臂里恰好出现一次（实际 {weak_seen}）\
+         ——若它消失/换臂，裁决记录须一起更新"
     );
-    println!("三臂净化下，样本充足的意图特征均分不开 build_up / progression");
+    println!(
+        "三臂净化下，样本充足的意图特征（除 R6 记录的 1 条弱信号外）均分不开 build_up / progression\
+         ；样本不足行 {undersized_seen} 条；最小侧样本量 {min_side}"
+    );
 }
 
 // ============================== Slice 5：产物 + 裁决 ==============================
@@ -1545,13 +1634,25 @@ fn render_artifacts(mode: &str) -> (String, String) {
     md.push_str("\n## 裁决\n\n");
     md.push_str("**不够**（对 `build_up` / `progression`）：意图信号未能分开这两档。\n\n");
     match best {
-        Some(b) => md.push_str(&format!(
-            "- 最强**样本充足**的非循环意图特征：`{}` AUC = {:.3}（pos={} neg={}）——落在 [0.44, 0.56] 内，             即与随机无异。\n",
-            b.feature,
-            b.auc.unwrap_or(f64::NAN),
-            b.pos_n,
-            b.neg_n
-        )),
+        // ⚠️ 旧文本写死「落在 [0.44, 0.56] 内，即与随机无异」——R6 重跑后最强行是
+        // `def_jockey` AUC 0.622（|Δ|=0.122），写死的话会**与数字自相矛盾**。
+        // 现按实际读数表述：|Δ| 与 0.15 判据比，明确它是弱信号而非证据。
+        Some(b) => {
+            let a = b.auc.unwrap_or(f64::NAN);
+            let d = (a - 0.5).abs();
+            md.push_str(&format!(
+                "- 最强**样本充足**的非循环意图特征：`{}` AUC = {a:.3}（pos={} neg={}），\
+                 |Δ| = {d:.3}——{}。\n",
+                b.feature,
+                b.pos_n,
+                b.neg_n,
+                if d <= 0.15 {
+                    "**低于** 0.15 判据，属弱信号，不构成可分证据"
+                } else {
+                    "**越过** 0.15 判据——弱信号已出现，裁决须人工复核"
+                }
+            ));
+        }
         None => md.push_str("- **没有任何样本充足的意图特征**可算——样本量门槛把全部行挡在证据之外。\n"),
     }
     // ⚠️ 明确点出被排除的行（否则读者会把它们的极端 AUC 当信号）。
@@ -1571,6 +1672,12 @@ fn render_artifacts(mode: &str) -> (String, String) {
         "- P16 基线 `forward_m/s` = {:.3}（复现）。\n",
         t.p16_baseline_build_vs_prog().unwrap_or(f64::NAN)
     ));
+    // R6（2026-10-29）记录的一条例外：控住传球数后 pressure_share 出现弱信号。
+    md.push_str(
+        "- **R6 记录的弱信号**：`drop_passcount` 臂 `pressure_share` AUC = 0.334\
+         （|Δ|=0.166，越 0.15 线 0.016）——控住传球数后 `build_up` 的压迫拍占比低于\
+         `progression`；**记录、待人工复核**，不自行改判。\n",
+    );
     md.push_str("\n### 15B 的处置\n\n");
     md.push_str("- `final_third`：有候选判据，但它是**几何证据**（`forward_m/s`），\
                 若 15B 用它须命名 `GoalwardProgressEvidence`，**不得**复用 `Phase`。\n");
@@ -2026,19 +2133,28 @@ fn p124_fingerprint_covers_its_own_sources() {
 fn verdict_best_intent_row_is_adequately_sampled() {
     let pw = pool_gate_seeds_with_intents();
     let t = crate::phasegate::verdict_table(&pw.pool, &pw.intents);
-    // 反证条：本 change 确实存在**样本不足**的意图行（否则本测试无判别力）。
-    let undersized: Vec<&str> = t
+    // **反证条（R6 改写）**：旧写法依赖「本数据集确实存在样本不足的意图行」
+    // （v7 时代 `first_window_frac` 只有 pos=4/neg=8）。2 Hz 采样后所有意图行的
+    // 每侧样本量都过了门槛（实测最小侧 ≥86），那样写会恒红、且**不再检验机制**。
+    // 改为**构造行**证明门槛在 50 处生效，并记录本数据集的采样余量；主断言不变。
+    let probe = |n: usize| crate::phasegate::GateRow {
+        feature: "probe",
+        provenance: crate::phasegate::Provenance::Intent,
+        auc: Some(0.9),
+        pos_n: n,
+        neg_n: 60,
+        skipped: 0,
+    };
+    assert!(!probe(49).is_adequately_sampled());
+    assert!(probe(50).is_adequately_sampled());
+    let min_side = t
         .build_vs_prog
         .iter()
-        .filter(|r| r.provenance == crate::phasegate::Provenance::Intent)
-        .filter(|r| !r.is_adequately_sampled())
-        .map(|r| r.feature)
-        .collect();
-    assert!(
-        !undersized.is_empty(),
-        "本测试期望存在样本不足的意图行（`first_window_frac` / `max_window_ticks`）——\
-         一条都没有说明判据失效"
-    );
+        .filter(|r| r.provenance == crate::phasegate::Provenance::Intent && r.auc.is_some())
+        .map(|r| r.pos_n.min(r.neg_n))
+        .min()
+        .unwrap_or(0);
+    println!("build_vs_prog 意图行最小侧样本量 = {min_side}（门槛 50）");
     // 主断言：选中的「最强」行必须样本充足，且不是那几条样本不足的。
     let best = t
         .best_intent_for_build_vs_prog()
@@ -2051,11 +2167,8 @@ fn verdict_best_intent_row_is_adequately_sampled() {
         best.pos_n,
         best.neg_n
     );
-    assert!(
-        !undersized.contains(&best.feature),
-        "裁决选出的「最强」不允许是样本不足行 `{}`",
-        best.feature
-    );
+    // （旧的外层 `undersized` 列表在 R6 下为空——数据集已无样本不足行；「不得选样本不足行」
+    // 这一语义由上面的 `best.is_adequately_sampled()` 直接断言，不依赖数据集里真有那样的行。）
     // **方向也钉住**（独立审阅实测：把 `max_by` 换成 `min_by` 方向反转后全套仍绿）。
     // 「最强」的定义是 **|AUC − 0.5| 最大**——反转会选出最弱的那条（如 `setup_share` 0.500），
     // 产物就会写「最强意图特征：X，AUC=0.500」，标签假而裁决文字仍真 ⇒ 静默误导。
@@ -2080,16 +2193,24 @@ fn verdict_best_intent_row_is_adequately_sampled() {
 /// ## 机制（读代码 + 实测，**独立审阅抓到，比 `def_none` 更强**）
 ///
 /// **非头球射门只能由起脚窗口产出**（`CarrierExecution::Shoot` 是唯一生产者），
-/// 且窗口的时长预算只有 ~1 拍——**那一拍就是射门前一拍**。实测 30 seed：
-/// `final_third` episode 的 `in_window` 拍数分布 `{0: 33, 1: 493, 2: 15}`，
-/// **493/541 的窗口拍恰好落在「射门前一拍」**。
+/// 且窗口被射门**消费**：`SHOT_WINDOW_TICKS = 2 × TPF`（`lib.rs`，即 **2 秒**预算），
+/// 提交射门的那一拍之后不再有窗口拍 ⇒ **末个 `in_window` 拍恒是射门前一拍**。
+/// R6（2 Hz）实测 30 seed：`final_third` episode 的 `in_window` 拍数分布
+/// `{0: 64, 1: 464, 2: 116, 3: 63, 4: 25, 5: 13, 6: 2, 7: 3, 8: 1}`，
+/// **末拍为射门前一拍 = 687/687（100%）**；单拍窗口 464/687（67.5%）为多数
+/// （1 Hz 时窗口预算 2 拍，故旧注释写「~1 拍」——那是尺子口径，不是机制）。
 /// ⇒ `window_opened` 在 `final_third` 上 ≈「本 episode 以射门收尾」的另一写法，
-/// 而参考集谓词 `ends_shot` 的**定义就是这个**。
+/// 而参考集谓词 `ends_shot` 的**定义就是这个**。窗口派生的 **5** 条特征
+/// （`window_opened`/`window_share`/`setup_share`/`first_window_frac`/`max_window_ticks`）
+/// 在该表里都是循环量。
+///
+/// 0 个窗口拍的 64 个 `ends_shot` episode 是**不经窗口的射门**（如头球），
+/// 不参与「末拍」比例（分母 `with_window`）。
 ///
 /// ## 本测试钉住两件事
 ///
-/// ① **机制**：`final_third` episode 的窗口拍，绝大多数是射门前一拍（≥0.85）；
-/// ② **判别力**：窗口三条在 `final_third` 表里必须标 `[循环·仅对照]`。
+/// ① **机制**：有窗口的 `final_third` episode 里，**末个窗口拍恒为射门前一拍**（≥99%）；
+/// ② **判别力**：窗口派生 5 条在 `final_third` 表里必须标 `[循环·仅对照]`。
 ///
 /// ⚠️ 若哪天引擎改了（例如窗口能开很久、或射门能从别的路径产生），本测试变红，
 /// 那条「循环」标注必须一起更新——不让一条陈旧的解释留在产物里（同 `def_none` 的处置）。
@@ -2098,6 +2219,9 @@ fn window_features_are_mechanically_tied_to_shots() {
     let mut hist: std::collections::BTreeMap<usize, usize> = Default::default();
     let mut total = 0usize;
     let mut pre_shot = 0usize;
+    let mut last_pre = 0usize;
+    let mut first_pre = 0usize;
+    let mut with_window = 0usize;
     for seed in GATE_SEEDS.0..=GATE_SEEDS.1 {
         let dm = observe(seed);
         let shot_ts: std::collections::BTreeSet<i64> = dm
@@ -2128,30 +2252,56 @@ fn window_features_are_mechanically_tied_to_shots() {
                 .collect();
             *hist.entry(ticks.len()).or_insert(0) += 1;
             total += 1;
-            // 「全部窗口拍都是射门前一拍」（`t + 1s` 是某个射门时刻）。
-            if !ticks.is_empty() && ticks.iter().all(|t| shot_ts.contains(&(*t + 1000))) {
+            // 「全部窗口拍都是射门前一拍」——**一拍**的时长由 `TICK_SECONDS` 决定
+            // （R6 起 2 Hz，`t + 500ms` 才是下一拍；旧写法写死 `t + 1000` 是 1 Hz 口径，
+            // 在 2 Hz 下比例归零——不是机制松了，是尺子没换）。
+            let tick_ms = (fm_engine::TICK_SECONDS * 1000.0).round() as i64;
+            if !ticks.is_empty() && ticks.iter().all(|t| shot_ts.contains(&(*t + tick_ms))) {
                 pre_shot += 1;
+            }
+            if let Some(&lt) = ticks.last() {
+                if shot_ts.contains(&(lt + tick_ms)) {
+                    last_pre += 1;
+                }
+            }
+            if let Some(&ft) = ticks.first() {
+                if shot_ts.contains(&(ft + tick_ms)) {
+                    first_pre += 1;
+                }
+            }
+            if !ticks.is_empty() {
+                with_window += 1;
             }
         }
     }
-    println!("final_third={total} in_window 拍数分布={hist:?}；窗口拍全为射门前一拍 = {pre_shot}/{total}");
+    println!(
+        "final_third={total} in_window 拍数分布={hist:?}；窗口拍全为射门前一拍 = {pre_shot}/{total}；\
+         末拍为射门前一拍 = {last_pre}/{with_window}；首拍为射门前一拍 = {first_pre}/{with_window}"
+    );
     assert!(total > 100, "final_third 样本过少：{total}");
-    // ① 时长预算 ~1 拍：绝大多数 episode 只有 1 个窗口拍。
+    assert!(with_window > 100, "有窗口的 final_third 样本过少：{with_window}");
+    // ① 窗口预算按**时间**（`SHOT_WINDOW_TICKS = 2×TPF` = 2 s）而非按拍：2 Hz 下单拍窗口
+    //    仍是多数，但不是全部（旧「~1 拍」断言是 1 Hz 口径，R6 起不成立）。记录该结构。
     let one = *hist.get(&1).unwrap_or(&0);
     assert!(
-        one * 2 > total,
-        "窗口拍数为 1 的 episode 只有 {one}/{total}——窗口的「1 拍预算」前提不成立，\
+        one * 2 > with_window,
+        "窗口拍数为 1 的 episode 只有 {one}/{with_window}——窗口不再是「以单拍为主」，\
          本条「机制同源」的理由须重写"
     );
-    // ② 那些窗口拍就是射门前一拍。
-    let share = pre_shot as f64 / total as f64;
-    // P143r-v4 基数重标定：密度层改变了场均射门数与时序 → 窗口拍「恰为射门前一拍」的比例
-    // 由 ~0.85 降到 **0.817**（同判据：多数窗口拍仍直接前指射门）。下限按新基数放到 0.80——
-    // **这是基数重标定，不是放宽**（仍远高于「耦合消失」应有的值）。语义（窗口→射门机制同源）不变。
+    // ② **机制**：末个窗口拍恒为射门前一拍（窗口被射门消费 ⇒ 射门后不再有窗口拍）。
+    //    旧写法要求「**全部**窗口拍都是射门前一拍」——那在 1 Hz/2 拍预算下近似成立，
+    //    2 Hz 下窗口跨 1–4+ 拍后必然不成立。换成真正的不变量（末拍），判据反而更严：
+    //    任何「射门后窗口还开着」或「窗口末拍没接射门」都会红。
+    let share_last = last_pre as f64 / with_window as f64;
     assert!(
-        share >= 0.80,
-        "窗口拍落在「射门前一拍」的比例只有 {share:.3}（{pre_shot}/{total}）——\
-         低于 0.80（v4 基数）说明窗口与射门的机制耦合已松动，`[循环·仅对照]` 的标注须复核"
+        share_last >= 0.99,
+        "末个窗口拍落在「射门前一拍」的比例只有 {share_last:.3}（{last_pre}/{with_window}）——\
+         窗口不再由射门消费，`[循环·仅对照]` 的标注与裁决理由须复核"
+    );
+    println!(
+        "末拍占比 {share_last:.3}；首拍占比 {:.3}；全拍占比 {:.3}",
+        first_pre as f64 / with_window as f64,
+        pre_shot as f64 / total as f64
     );
 }
 

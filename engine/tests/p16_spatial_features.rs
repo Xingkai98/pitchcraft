@@ -764,12 +764,18 @@ fn rust_shape_is_in_the_same_regime_as_the_js_ruler() {
         mean_depth,
         ms.home.width_sum / ms.home.computable.max(1) as f64
     );
-    // JS 标尺实测（P36/P37 基线）：引擎侧 depth 均值 ≈ 40.2 m、width ≈ 40.8 m。
-    // 这里给宽松带（±25%）——它抓的是**口径分叉**（如 max−min 会让 depth ≈ 84 m），
-    // 不是精确复现（精确比对需 JS 侧同帧产物，属 Slice 5 的产物验收）。
+    // JS 标尺的**当前**引擎侧读数（出处：`viewer/data/benchmark-baseline.json` →
+    // `engine.perMetric.hd.avg` = 24.79 m，区间 [21.40, 28.86]；该基线由 R6 终版 wasm
+    // `f6a9f9ec…` / lib `26417dcc…` 生成）。两条真实数据集同口径为 Metrica 25.94 m /
+    // SkillCorner 18.31 m（同文件 `datasets.*.perMetric.hd.avg`）——引擎值落在两者之间。
+    // ⚠️ 旧注释引的「≈40.2 m（P36/P37 基线）」是**移动层之前**的读数；R6 把队形纵深压到
+    // 24.79 m 后，再用 40 当锚会把「口径一致」误判成「口径分叉」。这是**锚点随 JS 标尺
+    // 重生成**，判据（同量级、抓 max−min 这类口径错）不变。这里给宽松带（±25%）——精确
+    // 比对需 JS 侧同帧产物，属 Slice 5 的产物验收。
     assert!(
-        (30.0..=50.0).contains(&mean_depth),
-        "Rust 侧平均 depth {mean_depth:.2} m 明显偏离 JS 标尺的 ≈40 m 量级——口径可能分叉"
+        (18.6..=31.0).contains(&mean_depth),
+        "Rust 侧平均 depth {mean_depth:.2} m 明显偏离 JS 标尺的 ≈24.8 m 量级\
+         （benchmark-baseline.json → engine.perMetric.hd.avg）——口径可能分叉"
     );
 }
 
@@ -1458,11 +1464,25 @@ fn phaseability_separability_is_measured() {
 ///   防守方位置/线路），以及**去除 motif 定义里「传球次数」的混淆**（否则分开了也说不清
 ///   是空间还是传球数）。
 ///
+/// ## R6 重跑（2026-10-29，C1 子拍/移动层/横向转移重放到 main）
+///
+/// 30 seed / 5364 episode：
+///
+/// | 量 | P16（v7） | P143r-v4 | **R6** |
+/// |---|---|---|---|
+/// | `final_third` vs 其余 `forward_m/s` | 0.855 | 0.88–0.92（两两） | **0.729**（钉值 ±0.03） |
+/// | `build_up` vs `progression` `forward_m/s` | 0.461 | 0.382 | **0.301**（钉值 ±0.03） |
+/// | 未归一 `forward_m`（build vs prog） | — | — | **0.616**（时长混淆记录） |
+/// | 时长中位数（build / prog / final） | 78 / 45 / 40 s | — | **36.5 / 24.5 / 19.5 s** |
+///
+/// 方向全部不变：`final_third` 仍显著可分；`build_up` 的推进速率仍**低于** `progression`
+/// （AUC < 0.5）。变的是基数——移动层压缩了推进速率分布，两档之间的差距被拉得更大。
+///
 /// ## 本测试的判别力（为什么它不会静默漂移）
 ///
-/// 它断言**两件事**：① 逐档的最强特征 AUC **必须**在预期带内（`final_third` 高、
-/// `build_up`/`progression` 互不可分）；② 样本量下限。若 join 再断（回归到本地下标），
-/// 第 ① 条会因 AUC 跌回 0.5 而红——**这正是它抓住 v1/v2 的方式**。
+/// 它断言**三件事**：① `final_third` 的 AUC 钉在 R6 记录值附近（±0.03；join 再断会跌回
+/// ~0.5 而红）；② `build_up`/`progression` 的 AUC 钉值 + 方向；③ 样本量与时长混淆记录。
+/// **这正是它抓住 v1/v2 join bug 的方式**——不是靠「落在某个宽带」，而是靠「偏离记录值」。
 #[test]
 fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
     const GATE_SEEDS: (u64, u64) = (1, 30);
@@ -1539,10 +1559,17 @@ fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
         .collect();
     let auc_final = auc(&fwd_final, &fwd_other).expect("final_third 的 AUC 应可算");
     println!("final_third vs 其余（forward_m/s）AUC = {auc_final:.3}");
+    // **R6 基数重标定（2026-10-29）**：C1 子拍/移动层/横向转移重放到 main 后，本量由
+    // P16 的 0.855 / P143r-v4 两两 0.88–0.92 移到 **0.729**（30 seed，join 未断）。
+    // 判据方向不变（final_third 仍与其余显著可分，AUC 远高于 0.5）；改为**钉值 ±0.03**
+    // 防静默漂移——join bug 复发仍会把它打到 ~0.5 而红，且任何进一步的形态漂移也会红。
+    // 这不是放宽：阈值跟随实测基数收紧成窄带（旧写法只挡「<0.75」一侧）。
+    const R6_RECORDED_AUC_FINAL: f64 = 0.729;
     assert!(
-        auc_final > 0.75,
-        "final_third 在 forward_m/s 上应与其余显著可分（实测 {auc_final:.3}）——\
-         若跌回 ~0.5，先查 join（`all_feats` 是否漏了 `i + offset`），再查样本"
+        (auc_final - R6_RECORDED_AUC_FINAL).abs() <= 0.03,
+        "final_third 在 forward_m/s 上的 AUC = {auc_final:.3}，偏离 R6 记录值 \
+         {R6_RECORDED_AUC_FINAL:.3}——先查 join（`all_feats` 是否漏了 `i + offset`），\
+         再查移动层是否又改了形态（那属研究裁决，须人工复核）"
     );
 
     // ② build_up 与 progression：**看去混淆后的量**（/秒）不可分。
@@ -1569,12 +1596,15 @@ fn phaseability_verdict_is_partial_and_the_evidence_is_duration_controlled() {
     // ⚠️⚠️ **裁决已变 —— 待用户拍板（P143r-v4，2026-10-11）** ⚠️⚠️
     //
     // 原裁决断言：`|AUC − 0.5| ≤ 0.06`（P16：时长归一后空间量**分不开** build_up/progression）。
-    // 四层移动层改变了 forward_m/s 的形态 → 现在 AUC = 0.382（≈0.38），**落在旧带之外**
+    // 四层移动层改变了 forward_m/s 的形态 → v4 时 AUC = 0.382（≈0.38），**落在旧带之外**
     // ⇒ 「空间量现在**能**分开这两档」——**这是对 P16 裁决的推翻**。
-    // 本 change **不自行改判**（改研究裁决是用户级动作）：这里只**记录** v4 读数、把它钉住
+    // **R6（2026-10-29，C1 子拍/移动层/横向转移重放到 main）**再把该读数推到 **0.301**
+    // （30 seed，与 p124 `gate_rerun_and_p16_baseline_side_by_side` 的同一管线逐位一致）。
+    // 方向仍是反向（build_up 推进速率更低），推翻的结论不变、只是更强。
+    // 本 change **不自行改判**（改研究裁决是用户级动作）：这里只**记录**读数、把它钉住
     // 防静默漂移，新裁决待用户拍板后另立 change。见 `tasks.md §裁决待定` 与
     // `.scratch/notes/p143r-v4-landing-*.md §裁决待定`。
-    const V4_RECORDED_AUC_BP: f64 = 0.382;
+    const V4_RECORDED_AUC_BP: f64 = 0.301;
     assert!(
         (auc_bp - V4_RECORDED_AUC_BP).abs() <= 0.03,
         "build_up vs progression forward_m/s AUC = {auc_bp:.3} 偏离 v4 记录值 {V4_RECORDED_AUC_BP}——\
