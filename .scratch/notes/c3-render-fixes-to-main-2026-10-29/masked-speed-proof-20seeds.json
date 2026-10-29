@@ -1,0 +1,397 @@
+{
+  "summary": {
+    "seeds": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20
+    ],
+    "duration": 5400,
+    "totalSpeedFields": 962315,
+    "allRawDiffer": true,
+    "allMaskedEqual": true,
+    "mainFlightP50Mean": 1.0431,
+    "branchFlightP50Mean": 1.0431,
+    "mainBelow095Total": 6884,
+    "branchBelow095Total": 200,
+    "branchAt095Total": 6696
+  },
+  "rows": [
+    {
+      "seed": 1,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "a5e5440ab37d9f15",
+      "hashRawBranch": "0879725340086a4e",
+      "hashMasked": "bca631a1781b5797",
+      "nSpeedFields": 46840,
+      "passFlightsMain": {
+        "p50": 1.0339,
+        "nBelow095": 365
+      },
+      "passFlightsBranch": {
+        "p50": 1.0339,
+        "nAt095": 357,
+        "nBelow095": 6
+      }
+    },
+    {
+      "seed": 2,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "c4551845c9c1cd14",
+      "hashRawBranch": "7158bffa1591bfac",
+      "hashMasked": "b18cea74d138fc6b",
+      "nSpeedFields": 48491,
+      "passFlightsMain": {
+        "p50": 1.0436,
+        "nBelow095": 344
+      },
+      "passFlightsBranch": {
+        "p50": 1.0436,
+        "nAt095": 331,
+        "nBelow095": 11
+      }
+    },
+    {
+      "seed": 3,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "8e8db39143507111",
+      "hashRawBranch": "3c80034e56e7b166",
+      "hashMasked": "3bcc6efe2d1867c6",
+      "nSpeedFields": 49106,
+      "passFlightsMain": {
+        "p50": 1.0482,
+        "nBelow095": 325
+      },
+      "passFlightsBranch": {
+        "p50": 1.0482,
+        "nAt095": 322,
+        "nBelow095": 7
+      }
+    },
+    {
+      "seed": 4,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "17d38cd74979dbef",
+      "hashRawBranch": "a6e0adb5ab46a8a4",
+      "hashMasked": "a926fb2abd8c9e5e",
+      "nSpeedFields": 47872,
+      "passFlightsMain": {
+        "p50": 1.0499,
+        "nBelow095": 339
+      },
+      "passFlightsBranch": {
+        "p50": 1.0499,
+        "nAt095": 333,
+        "nBelow095": 9
+      }
+    },
+    {
+      "seed": 5,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "d1fc059d4a6ead3f",
+      "hashRawBranch": "3e3f1e2b83323e4a",
+      "hashMasked": "01f4229e74b213fe",
+      "nSpeedFields": 47032,
+      "passFlightsMain": {
+        "p50": 1.0317,
+        "nBelow095": 353
+      },
+      "passFlightsBranch": {
+        "p50": 1.0317,
+        "nAt095": 351,
+        "nBelow095": 14
+      }
+    },
+    {
+      "seed": 6,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "e96e2905f19ba07d",
+      "hashRawBranch": "b53327777cadf53a",
+      "hashMasked": "47ac7f8f3f143239",
+      "nSpeedFields": 48041,
+      "passFlightsMain": {
+        "p50": 1.0424,
+        "nBelow095": 351
+      },
+      "passFlightsBranch": {
+        "p50": 1.0424,
+        "nAt095": 340,
+        "nBelow095": 11
+      }
+    },
+    {
+      "seed": 7,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "588880dbff324d3f",
+      "hashRawBranch": "df14ebeeafb6d574",
+      "hashMasked": "107e46f0c9e00014",
+      "nSpeedFields": 49099,
+      "passFlightsMain": {
+        "p50": 1.0239,
+        "nBelow095": 353
+      },
+      "passFlightsBranch": {
+        "p50": 1.0239,
+        "nAt095": 335,
+        "nBelow095": 14
+      }
+    },
+    {
+      "seed": 8,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "51019c1aa45fba1a",
+      "hashRawBranch": "1c02f51f56afd34a",
+      "hashMasked": "211828b2ec246674",
+      "nSpeedFields": 48648,
+      "passFlightsMain": {
+        "p50": 1.047,
+        "nBelow095": 349
+      },
+      "passFlightsBranch": {
+        "p50": 1.047,
+        "nAt095": 340,
+        "nBelow095": 12
+      }
+    },
+    {
+      "seed": 9,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "2ee7748328a69377",
+      "hashRawBranch": "94cd569e29fd1ee6",
+      "hashMasked": "e029ac4da2cd0b29",
+      "nSpeedFields": 47719,
+      "passFlightsMain": {
+        "p50": 1.0127,
+        "nBelow095": 364
+      },
+      "passFlightsBranch": {
+        "p50": 1.0127,
+        "nAt095": 358,
+        "nBelow095": 9
+      }
+    },
+    {
+      "seed": 10,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "2ec42fb9c157c1ae",
+      "hashRawBranch": "9836fd3c55c22dd3",
+      "hashMasked": "92730a4f329a7846",
+      "nSpeedFields": 48698,
+      "passFlightsMain": {
+        "p50": 1.0446,
+        "nBelow095": 347
+      },
+      "passFlightsBranch": {
+        "p50": 1.0446,
+        "nAt095": 336,
+        "nBelow095": 10
+      }
+    },
+    {
+      "seed": 11,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "6621ca20d9813533",
+      "hashRawBranch": "48946b84f12fe77d",
+      "hashMasked": "94129638321546f2",
+      "nSpeedFields": 47586,
+      "passFlightsMain": {
+        "p50": 1.0505,
+        "nBelow095": 353
+      },
+      "passFlightsBranch": {
+        "p50": 1.0505,
+        "nAt095": 343,
+        "nBelow095": 10
+      }
+    },
+    {
+      "seed": 12,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "c6001301fe2b2413",
+      "hashRawBranch": "f519a6353bc99f6f",
+      "hashMasked": "4631f69d29148fc3",
+      "nSpeedFields": 49513,
+      "passFlightsMain": {
+        "p50": 1.0605,
+        "nBelow095": 312
+      },
+      "passFlightsBranch": {
+        "p50": 1.0605,
+        "nAt095": 300,
+        "nBelow095": 13
+      }
+    },
+    {
+      "seed": 13,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "db9b90c9eccb54ff",
+      "hashRawBranch": "3a0656bdd6386f2b",
+      "hashMasked": "5ea585227d2192b1",
+      "nSpeedFields": 48887,
+      "passFlightsMain": {
+        "p50": 1.0534,
+        "nBelow095": 328
+      },
+      "passFlightsBranch": {
+        "p50": 1.0534,
+        "nAt095": 308,
+        "nBelow095": 12
+      }
+    },
+    {
+      "seed": 14,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "4d9fea2bdba7537b",
+      "hashRawBranch": "4289be69d189b4cf",
+      "hashMasked": "699ec494b8695129",
+      "nSpeedFields": 48025,
+      "passFlightsMain": {
+        "p50": 1.045,
+        "nBelow095": 344
+      },
+      "passFlightsBranch": {
+        "p50": 1.045,
+        "nAt095": 340,
+        "nBelow095": 5
+      }
+    },
+    {
+      "seed": 15,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "76271eabcac43a22",
+      "hashRawBranch": "04103be2f09a3ebc",
+      "hashMasked": "0bdc17c6d0d41836",
+      "nSpeedFields": 47197,
+      "passFlightsMain": {
+        "p50": 1.0578,
+        "nBelow095": 335
+      },
+      "passFlightsBranch": {
+        "p50": 1.0578,
+        "nAt095": 321,
+        "nBelow095": 8
+      }
+    },
+    {
+      "seed": 16,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "d744050e98b444d1",
+      "hashRawBranch": "50b562c0a5749ecd",
+      "hashMasked": "936bd50bd7911709",
+      "nSpeedFields": 47092,
+      "passFlightsMain": {
+        "p50": 1.0265,
+        "nBelow095": 344
+      },
+      "passFlightsBranch": {
+        "p50": 1.0265,
+        "nAt095": 339,
+        "nBelow095": 10
+      }
+    },
+    {
+      "seed": 17,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "ea05c0f6e8a22e37",
+      "hashRawBranch": "69d9af70158aaaca",
+      "hashMasked": "434b8c6e6a5958f5",
+      "nSpeedFields": 48734,
+      "passFlightsMain": {
+        "p50": 1.051,
+        "nBelow095": 346
+      },
+      "passFlightsBranch": {
+        "p50": 1.051,
+        "nAt095": 343,
+        "nBelow095": 9
+      }
+    },
+    {
+      "seed": 18,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "bda8fcdb7e89a841",
+      "hashRawBranch": "107801df809f6988",
+      "hashMasked": "51697d46c8e0fa79",
+      "nSpeedFields": 48002,
+      "passFlightsMain": {
+        "p50": 1.0425,
+        "nBelow095": 336
+      },
+      "passFlightsBranch": {
+        "p50": 1.0425,
+        "nAt095": 324,
+        "nBelow095": 9
+      }
+    },
+    {
+      "seed": 19,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "fd130028934236d8",
+      "hashRawBranch": "4aa0892fa931e21c",
+      "hashMasked": "98c8b9242fb4e681",
+      "nSpeedFields": 47377,
+      "passFlightsMain": {
+        "p50": 1.0373,
+        "nBelow095": 358
+      },
+      "passFlightsBranch": {
+        "p50": 1.0373,
+        "nAt095": 346,
+        "nBelow095": 11
+      }
+    },
+    {
+      "seed": 20,
+      "rawEqual": false,
+      "maskedEqual": true,
+      "hashRawMain": "7c1dec6ec0e253cd",
+      "hashRawBranch": "b5f24ed79124aa6e",
+      "hashMasked": "2c75a7dd781d945c",
+      "nSpeedFields": 48356,
+      "passFlightsMain": {
+        "p50": 1.0606,
+        "nBelow095": 338
+      },
+      "passFlightsBranch": {
+        "p50": 1.0606,
+        "nAt095": 329,
+        "nBelow095": 10
+      }
+    }
+  ]
+}

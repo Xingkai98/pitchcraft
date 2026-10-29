@@ -28,5 +28,6 @@
   "n_foul_yellow": 4,
   "n_foul_red": 0,
   "n_free_kick": 17,
-  "stream_hash": 3369870896039182766
+  "stream_hash": 3369870896039182766,
+  "speed_masked_stream_hash": 12859457208856593642
 }

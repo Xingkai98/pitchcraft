@@ -220,7 +220,7 @@ impl Event {
     }
 }
 
-/// 当前引擎/协议模型版本（**当前 = 9**）。
+/// 当前引擎/协议模型版本（**当前 = 10**）。
 /// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
 /// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
 /// v3：P29 射门机会迁移（射门由 hazard 五因子涌现，非槽强制；`shot_setup` 可被抢断打断）——
@@ -239,16 +239,24 @@ impl Event {
 /// v9：M5 射门分桶重标定（禁区弧 `7/22`→`3/22`、远射 `4/11`→`2/11`）+ `sample_shot_target`
 ///     禁区内体量 58%→70% + `l3_shot_ratios` 尺子口径由板条改罚球区矩形——事件流改变
 ///     （golden 重基线）。**同一版本内并入 M1b（门将出/退目标，见常量 `GK_COME_OUT_SLOPE`）**。
+/// v10：C3 传球飞行填拍——`tick_filling_flight` 在「原飞行 < 0.95s 且距离 ≥ 0.5m」时把上报
+///     `speed` 改写为 `距离 / 0.95`（viewer 的球飞行动画据此填满一拍；出界 pass 同样填拍）。
+///     **位置/决策/时间戳逐位不变，只有 `speed` 字段值与 `stream_hash` 变**。
+///     机器判据：`tests/realism.rs::gm_v10_is_v9_plus_speed_field_only`——它断言 v9/v10 的
+///     28 个计数字段全同、原始流哈希不同，且 **golden 记录的 `speed_masked_stream_hash`
+///     （掩掉所有 `"speed":<num>` 后的事件流哈希）v9 与 v10 逐 seed 相同**。掩码只抹 speed
+///     的数值，位置/时间戳/决策/其它字段任一漂移都会改变掩码哈希（2026-10-29 审阅用
+///     `receiver_x + 0.0007` 变异反证过：旧守卫绿、新守卫红）。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 9;
+pub const MODEL_VERSION: u32 = 10;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
 /// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起，
 /// v3 = P29 射门机会迁移起，v4 = P30 防守接触竞争起，v5 = P31 删槽位 + 涌现频率起，
 /// v6 = P34 同队米制间距分离起）。
-/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v5 `tests/golden-v5/`、
-/// v6 `tests/golden-v6/`，旧基线保留不覆盖），
+/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v9 `tests/golden-v9/`、
+/// v10 `tests/golden-v10/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
@@ -3460,6 +3468,27 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
 /// `last_emitted`**（重构前直接写这三处 + 返回 main）。RNG 消费顺序与位置**逐位不变**——
 /// 随机数仍在本函数内抽取，故 golden 只在分离推移处漂移，不因重排而漂。
 /// 提交（写入 st.pos 并回填 main.x2/y2）由调用方在统一分离后完成。
+/// C3（R2）：让**传球飞行时长**填满本 tick（`TICK_FILL_FLIGHT_S` = 0.95s）。
+///
+/// 背景：事件 `speed` 同时驱动两处——引擎 `t_end`（高亮结束 / finalize tick）与 viewer 的
+/// 球飞行动画（`duration = 距离 / speed`）。实测引擎一次传球的飞行只有 0.2–0.8s，球到落点后
+/// 到下一拍（1s 边界）之间**静止干等**（盲测选窗里占总静止时间约 15%——**本仓内不可自证**：
+/// 该读数出自 commit 6105407 的实施期盲测选窗统计，未落盘为可复算的 note/脚本）。
+///
+/// 规则：原飞行 `< 0.95s` 时改写到 0.95s（`speed = 距离 / 0.95`，RNG 抽取次数不变，
+/// **不动任何决策输入**；finalize tick 仍是 t+1，动力学逐位不变——由事件流哈希（掩掉 speed）
+/// 守卫）；原飞行 ≥ 0.95s 的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
+/// 返回 `(speed, flight)`：调用方必须同时用这两项的返回值（事件与 `t_end` 一致）。
+fn tick_filling_flight(dist_m: f64, speed: f64) -> (f64, f64) {
+    const TICK_FILL_FLIGHT_S: f64 = 0.95;
+    let flight = dist_m / speed;
+    if flight < TICK_FILL_FLIGHT_S && dist_m >= 0.5 {
+        (dist_m / TICK_FILL_FLIGHT_S, TICK_FILL_FLIGHT_S)
+    } else {
+        (speed, flight)
+    }
+}
+
 fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
     let p = st.pos[st.carrier as usize];
     let home = st.possession == 0;
@@ -3978,7 +4007,11 @@ fn emit_pass_highlight_inner(
                 OutSide::Sideline => st.opportunity_tally.exec_pass_out_throw_in += 1,
             }
             let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-            let flight = distance_meters(from_pos, (x2, y2)) / speed;
+            // C3 补齐（2026-10-29 独立审阅 P1.1）：出界 pass 也走填拍。此前这一支是唯一没接
+            // `tick_filling_flight` 的 pass 分支——短出界球的 `speed` 与其他 pass 语义不一致，
+            // 且 L2 的填拍门会把它当成「未填拍的短传」。填拍不消耗 RNG、不改任何决策输入；
+            // 填后 `t_end` 仍落在 [t, t+1)，finalize tick 照旧是 t+1（与 C3 其余分支同一论证）。
+            let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (x2, y2)), speed);
             let t_end = t + flight;
             events.push(Event {
                 t, type_: EventType::Pass, subject: from, from: Some(from), to: None,
@@ -4046,7 +4079,7 @@ fn intercept_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &m
     obs: &mut observation::BehaviorObservationRecorder) {
     let (ix, iy) = st.pos[interceptor as usize];
     let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-    let flight = distance_meters(from_pos, (ix, iy)) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (ix, iy)), speed);
     let t_end = t + flight;
     events.push(Event {
         t, type_: EventType::Pass, subject: from, from: Some(from), to: Some(to),
@@ -4095,7 +4128,7 @@ fn lost_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     obs: &mut observation::BehaviorObservationRecorder) {
     let (x2, y2) = (clamp01(lx), clamp01(ly));
     let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-    let flight = distance_meters(from_pos, (x2, y2)) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (x2, y2)), speed);
     let t_end = t + flight;
     // 续滚方向 = 传球方向（传过头读法：球沿原方向滚过落点，接球者/防守者追）
     let dx = x2 - from_pos.0;
@@ -4154,7 +4187,7 @@ fn normal_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events: &mut 
     let _ = home;
     let _ = to_pos;
     let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-    let flight = distance_meters(from_pos, (x2, y2)) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (x2, y2)), speed);
     let t_end = t + flight;
     let meters = distance_meters(from_pos, (x2, y2));
     let h = pass_h(meters, rng);
@@ -4502,7 +4535,7 @@ fn emit_forward_pass_highlight(st: &mut MatchState, rng: &mut SeededRng, events:
     let lead = 0.1 + (rng.next_u64() % 30) as f64 / 100.0;
     let (x2, y2) = lead_point(from_pos, to_pos, lead);
     let speed = 12.0 + (rng.next_u64() % 130) as f64 / 10.0;
-    let flight = distance_meters(from_pos, (x2, y2)) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (x2, y2)), speed);
     let t_end = t + flight;
     let h = pass_h(distance_meters(from_pos, (x2, y2)), rng);
     events.push(Event {
@@ -5074,7 +5107,8 @@ fn start_goal_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Ev
     let land = goal_kick_land(st, rng);
     let speed = 16.0 + (rng.next_u64() % 40) as f64 / 10.0; // 16-19.9 m/s（spec ~15-20）
     let h = 0.5 + (rng.next_u64() % 30) as f64 / 100.0;     // 0.5-0.8 长弧线高球
-    let t_end = t + distance_meters(gk_pos, land) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(gk_pos, land), speed);
+    let t_end = t + flight;
     events.push(Event {
         t, type_: EventType::Pass, subject: gk_id, from: Some(gk_id), to: None,
         x: gk_pos.0, y: gk_pos.1, x2: Some(land.0), y2: Some(land.1),
@@ -5225,7 +5259,7 @@ fn emit_corner_kick(
     let land = (clamp01(land_x), clamp01(land_y));
     let speed = 18.0 + (rng.next_u64() % 40) as f64 / 10.0;
     let h = 0.5 + (rng.next_u64() % 30) as f64 / 100.0; // 0.5-0.8 长弧线
-    let flight = distance_meters(flag, land) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(flag, land), speed);
     let t_end = t + flight;
     events.push(Event {
         t, type_: EventType::Pass, subject: kicker, from: Some(kicker), to: None,
@@ -5267,7 +5301,7 @@ fn emit_throw_in(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Even
     // P34（#53）：接球点 = 接球者终点 → 先与队友当前位置米制分离（零 RNG，不影响下方抽取顺序）。
     let (x2, y2) = separate_target_point(st, to, lead_point(out_pos, to_pos, lead));
     let speed = 12.0 + (rng.next_u64() % 20) as f64 / 10.0; // 掷球 12-13.9 m/s（短传偏慢）
-    let flight = distance_meters(out_pos, (x2, y2)) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(out_pos, (x2, y2)), speed);
     let t_end = t + flight;
     events.push(Event {
         t, type_: EventType::Pass, subject: thrower, from: Some(thrower), to: Some(to),
@@ -5309,7 +5343,7 @@ fn emit_free_kick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<Eve
     // P34（#53）：接球点 = 接球者终点 → 先与队友当前位置米制分离（零 RNG，不影响下方抽取顺序）。
     let (x2, y2) = separate_target_point(st, to, lead_point(spot, to_pos, lead));
     let speed = 12.0 + (rng.next_u64() % 20) as f64 / 10.0; // 任意球短传 12-13.9 m/s（同掷球）
-    let flight = distance_meters(spot, (x2, y2)) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(spot, (x2, y2)), speed);
     let t_end = t + flight;
     events.push(Event {
         t, type_: EventType::Pass, subject: kicker, from: Some(kicker), to: Some(to),
@@ -5606,7 +5640,7 @@ fn emit_header_flick(st: &mut MatchState, rng: &mut SeededRng, events: &mut Vec<
     // P34（#53）：接球点 = 接球者终点 → 先与队友当前位置米制分离（零 RNG，不影响下方抽取顺序）。
     let (x2, y2) = separate_target_point(st, to, lead_point(pos, to_pos, lead));
     let speed = 10.0 + (rng.next_u64() % 40) as f64 / 10.0;
-    let flight = distance_meters(pos, (x2, y2)) / speed;
+    let (speed, flight) = tick_filling_flight(distance_meters(pos, (x2, y2)), speed);
     let t_end = t + flight;
     events.push(Event {
         t,
@@ -5726,7 +5760,7 @@ fn emit_clearance(
     let def_home = st.possession == 0;
     let attack_home = !def_home;
     let clear_dir = if def_home { 1.0 } else { -1.0 }; // 顶离自家球门（朝中场）
-    let speed = 14.0 + (rng.next_u64() % 40) as f64 / 10.0;
+    let mut speed = 14.0 + (rng.next_u64() % 40) as f64 / 10.0;
     let y = 0.2 + (rng.next_u64() % 60) as f64 / 100.0;
     let t_end;
     let outcome;
@@ -5741,7 +5775,7 @@ fn emit_clearance(
             -0.01 - (rng.next_u64() % 40) as f64 / 1000.0
         };
         (x2, y2) = (clamp01(out_x), y);
-        t_end = t + distance_meters(pos, (x2, y2)) / speed;
+        t_end = { let (s, f) = tick_filling_flight(distance_meters(pos, (x2, y2)), speed); speed = s; t + f };
         detail = "out_goal_line";
         out_pos = Some((out_x, y));
         outcome = HighlightOutcome::PassOutOfPlay {
@@ -5758,7 +5792,7 @@ fn emit_clearance(
             -0.01 - (rng.next_u64() % 40) as f64 / 1000.0
         };
         (x2, y2) = (clamp01(pos.0 + clear_dir * 0.15), clamp01(out_y));
-        t_end = t + distance_meters(pos, (x2, y2)) / speed;
+        t_end = { let (s, f) = tick_filling_flight(distance_meters(pos, (x2, y2)), speed); speed = s; t + f };
         detail = "out_sideline";
         out_pos = Some((pos.0 + clear_dir * 0.15, out_y));
         outcome = HighlightOutcome::PassOutOfPlay { detail: detail.to_string(), out_pos: (pos.0 + clear_dir * 0.15, out_y), source: PassOutSource::Clearance, own_goal_line: true };
@@ -5766,7 +5800,7 @@ fn emit_clearance(
         // 正常解围：顶出禁区（落点往中场方向 0.18-0.32 归一化）→ 松散球重新争（普通）
         let dist = 0.18 + (rng.next_u64() % 14) as f64 / 100.0;
         (x2, y2) = (clamp01(pos.0 + clear_dir * dist), clamp01(y + (rng.next_u64() % 21) as f64 / 1000.0 - 0.01));
-        t_end = t + distance_meters(pos, (x2, y2)) / speed;
+        t_end = { let (s, f) = tick_filling_flight(distance_meters(pos, (x2, y2)), speed); speed = s; t + f };
         detail = "clearance";
         let dx = x2 - pos.0;
         let dy = y2 - pos.1;
@@ -5918,8 +5952,17 @@ fn advance_dead_ball(
     let kickoff_t = observation::ObservedTime::event_emit(t);
     obs.restart_taken(kickoff_t, observation::ControlFactBasis::RestartRule);
     obs_bind(events, obs, obs_last_event(events));
-    // kickoff 球飞行结束时刻：main 在其后首个 tick 边界恢复（避免 beat-main 在球未到落点就开始）
-    let kickoff_end = t + distance_meters((0.5, 0.5), (kx2, ky2)) / 12.0;
+    // 开球球飞行结束时刻：main 在其后首个 tick 边界恢复（避免 beat-main 在球未到落点就开始）。
+    // ⚠️ 归因边界（2026-10-29 审阅 P1.1/P2.4）：`kickoff` 事件类型是 `"kickoff"`（**不是 pass**），
+    // 它的 `speed` 字段保持 12.0，`kickoff_end` 也不序列化；这里算出的填拍只用于两处——
+    //   ① `advance_dead_ball` 的恢复判定：`t < kickoff_end` 时该 tick 不产 main。判定在**整数
+    //      tick**上做；填拍只作用于「原飞行 < 0.95s」的那一类，此时原飞行与 0.95s 都 < 1s
+    //      ⇒ 恢复 tick 两版都是 t+1（原飞行 ≥0.95s 的保持原值，本就不变），事件流不变；
+    //   ② observation 的 `resumed_t`（`ObservedTime::flight_end(kickoff_end)`）——这是唯一可见差异。
+    // ⇒ 对 viewer 球动画零效果（动画读事件 `speed`=12.0）。不要用这里论证「填拍已覆盖开球」。
+    let (kickoff_speed, kickoff_flight) = tick_filling_flight(distance_meters((0.5, 0.5), (kx2, ky2)), 12.0);
+    let _ = kickoff_speed; // 事件 speed 字段保持 12.0（开球拨球不按飞行改写，仅拉长飞行时长）
+    let kickoff_end = t + kickoff_flight;
     st.carrier = receiver;
     // 开球接收者移到拨球落点；对接收者做同队分离（落点可能贴着队友——开球者即队友）。
     let snap = separate_target_point(st, receiver, (kx2, ky2));
