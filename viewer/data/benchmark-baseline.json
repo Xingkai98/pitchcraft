@@ -24,8 +24,8 @@
   "engineFingerprint": {
     "wasmPath": "viewer/engine.wasm",
     "sourcePath": "engine/src/lib.rs",
-    "wasmSha256": "d71e4592c196b31f1db9981246c5d42394e25072a3e6b0f8bb6fb0b0772851fc",
-    "sourceSha256": "d1ae722a6808da25b62a8ae1ef562a7cf2a74e1c67e71fe9243778e1068b24d5"
+    "wasmSha256": "f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f",
+    "sourceSha256": "7728355867e6a021a073b925e716b3c83e4699095645f42d919c49ed89194331"
   },
   "windows": {
     "sizeSec": 300,

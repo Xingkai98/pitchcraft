@@ -843,8 +843,10 @@ const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// 「移动层杠杆会破抢断/犯规带」的实测见 note §9.2。
 ///
 /// **R5c 重锚：−4.50 → −4.20（当前取值）**。横向转移（`PASS_W_LATERAL`）把接球点推远、
-/// 射门体量下滑，按 C1 的水平重锚拉回；R5c 读数 regular 19.6–23.1/场、L1 200 场 23.1 ∈ [14,29]。
-/// 出处：`.scratch/notes/RECORD.md` R5c 节 + `.scratch/notes/c1-movement-coupling-2026-10-28.md` §7。
+/// 射门体量下滑，按 C1 的水平重锚拉回。regular 射门：**V1 19.6/场（贴下沿）→ R5c 23.1/场**
+/// （L1 200 场 23.1 ∈ [14,29]）——**两个数属于两个树，不是一个区间**。
+/// 出处：`.scratch/notes/RECORD.md` R5 节（19.40）与 R5c 节（23.1）+
+/// `.scratch/notes/c1-movement-coupling-2026-10-28.md` §7。
 const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.2;
 /// 射门推进 hazard 的**每秒率参考窗口**（秒）：λ = e^(score+shift) / 本值。
 /// 旧实现是「每机会一次、window=1.0 s」；1 Hz 基线实测机会间隔 ≈ 2.0 s（四 seed
