@@ -181,7 +181,8 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
     },
     AnomalyCoverageRow {
         rule: "A2",
-        topic: "争抢时长退化：多数松散球同 tick 被拾回",
+        // R6（2 Hz）：零时长占比 45.7%（300 seed），不再过半但仍为最大单一类 ⇒ 措辞从「多数」改为「近半」。
+        topic: "争抢时长退化：近半松散球同 tick 被拾回（R6 300 seed 45.7%）",
         per_episode_samples: true,
         note: "**部分覆盖，有两层缺口**：\n\
                （a）本层的 `instant_contest` 只覆盖 A2 母体的 **~90%**——A2 数**全部**零时长争抢\n\
@@ -189,7 +190,8 @@ pub const ANOMALY_COVERAGE: &[AnomalyCoverageRow] = &[
                （实测 15434 = 90.4%）；余下约 10% 发生在「控制已释放、球还在飞」的**两段 episode 之间**，\n\
                在 L2 的争抢成因表里数得到，但没有 card 可挂；\n\
                （b）A2 关心的**追逐过程**在其主因 `interception_loose` 上**落在盲区**——\n\
-               该成因 729/729 不产 loose beat，诊断卡的【丢球后】一节只能记「追逐不可见」",
+               P17A 300 seed 实测该成因 729/729 不产 loose beat（机制未变；R6 未复测该计数），\n\
+               诊断卡的【丢球后】一节只能记「追逐不可见」",
     },
     AnomalyCoverageRow {
         rule: "A3",
