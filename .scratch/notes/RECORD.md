@@ -1172,15 +1172,16 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
     （`target/p17b-diagnosis/baseline.md` 按成因表）；P17A 的 30 seed 记录是 729/729
     （Round 4 P2-1：此前后者被误标为「300 seed」）。
 
-### 4. 验证记录（2026-10-30，冻结树 `f58d37a`；后续仅 notes 提交）
+### 4. 验证记录（2026-10-30，最终树 `0dcdc76`，含 Round 4 修复；其后仅 notes 提交）
 
 - 默认套件 `cargo test --release --no-fail-fast`：**0 红**。9 target：
   lib **204** / p124 **35** / p15 **11** / p16 **36** / p17a **24** / p17b **33** / p18 **6** /
   realism **7** / doc **0**（各 target 的 `ignored` 分别为 1/2/1/2/2/2/2/9/0）。
 - 产物门（`#[ignore]`）以 `P124/P16/P17B_SOURCE_COMMIT=<HEAD>` 重跑，全部 ok：
-  p15 `l3_300_seed…`（66.8s）、p16 canary+baseline（89.2s）、p17b canary+baseline（113.8s）、
-  p124 canary+baseline（156.6s）。p124 产物记 `worktree_dirty=false`、`source_commit=f58d37a…`；
-  p16/p17b 同源（p16 记 `c1c9ed5…`，测试源码未再变、`source_commit` 是其祖先）。
+  p15 `l3_300_seed…`（65.0s）、p16 canary+baseline（81.0s）、p17b canary+baseline（109.9s）、
+  p124 canary+baseline（110.3s）。`source_commit`：p15/p16 记 `db5ad2f…`（Round 4 修复提交），
+  p17b 记 `0dcdc76…`（其后测试源码未再变），p124 记 `cfe7abd…`（其后 p124 源码未再变）；
+  三者都是最终 HEAD 的祖先。p124 产物另记 `worktree_dirty=false`。
 - verify 关键步：viewer **401/401**、tools **537/537**、visual-review **74/74**、
   baseline sentinel **10/10**、e2e-v2 OK（11737 事件，无 snap：球 0.0161 / 球员 0.0301）、
   spacing-sweep 8 seed × 2157 窗 **player_overlap findings=0**。
