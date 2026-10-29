@@ -1111,11 +1111,19 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
   - 形态③ `[253,87,109,492,133,341,569,596]`
   - lib 取 **`[18,232,456,529,428,508,253,87,109]`**（4/2/3）；p15 取 **`[18,428,253]`**（1/1/1）。
   - 判据（谓词 `start_t == 尾哨`、豁免条款、防空转）**未动**，只换样本。
+- ⚠️ **CI 教训（2026-10-30，首次把 R6 树跑上 GitHub Actions）**：CI（rustc 1.99.1 runner）
+  的 p15 给出 **1/1/0**——seed 253 的形态③在 CI 上**不命中**，而本机 1.97.1 release/debug
+  与 1.99.1 release/debug 都命中。尾哨截断是 **knife-edge 时序**，不能把「某 seed 在本机
+  命中」当跨环境常量。⇒ 两个覆盖门改为 **候选表 + 运行时扫描**（扫到三种形态都出现即停；
+  形态①/②/③ 必须出现的防空转断言不变），候选表补 9 个形态② seed（601..=1200 复扫：
+  616/645/698/748/842/957/1015/1098/1112，1.97/1.99 release 一致）。**判据未动，换的是
+  样本来源**；单 seed 失效不再直接判红，候选表全扫完仍不覆盖才红。
 - **产 gap 的截断样本**（`full_time_during_ball_in_flight`）：旧样本 `562@120`、`441@700`、
   `347@300` 在新树上**全部 0 gap**（它们末尾没有「进球 → 开球 → 开球飞行撞哨」的时序）。
   按同一判据复扫 **seed 1..=800 × dur {120,300,400,700}**：命中只剩 **360@400**；
   扩展扫 **dur {200,250,350,450,500,600,900,1200,1800,2700}** 再得 **225@450 / 103@900**。
-  - 取 **360@400**（lib 单样本）与 **360@400 + 103@900**（p15 两样本，一短一长）。
+  - 取 **360@400 + 225@450 + 103@900** 作候选表（lib 取第一个恰好 1 条合法 gap 的；
+    p15 跳过本环境不产 gap 的候选，凑够 2 个有效样本；同样是对 knife-edge 的兜底）。
   - 逐样本核验：三例都是「episode 以 `Goal` 收束 → kickoff 在末拍发出 → 飞行中撞哨」，
     restart `end_reason=MatchEnd`、无 `open_play_resumed_t`、`state=Ended`、gap 原因全部合法。
 
@@ -1172,21 +1180,26 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
     （`target/p17b-diagnosis/baseline.md` 按成因表）；P17A 的 30 seed 记录是 729/729
     （Round 4 P2-1：此前后者被误标为「300 seed」）。
 
-### 4. 验证记录（2026-10-30，最终树 `0dcdc76`，含 Round 4 修复；其后仅 notes 提交）
+### 4. 验证记录（2026-10-30，最终树 `1c6c649`，含 Round 4 + CI 兜底；其后仅 notes 提交）
 
 - 默认套件 `cargo test --release --no-fail-fast`：**0 红**。9 target：
   lib **204** / p124 **35** / p15 **11** / p16 **36** / p17a **24** / p17b **33** / p18 **6** /
   realism **7** / doc **0**（各 target 的 `ignored` 分别为 1/2/1/2/2/2/2/9/0）。
+- **CI 代理复跑（rustc 1.99.1，debug profile，即 CI step 1 的口径）**：p15 **11** / p16 **36** /
+  p17b **33** / p124 **34+1 环境性红**（`on_disk` 的 worktree_dirty 实时比对，见下；
+  干净 clone/CI 上产物不存在，该守卫整段跳过）。四个 target 的**所有数值钉**在 debug 下仍绿。
 - 产物门（`#[ignore]`）以 `P124/P16/P17B_SOURCE_COMMIT=<HEAD>` 重跑，全部 ok：
-  p15 `l3_300_seed…`（65.0s）、p16 canary+baseline（81.0s）、p17b canary+baseline（109.9s）、
-  p124 canary+baseline（110.3s）。`source_commit`：p15/p16 记 `db5ad2f…`（Round 4 修复提交），
-  p17b 记 `0dcdc76…`（其后测试源码未再变），p124 记 `cfe7abd…`（其后 p124 源码未再变）；
-  三者都是最终 HEAD 的祖先。p124 产物另记 `worktree_dirty=false`。
+  p15 `l3_300_seed…`（70.0s）、p16 canary+baseline（119.4s）、p17b canary+baseline（118.7s）、
+  p124 canary+baseline（204.0s）。全部 `source_commit=1c6c649…`；p124 产物另记
+  `worktree_dirty=false`。
 - verify 关键步：viewer **401/401**、tools **537/537**、visual-review **74/74**、
   baseline sentinel **10/10**、e2e-v2 OK（11737 事件，无 snap：球 0.0161 / 球员 0.0301）、
   spacing-sweep 8 seed × 2157 窗 **player_overlap findings=0**。
 - 确定性：同 seed 连跑两次事件流 sha256 逐位相同（seed 42 `14bccb4a…`、7 `813de9da…`、
   601 `c4871bf2…`，与 R6 验收包哈希一致）。
+- ⚠️ **CI 首跑（4db6162）红在 p15 截断覆盖门（1/1/0）**：本机 1.97/1.99、release/debug 都
+  命中 seed 253 的形态③，CI runner 上不命中 ⇒ 已改为候选表 + 运行时扫描（见 §1 的 CI 教训
+  与 `1c6c649`）。这是**跨环境 knife-edge**，不是判据放宽。
 - ⚠️ **p124 的 `on_disk_artifacts_*` 有一条环境前提**：它把产物的 `worktree_dirty=false`
   与**实时** `git status --porcelain` 比对。本 worktree 带有**预先存在**的 `.gitignore` 修改
   与 4 项未跟踪笔记（非本分支产物），裸跑会因「实时脏」判红。产物是在**干净视口**
