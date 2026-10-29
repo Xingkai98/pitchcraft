@@ -239,16 +239,21 @@ impl Event {
 /// v9：M5 射门分桶重标定（禁区弧 `7/22`→`3/22`、远射 `4/11`→`2/11`）+ `sample_shot_target`
 ///     禁区内体量 58%→70% + `l3_shot_ratios` 尺子口径由板条改罚球区矩形——事件流改变
 ///     （golden 重基线）。**同一版本内并入 M1b（门将出/退目标，见常量 `GK_COME_OUT_SLOPE`）**。
+/// v10：C3 传球飞行填拍——`tick_filling_flight` 在「原飞行 < 0.95s 且距离 ≥ 0.5m」时把上报
+///     `speed` 改写为 `距离 / 0.95`（viewer 的球飞行动画据此填满一拍）。**位置/决策/时间戳
+///     逐位不变，只有 `speed` 字段值与 `stream_hash` 变**——证据是
+///     `tests/realism.rs::gm_v10_is_v9_plus_speed_field_only`（v9/v10 基线逐字段相同、只哈希不同）
+///     与掩掉 speed 后的事件流逐字节比对（同 change 的实施记录）。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 9;
+pub const MODEL_VERSION: u32 = 10;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
 /// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起，
 /// v3 = P29 射门机会迁移起，v4 = P30 防守接触竞争起，v5 = P31 删槽位 + 涌现频率起，
 /// v6 = P34 同队米制间距分离起）。
-/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v5 `tests/golden-v5/`、
-/// v6 `tests/golden-v6/`，旧基线保留不覆盖），
+/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v9 `tests/golden-v9/`、
+/// v10 `tests/golden-v10/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {

@@ -554,10 +554,39 @@ fn aggregate(seed: u64) -> MatchStats {
                     Some("free_kick") => st.n_free_kick += 1,
                     _ => {}
                 }
-                // pass 速度区间：普通 12-24.9 / 角球 18-21.9 / 界外 12-13.9 / 门球 16-19.9 /
-                // 头球摆渡 10-13.9 / 解围 14-17.9 → 统一 [10, 25)
-                if spd >= 0.0 && (spd < 10.0 || spd >= 25.0) {
-                    st.speed_violations.push(format!("pass speed {:.2} (want [10,25))", spd));
+                // pass 速度区间（C3 起分两支）：
+                //   - 未改写：生成器原始速度，普通 12-24.9 / 角球 18-21.9 / 界外 12-13.9 /
+                //     门球 16-19.9 / 头球摆渡 10-13.9 / 解围 14-17.9 → 统一 [10, 25)；
+                //   - 改写（tick-fill）：`tick_filling_flight` 在「原飞行 < 0.95s 且距离 ≥ 0.5m」
+                //     时把 speed 改为 `距离/0.95`（viewer 让球飞满一拍）⇒ 短传的 speed 必然 < 10。
+                // 判据**不是**把下界放宽（那会让随机掉速溜过去），而是守住改写自身的语义：
+                // 凡 speed < 10 的 pass，其由序列化字段复算的飞行时长必须 ≈ 0.95s。
+                // 容差 0.03s：x/y/x2/y2 各含 ≤5e-5 归一化量化（105m/68m → 距离误差 ≤0.0125m），
+                // 除以最小 speed（≈0.53）后放大约 0.024s；改错填拍常量（如 0.5/0.8）仍会红。
+                if spd >= 0.0 {
+                    if spd >= 25.0 {
+                        st.speed_violations
+                            .push(format!("pass speed {:.2} (want <25)", spd));
+                    } else if spd < 10.0 {
+                        let x1 = field_num(e, "x").unwrap_or(-1.0);
+                        let y1 = field_num(e, "y").unwrap_or(-1.0);
+                        let x2 = field_num(e, "x2");
+                        let y2 = field_num(e, "y2");
+                        let flight = match (x2, y2) {
+                            (Some(x2), Some(y2)) if spd > 0.0 => {
+                                let dx = (x2 - x1) * PITCH_LENGTH_M;
+                                let dy = (y2 - y1) * PITCH_WIDTH_M;
+                                (dx * dx + dy * dy).sqrt() / spd
+                            }
+                            _ => f64::INFINITY, // 无落点可验 → 按违例处理
+                        };
+                        if (flight - 0.95).abs() > 0.03 {
+                            st.speed_violations.push(format!(
+                                "pass speed {:.2} <10 但不是 tick-fill（复算 flight {:.3}s，want 0.95±0.03）",
+                                spd, flight
+                            ));
+                        }
+                    }
                 }
             }
             "foul" => {
@@ -1348,7 +1377,12 @@ fn l2_sent_off_kickoff_seeds() {
 // 与部分事件字段（接球点/门将扑救点/开球落点等）按 `SAME_TEAM_MIN_DIST_M` 米制分离 →
 // 事件流再变，v6 与 v1..v5 逐 seed 都不同。v1..v5 保留不覆盖，作历史对照。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 9）落 v9；需要对比旧版本时读旧目录。
+// C3：v10 = 传球飞行填拍（`tests/golden-v10/`）。这是**协议字段值变化、不是行为变化**：
+// `tick_filling_flight` 把原飞行 < 0.95s 的传球 `speed` 改写为 `距离/0.95`（viewer 动画填拍），
+// 位置/决策/时间戳逐位不变——由 `gm_v10_is_v9_plus_speed_field_only`（v9/v10 计数全同、只哈希
+// 不同）与实施期的「掩掉 speed 后事件流逐字节相同」证明。v9 保留不覆盖。
+//
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 10）落 v10；需要对比旧版本时读旧目录。
 // p143r-v4：四层机制（球导向跑位/开放局逼抢/事件密度/传球选择+对抗几何）改变可观测行为 → MODEL_VERSION 7→8。
 
 /// 模型版本 → golden 基线目录名。
@@ -1363,6 +1397,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         7 => "tests/golden-v7",
         8 => "tests/golden-v8",
         9 => "tests/golden-v9",
+        10 => "tests/golden-v10",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1593,6 +1628,25 @@ fn gm_legacy_baselines_preserved_and_differs() {
         }
     }
     assert!(seeds_with_out > 0, "10 个 canary seed 里应有 seed 产出出界 pass（否则假设不成立）");
+}
+
+/// C3 重基线纪律：v10 与 v9 的**计数全同、只有流哈希不同**。
+///
+/// C3 只改上报 `speed`（`tick_filling_flight`），不动位置/决策——若 v10 的任一计数与 v9 不同，
+/// 说明重基线把行为漂移洗进了基线（不是「只有字段值变」）。这是 golden 重基线的**自证条**，
+/// 同时给 `MODEL_VERSION` 9→10 的注释提供仓内出处（不是单方面的叙事）。
+#[test]
+fn gm_v10_is_v9_plus_speed_field_only() {
+    for seed in GOLDEN_SEEDS {
+        let st = aggregate(seed);
+        let gold_v9 = read_golden(9, seed);
+        let hash_same = assert_golden_fields_match(seed, &gold_v9, &st, "v9-vs-v10");
+        assert!(
+            !hash_same,
+            "seed {}：v10 与 v9 流哈希相同——C3 的 speed 改写没有落到事件流（重基线未生效？）",
+            seed
+        );
+    }
 }
 
 
