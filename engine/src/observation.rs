@@ -5339,17 +5339,46 @@ mod tests {
     ///   1800,2700}）：t=899.5 的 kickoff **飞行中**撞上 t=900 终场哨——**更长时长同样产 gap**。
     ///
     /// 所以「真实路径 0 gap」**只在**未被截断的干净比赛上成立，不是全称命题——
-    /// `gap_count() == 0` 的几处断言各自限定了样本（本测试用 `dur 400` 只是取一个**稳定复现**的
-    /// 样本，不表示其它时长不会产）。
+    /// `gap_count() == 0` 的几处断言各自限定了样本（本测试从**候选表**里取第一个恰好产
+    /// 1 条合法 gap 的样本；候选在个别编译/机器上可能失效，见测试体的 CI 注记）。
     ///
     /// 判别力（防空转）：若把 `full_time` 里的未决飞行分支删掉，本测试第 2 条断言红。
     #[test]
     fn truncated_stream_produces_a_full_time_gap_by_design() {
-        let config = MatchConfig {
-            match_duration_seconds: 400.0,
-            ..MatchConfig::default_()
-        };
-        let dm = simulate_with_behavior_observations(360, config);
+        // **CI 兜底（2026-10-30）**：与 `every_episode...` 同理，尾哨截断是 knife-edge
+        // 时序——同一个 seed 在不同编译/机器上可能不再命中。这里用候选表扫描**第一个**
+        // 恰好产 1 条 `full_time_during_ball_in_flight` 的样本；判据（恰好 1 条、原因
+        // 具名、restart 以 MatchEnd 收束且无 open_play_resumed_t）全部不变。
+        const GAP_SAMPLE_CANDIDATES: &[(u64, f64)] =
+            &[(360, 400.0), (225, 450.0), (103, 900.0)];
+        let mut tried: Vec<(u64, f64, usize)> = Vec::new();
+        let mut chosen: Option<(u64, f64, DiagnosticMatch)> = None;
+        for &(seed, dur) in GAP_SAMPLE_CANDIDATES {
+            let config = MatchConfig {
+                match_duration_seconds: dur,
+                ..MatchConfig::default_()
+            };
+            let dm = simulate_with_behavior_observations(seed, config);
+            let want = Some(ControlFactDetail::Gap(
+                ObservationGapReason::FullTimeDuringBallInFlight,
+            ));
+            let all_full_time = dm
+                .control_facts
+                .iter()
+                .filter(|f| f.kind == ControlFactKind::ObservationGap)
+                .all(|f| f.detail == want);
+            if dm.gap_count() == 1 && all_full_time {
+                chosen = Some((seed, dur, dm));
+                break;
+            }
+            tried.push((seed, dur, dm.gap_count()));
+        }
+        let (_seed, _dur, dm) = chosen.unwrap_or_else(|| {
+            panic!(
+                "候选表里没有「恰好 1 条 full_time_during_ball_in_flight」样本\
+                 （试过 seed/dur/gaps = {tried:?}）——换样本，不换判据"
+            )
+        });
         assert_eq!(
             dm.gap_count(),
             1,
@@ -5574,11 +5603,26 @@ mod tests {
         // 形态③ [253,87,109,492,133,341,569,596]，取
         // `[18,232,456,529,428,508,253,87,109]`（计数 4/2/3）。**换样本，不是换判据**——
         // 谓词、豁免条款、防空转断言均未动。（与 p15 的 `TRUNCATION_FORM_SEEDS` 同一次扫描。）
-        const SEEDS: [u64; 9] = [18, 232, 456, 529, 428, 508, 253, 87, 109];
+        //
+        // **CI 兜底（2026-10-30）**：形态命中是尾哨时序的 knife-edge——同一源码在本机
+        // release/debug 都命中 seed 253 的形态③，而 CI（rustc 1.99.1 + GitHub runner）
+        // 上同一 seed 只给出 1/1/0。⇒ 不再把单个 seed 当跨环境常量：用候选表**运行时扫描**
+        // 到三种形态都出现为止（各形态的候选按已知命中顺序排列）。判据（①/②/③ 都必须
+        // 出现 + 每条空对象必须在截断时刻）不变；变的是「样本从哪里来」。
+        const FORM_SEED_CANDIDATES: &[u64] = &[
+            18, 428, 253, 87, 109, 616, 232, 456, 508, 645, 492, 529, 542, 698, 350, 351,
+            561, 748, 196, 593, 133, 842, 341, 569, 596, 957, 1015, 1098, 1112,
+        ];
         let mut truncated_episode = 0usize;
         let mut truncated_restart_untaken = 0usize;
         let mut truncated_restart_taken = 0usize;
-        for seed in SEEDS {
+        for seed in FORM_SEED_CANDIDATES.iter().copied() {
+            if truncated_episode > 0
+                && truncated_restart_untaken > 0
+                && truncated_restart_taken > 0
+            {
+                break; // 三种形态都已覆盖；继续扫只是浪费模拟
+            }
             let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
             let whistle_t = dm
                 .events
@@ -5641,7 +5685,8 @@ mod tests {
                 && truncated_restart_untaken > 0
                 && truncated_restart_taken > 0,
             "seed 集合没有覆盖全部三种截断形态（episode {} / restart 未 taken {} / \
-             restart 已 taken {}）——豁免条款有分支是空转的；请在 SEEDS 里补命中该形态的 seed",
+             restart 已 taken {}）——豁免条款有分支是空转的；请在 `FORM_SEED_CANDIDATES` \
+             里补命中该形态的 seed（候选表已扫完仍未覆盖）",
             truncated_episode,
             truncated_restart_untaken,
             truncated_restart_taken
