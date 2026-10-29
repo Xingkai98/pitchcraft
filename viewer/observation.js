@@ -3,7 +3,7 @@
 // 提供 audit_input（米制 + viewer 可观测特征推导）与 CLI 重放命令模板。
 // 不含凭证、不做网络请求、不依赖 WASM。
 
-import { deriveAuditInput } from './derive-audit-features.js?v=20261028-5';
+import { deriveAuditInput } from './derive-audit-features.js?v=20261029-1';
 
 export const OBSERVATION_SCHEMA_VERSION = '1';
 

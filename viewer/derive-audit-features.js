@@ -12,7 +12,7 @@
 // 拍长从 config 读：beat/tackle 的动作区间是一拍（2 Hz 下 0.5 s），不写死 1 s。
 // Node 侧（tools/detectors.mjs）以裸路径 import 本模块，是另一个实例（值相同、无状态）——
 // 不要在这条链上做运行时改值。
-import { config } from './config.js?v=20261028-5';
+import { config } from './config.js?v=20261029-1';
 
 // audit_input 的形状版本（P21 D6）。detector 读的字段契约会在版本里演进；消费方
 // （tools/detectors.mjs 的 runAudit）入口校验它，缺失或未知即报错，避免「字段悄悄换了

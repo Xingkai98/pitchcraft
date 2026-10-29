@@ -2,7 +2,7 @@
 // 原则：引擎给参数、画面给戏；人球解耦（带球=踢-追周期、传球=传跑配合、射门=门将先动）。
 // 本模块为纯函数（不碰 DOM/Canvas），便于单测（tasks 5.4/6.1）。
 
-import { config } from './config.js?v=20261028-5';
+import { config } from './config.js?v=20261029-1';
 
 // 动画锚点：一个可渲染的关键帧（球员位置/球位置随时间变化）
 // { t, kind: 'player'|'ball'|'pitch', id?, x, y }
