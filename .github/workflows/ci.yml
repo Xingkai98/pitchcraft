@@ -17,7 +17,12 @@ jobs:
     name: verify.sh 全套（引擎单测 + viewer 单测/DOM + tools 单测 + WASM e2e + realism L1）
     runs-on: ubuntu-latest
     # wasm release 编译 + realism L1 在干净 runner 上可能数分钟；rust-cache 之外再给足上限兜底。
-    timeout-minutes: 30
+    #
+    # ⚠️ 2026-10-30 R6：引擎改 2 Hz（`TICK_SECONDS=0.5`）后，debug 套件的模拟步数约翻倍、
+    # 事件密度 ~2.1×，step 1（`cargo test` debug）从 main 的 ~10 分钟涨到 **>30 分钟**
+    # （实测 30 分钟 job 上限在 step 1 里被 cancel）。这不是测试变慢的偶然——是每步
+    # 模拟成本变高。兜底上限提到 90 分钟（不改任何测试/判据；超标仍会被 cancel）。
+    timeout-minutes: 90
 
     steps:
       - name: 检出代码
