@@ -3,7 +3,17 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { interpretEvent, buildTimeline } from './interpretation.js';
+
+// beat 演绎铺满一拍 [t, t + tickSeconds]；拍长必须从 interpretation.js 实际使用的
+// config 模块实例读（带 ?v= 查询串的 import 与裸 './config.js' 是两个实例——与
+// app.test.js / debug.test.js 同法：从源码抠说明符，不写死版本号）。
+const _interpSrc = readFileSync(new URL('./interpretation.js', import.meta.url), 'utf8');
+const _configSpec = _interpSrc.match(/from '(\.\/config\.js[^']*)'/)?.[1];
+assert.ok(_configSpec, 'interpretation.js 顶层应 import ./config.js（带 ?v=）');
+const { config } = await import(_configSpec);
+const TICK = config.interpretation.tickSeconds;
 
 test('pass: 生成球飞行 + 接球者跑位锚点', () => {
   const e = { t: 10, type: 'pass', from: 8, to: 9, x: 0.4, y: 0.5, x2: 0.6, y2: 0.4, speed: 12, lead: 0.3, result: 'success' };
@@ -122,6 +132,40 @@ test('tackle success: 持球→逼近→捅开→防守者拿球', () => {
   const tacklerEnd = anchors.filter((a) => a.kind === 'player' && a.id === TACKLE_SUCCESS.subject).sort((a, b) => b.t - a.t)[0];
   assert.ok(Math.abs(tacklerEnd.x - ballEnd.x) < 1e-6, `防守者应与球重合，${tacklerEnd.x} vs ${ballEnd.x}`);
   assert.ok(Math.abs(tacklerEnd.y - ballEnd.y) < 1e-6);
+});
+
+test('tackle 高亮终点 = t + tickSeconds（与引擎 t_end = t + TICK_SECONDS 同步）', () => {
+  // 引擎 `emit_tackle_highlight_impl` 的 t_end = t + TICK_SECONDS；viewer 不得写死 1 s。
+  // v2 事件（带 carrier）走 [t0, t0+tick] 分支；v1 旧格式仍用捡球演绎（不在当前事件流里）。
+  const e = { t: 27, type: 'tackle', subject: 10, x: 0.55, y: 0.5, carrier: 16, x2: 0.45, y2: 0.55,
+    result: 'success', carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.43, loose_y: 0.51,
+    subject_end_x: 0.45, subject_end_y: 0.55, carrier_end_x: 0.45, carrier_end_y: 0.58 };
+  const anchors = interpretEvent(e);
+  const tEnd = e.t + TICK;
+  const late = anchors.filter((a) => a.t > tEnd + 1e-9);
+  assert.equal(late.length, 0, `不应有锚点晚于 t+tick（TICK=${TICK}）：${JSON.stringify(late)}`);
+  const players = anchors.filter((a) => a.kind === 'player' && a.id === e.subject);
+  assert.ok(players.some((a) => Math.abs(a.t - tEnd) < 1e-9), `防守者应在 t+tick 到位（TICK=${TICK}）`);
+});
+
+test('buildTimeline: tackle 高亮在 t+tick 结束，下一拍参与者不被错误排除', () => {
+  // highlightEndTime 的 tackle 分支必须读 tickSeconds：旧 1 s 窗口会把 t+tick 的那一拍
+  // 参与者错误划入「飞行中高亮」并从 beat movers 排除（2 Hz 下每场 ~25 次抢断）。
+  const events = [
+    { t: 30, type: 'tackle', subject: 10, carrier: 16, x: 0.55, y: 0.5, x2: 0.45, y2: 0.55, result: 'fail' },
+    { t: 30 + TICK, type: 'beat', movers: [{ id: 10, from_x: 0.45, from_y: 0.55, to_x: 0.46, to_y: 0.55, speed: 4, action: 'run' }] },
+  ];
+  const tl = buildTimeline(events, 'continuous');
+  const beatMovers = tl.filter((a) => a.evt === 1 && a.kind === 'player' && a.id === 10);
+  assert.ok(beatMovers.length > 0, `t+tick 的 beat 不应被 tackle 高亮排除（TICK=${TICK}）`);
+});
+
+test('viewer tickSeconds 与引擎 TICK_SECONDS 同步（防手工漂移）', () => {
+  // 两处是手工同步（引擎常量 ↔ viewer config）；没有任何测试守的话，一边改错仍全绿。
+  const src = readFileSync(new URL('../engine/src/lib.rs', import.meta.url), 'utf8');
+  const m = src.match(/pub const TICK_SECONDS: f64 = ([0-9.]+);/);
+  assert.ok(m, 'engine/src/lib.rs 应声明 pub const TICK_SECONDS');
+  assert.equal(Number(m[1]), TICK, `引擎 TICK_SECONDS=${m[1]} ≠ viewer config tickSeconds=${TICK}`);
 });
 
 test('tackle fail: 原持球人拿回球，防守者停在接触点', () => {
@@ -299,7 +343,7 @@ test('tackle 结算分离: subject/carrier 各归引擎终点（不重叠）', (
     carrier_from_x: 0.55, carrier_from_y: 0.5, loose_x: 0.4277, loose_y: 0.5053,
     subject_end_x: 0.45, subject_end_y: 0.55, carrier_end_x: 0.45, carrier_end_y: 0.58 };
   const anchors = interpretEvent(eSucc);
-  const endT = 28;
+  const endT = 27 + TICK;
   const tacklerEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.subject && Math.abs(a.t - endT) < 1e-6).pop();
   const victimEnd = anchors.filter((a) => a.kind === 'player' && a.id === eSucc.carrier && Math.abs(a.t - endT) < 1e-6).pop();
   assert.ok(tacklerEnd && victimEnd, 'v2 tackle 应有 subject/carrier 终态锚点');
@@ -350,7 +394,7 @@ test('buildTimeline continuous: tackle 前跳过 off_ball_run 找到同被铲者
 
 // ---- v2：beat 节拍演绎 ----
 
-test('beat: movers 铺满整拍 [t, t+1]，main 人球解耦，ball 滚动', () => {
+test('beat: movers 铺满整拍 [t, t+tick]，main 人球解耦，ball 滚动', () => {
   const e = {
     t: 10, type: 'beat',
     movers: [
@@ -360,11 +404,11 @@ test('beat: movers 铺满整拍 [t, t+1]，main 人球解耦，ball 滚动', () 
     main: { type: 'dribble', subject: 10, x: 0.55, y: 0.5, x2: 0.58, y2: 0.5, speed: 5, touch_freq: 1.5 },
   };
   const anchors = interpretEvent(e);
-  // movers 铺满整拍：起点 t=10，终点 t=11
+  // movers 铺满整拍：起点 t=10，终点 t=10+tick
   const m5 = anchors.filter((a) => a.kind === 'player' && a.id === 5).sort((a, b) => a.t - b.t);
   assert.equal(m5[0].t, 10);
   assert.equal(m5[0].x, 0.3);
-  assert.equal(m5[m5.length - 1].t, 11);
+  assert.equal(m5[m5.length - 1].t, 10 + TICK);
   assert.equal(m5[m5.length - 1].x, 0.35);
   // main：球随 carrier（拍边界连续，不做 sep 领先偏移——避免方向变化导致拍边界球跳）
   const carrier = anchors.filter((a) => a.kind === 'player' && a.id === 10).sort((a, b) => a.t - b.t);
@@ -386,7 +430,7 @@ test('beat: 松散球 ball 铺满整拍', () => {
   const balls = anchors.filter((a) => a.kind === 'ball').sort((a, b) => a.t - b.t);
   assert.equal(balls[0].t, 20);
   assert.equal(balls[0].x, 0.4);
-  assert.equal(balls[balls.length - 1].t, 21);
+  assert.equal(balls[balls.length - 1].t, 20 + TICK);
   assert.equal(balls[balls.length - 1].x, 0.42);
 });
 
@@ -414,17 +458,18 @@ test('buildTimeline 两层合成: 高亮参与者从重叠 beat movers 排除', 
 });
 
 test('buildTimeline 跨 beat 连续: from(N+1)==to(N)', () => {
+  const t1 = 10 + TICK;
   const events = [
     { t: 10, type: 'beat', movers: [{ id: 5, from_x: 0.3, from_y: 0.4, to_x: 0.35, to_y: 0.4, speed: 4, action: 'run' }] },
-    { t: 11, type: 'beat', movers: [{ id: 5, from_x: 0.35, from_y: 0.4, to_x: 0.38, to_y: 0.42, speed: 4, action: 'run' }] },
+    { t: t1, type: 'beat', movers: [{ id: 5, from_x: 0.35, from_y: 0.4, to_x: 0.38, to_y: 0.42, speed: 4, action: 'run' }] },
   ];
   const tl = buildTimeline(events, 'continuous');
   const m5 = tl.filter((a) => a.kind === 'player' && a.id === 5).sort((a, b) => a.t - b.t);
-  // 锚点序列：10(0.3) → 11(0.35) → 11(0.35) → 12(0.38)
-  // 跨拍衔接：beat0 终点 (11, 0.35) == beat1 起点 (11, 0.35)
-  assert.equal(m5[1].t, 11);
+  // 锚点序列：10(0.3) → t1(0.35) → t1(0.35) → t1+TICK(0.38)
+  // 跨拍衔接：beat0 终点 (t1, 0.35) == beat1 起点 (t1, 0.35)
+  assert.equal(m5[1].t, t1);
   assert.equal(m5[1].x, 0.35);
-  assert.equal(m5[2].t, 11);
+  assert.equal(m5[2].t, t1);
   assert.equal(m5[2].x, 0.35, '跨拍 from(N+1)==to(N)，位置连续');
 });
 

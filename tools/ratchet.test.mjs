@@ -26,11 +26,13 @@ test('lower：上升=变差，下降=改善', () => {
   assert.equal(judge(m, 0.54, 0.54), 'same');
 });
 
-test('band：从带内走到带外=变差；从带外走近带=改善', () => {
+test('band：带内=不退化（含朝边缘走）；带外越远越退化、越近越改善', () => {
   const m = { dir: 'band', band: [7.015, 14.015] };
   assert.equal(judge(m, 7.5, 20.0), 'regress');   // 带内 → 带外
   assert.equal(judge(m, 20.0, 7.5), 'improve');   // 带外 → 带内
-  assert.equal(judge(m, 7.5, 8.0), 'same');       // 都在带内、离带心更近 → 不算退化
+  assert.equal(judge(m, 7.5, 8.0), 'same');       // 都在带内 → 不退化
+  assert.equal(judge(m, 10.5, 13.9), 'same');     // 带内、朝上边缘走 → 不退化（2026-10-28 语义）
+  assert.equal(judge(m, 13.9, 10.5), 'same');     // 带内、朝带心走 → 不退化
 });
 
 test('band：带外但更接近带 = 改善；带外更远 = 变差', () => {
@@ -47,6 +49,16 @@ test('抖动容差：极小变化记为持平（避免浮点噪声刷红）', ()
   const m = { dir: 'higher' };
   assert.equal(judge(m, 0.37, 0.3700001), 'same');
   assert.equal(judge(m, 100, 100.004), 'same');   // 相对容差 1e-4
+});
+
+test('噪声容差 noiseTol：带内小退化不判（种子噪声不被误判为退化）', () => {
+  // 冻结 10-seed 是上尾样本：shotsReg 换 seed 集 39.0/37.8/35.4/37.3，半差 1.8；latSd 7.07–8.60 半差 0.8
+  const shots = { dir: 'higher', noiseTol: 1.8 };
+  assert.equal(judge(shots, 39.0, 37.5), 'same');     // 退化 1.5 < 容差 → 不判
+  assert.equal(judge(shots, 39.0, 34.0), 'regress');  // 退化 5.0 > 容差 → 判
+  const lat = { dir: 'band', band: [7.015, 14.015], noiseTol: 0.8 };
+  assert.equal(judge(lat, 7.07, 6.9), 'same');        // 出带 0.115 < 容差 → 不判
+  assert.equal(judge(lat, 7.07, 5.5), 'regress');     // 出带 1.515 > 容差 → 判
 });
 
 test('登记表：id 唯一', () => {

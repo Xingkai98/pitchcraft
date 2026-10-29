@@ -55,9 +55,9 @@
 //!   引擎**没有**为它建立高亮或飞行。`MatchState::new` 已经把 `st.carrier = 10`、
 //!   `st.possession = 0`、`st.ball_pos = (0.55,0.5)` 提交好了，`match_events` 又把
 //!   `st.pos[10] = (0.55,0.5)`（球与接收者同位），**首个 tick 的 beat 就直接给 10 号 `main`**
-//!   （实测：`t=1.0 Beat main.subject=10`）。该事件的 `speed = 14.0` 只是装饰——拨球距离
-//!   `distance_meters((0.5,0.5),(0.55,0.5)) = 5.25m`，除以 `speed` 得 0.375s < `TICK_SECONDS`(1s)，
-//!   引擎从未进入飞行态。
+//!   （1 Hz 下首个 beat 在 `t=1.0`；2 Hz 下 `t=0.5`）。该事件的 `speed = 14.0` 只是装饰——拨球距离
+//!   `distance_meters((0.5,0.5),(0.55,0.5)) = 5.25m`，除以 `speed` 得 0.375s < `TICK_SECONDS`
+//!   （1 Hz 下 1 s、2 Hz 下 0.5 s；两种节拍都小于一拍），引擎从未进入飞行态。
 //!   所以这里记 `restart_taken(EngineState)` **紧跟** `control_established(Home, 10, Kickoff)`
 //!   （同一提交点 t=0），basis 用 `EngineState`（不是 `FinalizedOutcome`——没有高亮 finalize）。
 //!   **不要**为它等 `kickoff_end`、也不要记 `BallInFlight`：那会记录一个引擎里不存在的飞行段。
