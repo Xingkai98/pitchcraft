@@ -1154,12 +1154,23 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
   - `loose_census_...`：段长以 beat 计，而 beat 是逐 tick 事件；design §4.4.1 的 **3.02 是 1 Hz**
     （1 beat = 1 s）。R6 实测 **6.43 beat × 0.5 s = 3.215 s**（与 3.02 s 同量级，+6.5%）⇒
     断言改按**秒**判（带 2.8–3.3 s 未动），不是把 beat 数放宽。
-  - `instant_contest_covers_only_the_episode_closing_share_of_a2`：2 Hz 把争抢起止量化步长
-    减半 ⇒ 零时长占比 **52.7%→45.7%**（300 seed：17074/37401），**不再过半但仍是最大单一类**
+    **Beat 逐 tick 一条的复核**：wasm 事件流 seed 1/7，`Beat` 事件与 `t` 一一对应
+    （`max beat per t = 1`，无同刻多条）⇒ `beat × TICK_SECONDS` 是合法换算。
+    产物生成器（`p17b/report.rs`）同步改为同时印 `beat` 与 `s`（此前只印 beat，与 design
+    的 3.02 s 并列会读成 2.1× 口径分叉——Round 4 P2-2）。
+  - `instant_contest_covers_only_the_episode_closing_share_of_a2`：2 Hz 口径下实测零时长占比
+    **52.7%（P17A 1 Hz 记录）→45.7%**（300 seed：17074/37401），**不再过半但仍是最大单一类**
     （次高 2.5 s 档 13331 = 35.6%；30 seed 44.6% / 2.5 s 37.1%）。判定从「过半」改为
     「最大单一类」（结构判据：被别的档反超即红）。零时长中「收束一段 episode」占比
     **69.7%→90.4%**（15434/17074），缺口从 ~30% 缩到 ~9.6%；类定义与 A2 覆盖注记同步改写
     （`episode.rs` `EXCEPTION_CLASSES`、`reasons.rs` 的 A2 note）。
+    ⚠️ **占比变化的原因本轮未逐条归因**（2 Hz 改变量化步长只是一个**候选**解释，未验证）；
+    「全部争抢」的分母另一口径：R6 300 seed **37401** 条争抢中 **25078（67.1%）** 收束了一段
+    episode、余 **32.9%** 无卡可挂（`episode.rs::closing_contest_fact` 文档）——与
+    `instant_contest` 的零时长子集分母**不可互换**。
+    `interception_loose` 的盲区在 R6 300 seed 仍成立：**15364/15364 追逐不可见**
+    （`target/p17b-diagnosis/baseline.md` 按成因表）；P17A 的 30 seed 记录是 729/729
+    （Round 4 P2-1：此前后者被误标为「300 seed」）。
 
 ### 4. 验证记录（2026-10-30，冻结树 `f58d37a`；后续仅 notes 提交）
 
@@ -1180,3 +1191,30 @@ p53 用 TICK_SECONDS 表达 t_rem；e2e 角球准备期豁免从整秒时刻集�
   与 4 项未跟踪笔记（非本分支产物），裸跑会因「实时脏」判红。产物是在**干净视口**
   （`assume-unchanged .gitignore` + `status.showUntrackedFiles=no`，全程未改文件）下生成的，
   最终全量验证也用同一视口跑；CI/干净 clone 上无此问题（产物不存在时该守卫整段跳过）。
+
+## 审阅闭环 Round 4（2026-10-30，R6 研究门收口复审）
+
+- 报告：`.scratch/notes/c1-ballpath-pass-2026-10-29/review-round4.md`（零上下文只读）。
+- **结论：P1 = 0**（行为门/重钉值全部按原判据复核通过；实测读数与注释/RECORD 逐一对上）；
+  **P2 = 3**（均为记录层）；P3 = 6。
+- 修复（`db5ad2f`）：
+  - **P2-1** `reasons.rs` 把 `interception_loose` 的 729/729 误标为「P17A 300 seed」——
+    它是 **30 seed** 的数；R6 300 seed 复核机制仍成立（**15364/15364** 追逐不可见，
+    产物按成因表可证）。
+  - **P2-2** `p17b/report.rs` 的产物把 **beat 当秒**印（`6.43` vs design `3.02`）→ 改为
+    `6.43 beat = 3.21 s` 并列，并注明 design 是 1 Hz 口径。
+  - **P2-3** p124 的 `final_third` 记录锚未随 R6 重钉：`COUNTER_PROOF_EXPECTED`
+    **0.764→0.729**（容差 **0.05→0.03**，与 p16 同管线同钉值）；`gate_rerun` 的 doc
+    （0.855 / 0.461 / 「窗口应强」）按 body 重写为 0.729 / 0.301 / 「final_third 意图侧
+    无非循环证据（6 条循环）」。
+  - **P3×6**：p15/observation 陈旧 seed 示例改为 R6 样本；`closing_contest_fact` 绝对数
+    20053→37401（67.1% 收束 / 32.9% 无卡）；p16「不是放宽」改为如实（新带下限 0.699
+    比旧 >0.75 低 0.051，换来了上限）；loose census 补「Beat 逐 tick 一条」复核与
+    「段数贴带上沿 2097/2100」记录；p124 窗口机制 doc 更正「~1 拍」= 观测分布而非预算、
+    0 窗口拍的 64 例不再断言成因；p16/p17b 的未验证因果改为「未逐条归因」。
+- 复核：p15 11 passed、p16 36 passed、p17b 34 passed、p124 36 passed（on_disk 指纹门
+  在重生成产物前预期红）；p124 反证条与 gate 实测均为 **0.729**。
+- 审阅者另核实：`pressure_share` 豁免只豁免一格（`weak_seen==1`）；`gate_rows` 按表
+  Circular 只影响 `final_vs_rest`（`build_vs_prog` 仍 0.498/0.511 `[Intent]`）；
+  `loose_runs` 的 beat 逐 tick 一条；depth 锚 24.7935 与基线一致；`SHOT_WINDOW_TICKS=4 拍
+  =2 s` 与 687/687 机制自洽；`lib.rs` 零改动。
