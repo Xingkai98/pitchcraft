@@ -1,0 +1,34 @@
+{
+  "judge_id": "r6-sonnet",
+  "items": [
+    {"id": "rb-247b4ffa69", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "全队挤在中圈一团、每人步幅极小且碎；球整段只走约65m（本包最短），没有长传转移。"},
+    {"id": "rb-e7a8e6904a", "A_guess": "engine", "A_confidence": 2, "B_score": 2, "cues": "两队重心几乎重合、完全交织；球员轨迹是大回环/绕圈（过冲绕回原处），不像按角色分头跑。"},
+    {"id": "rb-2ca45a89d0", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "全队统一低速（约1.6m/s）沿纵向车道来回折返，几乎无人冲刺；球路走出闭合矩形回路。"},
+    {"id": "rb-86d88c8ebf", "A_guess": "engine", "A_confidence": 2, "B_score": 2, "cues": "全员均速慢跑、几乎无人快跑；各自原地成闭环并互相缠绕，缺少角色分工的独立跑动。"},
+    {"id": "rb-f309f52e91", "A_guess": "engine", "A_confidence": 3, "B_score": 1, "cues": "20人全塞在中圈右侧约25m见方的范围、其余场区清空（中场不该这么塌）；球在同一小团里来去。"},
+    {"id": "rb-fbc08f3046", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "全队横跨两个半场长距离推进、分成两条平行带；有快慢差异和边路拉开。"},
+    {"id": "rb-863aa51390", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "攻防都压在左半场、轨迹方向分散；有人慢有人快，球路长短混合。"},
+    {"id": "rb-a3ee048b02", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "球员轨迹呈放射状散开、方向离散度最高；球程约140m，含多次长距离转移。"},
+    {"id": "rb-926e84e8f5", "A_guess": "real", "A_confidence": 3, "B_score": 4, "cues": "长弧线推进自然、方向多样；球程约162m，有多个30m级直线转移，像真实攻防转换。"},
+    {"id": "rb-a1b3bdb1c4", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "约三成跑动几乎为站桩（盯人/保持位置），其余各不相同；队形有前后层次。"},
+    {"id": "rb-de7fb9c6b3", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "全队铺开跨全宽（位置标准差最大一档）、含冲刺段；长弧线推进而非绕圈。"},
+    {"id": "rb-186ee33815", "A_guess": "real", "A_confidence": 2, "B_score": 4, "cues": "全队持续约3m/s奔跑、跨全场的长直线推进；球程约150m，有明显快慢差异。"},
+    {"id": "rb-2e1ce7cee9", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "细长“跑道”状闭环——同一区域来回过冲；除门将外所有人绕同一片地打转。"},
+    {"id": "rb-f5b6d96950", "A_guess": "engine", "A_confidence": 2, "B_score": 2, "cues": "球路走成闭合三角（出去又原路返回）；球员轨迹多为圆环互相嵌套，两队重心很近。"},
+    {"id": "rb-30f0e6fee1", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "整队同向大斜线推进（像反击转换），两队重心相隔最宽约17m；跑动有快有慢。"},
+    {"id": "rb-6781b4b0d8", "A_guess": "engine", "A_confidence": 2, "B_score": 2, "cues": "20人全集中在中圈右侧小区域密集缠绕；球在同一处来回折返，无大范围转移。"},
+    {"id": "rb-0a4899b68c", "A_guess": "real", "A_confidence": 2, "B_score": 4, "cues": "球路横向大范围转移（横跨约65m）、长直线段多；球员跑动方向分散，像真实的左右调度。"},
+    {"id": "rb-9afc954f1e", "A_guess": "engine", "A_confidence": 2, "B_score": 3, "cues": "几乎无人停顿（站桩比例最低一档）、全队同向漂移；方向集中度偏高，缺少角色差异。"},
+    {"id": "rb-abcb43cfa3", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "球压在左门前来回、人群聚在禁区，符合门线混战形态；有一段长解围往返。"},
+    {"id": "rb-9421ffc326", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "两队重心几乎重叠（约9.5m）、彼此穿插；球路绕中圈成闭合环，速度分布过于整齐。"},
+    {"id": "rb-5fb61bd6a1", "A_guess": "engine", "A_confidence": 2, "B_score": 2, "cues": "细长竖向回环反复出现，同一批人绕同一片区域打转；球员轨迹多为自交环。"},
+    {"id": "rb-f36ad0ed12", "A_guess": "real", "A_confidence": 3, "B_score": 4, "cues": "球程全场最长（约172m）、多条40m级直线转移；跑动与站位有分工，非整队同步。"},
+    {"id": "rb-fe7f2f4bc7", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "约三成球员几乎不动、其余缓慢漂移；攻防重心随球向右移动，球程中等。"},
+    {"id": "rb-9949182c6a", "A_guess": "engine", "A_confidence": 2, "B_score": 2, "cues": "跑动方向集中度全包最高（近半跑动同向），全队贴着球走；球在底部形成密集“结”。"}
+  ],
+  "controls": [
+    {"id": "ctl-105d0b7d54", "same_source": "different", "more_real": "B", "confidence": 2, "notes": "A侧24秒里全队几乎同速同向狂奔（超过10m/3.4s的人次占一半以上、每步队形方向余弦≈1），机械的整队同步；B侧为左半场团块、速度差异大且含一次约40m长解围，更像真实。"},
+    {"id": "ctl-0dcca6f5dd", "same_source": "same", "more_real": null, "confidence": 2, "notes": "两侧都是中区密集缠绕、球路绕着人群成闭合环，球员轨迹同为嵌套圆环；差别只在球路折角与一条长腿的长度，整体形态一致。"},
+    {"id": "ctl-1402266976", "same_source": "different", "more_real": "A", "confidence": 2, "notes": "B侧球员轨迹是贯穿全场的长直线+折角网络、全员持续同速推进（几乎无人停顿），像“跑到目标点再转向”；A侧曲线更自然、快慢分明、有站桩球员。"}
+  ]
+}

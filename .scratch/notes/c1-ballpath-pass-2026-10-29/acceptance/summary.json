@@ -1,0 +1,1334 @@
+{
+  "key": ".scratch/notes/c1-ballpath-pass-2026-10-29/acceptance/blind-key.json",
+  "judges": [
+    {
+      "path": "/tmp/r6-judge-sonnet/judge.json",
+      "judge_id": "r6-sonnet",
+      "main": {
+        "n": 24,
+        "correct": 8,
+        "accuracy": 0.3333333333333333,
+        "accuracyCI95": {
+          "lo": 0.17971978688379642,
+          "hi": 0.5329404050591954
+        },
+        "confusion": {
+          "real_as_real": 4,
+          "real_as_engine": 8,
+          "engine_as_real": 8,
+          "engine_as_engine": 4
+        },
+        "bScore": {
+          "real": {
+            "n": 12,
+            "mean": 2.5,
+            "median": 2
+          },
+          "engine": {
+            "n": 12,
+            "mean": 2.8333333333333335,
+            "median": 3
+          },
+          "aucRealHigher": 0.375
+        },
+        "confidenceBuckets": {
+          "high": {
+            "n": 0,
+            "accuracy": null
+          },
+          "low": {
+            "n": 17,
+            "accuracy": 0.29411764705882354
+          }
+        }
+      },
+      "controls": {
+        "n": 3,
+        "byType": {
+          "real-real": {
+            "n": 1,
+            "correct": 1
+          },
+          "engine-engine": {
+            "n": 1,
+            "correct": 0
+          },
+          "real-engine": {
+            "n": 1,
+            "correct": 1
+          }
+        },
+        "balancedAccuracy": 1,
+        "mixedMoreRealAccuracy": 1,
+        "rows": [
+          {
+            "id": "ctl-105d0b7d54",
+            "type": "real-engine",
+            "truth": "different",
+            "guess": "different",
+            "correct": true,
+            "confidence": 2,
+            "moreRealCorrect": true
+          },
+          {
+            "id": "ctl-0dcca6f5dd",
+            "type": "real-real",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 2,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-1402266976",
+            "type": "engine-engine",
+            "truth": "same",
+            "guess": "different",
+            "correct": false,
+            "confidence": 2,
+            "moreRealCorrect": null
+          }
+        ]
+      },
+      "cues": [
+        {
+          "cue": "全队挤在中圈一团",
+          "count": 1
+        },
+        {
+          "cue": "每人步幅极小且碎",
+          "count": 1
+        },
+        {
+          "cue": "球整段只走约65m（本包最短）",
+          "count": 1
+        },
+        {
+          "cue": "没有长传转移。",
+          "count": 1
+        },
+        {
+          "cue": "两队重心几乎重合",
+          "count": 1
+        },
+        {
+          "cue": "完全交织",
+          "count": 1
+        },
+        {
+          "cue": "球员轨迹是大回环",
+          "count": 1
+        },
+        {
+          "cue": "绕圈（过冲绕回原处）",
+          "count": 1
+        },
+        {
+          "cue": "不像按角色分头跑。",
+          "count": 1
+        },
+        {
+          "cue": "全队统一低速（约1.6m",
+          "count": 1
+        },
+        {
+          "cue": "s）沿纵向车道来回折返",
+          "count": 1
+        },
+        {
+          "cue": "几乎无人冲刺",
+          "count": 1
+        },
+        {
+          "cue": "球路走出闭合矩形回路。",
+          "count": 1
+        },
+        {
+          "cue": "全员均速慢跑",
+          "count": 1
+        },
+        {
+          "cue": "几乎无人快跑",
+          "count": 1
+        },
+        {
+          "cue": "各自原地成闭环并互相缠绕",
+          "count": 1
+        },
+        {
+          "cue": "缺少角色分工的独立跑动。",
+          "count": 1
+        },
+        {
+          "cue": "20人全塞在中圈右侧约25m见方的范围",
+          "count": 1
+        },
+        {
+          "cue": "其余场区清空（中场不该这么塌）",
+          "count": 1
+        },
+        {
+          "cue": "球在同一小团里来去。",
+          "count": 1
+        },
+        {
+          "cue": "全队横跨两个半场长距离推进",
+          "count": 1
+        },
+        {
+          "cue": "分成两条平行带",
+          "count": 1
+        },
+        {
+          "cue": "有快慢差异和边路拉开。",
+          "count": 1
+        },
+        {
+          "cue": "攻防都压在左半场",
+          "count": 1
+        },
+        {
+          "cue": "轨迹方向分散",
+          "count": 1
+        },
+        {
+          "cue": "有人慢有人快",
+          "count": 1
+        },
+        {
+          "cue": "球路长短混合。",
+          "count": 1
+        },
+        {
+          "cue": "球员轨迹呈放射状散开",
+          "count": 1
+        },
+        {
+          "cue": "方向离散度最高",
+          "count": 1
+        },
+        {
+          "cue": "球程约140m",
+          "count": 1
+        },
+        {
+          "cue": "含多次长距离转移。",
+          "count": 1
+        },
+        {
+          "cue": "长弧线推进自然",
+          "count": 1
+        },
+        {
+          "cue": "方向多样",
+          "count": 1
+        },
+        {
+          "cue": "球程约162m",
+          "count": 1
+        },
+        {
+          "cue": "有多个30m级直线转移",
+          "count": 1
+        },
+        {
+          "cue": "像真实攻防转换。",
+          "count": 1
+        },
+        {
+          "cue": "约三成跑动几乎为站桩（盯人",
+          "count": 1
+        },
+        {
+          "cue": "保持位置）",
+          "count": 1
+        },
+        {
+          "cue": "其余各不相同",
+          "count": 1
+        },
+        {
+          "cue": "队形有前后层次。",
+          "count": 1
+        },
+        {
+          "cue": "全队铺开跨全宽（位置标准差最大一档）",
+          "count": 1
+        },
+        {
+          "cue": "含冲刺段",
+          "count": 1
+        },
+        {
+          "cue": "长弧线推进而非绕圈。",
+          "count": 1
+        },
+        {
+          "cue": "全队持续约3m",
+          "count": 1
+        },
+        {
+          "cue": "s奔跑",
+          "count": 1
+        },
+        {
+          "cue": "跨全场的长直线推进",
+          "count": 1
+        },
+        {
+          "cue": "球程约150m",
+          "count": 1
+        },
+        {
+          "cue": "有明显快慢差异。",
+          "count": 1
+        },
+        {
+          "cue": "细长“跑道”状闭环——同一区域来回过冲",
+          "count": 1
+        },
+        {
+          "cue": "除门将外所有人绕同一片地打转。",
+          "count": 1
+        },
+        {
+          "cue": "球路走成闭合三角（出去又原路返回）",
+          "count": 1
+        },
+        {
+          "cue": "球员轨迹多为圆环互相嵌套",
+          "count": 1
+        },
+        {
+          "cue": "两队重心很近。",
+          "count": 1
+        },
+        {
+          "cue": "整队同向大斜线推进（像反击转换）",
+          "count": 1
+        },
+        {
+          "cue": "两队重心相隔最宽约17m",
+          "count": 1
+        },
+        {
+          "cue": "跑动有快有慢。",
+          "count": 1
+        },
+        {
+          "cue": "20人全集中在中圈右侧小区域密集缠绕",
+          "count": 1
+        },
+        {
+          "cue": "球在同一处来回折返",
+          "count": 1
+        },
+        {
+          "cue": "无大范围转移。",
+          "count": 1
+        },
+        {
+          "cue": "球路横向大范围转移（横跨约65m）",
+          "count": 1
+        },
+        {
+          "cue": "长直线段多",
+          "count": 1
+        },
+        {
+          "cue": "球员跑动方向分散",
+          "count": 1
+        },
+        {
+          "cue": "像真实的左右调度。",
+          "count": 1
+        },
+        {
+          "cue": "几乎无人停顿（站桩比例最低一档）",
+          "count": 1
+        },
+        {
+          "cue": "全队同向漂移",
+          "count": 1
+        },
+        {
+          "cue": "方向集中度偏高",
+          "count": 1
+        },
+        {
+          "cue": "缺少角色差异。",
+          "count": 1
+        },
+        {
+          "cue": "球压在左门前来回",
+          "count": 1
+        },
+        {
+          "cue": "人群聚在禁区",
+          "count": 1
+        },
+        {
+          "cue": "符合门线混战形态",
+          "count": 1
+        },
+        {
+          "cue": "有一段长解围往返。",
+          "count": 1
+        },
+        {
+          "cue": "两队重心几乎重叠（约9.5m）",
+          "count": 1
+        },
+        {
+          "cue": "彼此穿插",
+          "count": 1
+        },
+        {
+          "cue": "球路绕中圈成闭合环",
+          "count": 1
+        },
+        {
+          "cue": "速度分布过于整齐。",
+          "count": 1
+        },
+        {
+          "cue": "细长竖向回环反复出现",
+          "count": 1
+        },
+        {
+          "cue": "同一批人绕同一片区域打转",
+          "count": 1
+        },
+        {
+          "cue": "球员轨迹多为自交环。",
+          "count": 1
+        },
+        {
+          "cue": "球程全场最长（约172m）",
+          "count": 1
+        },
+        {
+          "cue": "多条40m级直线转移",
+          "count": 1
+        },
+        {
+          "cue": "跑动与站位有分工",
+          "count": 1
+        },
+        {
+          "cue": "非整队同步。",
+          "count": 1
+        },
+        {
+          "cue": "约三成球员几乎不动",
+          "count": 1
+        },
+        {
+          "cue": "其余缓慢漂移",
+          "count": 1
+        },
+        {
+          "cue": "攻防重心随球向右移动",
+          "count": 1
+        },
+        {
+          "cue": "球程中等。",
+          "count": 1
+        },
+        {
+          "cue": "跑动方向集中度全包最高（近半跑动同向）",
+          "count": 1
+        },
+        {
+          "cue": "全队贴着球走",
+          "count": 1
+        },
+        {
+          "cue": "球在底部形成密集“结”。",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "path": "/tmp/r6-judge-opus/judge.json",
+      "judge_id": "r6-opus",
+      "main": {
+        "n": 24,
+        "correct": 12,
+        "accuracy": 0.5,
+        "accuracyCI95": {
+          "lo": 0.31427131627763083,
+          "hi": 0.6857286837223692
+        },
+        "confusion": {
+          "real_as_real": 6,
+          "real_as_engine": 6,
+          "engine_as_real": 6,
+          "engine_as_engine": 6
+        },
+        "bScore": {
+          "real": {
+            "n": 12,
+            "mean": 2.6666666666666665,
+            "median": 2.5
+          },
+          "engine": {
+            "n": 12,
+            "mean": 2.5833333333333335,
+            "median": 2.5
+          },
+          "aucRealHigher": 0.5208333333333334
+        },
+        "confidenceBuckets": {
+          "high": {
+            "n": 6,
+            "accuracy": 0.6666666666666666
+          },
+          "low": {
+            "n": 3,
+            "accuracy": 0.6666666666666666
+          }
+        }
+      },
+      "controls": {
+        "n": 3,
+        "byType": {
+          "real-real": {
+            "n": 1,
+            "correct": 1
+          },
+          "engine-engine": {
+            "n": 1,
+            "correct": 1
+          },
+          "real-engine": {
+            "n": 1,
+            "correct": 0
+          }
+        },
+        "balancedAccuracy": 0.5,
+        "mixedMoreRealAccuracy": null,
+        "rows": [
+          {
+            "id": "ctl-105d0b7d54",
+            "type": "real-engine",
+            "truth": "different",
+            "guess": "same",
+            "correct": false,
+            "confidence": 3,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-0dcca6f5dd",
+            "type": "real-real",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-1402266976",
+            "type": "engine-engine",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 2,
+            "moreRealCorrect": null
+          }
+        ]
+      },
+      "cues": [
+        {
+          "cue": "ball",
+          "count": 24
+        },
+        {
+          "cue": "path",
+          "count": 24
+        },
+        {
+          "cue": "confined",
+          "count": 4
+        },
+        {
+          "cue": "to",
+          "count": 4
+        },
+        {
+          "cue": "band",
+          "count": 4
+        },
+        {
+          "cue": "length",
+          "count": 4
+        },
+        {
+          "cue": "narrow",
+          "count": 3
+        },
+        {
+          "cue": "width",
+          "count": 3
+        },
+        {
+          "cue": "central",
+          "count": 2
+        },
+        {
+          "cue": "~107m",
+          "count": 2
+        },
+        {
+          "cue": "pitch",
+          "count": 2
+        },
+        {
+          "cue": "spanning",
+          "count": 2
+        },
+        {
+          "cue": "mid-pitch",
+          "count": 2
+        },
+        {
+          "cue": "with",
+          "count": 2
+        },
+        {
+          "cue": "high",
+          "count": 2
+        },
+        {
+          "cue": "winding",
+          "count": 2
+        },
+        {
+          "cue": "~128m",
+          "count": 2
+        },
+        {
+          "cue": "long",
+          "count": 2
+        },
+        {
+          "cue": "~118m",
+          "count": 2
+        },
+        {
+          "cue": "borderline-long",
+          "count": 2
+        },
+        {
+          "cue": "~110m",
+          "count": 2
+        },
+        {
+          "cue": "~66m",
+          "count": 1
+        },
+        {
+          "cue": "straight",
+          "count": 1
+        },
+        {
+          "cue": "angular",
+          "count": 1
+        },
+        {
+          "cue": "legs",
+          "count": 1
+        },
+        {
+          "cue": "left-half",
+          "count": 1
+        },
+        {
+          "cue": "ends",
+          "count": 1
+        },
+        {
+          "cue": "at",
+          "count": 1
+        },
+        {
+          "cue": "centre",
+          "count": 1
+        },
+        {
+          "cue": "spot",
+          "count": 1
+        },
+        {
+          "cue": "players",
+          "count": 1
+        },
+        {
+          "cue": "interleaved",
+          "count": 1
+        },
+        {
+          "cue": "lane-biased",
+          "count": 1
+        },
+        {
+          "cue": "no",
+          "count": 1
+        },
+        {
+          "cue": "team",
+          "count": 1
+        },
+        {
+          "cue": "shape",
+          "count": 1
+        },
+        {
+          "cue": "~116m",
+          "count": 1
+        },
+        {
+          "cue": "but",
+          "count": 1
+        },
+        {
+          "cue": "(x170-334)",
+          "count": 1
+        },
+        {
+          "cue": "mostly",
+          "count": 1
+        },
+        {
+          "cue": "lateral",
+          "count": 1
+        },
+        {
+          "cue": "movement",
+          "count": 1
+        },
+        {
+          "cue": "mid-third",
+          "count": 1
+        },
+        {
+          "cue": "of",
+          "count": 1
+        },
+        {
+          "cue": "~125m",
+          "count": 1
+        },
+        {
+          "cue": "variation",
+          "count": 1
+        },
+        {
+          "cue": "~131m",
+          "count": 1
+        },
+        {
+          "cue": "tight",
+          "count": 1
+        },
+        {
+          "cue": "right-corner",
+          "count": 1
+        },
+        {
+          "cue": "back-and-forth",
+          "count": 1
+        },
+        {
+          "cue": "(attack",
+          "count": 1
+        },
+        {
+          "cue": "build-up)",
+          "count": 1
+        },
+        {
+          "cue": "~89m",
+          "count": 1
+        },
+        {
+          "cue": "short",
+          "count": 1
+        },
+        {
+          "cue": "~103m",
+          "count": 1
+        },
+        {
+          "cue": "~155m",
+          "count": 1
+        },
+        {
+          "cue": "full-width",
+          "count": 1
+        },
+        {
+          "cue": "spread",
+          "count": 1
+        },
+        {
+          "cue": "~143m",
+          "count": 1
+        },
+        {
+          "cue": "near-full",
+          "count": 1
+        },
+        {
+          "cue": "x106-569",
+          "count": 1
+        },
+        {
+          "cue": "borderline-short",
+          "count": 1
+        },
+        {
+          "cue": "right-side",
+          "count": 1
+        },
+        {
+          "cue": "half",
+          "count": 1
+        },
+        {
+          "cue": "~162m",
+          "count": 1
+        },
+        {
+          "cue": "~114m",
+          "count": 1
+        },
+        {
+          "cue": "right",
+          "count": 1
+        },
+        {
+          "cue": "corner",
+          "count": 1
+        },
+        {
+          "cue": "~129m",
+          "count": 1
+        },
+        {
+          "cue": "~141m",
+          "count": 1
+        },
+        {
+          "cue": "left-corner",
+          "count": 1
+        },
+        {
+          "cue": "build-up",
+          "count": 1
+        },
+        {
+          "cue": "~119m",
+          "count": 1
+        },
+        {
+          "cue": "~169m",
+          "count": 1
+        },
+        {
+          "cue": "longest",
+          "count": 1
+        },
+        {
+          "cue": "spans",
+          "count": 1
+        },
+        {
+          "cue": "full",
+          "count": 1
+        },
+        {
+          "cue": "~117m",
+          "count": 1
+        },
+        {
+          "cue": "~113m",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "path": "/tmp/r6-judge-fable/judge.json",
+      "judge_id": "r6-fable",
+      "main": {
+        "n": 24,
+        "correct": 13,
+        "accuracy": 0.5416666666666666,
+        "accuracyCI95": {
+          "lo": 0.35074553553106635,
+          "hi": 0.7210894164831857
+        },
+        "confusion": {
+          "real_as_real": 6,
+          "real_as_engine": 6,
+          "engine_as_real": 5,
+          "engine_as_engine": 7
+        },
+        "bScore": {
+          "real": {
+            "n": 12,
+            "mean": 2.9166666666666665,
+            "median": 3
+          },
+          "engine": {
+            "n": 12,
+            "mean": 2.4166666666666665,
+            "median": 2.5
+          },
+          "aucRealHigher": 0.6458333333333334
+        },
+        "confidenceBuckets": {
+          "high": {
+            "n": 2,
+            "accuracy": 1
+          },
+          "low": {
+            "n": 8,
+            "accuracy": 0.25
+          }
+        }
+      },
+      "controls": {
+        "n": 3,
+        "byType": {
+          "real-real": {
+            "n": 1,
+            "correct": 1
+          },
+          "engine-engine": {
+            "n": 1,
+            "correct": 1
+          },
+          "real-engine": {
+            "n": 1,
+            "correct": 1
+          }
+        },
+        "balancedAccuracy": 1,
+        "mixedMoreRealAccuracy": 1,
+        "rows": [
+          {
+            "id": "ctl-105d0b7d54",
+            "type": "real-engine",
+            "truth": "different",
+            "guess": "different",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": true
+          },
+          {
+            "id": "ctl-0dcca6f5dd",
+            "type": "real-real",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": null
+          },
+          {
+            "id": "ctl-1402266976",
+            "type": "engine-engine",
+            "truth": "same",
+            "guess": "same",
+            "correct": true,
+            "confidence": 3,
+            "moreRealCorrect": null
+          }
+        ]
+      },
+      "cues": [
+        {
+          "cue": "两端门将孤立",
+          "count": 3
+        },
+        {
+          "cue": "球路尖角锯齿",
+          "count": 3
+        },
+        {
+          "cue": "把握有限。",
+          "count": 2
+        },
+        {
+          "cue": "右侧门将孤立",
+          "count": 2
+        },
+        {
+          "cue": "左侧门将孤立",
+          "count": 2
+        },
+        {
+          "cue": "球员轨迹较长",
+          "count": 1
+        },
+        {
+          "cue": "平滑微弯",
+          "count": 1
+        },
+        {
+          "cue": "队形分散",
+          "count": 1
+        },
+        {
+          "cue": "球路是两个缓峰",
+          "count": 1
+        },
+        {
+          "cue": "个体差异尚在",
+          "count": 1
+        },
+        {
+          "cue": "部分段偏直",
+          "count": 1
+        },
+        {
+          "cue": "多名球员在小区间内反复绕圈",
+          "count": 1
+        },
+        {
+          "cue": "s",
+          "count": 1
+        },
+        {
+          "cue": "形折返",
+          "count": 1
+        },
+        {
+          "cue": "球路大锐角锯齿",
+          "count": 1
+        },
+        {
+          "cue": "像目标点振荡。",
+          "count": 1
+        },
+        {
+          "cue": "仅小幅真实移动",
+          "count": 1
+        },
+        {
+          "cue": "球员各自漫游且转弯半径不一",
+          "count": 1
+        },
+        {
+          "cue": "球路像一次完整回路传递。",
+          "count": 1
+        },
+        {
+          "cue": "轨迹圆滑连贯",
+          "count": 1
+        },
+        {
+          "cue": "个体形态差异明显",
+          "count": 1
+        },
+        {
+          "cue": "门将孤立右侧",
+          "count": 1
+        },
+        {
+          "cue": "球沿大回路推进",
+          "count": 1
+        },
+        {
+          "cue": "像真实逼抢回合。",
+          "count": 1
+        },
+        {
+          "cue": "全部球员挤在右侧狭窄竖带内高频交叠",
+          "count": 1
+        },
+        {
+          "cue": "折线拼接",
+          "count": 1
+        },
+        {
+          "cue": "球在带内来回弹跳",
+          "count": 1
+        },
+        {
+          "cue": "极像目标驱动压缩",
+          "count": 1
+        },
+        {
+          "cue": "另有一人长时间孤置中场。",
+          "count": 1
+        },
+        {
+          "cue": "大量长直线段加急拐角横贯中场",
+          "count": 1
+        },
+        {
+          "cue": "球路长直束带配锐角顶点",
+          "count": 1
+        },
+        {
+          "cue": "机械感强。",
+          "count": 1
+        },
+        {
+          "cue": "进攻集中在左半场",
+          "count": 1
+        },
+        {
+          "cue": "球员按角色散开",
+          "count": 1
+        },
+        {
+          "cue": "右侧门将有自然的小轨迹",
+          "count": 1
+        },
+        {
+          "cue": "弧线多样。",
+          "count": 1
+        },
+        {
+          "cue": "弧形与直线混合",
+          "count": 1
+        },
+        {
+          "cue": "个体形态差异大",
+          "count": 1
+        },
+        {
+          "cue": "球路长回路",
+          "count": 1
+        },
+        {
+          "cue": "整体像真实传控段。",
+          "count": 1
+        },
+        {
+          "cue": "轨迹弯曲自然",
+          "count": 1
+        },
+        {
+          "cue": "形态各异",
+          "count": 1
+        },
+        {
+          "cue": "球路蜿蜒并带回环。",
+          "count": 1
+        },
+        {
+          "cue": "长而平滑的",
+          "count": 1
+        },
+        {
+          "cue": "u",
+          "count": 1
+        },
+        {
+          "cue": "形跑动",
+          "count": 1
+        },
+        {
+          "cue": "球员分散",
+          "count": 1
+        },
+        {
+          "cue": "球路在左半场折返。",
+          "count": 1
+        },
+        {
+          "cue": "多条近水平的波浪线近似平行推进",
+          "count": 1
+        },
+        {
+          "cue": "方向高度一致",
+          "count": 1
+        },
+        {
+          "cue": "球路为锐角长折线",
+          "count": 1
+        },
+        {
+          "cue": "同步感偏机械。",
+          "count": 1
+        },
+        {
+          "cue": "右半场密集交叉",
+          "count": 1
+        },
+        {
+          "cue": "以直线段快速改向",
+          "count": 1
+        },
+        {
+          "cue": "空间利用高度集中。",
+          "count": 1
+        },
+        {
+          "cue": "大半径平滑回环",
+          "count": 1
+        },
+        {
+          "cue": "个体差异明显",
+          "count": 1
+        },
+        {
+          "cue": "但回环略多",
+          "count": 1
+        },
+        {
+          "cue": "把握一般。",
+          "count": 1
+        },
+        {
+          "cue": "多名球员连续小圈绕行（卷曲半径相近）",
+          "count": 1
+        },
+        {
+          "cue": "球路为大三角长直段",
+          "count": 1
+        },
+        {
+          "cue": "规律性偏强。",
+          "count": 1
+        },
+        {
+          "cue": "整队沿对角线近乎平行地整体平移",
+          "count": 1
+        },
+        {
+          "cue": "同步转向",
+          "count": 1
+        },
+        {
+          "cue": "球路长折线",
+          "count": 1
+        },
+        {
+          "cue": "像共享同一信号的集体移动。",
+          "count": 1
+        },
+        {
+          "cue": "所有轨迹压进中线右侧窄带成一团",
+          "count": 1
+        },
+        {
+          "cue": "短直段拼接",
+          "count": 1
+        },
+        {
+          "cue": "密集交叠",
+          "count": 1
+        },
+        {
+          "cue": "球在带内乒乓弹跳。",
+          "count": 1
+        },
+        {
+          "cue": "覆盖面积大但个体路径弯曲多样",
+          "count": 1
+        },
+        {
+          "cue": "与宽幅直线束风格不同",
+          "count": 1
+        },
+        {
+          "cue": "中区密集结块",
+          "count": 1
+        },
+        {
+          "cue": "直线段与急转角拼接",
+          "count": 1
+        },
+        {
+          "cue": "球路为锐角束带。",
+          "count": 1
+        },
+        {
+          "cue": "左半场高密度缠绕",
+          "count": 1
+        },
+        {
+          "cue": "折线感强",
+          "count": 1
+        },
+        {
+          "cue": "远端球员孤置不动。",
+          "count": 1
+        },
+        {
+          "cue": "长弧线跑动平滑",
+          "count": 1
+        },
+        {
+          "cue": "纵向分散符合角色",
+          "count": 1
+        },
+        {
+          "cue": "球路呈闭合回路。",
+          "count": 1
+        },
+        {
+          "cue": "覆盖宽",
+          "count": 1
+        },
+        {
+          "cue": "轨迹略抖但整体连贯",
+          "count": 1
+        },
+        {
+          "cue": "两端门将分离",
+          "count": 1
+        },
+        {
+          "cue": "球路偏折线",
+          "count": 1
+        },
+        {
+          "cue": "两种特征混杂。",
+          "count": 1
+        },
+        {
+          "cue": "中路密集缠绕",
+          "count": 1
+        },
+        {
+          "cue": "以短直线快速改向",
+          "count": 1
+        },
+        {
+          "cue": "球路为尖角大风筝形。",
+          "count": 1
+        },
+        {
+          "cue": "右半场密集折线团",
+          "count": 1
+        },
+        {
+          "cue": "左侧球员孤置。",
+          "count": 1
+        },
+        {
+          "cue": "大量长而近乎平行的平滑束带加锐角球路",
+          "count": 1
+        },
+        {
+          "cue": "八帧人数完全恒定",
+          "count": 1
+        },
+        {
+          "cue": "规律性过强。",
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "aggregate": {
+    "nJudges": 3,
+    "meanMainAccuracy": 0.4583333333333333,
+    "meanControlBalancedAccuracy": 0.8333333333333334
+  }
+}
