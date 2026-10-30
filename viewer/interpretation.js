@@ -2,7 +2,7 @@
 // 原则：引擎给参数、画面给戏；人球解耦（带球=踢-追周期、传球=传跑配合、射门=门将先动）。
 // 本模块为纯函数（不碰 DOM/Canvas），便于单测（tasks 5.4/6.1）。
 
-import { config } from './config.js';
+import { config } from './config.js?v=20261029-1';
 
 // 动画锚点：一个可渲染的关键帧（球员位置/球位置随时间变化）
 // { t, kind: 'player'|'ball'|'pitch', id?, x, y }
@@ -151,7 +151,7 @@ function interpretShot(e, out) {
 // result=success（或缺省）→ 防守者拿球；result=fail → 原持球人拿回。
 // dropCarryBeat（连续模式）：若被铲者上一事件刚带球到接触点，丢弃 carry-beat 起点（从接触点开始），
 // 避免连续播放里"重放刚播过的带球段"（design D4，grill Q6）。
-// v2（carrier 存在）：高亮时长固定 1 tick（引擎 t_end=t+1）；approach 压缩到 1s 内，
+// v2（carrier 存在）：高亮时长固定一拍（引擎 t_end=t+TICK_SECONDS）；approach 压缩到拍内，
 //   球员终态 = 引擎结算终点 subject_end/carrier_end（tackle 后两球员空间分离，不再同落接触点），
 //   球终态 = loose（与下一 beat.ball 起点连续）；collect（捡球）不在此演绎——由后续 beat.ball + chase movers 表达。
 function interpretTackle(e, out, dropCarryBeat = false) {
@@ -182,10 +182,15 @@ function interpretTackle(e, out, dropCarryBeat = false) {
   const carrierMoveDur = dropCarryBeat ? 0 : durationFromSpeed(distanceMeters(cfx, cfy, vx, vy), config.defaults.dribbleSpeed);
   let approachDur = durationFromSpeed(distanceMeters(sx, sy, vx, vy), config.defaults.runSpeed);
   if (isV2) {
-    approachDur = Math.min(approachDur, 0.6); // v2 高亮 1 tick：逼近压缩到 0.6s（避免 >1s 破坏时序）
+    // v2 高亮 = 一拍：逼近压缩到 0.6×tick（1 Hz 下仍是 0.6 s；2 Hz 下 0.3 s）。
+    approachDur = Math.min(approachDur, 0.6 * config.interpretation.tickSeconds);
   }
-  // 带球段与逼近段同时发生，接触时刻取两者较长者（双方都在动）
-  const tContact = t0 + Math.max(carrierMoveDur, approachDur);
+  // 带球段与逼近段同时发生，接触时刻取两者较长者（双方都在动）。
+  // v2 的高亮只到 t0+tick，接触点不得超过它（留 0.05 s 给捅开段）——否则会出现晚于高亮终点的锚点。
+  const tContactRaw = t0 + Math.max(carrierMoveDur, approachDur);
+  const tContact = isV2
+    ? Math.min(tContactRaw, t0 + config.interpretation.tickSeconds - 0.05)
+    : tContactRaw;
   out.push({ t: t0, kind: 'player', id: victim, x: cfx, y: cfy });
   out.push({ t: tContact, kind: 'player', id: victim, x: vx, y: vy });
   out.push({ t: t0, kind: 'player', id: tackler, x: sx, y: sy });
@@ -201,7 +206,7 @@ function interpretTackle(e, out, dropCarryBeat = false) {
   const deflectDur = durationFromSpeed(distanceMeters(vx, vy, loose.x, loose.y), deflect.deflectSpeed);
 
   if (isV2) {
-    // v2：高亮覆盖 [t0, t0+1]。球员终态 = 引擎结算终点（subject_end/carrier_end，tackle 后两球员空间分离，
+    // v2：高亮覆盖 [t0, t0 + tickSeconds]（与引擎 tackle 高亮的 t_end = t + TICK_SECONDS 同步）。球员终态 = 引擎结算终点（subject_end/carrier_end，tackle 后两球员空间分离，
     //   不再同落接触点重叠）；球终态按 result：
     //   success → 弹到 loose（进入松散球，与 beat.ball 起点连续）
     //   fail    → 停在接触点（被铲者保持，main 从接触点恢复，无松散球）
@@ -211,7 +216,7 @@ function interpretTackle(e, out, dropCarryBeat = false) {
     const tacklerEndY = (Number.isFinite(e.subject_end_y)) ? e.subject_end_y : vy;
     const victimEndX = (Number.isFinite(e.carrier_end_x)) ? e.carrier_end_x : vx;
     const victimEndY = (Number.isFinite(e.carrier_end_y)) ? e.carrier_end_y : vy;
-    const end = t0 + 1;
+    const end = t0 + config.interpretation.tickSeconds;
     if (e.result === 'fail') {
       out.push({ t: end, kind: 'ball', x: vx, y: vy });
       out.push({ t: end, kind: 'player', id: victim, x: victimEndX, y: victimEndY });
@@ -291,12 +296,12 @@ function interpretOffBallRun(e, out) {
 }
 
 // ---- v2：beat 节拍演绎（并行节拍）----
-// beat = 固定 1s tick 的并行动作：main（carrier 带球）+ movers（并行跑位）+ ball（松散球）。
-// 所有动画铺满整拍 [t, t+1]（缓动到位，非"距离÷速度"——保证 22 人并行同时动）。
+// beat = 固定 tick 的并行动作：main（carrier 带球）+ movers（并行跑位）+ ball（松散球）。
+// 所有动画铺满整拍 [t, t+tickSeconds]（缓动到位，非"距离÷速度"——保证 22 人并行同时动）。
 // 高亮参与者由 buildTimeline 在 beat 展开前排除（两层合成，spec 要求 viewer 侧防御）。
 function interpretBeat(e, out, excluded = null) {
   const t0 = e.t;
-  const t1 = t0 + 1; // 铺满整拍
+  const t1 = t0 + config.interpretation.tickSeconds; // 铺满整拍（与引擎 TICK_SECONDS 同步；2 Hz = 0.5s）
   // main：carrier 带球。球位置 = carrier（拍边界连续；不做 sep 领先偏移——方向变化会导致拍边界球跳，审阅 minor）
   if (e.main) {
     const m = e.main;
@@ -340,9 +345,9 @@ function highlightParticipants(e) {
   return new Set();
 }
 
-// 高亮事件的自然飞行终点（pass/shot 按距离÷球速；tackle 固定 1 tick）
+// 高亮事件的自然飞行终点（pass/shot 按距离÷球速；tackle 固定一拍 = tickSeconds）
 function highlightEndTime(e) {
-  if (e.type === 'tackle') return e.t + 1;
+  if (e.type === 'tackle') return e.t + config.interpretation.tickSeconds;
   const meters = distanceMeters(e.x, e.y, e.x2, e.y2);
   const speed = e.speed ?? (e.type === 'pass' ? config.defaults.passSpeed : config.defaults.shotSpeed);
   return e.t + durationFromSpeed(meters, speed);

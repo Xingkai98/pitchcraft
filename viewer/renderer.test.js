@@ -6,7 +6,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { MockCanvas } from './mock-canvas.js';
 import { drawPitch, drawPlayer, drawBall, drawCard, renderFrame } from './renderer.js';
-import { config } from './config.js';
+import { config } from './config.js?v=20261029-1';
 
 const W = config.canvas.width;
 const H = config.canvas.height;

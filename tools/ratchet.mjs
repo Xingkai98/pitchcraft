@@ -32,27 +32,31 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 // dir: 'higher' 越高越好 | 'lower' 越低越好 | 'band' 落带内最好（用 distToBand 判）
 // 取不到的指标一律 throw，不填默认值。
 export const METRICS = [
-  // ── like-football.mjs（5 seed × 12s 窗；真实锚 = Metrica real-game-1/2）──
-  { id: 'lf.disp', label: '位移/窗', source: 'like', dir: 'higher', caliber: 'like-football · 5 seed · 12s 窗 · Metrica 2 场', re: /^\s*\S+\s+位移\/窗★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.lat', label: '横向占比', source: 'like', dir: 'higher', caliber: 'like-football · 5 seed · 12s 窗 · Metrica 2 场', re: /^\s*\S+\s+横向占比★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.mix', label: '混队度', source: 'like', dir: 'higher', caliber: 'like-football · 5 seed · 12s 窗 · Metrica 2 场', re: /^\s*\S+\s+混队度★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.hd', label: '纵深(主)', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+纵深\(主\)\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.ad', label: '纵深(客)', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+纵深\(客\)\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.spread', label: '紧凑度', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+紧凑度\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.gap', label: '分边', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+分边★\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.ballDist', label: '球距', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · SkillCorner 结构锚', re: /^\s*\S+\s+球距\s+([\d.]+)\s+([\d.]+)/m },
-  { id: 'lf.distance', label: '距离', source: 'like', dir: 'lower', caliber: 'like-football · 5 seed · 8 行 mean|ln(E/R)|', re: /距离（幅度量[^=]*=\s*([\d.]+)/m },
+  // ── like-football.mjs（5 seed × 12s 窗）──
+  // 2026-10-28：软指标从「比当前高/低」改为「以真实为中心的带」（±25%），带内 = 不退化——
+  // 方向正确但中间小回退的候选不再被一刀切（第 1 轮 K1a/K2a/K4 均因此被错杀）。
+  // 真实值出处：disp/lat/mix = Metrica 2 场（like-football 基线行）；hd/ad/spread/gap =
+  // SkillCorner **allPoints**（dbg-caliber 探针，盲测渲染口径）；球距 ≈ 15m。带 = 真实 ×(0.75,1.25)。
+  { id: 'lf.disp', label: '位移/窗', source: 'like', dir: 'band', band: [10.1, 16.8], caliber: 'like-football · 5 seed · Metrica 真实 13.46 ±25%', re: /^\s*\S+\s+位移\/窗★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.lat', label: '横向占比', source: 'like', dir: 'band', band: [0.32, 0.54], caliber: 'like-football · 5 seed · Metrica 真实 0.43 ±25%', re: /^\s*\S+\s+横向占比★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.mix', label: '混队度', source: 'like', dir: 'band', band: [0.60, 1.00], caliber: 'like-football · 5 seed · Metrica 真实 0.80 ±25%(上界封1)', re: /^\s*\S+\s+混队度★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.hd', label: '纵深(主)', source: 'like', dir: 'band', band: [19.4, 32.3], caliber: 'like-football · 5 seed · SkillCorner allPoints 25.82 ±25%', re: /^\s*\S+\s+纵深\(主\)\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.ad', label: '纵深(客)', source: 'like', dir: 'band', band: [19.2, 32.0], caliber: 'like-football · 5 seed · SkillCorner allPoints 25.63 ±25%', re: /^\s*\S+\s+纵深\(客\)\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.spread', label: '紧凑度', source: 'like', dir: 'band', band: [11.1, 18.5], caliber: 'like-football · 5 seed · SkillCorner allPoints 14.78 ±25%', re: /^\s*\S+\s+紧凑度\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.gap', label: '分边', source: 'like', dir: 'band', band: [5.2, 8.6], caliber: 'like-football · 5 seed · SkillCorner allPoints 6.88 ±25%', re: /^\s*\S+\s+分边★\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.ballDist', label: '球距', source: 'like', dir: 'band', band: [11.2, 18.7], caliber: 'like-football · 5 seed · SkillCorner 结构锚 ~15m ±25%', re: /^\s*\S+\s+球距\s+([\d.]+)\s+([\d.]+)/m },
+  { id: 'lf.distance', label: '距离', source: 'like', dir: 'report', caliber: 'like-football · 5 seed · 8 行 mean|ln(E/R)| · 报告项(不判退化)', re: /距离（幅度量[^=]*=\s*([\d.]+)/m },
 
   // ── check-criteria.mjs（10 seed；真实锚 = Metrica；band 取自 criteria-spec）──
   { id: 'p38.hd', label: '纵深', source: 'criteria', dir: 'band', band: [23.385, 28.385], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /纵深\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.spread', label: '紧凑度', source: 'criteria', dir: 'band', band: [13.41, 17.01], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /紧凑度\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.gap', label: '重心间距', source: 'criteria', dir: 'band', band: [6.54, 10.14], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /重心间距\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
-  { id: 'p38.latSd', label: '横向位移 sd', source: 'criteria', dir: 'band', band: [7.015, 14.015], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /横向位移 sd\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
+  { id: 'p38.latSd', label: '横向位移 sd', source: 'criteria', dir: 'band', band: [7.015, 14.015], noiseTol: 0.8, caliber: 'check-criteria · 10 seed · Metrica 锚 · 噪声容差 0.8（同 base 换 seed 集 7.07–8.60，见 RECORD R2）', re: /横向位移 sd\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.swarm', label: 'y 两两相关', source: 'criteria', dir: 'band', band: [0.451, 0.891], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /y 两两相关\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.fault', label: '断层幅度', source: 'criteria', dir: 'band', band: [2.45, 7.45], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /断层幅度\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   { id: 'p38.balance', label: '各线均衡', source: 'criteria', dir: 'band', band: [0.84, 1.28], caliber: 'check-criteria · 10 seed · Metrica 锚', re: /各线均衡\s+当前\s+([\d.]+)\s+目标\s+\[([\d.]+), ([\d.]+)\]/m },
   // 单边下界：只防崩，不是真实目标
-  { id: 'p38.shotsReg', label: '普通射门/场', source: 'criteria', dir: 'higher', caliber: 'check-criteria · 10 seed · 单边下界（真实参照 16.51）', re: /普通射门\/场\s+当前\s+([\d.]+)/m },
+  { id: 'p38.shotsReg', label: '普通射门/场', source: 'criteria', dir: 'higher', noiseTol: 1.8, caliber: 'check-criteria · 10 seed · 单边下界（真实参照 16.51）· 噪声容差 1.8（同 base 换 seed 集 39.0/37.8/35.4/37.3，见 RECORD R2）', re: /普通射门\/场\s+当前\s+([\d.]+)/m },
 
   // ── check-behavior-gates.mjs（canary 30 seed；真实锚 = A-League 20 场）──
   { id: 'p18.a1', label: 'A1 链时长(s)', source: 'p18', dir: 'lower', caliber: 'p18 行为门 · canary 30 seed · 真实 A-League', re: /\[A1\][\s\S]*?引擎\s+([\d.]+)\s+真实\s+([\d.]+)\s+倍数\s+([\d.]+)×/m },
@@ -114,20 +118,25 @@ export function collect({ skipP18 = false } = {}) {
 /** 方向感知的退化判定。返回 'regress' | 'improve' | 'same' | 'report'。 */
 export function judge(m, before, after) {
   if (m.dir === 'report') return 'report';
-  const eps = Math.max(Math.abs(before) * 1e-4, 1e-6); // 抖动容差
+  const nt = m.noiseTol ?? 0; // 种子噪声容差：同一 base 换 seed 集的最大半差（见各 metric 的 caliber 出处）
+  const eps = Math.max(Math.abs(before) * 1e-4, 1e-6); // 浮点抖动容差
   const d = after - before;
   if (Math.abs(d) <= eps) return 'same';
-  if (m.dir === 'higher') return d < 0 ? 'regress' : 'improve';
-  if (m.dir === 'lower') return d > 0 ? 'regress' : 'improve';
-  // band：看「离带心的距离」是变远还是变近
+  if (m.dir === 'higher') {
+    if (d < 0 && Math.abs(d) <= nt) return 'same'; // 噪声内的小退化不判
+    return d < 0 ? 'regress' : 'improve';
+  }
+  if (m.dir === 'lower') {
+    if (d > 0 && Math.abs(d) <= nt) return 'same';
+    return d > 0 ? 'regress' : 'improve';
+  }
+  // band：带内（或噪声内）= 可接受（不退化）；带外越远越退化、越近越改善。
   const [lo, hi] = m.band;
-  const mid = (lo + hi) / 2;
+  const tol = Math.max(nt, eps);
   const outBefore = before < lo ? lo - before : before > hi ? before - hi : 0;
   const outAfter = after < lo ? lo - after : after > hi ? after - hi : 0;
-  if (Math.abs(outBefore - outAfter) <= eps) {
-    // 都在带内或同距：按离带心远近判
-    return Math.abs(after - mid) <= Math.abs(before - mid) ? 'same' : 'regress';
-  }
+  if (outBefore <= tol && outAfter <= tol) return 'same'; // 都在带内(或噪声内)
+  if (Math.abs(outAfter - outBefore) <= eps) return 'same';
   return outAfter > outBefore ? 'regress' : 'improve';
 }
 

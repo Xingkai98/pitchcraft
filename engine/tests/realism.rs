@@ -92,10 +92,15 @@ const TACKLE_FAR_EPS_M: f64 = 0.05;
 /// C3 填拍门（L2 pass 分支）的量化容差（米，距离空间）。
 ///
 /// 硬上界推导：序列化坐标 4 位小数 ⇒ 距离重算误差 ≤0.0126m；`speed` 是 `{:.1}`（±0.05）⇒
-/// 在 `距离 = 0.95·speed` 上放大约 0.0475m。合计 **≤0.06m**（2026-10-29 审阅 P2.1：
-/// 旧版按 0.03s 飞行容差推导时漏了 speed 自身的量化项，且在最小 speed 上推导——那个推导
-/// 不成立，但实测最坏 0.0247s≈0.0395m 仍在 0.06m 内）。
-const PASS_FLIGHT_QUANT_EPS_M: f64 = 0.06;
+/// 在 `距离 = FILL·speed` 上放大 `FILL × 0.05`。2 Hz 下 FILL = 0.95 × 0.5 s = 0.475 s
+/// ⇒ 0.02375m；合计 ≤0.0364m → 取 **0.04m**（2026-10-29：C3 的 1 Hz 推导是 0.95×0.05=0.0475，
+/// 合计 0.06m；本树的拍长换成 0.5 s 后同法重推）。
+const PASS_FLIGHT_QUANT_EPS_M: f64 = 0.04;
+
+/// 本引擎的传球飞行填拍时长（秒）：`0.95 × TICK_SECONDS`（见 `lib.rs::tick_filling_flight`）。
+/// 测试侧显式写死，并由 `l2_pass_fill_constant_matches_engine_tick` 与**引擎导出的**
+/// `TICK_SECONDS` 断言同步——拍频改动时该测试会红，不会静默漂移。
+const PASS_FILL_FLIGHT_S: f64 = 0.95 * 0.5;
 
 /// 填拍门检查的最小序列化距离（米）。低于 0.52m 跳过：坐标量化（±0.0126m）使「内部距离
 /// 是否真的 ≥0.5m（= 是否进入填拍域）」在 0.5m 边界上不可判；0.52 = 0.5 + 0.0126 向上取整。
@@ -600,35 +605,31 @@ fn aggregate(seed: u64) -> MatchStats {
                     Some("free_kick") => st.n_free_kick += 1,
                     _ => {}
                 }
-                // pass 速度/飞行不变量（C3 改写后的口径；2026-10-29 审阅 P2.1/P2.2 重写）：
+                // pass 速度/飞行不变量（C3 改写后的口径，2026-10-29 审阅 P2.1/P2.2；v11 改 2 Hz 后重推）：
                 //
                 // 生成器原始速度按来源不同（普通 12-24.9 / 角球 18-21.9 / 界外 12-13.9 /
                 // 门球 16-19.9 / 头球摆渡 10-13.9 / 解围 14-17.9 / 出界 pass 12-24.9），
-                // 统一上界 < 25。`tick_filling_flight` 再在「原飞行 < 0.95s 且距离 ≥ 0.5m」时
-                // 把 speed 改写为 `距离/0.95`（只降不升：改写值 < 原速）。
+                // 统一上界 < 25。`tick_filling_flight` 再在「原飞行 < FILL 且距离 ≥ 0.5m」时把
+                // speed 改写为 `距离/FILL`（只降不升：改写值 < 原速）。2 Hz 下 FILL = 0.475 s。
                 //
                 // 因此对**任何**落点可验、内部距离 ≥ 0.5m 的 pass，都有统一不变量：
-                //     speed ≤ 距离 / 0.95   ⇔   距离 / speed ≥ 0.95
-                // （填拍的取等；未填拍的原飞行就 ≥ 0.95s）。这不只守「短传填拍」，也守
-                // 「≥9.5m 的快速传球该填却未填」——旧版只查 speed<10 的分支，距填拍门
-                // ≥9.5m 的传球完全没验（审阅 P2.2 的覆盖盲区）。
+                //     speed ≤ 距离 / FILL   ⇔   距离 / speed ≥ FILL
+                // （填拍的取等；未填拍的原飞行就 ≥ FILL）。这不只守「短传填拍」，也守
+                // 「该填却未填」的较长传球——不是只查 speed<10 的分支（审阅 P2.2 的覆盖盲区）。
                 //
                 // 容差（距离空间，硬上界可证）：测试读的是**序列化后**字段——
                 //   - x/y/x2/y2 各 4 位小数 ⇒ 每端点 ≤0.00626m ⇒ 距离重算误差 ≤0.0126m
                 //     （推导同 `TACKLE_FAR_EPS_M` 注释）；
-                //   - speed 是 `{:.1}`（±0.05）⇒ 0.95×0.05 = 0.0475m；
-                //   ⇒ |距离_ser − 0.95·speed_ser| ≤ 0.06m（= `PASS_FLIGHT_QUANT_EPS_M`）。
+                //   - speed 是 `{:.1}`（±0.05）⇒ FILL×0.05 = 0.475×0.05 = 0.02375m；
+                //   ⇒ |距离_ser − FILL·speed_ser| ≤ 0.04m（= `PASS_FLIGHT_QUANT_EPS_M`）。
                 // 距离 < 0.52m 的事件跳过：坐标量化（±0.0126m）让「内部距离是否真 ≥0.5m
                 // （即是否该填拍）」在 0.5m 边界上不可判。
-                // 实测余量（300 seed）：
-                //   - 审阅（speed<10 子集）最坏 |flight−0.95| = 0.0247s（seed 48）≈0.0395m
-                //     ——出处在 `.scratch/notes/c3-render-fixes-to-main-2026-10-29/
-                //     review-independent-2026-10-29.md` §2.5；
-                //   - 修复后复测（全 pass）最坏 0.0233s（seed 187），真违例 0
-                //     ——见同目录 `pass-flight-residuals-fixed-300seeds.json`。
-                // 两者都 < 0.06m。出界分支未接填拍时（修复前）300 seed 有 2,932 条
-                // flight<0.945s 的 pass 残余，其中 932 条来自该分支（同目录
-                // `pass-flight-residuals-prefix-300seeds.json`）。
+                // 1 Hz 时代的实测余量与修复记录（出界分支未填拍 = 300 seed 2,932 条残余）仍在
+                // `.scratch/notes/c3-render-fixes-to-main-2026-10-29/`；本树只是把 FILL 从 0.95
+                // 换成 0.475，容差按同法重推（0.06 → 0.04）。**2 Hz 实测余量**（8 seed × 5400s，
+                // 7155 条可验 pass，同一序列化口径）：最坏残余 **−0.0282m**（seed 11），
+                // 距 0.04 容差余量 0.0118m；真违例（<−0.04）0 条。
+                // 读数出处：`.scratch/notes/RECORD.md` R6「填拍门余量」行；探针 `/tmp/probe-fillres.mjs`。
                 if spd >= 0.0 {
                     if spd >= 25.0 {
                         st.speed_violations
@@ -644,7 +645,7 @@ fn aggregate(seed: u64) -> MatchStats {
                                 let dy = (y2 - y1) * PITCH_WIDTH_M;
                                 let dist = (dx * dx + dy * dy).sqrt();
                                 if dist >= PASS_FILL_MIN_CHECK_M
-                                    && dist - 0.95 * spd < -PASS_FLIGHT_QUANT_EPS_M
+                                    && dist - PASS_FILL_FLIGHT_S * spd < -PASS_FLIGHT_QUANT_EPS_M
                                 {
                                     let flight = if spd > 0.0 {
                                         dist / spd
@@ -652,9 +653,9 @@ fn aggregate(seed: u64) -> MatchStats {
                                         f64::INFINITY
                                     };
                                     st.speed_violations.push(format!(
-                                        "pass speed {:.2} 未填拍（复算 flight {:.3}s < 0.95s，\
+                                        "pass speed {:.2} 未填拍（复算 flight {:.3}s < {:.3}s，\
                                          距离 {:.2}m，量化容忍 {:.2}m）",
-                                        spd, flight, dist, PASS_FLIGHT_QUANT_EPS_M
+                                        spd, flight, PASS_FILL_FLIGHT_S, dist, PASS_FLIGHT_QUANT_EPS_M
                                     ));
                                 }
                             }
@@ -1323,6 +1324,28 @@ fn p13_side_effect_snapshot() {
 // L2/golden 不 `#[ignore]`：只有 15+10 场，debug 下 ~3s，是「应处处成立」的快速不变量，
 // 默认 `cargo test` 就该跑（L1 统计聚合才需要 ignore + release 显式跑）。
 
+/// 填拍门的填充时长必须与**引擎导出**的拍长同步（审阅 P2-3：此前只有注释声称同步，
+/// 没有断言——TICK 变 1.0 时 dist ≥ 0.475·speed 仍成立，门会静默失效/失准）。
+#[test]
+fn l2_pass_fill_constant_matches_engine_tick() {
+    assert_eq!(
+        PASS_FILL_FLIGHT_S,
+        0.95 * TICK_SECONDS,
+        "测试侧的填拍时长 {PASS_FILL_FLIGHT_S}s 与引擎 0.95×TICK_SECONDS={}s 不同步——\
+         改拍频时必须同步重推 L2 填拍门的填充时长与容差",
+        0.95 * TICK_SECONDS
+    );
+    // 填拍门的容差按同一填充时长推导：坐标 4 位小数的距离重算误差 ≤0.0126m +
+    // speed `{:.1}` 的量化项 FILL×0.05。两项之和才是硬上界（审阅 P3-R2-3：
+    // 只判 speed 项会让 EPS 落在 0.03 时本测试仍绿、而门会误红）。
+    let quant_bound = 0.0126 + PASS_FILL_FLIGHT_S * 0.05;
+    assert!(
+        PASS_FLIGHT_QUANT_EPS_M >= quant_bound,
+        "填拍容差 {PASS_FLIGHT_QUANT_EPS_M} 未覆盖硬上界 {quant_bound:.4}m（坐标 0.0126 + speed 量化 {:.4}）",
+        PASS_FILL_FLIGHT_S * 0.05
+    );
+}
+
 #[test]
 fn l2_cross_event_invariants() {
     for seed in 1..=SEEDS_L2 {
@@ -1423,7 +1446,10 @@ fn l2_cross_event_invariants() {
 /// 引擎确定性 → 永不 flaky；`n_foul_red > 0` 的前置断言保证将来引擎改动让它们再次空跑时会红。
 #[test]
 fn l2_sent_off_kickoff_seeds() {
-    for seed in [33u64, 187, 246, 269] {
+    // v11（2 Hz + 移动层）后重扫 1..=300：旧 fixture 33/187/246/269 在该树上不再产红牌
+    // （定向 seed 的前提失效，不是 sent-off 机制坏了）。新集合每个 seed 均实测含红牌；
+    // 163 含 2 红、232 有 31 犯规，覆盖面更宽。扫描读数见 `.scratch/notes/RECORD.md`。
+    for seed in [8u64, 13, 163, 232] {
         let st = aggregate(seed);
         assert!(st.n_foul_red > 0, "seed {} 应含红牌（定向 seed 失效？）", seed);
         assert_eq!(
@@ -1464,7 +1490,14 @@ fn l2_sent_off_kickoff_seeds() {
 // 逐 seed 相同**。v9 目录保留不覆盖（只是补了 `speed_masked_stream_hash` 一列——由 1c5729d 的
 // 引擎生成，其余列逐位不变；见 2026-10-29 修复记录）。
 //
-// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 10）落 v10；需要对比旧版本时读旧目录。
+// C1：v11 = 子拍（2 Hz）+ 射门每秒率重锚 + 移动层（近球冲刺/被过掉拉人）+ 传球横向转移 +
+// 方向化长传拦截 + 门前优先档（`tests/golden-v11/`）。这是**行为变化**：决策拍、射门/抢断/
+// 犯规体量与事件序列都变。自证条 `gm_v11_changes_behavior_not_just_speed`：v11 与 v10 的
+// 计数可不同（行为变了），但**掩掉 speed 后流哈希也必须不同**——若只有 speed 变，说明重基线
+// 洗进了「应改而未改」的版本。v9/v10 保留不覆盖（v10 = C3 填拍，v9 = 其前身；两者的速度
+// 字段关系仍由 `gm_v10_is_v9_plus_speed_field_only` 静态守着）。
+//
+// 版本 → 目录：新引擎输出永远按 `MODEL_VERSION`（当前 11）落 v11；需要对比旧版本时读旧目录。
 // p143r-v4：四层机制（球导向跑位/开放局逼抢/事件密度/传球选择+对抗几何）改变可观测行为 → MODEL_VERSION 7→8。
 
 /// 模型版本 → golden 基线目录名。
@@ -1480,6 +1513,7 @@ fn golden_dir(model_version: u32) -> &'static str {
         8 => "tests/golden-v8",
         9 => "tests/golden-v9",
         10 => "tests/golden-v10",
+        11 => "tests/golden-v11",
         other => panic!("未知 model_version {}（无对应 golden 目录）", other),
     }
 }
@@ -1562,7 +1596,7 @@ fn golden_from_str(s: &str) -> MatchStats {
     st.stream_hash = field_str(s, "stream_hash")
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
-    // v1..v8 的 golden 没有这一列 → 0（只有 v9/v10 的守卫会检查非 0）。
+    // v1..v8 的 golden 没有这一列 → 0（v9..v11 的守卫会检查非 0）。
     st.speed_masked_stream_hash = field_str(s, "speed_masked_stream_hash")
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(0);
@@ -1641,6 +1675,19 @@ fn gm_canary_seeds() {
         assert!(
             hash_ok,
             "seed {} 事件流哈希漂移（任何静默改动）",
+            seed
+        );
+        // v11 起：掩码流哈希也必须与 golden 一致——否则该列可以是任意固定值，
+        // `gm_v11_changes_behavior_not_just_speed` 用它做的「不是只改 speed」论证就失去出处
+        // （审阅 P2-2 的变异：只改 golden 的这一列，4 条 gm 测试全绿）。
+        assert_ne!(
+            gold.speed_masked_stream_hash, 0,
+            "seed {}：当前 MODEL_VERSION 的 golden 缺 `speed_masked_stream_hash`",
+            seed
+        );
+        assert_eq!(
+            gold.speed_masked_stream_hash, st.speed_masked_stream_hash,
+            "seed {}：掩码流哈希漂移（位置/时间戳/决策变化，或 golden 该列未被重生成）",
             seed
         );
     }
@@ -1726,30 +1773,53 @@ fn gm_legacy_baselines_preserved_and_differs() {
 /// **2026-10-29 审阅 P1.2 加固**：原版只比 28 个计数 + 哈希不同 ⇒ 看不见位置类字段漂移
 /// （审阅实测 `receiver_x + 0.0007` 时本测试照绿）。现在再加一条**掩码流哈希**：
 /// `speed_masked_stream_hash` 把事件流里所有 `"speed":<num>` 的数值抹成 `0` 后做 FNV-1a
-/// （见 `mask_speed_fields`），v9 与当前（v10）必须**逐 seed 相同**。掩码流保留了位置、
+/// （见 `mask_speed_fields`），v9 与 v10 必须**逐 seed 相同**。掩码流保留了位置、
 /// 时间戳、决策、detail/result 与事件序列——它们任一漂移都会让本断言红。
 /// v9 黄金的这一列由 `1c5729d` 的引擎重新生成（计数与 `stream_hash` 与旧文件逐位相同，
 /// 只多一列；证据见 `.scratch/notes/c3-render-fixes-to-main-2026-10-29/review-fixes-2026-10-29.md`）。
+/// **v11 起改为静态比对两份冻结文件**（不再拿当前引擎 `aggregate` 的结果比 v9）——见函数内注。
 #[test]
 fn gm_v10_is_v9_plus_speed_field_only() {
+    // v11 起当前引擎已不再是 v10，本测试改为**两份冻结 golden 的静态对比**（不再 `aggregate`）：
+    // 这正是该不变量本来的语义——v10 = v9 + speed 字段，与之后引擎怎么演进无关。
     for seed in GOLDEN_SEEDS {
-        let st = aggregate(seed);
         let gold_v9 = read_golden(9, seed);
-        let hash_same = assert_golden_fields_match(seed, &gold_v9, &st, "v9-vs-v10");
+        let gold_v10 = read_golden(10, seed);
+        let hash_same = assert_golden_fields_match(seed, &gold_v9, &gold_v10, "v9-vs-v10");
         assert!(
             !hash_same,
-            "seed {}：v10 与 v9 流哈希相同——C3 的 speed 改写没有落到事件流（重基线未生效？）",
+            "seed {}：v10 与 v9 流哈希相同——C3 的 speed 改写没有落到基线",
             seed
         );
         assert_ne!(
             gold_v9.speed_masked_stream_hash, 0,
-            "seed {}：v9 golden 缺 `speed_masked_stream_hash`（用 1c5729d 的引擎重生成该列）",
+            "seed {}：v9 golden 缺 `speed_masked_stream_hash`",
             seed
         );
         assert_eq!(
-            gold_v9.speed_masked_stream_hash, st.speed_masked_stream_hash,
-            "seed {}：掩掉 speed 后 v10 与 v9 的事件流不同——出现了 speed 以外的字段漂移\
-             （位置/时间戳/决策/事件序列；C3 只允许 speed 字段变）",
+            gold_v9.speed_masked_stream_hash, gold_v10.speed_masked_stream_hash,
+            "seed {}：掩掉 speed 后 v10 与 v9 的基线事件流不同——历史基线的 speed-only 关系损坏\
+             （位置/时间戳/决策/事件序列漂移）",
+            seed
+        );
+    }
+}
+
+/// C1 重基线纪律：v11 与 v10 **必须不是「只差 speed」**——掩掉 speed 后流哈希也必须不同。
+///
+/// 动机与上方 v10 自证条对称：v11 是行为改变（2 Hz 决策拍 / 射门重锚 / 移动层 / 传球横向
+/// 转移），若某个 canary seed 的掩码流哈希与 v10 相同，说明该 seed 上重基线没体现行为变化
+/// （或重基线把旧流写进了新目录），是「洗白回归」。计数不同**不**是本测试的断言——行为改变
+/// 允许计数变；这里守的是「变化不是只抹了 speed」。
+#[test]
+fn gm_v11_changes_behavior_not_just_speed() {
+    for seed in GOLDEN_SEEDS {
+        let gold_v10 = read_golden(10, seed);
+        let gold_v11 = read_golden(11, seed);
+        assert_ne!(
+            gold_v10.speed_masked_stream_hash, gold_v11.speed_masked_stream_hash,
+            "seed {}：v11 与 v10 掩掉 speed 后事件流相同——v11 应改变位置/时间戳/决策，\
+             不能只是 speed 字段变化",
             seed
         );
     }
@@ -1863,6 +1933,7 @@ fn p31_frequency_5min_directional() {
         per(0), per90
     );
 }
+
 
 
 

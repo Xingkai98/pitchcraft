@@ -13,7 +13,7 @@
 
 import { readFileSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { config } from './config.js';
+import { config } from './config.js?v=20261029-1';
 import { parseEventStream } from './protocol.js';
 import { Game } from './game.js';
 import { renderFrame } from './renderer.js';

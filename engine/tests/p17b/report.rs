@@ -301,10 +301,10 @@ pub struct ContestGroup {
     pub pursuit_invisible: usize,
     /// **全量**争抢事实数（该成因的 `contest_started` 事实条数）。
     ///
-    /// ⚠️ 与 `cards` **不是一回事**：实测约 30% 的争抢**不与任何 episode 收束同刻**
-    /// （发生在「控制已释放、球还在飞」的两段 episode 之间）⇒ 它们数得到成因，
-    /// 但**挂不到卡上**。只给 `cards` 会让读者把它当成「该成因的争抢数」——
-    /// 那正是「留空 = 没发生」的形态，本 change 明令禁止。
+    /// ⚠️ 与 `cards` **不是一回事**：R6 300 seed 实测 **32.9%** 的争抢**不与任何
+    /// episode 收束同刻**（25078/37401 有卡；发生在「控制已释放、球还在飞」的两段
+    /// episode 之间）⇒ 它们数得到成因，但**挂不到卡上**。只给 `cards` 会让读者把它
+    /// 当成「该成因的争抢数」——那正是「留空 = 没发生」的形态，本 change 明令禁止。
     pub facts_full_corpus: usize,
 }
 
@@ -1217,11 +1217,16 @@ pub fn to_markdown(r: &Report) -> String {
     o.push_str("> 诊断卡里的【丢球后】一节只覆盖**该段争抢窗内的子集**——**两者不可互相换算**。\n\n");
     let cr = r.mover_counts.get("census_runs").copied().unwrap_or(0);
     let cb = r.mover_counts.get("census_beats").copied().unwrap_or(0);
+    // ⚠️ **单位换算（R6，2 Hz）**：`census_beats` 是**拍**（beat），而 design §4.4.1 的
+    // 3.02 是**秒**（1 Hz 下 1 beat = 1 s）。产物必须同时给出 beat 与秒，否则读者会把
+    // 6.43（beat）与 3.02（s）直接比成 2.1× 的口径分叉。`fm_engine::TICK_SECONDS` = 0.5。
+    let mean_beat = if cr > 0 { cb as f64 / cr as f64 } else { f64::NAN };
+    let mean_s = mean_beat * fm_engine::TICK_SECONDS;
     o.push_str(&format!(
-        "- 段数 **{}**，总拍数 {}，均长 {}（design §4.4.1 载 946 段 / 均长 3.02）\n",
-        cr,
-        cb,
-        if cr > 0 { format!("{:.2}", cb as f64 / cr as f64) } else { "—".into() }
+        "- 段数 **{cr}**，总拍数 {cb}，均长 {mean_beat:.2} beat = **{mean_s:.2} s**\
+         （design §4.4.1 载 946 段 / 均长 3.02 s，**1 Hz 口径**；R6 的 beat 按 \
+         `TICK_SECONDS`={:.1}s 换算成秒后再比）\n",
+        fm_engine::TICK_SECONDS
     ));
     for (label, key) in [
         ("`chase` 口径（靶点恒为球）", "census_chase_class"),

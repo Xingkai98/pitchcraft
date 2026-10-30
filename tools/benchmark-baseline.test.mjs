@@ -103,13 +103,26 @@ test('基线：数值在球场量级内、区间有序、均值在区间内', { 
     if (!s) continue;
     assert.ok(s.min <= s.avg && s.avg <= s.max, `engine.${k} 均值应在区间内`);
   }
-  // D3 结论哨兵（显式 tripwire）：主数据集三项采用指标的分离结论——引擎 min 高于真实 max。
-  // 若未来校准 change 合理地缩小了差距，重生成基线时本断言会红——这是**有意的**：
-  // 结论变了就必须显式更新 design D3 与本断言，不许静默漂移（同 golden master 的重基线纪律）。
+  // D3 结论哨兵（显式 tripwire）：**2026-10-29 R6 更新**。
+  //
+  // P36 D3 的原始结论是「主数据集三项指标（hd/spread/gap）引擎 min 严格高于真实 max」= 分离。
+  // C1 子拍 + 移动层重放到 main 后重生成基线，三项**已落入/重叠真实范围**（本文件读数）：
+  //   hd     engine 21.40–28.86 vs real 11.55–23.95
+  //   spread engine 14.51–16.74 vs real  9.70–15.95
+  //   gap    engine  6.22– 7.23 vs real  3.22–8.32
+  // ⇒ 分离结论不再成立，按本测试自己的纪律「结论变了必须显式更新」改为守**新结论**：
+  //   ① 引擎范围与真实范围重叠（不再是严格分离）；
+  //   ② 均值幅度在真实的 [0.67×, 1.5×] 内（防止未来静默漂远或漂回分离态）。
+  // 这不是放宽带：hd/spread/gap 仍然没有「像不像」的验收资格（主验收是双盲判别 +
+  // ratchet/L1），这里只把 D3 的历史结论钉到当前实测事实。
   const primary = b.datasets[b.primaryDataset];
   for (const k of ['hd', 'spread', 'gap']) {
-    assert.ok(b.engine.perMetric[k].min > primary.perMetric[k].max,
-      `${k} 的分离结论已变（D3）——校准落地时连同 design D3 与本断言一起更新`);
+    const eng = b.engine.perMetric[k];
+    const re = primary.perMetric[k];
+    assert.ok(eng.min <= re.max,
+      `${k} 的分离结论已变（D3）：引擎 min ${eng.min} 应 ≤ 真实 max ${re.max}（新结论=重叠）`);
+    assert.ok(eng.avg >= re.avg * 0.67 && eng.avg <= re.avg * 1.5,
+      `${k} 引擎均值 ${eng.avg} 应落在真实均值 ${re.avg} 的 [0.67×, 1.5×] 内`);
   }
 });
 

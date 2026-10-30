@@ -1,0 +1,34 @@
+{
+  "judge_id": "r6-opus",
+  "items": [
+    {"id": "rb-247b4ffa69", "A_guess": "engine", "A_confidence": 5, "B_score": 1, "cues": "ball path ~66m, straight angular legs confined to left-half central band, ends at centre spot; players interleaved, lane-biased, no team shape"},
+    {"id": "rb-e7a8e6904a", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~116m but confined to narrow length band (x170-334), mostly lateral movement"},
+    {"id": "rb-2ca45a89d0", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~107m confined to mid-third of pitch length"},
+    {"id": "rb-86d88c8ebf", "A_guess": "real", "A_confidence": 3, "B_score": 3, "cues": "ball path ~125m spanning mid-pitch with width variation"},
+    {"id": "rb-f309f52e91", "A_guess": "real", "A_confidence": 3, "B_score": 3, "cues": "ball path ~131m tight right-corner back-and-forth (attack build-up), high winding"},
+    {"id": "rb-fbc08f3046", "A_guess": "engine", "A_confidence": 4, "B_score": 2, "cues": "ball path ~89m, short"},
+    {"id": "rb-863aa51390", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~103m, narrow central width band"},
+    {"id": "rb-a3ee048b02", "A_guess": "real", "A_confidence": 3, "B_score": 3, "cues": "ball path ~128m mid-pitch"},
+    {"id": "rb-926e84e8f5", "A_guess": "real", "A_confidence": 4, "B_score": 4, "cues": "ball path ~155m, long with full-width spread"},
+    {"id": "rb-a1b3bdb1c4", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "ball path ~118m borderline-long"},
+    {"id": "rb-de7fb9c6b3", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~110m"},
+    {"id": "rb-186ee33815", "A_guess": "real", "A_confidence": 4, "B_score": 4, "cues": "ball path ~143m spanning near-full pitch length x106-569"},
+    {"id": "rb-2e1ce7cee9", "A_guess": "engine", "A_confidence": 2, "B_score": 2, "cues": "ball path ~118m borderline-short, right-side half"},
+    {"id": "rb-f5b6d96950", "A_guess": "real", "A_confidence": 4, "B_score": 4, "cues": "ball path ~162m, long"},
+    {"id": "rb-30f0e6fee1", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~110m"},
+    {"id": "rb-6781b4b0d8", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~114m confined to right corner"},
+    {"id": "rb-0a4899b68c", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~107m narrow width band"},
+    {"id": "rb-9afc954f1e", "A_guess": "real", "A_confidence": 3, "B_score": 3, "cues": "ball path ~129m"},
+    {"id": "rb-abcb43cfa3", "A_guess": "real", "A_confidence": 3, "B_score": 3, "cues": "ball path ~141m left-corner build-up, high winding"},
+    {"id": "rb-9421ffc326", "A_guess": "real", "A_confidence": 2, "B_score": 3, "cues": "ball path ~119m borderline-long"},
+    {"id": "rb-5fb61bd6a1", "A_guess": "real", "A_confidence": 3, "B_score": 3, "cues": "ball path ~128m"},
+    {"id": "rb-f36ad0ed12", "A_guess": "real", "A_confidence": 5, "B_score": 4, "cues": "ball path ~169m, longest, spans full length"},
+    {"id": "rb-fe7f2f4bc7", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~117m"},
+    {"id": "rb-9949182c6a", "A_guess": "engine", "A_confidence": 3, "B_score": 2, "cues": "ball path ~113m"}
+  ],
+  "controls": [
+    {"id": "ctl-105d0b7d54", "same_source": "same", "more_real": null, "confidence": 3, "notes": "both sides long ball path (A~153m, B~167m) -> both real"},
+    {"id": "ctl-0dcca6f5dd", "same_source": "same", "more_real": null, "confidence": 3, "notes": "both sides long ball path (A~149m, B~154m) -> both real"},
+    {"id": "ctl-1402266976", "same_source": "same", "more_real": null, "confidence": 2, "notes": "both sides short-medium ball path (A~117m, B~104m) -> both engine; length gap noted"}
+  ]
+}

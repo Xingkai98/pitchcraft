@@ -9,6 +9,10 @@
 // 所有推导值都标 responsibility_source / pass_speed_source，绝不伪装成引擎事实。
 //
 // 无 DOM、无 WASM、无网络。确定性：同一输入产生同一输出。
+// 拍长从 config 读：beat/tackle 的动作区间是一拍（2 Hz 下 0.5 s），不写死 1 s。
+// Node 侧（tools/detectors.mjs）以裸路径 import 本模块，是另一个实例（值相同、无状态）——
+// 不要在这条链上做运行时改值。
+import { config } from './config.js?v=20261029-1';
 
 // audit_input 的形状版本（P21 D6）。detector 读的字段契约会在版本里演进；消费方
 // （tools/detectors.mjs 的 runAudit）入口校验它，缺失或未知即报错，避免「字段悄悄换了
@@ -115,15 +119,15 @@ function onBallActors(events, pitch, defaults) {
   const acts = [];
   for (const e of events ?? []) {
     if (e.type === 'beat') {
-      if (e.main) acts.push({ t0: e.t, t1: e.t + 1, participants: [e.main.subject] });
-      else if (e.ball) acts.push({ t0: e.t, t1: e.t + 1, participants: [] });
+      if (e.main) acts.push({ t0: e.t, t1: e.t + config.interpretation.tickSeconds, participants: [e.main.subject] });
+      else if (e.ball) acts.push({ t0: e.t, t1: e.t + config.interpretation.tickSeconds, participants: [] });
       continue;
     }
     if (e.type === 'tackle') {
       const victim = e.carrier ?? e.to;
       acts.push({
         t0: e.t,
-        t1: e.t + 1,
+        t1: e.t + config.interpretation.tickSeconds,
         participants: [e.subject, victim].filter((x) => typeof x === 'number'),
       });
       continue;

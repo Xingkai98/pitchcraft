@@ -220,7 +220,7 @@ impl Event {
     }
 }
 
-/// 当前引擎/协议模型版本（**当前 = 10**）。
+/// 当前引擎/协议模型版本（**当前 = 11**）。
 /// v1：P27 之前的出界编码（出界 pass 走 `result:"contested"` + `detail:"out_*"`，落点 clamp01）。
 /// v2：P27 出界协议迁移（出界 pass 显式 `result:"out"` + `out_side` + 真实越界 `out_pos`）。
 /// v3：P29 射门机会迁移（射门由 hazard 五因子涌现，非槽强制；`shot_setup` 可被抢断打断）——
@@ -241,22 +241,24 @@ impl Event {
 ///     （golden 重基线）。**同一版本内并入 M1b（门将出/退目标，见常量 `GK_COME_OUT_SLOPE`）**。
 /// v10：C3 传球飞行填拍——`tick_filling_flight` 在「原飞行 < 0.95s 且距离 ≥ 0.5m」时把上报
 ///     `speed` 改写为 `距离 / 0.95`（viewer 的球飞行动画据此填满一拍；出界 pass 同样填拍）。
-///     **位置/决策/时间戳逐位不变，只有 `speed` 字段值与 `stream_hash` 变**。
-///     机器判据：`tests/realism.rs::gm_v10_is_v9_plus_speed_field_only`——它断言 v9/v10 的
-///     28 个计数字段全同、原始流哈希不同，且 **golden 记录的 `speed_masked_stream_hash`
-///     （掩掉所有 `"speed":<num>` 后的事件流哈希）v9 与 v10 逐 seed 相同**。掩码只抹 speed
-///     的数值，位置/时间戳/决策/其它字段任一漂移都会改变掩码哈希（2026-10-29 审阅用
-///     `receiver_x + 0.0007` 变异反证过：旧守卫绿、新守卫红）。
+///     **位置/决策/时间戳逐位不变，只有 `speed` 字段值与 `stream_hash` 变**——机器判据是
+///     `tests/realism.rs::gm_v10_is_v9_plus_speed_field_only`（掩掉 `"speed"` 后 v9/v10 逐 seed
+///     同哈希；该测试比对的是**两份冻结 golden 文件**，不依赖当前引擎行为）。
+/// v11：C1 子拍 + 球程快段（2026-10-28/29 的 goal 循环）——决策拍 1 Hz→2 Hz（全部 tick 常量按
+///     `TPF` 重标为秒语义）、射门掷定改每秒率（`per_second_hazard`）并水平重锚、fill 改为
+///     `0.95 × TICK_SECONDS`、移动层近球冲刺 + `FOUL_BEATEN_GAIN`、传球价值加横向转移项、
+///     长传拦截加成按前向分量缩放、`OPEN_BOX_SHOT_*` 门前优先档。**行为与事件流全量改变**
+///     （golden 重基线到 `tests/golden-v11/`）；逐项出处见 `.scratch/notes/RECORD.md` 的 R2–R5c 节。
 /// golden 基线按此版本分目录；旧版本基线保留不覆盖，供逐 seed 回归对比（D6）。
-pub const MODEL_VERSION: u32 = 10;
+pub const MODEL_VERSION: u32 = 11;
 
 /// 最小 config 形状（S3 修复）：`{ match_duration_seconds }`。
 /// P0 演示：`demo_mode: true` 时产出精简事件序列（各类型 1-2 个），便于逐动作观看。
 /// P27：`model_version` 标记事件流协议版本（v1 = P27 之前，v2 = P27 出界协议迁移起，
 /// v3 = P29 射门机会迁移起，v4 = P30 防守接触竞争起，v5 = P31 删槽位 + 涌现频率起，
 /// v6 = P34 同队米制间距分离起）。
-/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v9 `tests/golden-v9/`、
-/// v10 `tests/golden-v10/`，旧基线保留不覆盖），
+/// **当前只用于 golden 目录选择**（v1 `tests/golden/` … v10 `tests/golden-v10/`、
+/// v11 `tests/golden-v11/`，旧基线保留不覆盖），
 /// **不切换引擎行为**——同一代码对所有版本都产出相同事件流，旧基线是相应时点引擎的冻结产物。
 #[derive(Debug, Clone, Copy)]
 pub struct MatchConfig {
@@ -302,6 +304,11 @@ const PASS_W_OPEN: f64 = 0.5;
 const PASS_W_LENGTH: f64 = 1.0;
 /// 空间裕度权重：落点前方到最近对方球员的纵向空当（越开阔越好）。
 const PASS_W_SPACE: f64 = 1.0;
+/// **横向转移（switch of play）权重**：偏好落点与持球者的横向差 |Δy|（归一化）。
+/// 动机：快段（传球）球程是盲测的判别轴；长**前向**传球会把接球点推近球门、改变
+/// 射门/犯规/角球构成（R5b），而长**横向**转移在不大幅推进 x 的前提下增加球程。
+/// 0 = 关闭（V1 基线）。
+const PASS_W_LATERAL: f64 = 1.0;
 /// 「正好在前方」的窄奖励：落点比持球者前 `PASS_AHEAD_TARGET`（归一化）时给满，
 /// 偏离越大奖励线性衰减到 0——这条鼓励「一脚向前的直塞」而不是「稍稍向前」。
 const PASS_AHEAD_TARGET: f64 = 0.2;
@@ -390,11 +397,11 @@ pub const FOUL_TYPE_TRIP_P: u64 = 13;
 // （窄），犯规用 8m（宽），两者错开距离窗口。
 
 /// defender 级抢断冷却（tick，3-5s 档）：同一防守者抢断/犯规后此窗口内 `score_tackle` 被压（D1）。
-const TACKLE_COOLDOWN_TICKS: u32 = 4;
+const TACKLE_COOLDOWN_TICKS: u32 = 4 * TPF;
 /// pair 级接触冷却（tick，5-8s 档）：同一（防守者, 被抢者）对接触后此窗口内再次接触的
 /// `score_tackle` 被压（D1）。取代旧的 `last_tackle_pair`（单 pair、无 age、只用于
 /// 「连续同对强制失败」的事后补丁）。
-const CONTACT_PAIR_COOLDOWN_TICKS: u32 = 6;
+const CONTACT_PAIR_COOLDOWN_TICKS: u32 = 6 * TPF;
 /// **抢断**的接触尺度（米）：`tackle_closeness = clamp01(1 - d / SCALE)`。取 2.5m——抢断是
 /// 「脚下」动作，只在极近处成立。校准依据：每场 90min 约 715 次防守评估，抢断目标 ~5-7/场
 /// → 命中率需 ~1%，故抢断只能在评估中占比很小的「≤2.5m」带里胜出（见 `.p30-progress.md`）。
@@ -474,7 +481,12 @@ const JOCKEY_FIT_GAIN: f64 = 0.45;
 /// （射门 17.8 → 23.7/场，新增射门不成比例来自禁区外），**与任何一条概率常量无关**。
 /// ⇒ 「−0.92 是刚清 ratio 且留在带内的最轻点」这个**取值**仍成立（ratio 轴的推理没错，
 /// 且单点复原证明 `cd42b0a` 的全部行为改动就是那两条常量）；**错的只是「它压低了 box-goal 占比」这个因果**。
-const BASE_DEF_TACKLE: f64 = -0.92;
+///
+/// ⚠️ **当前取值是 −1.47（C1 in-box 谱系，R6 重放）**：上文 −0.92 的论证解释的是**那一代**取值。
+/// `−0.92 → −1.47` 与 `BASE_DEF_FOUL −0.22 → −0.30` 配对，服务于门前优先档
+/// （`OPEN_BOX_SHOT_*`）落地后的抢断/犯规体量守带；出处：`.scratch/notes/RECORD.md` R0 节
+/// 「机制现状 #3」（in-box 谱系提交 `3cab5f9`）与 R2–R5c 的 L1 绿集（抢断/犯规带）。
+const BASE_DEF_TACKLE: f64 = -1.47;
 /// 抢断 closeness 增益：把「贴到脚下」放大到能压过 contain/jockey 的量级。必须**大于**
 /// `FOUL_CLOSENESS_GAIN`——两者形状相同，增益差决定「贴身且正面 → 抢断」的分界。
 const TACKLE_CLOSENESS_GAIN: f64 = 1.80;
@@ -507,17 +519,27 @@ const TACKLE_PAIR_CD_PENALTY: f64 = 0.60;
 /// 还回来，故须同步压 FOUL 把这部分切回带中。−0.22/−0.92 是 T2 可行矩形
 /// （TACKLE∈[−0.92,−1.00] × FOUL∈[−0.23,−0.20]）里**最轻、且在本树过全部官方带**的一点
 /// （极值 b23 不迁移到 T3 修后树，见 `BASE_DEF_TACKLE` 注释）。
-const BASE_DEF_FOUL: f64 = -0.22;
+///
+/// ⚠️ **当前取值是 −0.30（C1 in-box 谱系，R6 重放）**：与 `BASE_DEF_TACKLE −1.47` 配对；
+/// −0.22/−0.92 是**上一代**配对。出处：`.scratch/notes/RECORD.md` R0「机制现状 #3」
+/// （in-box 提交 `3cab5f9`）与 R5c 的犯规 L1 绿集（17–28/场 ∈ [16,30]）。
+const BASE_DEF_FOUL: f64 = -0.30;
 const FOUL_DANGER_GAIN: f64 = 0.40;
 /// 犯规的 closeness 增益：**小于** `TACKLE_CLOSENESS_GAIN`（见上）。
 const FOUL_CLOSENESS_GAIN: f64 = 0.55;
+/// 「被过掉的防守者伸手拉人」增益（乘 `bad_angle` ∈ [0,1]：防守者在持球者身后越远越高）。
+/// 这是犯规与**移动层**的耦合项：持球者带球跑动越多，防守者越常处于身后（坏角度），
+/// 拉人/绊人倾向随之上升——与 `score_tackle` 的 `-bad_angle`（背后铲球容易失位）同源。
+/// 0 = 关闭（现行基线行为）。
+const FOUL_BEATEN_GAIN: f64 = 0.15;
 /// 吃黄威慑的打分惩罚（由 `FOUL_YELLOWED_DETERRENCE` 换算，保持同一「威慑」常量族）。
 const FOUL_YELLOW_PENALTY: f64 = FOUL_YELLOWED_DETERRENCE;
 /// 全局犯规冷却惩罚权重（乘「剩余冷却比例」∈ [0,1]，分母 `FOUL_MIN_GAP_TICKS`）。
 const FOUL_CD_PENALTY: f64 = 0.80;
 /// 持球者压迫状态的保持时长（tick，D5）：contain/jockey 结算时置满，每 tick 衰减 1。
-/// 取 8 ≈ 机会点平均间距（~7 tick），使「无事件防守」在两次机会之间保持生效但会衰减。
-const PRESSURE_STATE_HOLD_TICKS: u32 = 8;
+/// 取 8 秒（= 8×TPF tick；2 Hz 下 16 tick）≈ 机会点平均间距（~7 秒），
+/// 使「无事件防守」在两次机会之间保持生效但会衰减。
+const PRESSURE_STATE_HOLD_TICKS: u32 = 8 * TPF;
 /// 压迫状态对射门 hazard `defensive_pressure` 因子的权重（D5 的唯一落点）。
 /// 取小值：它是几何压迫的**补充**（无事件防守的持续逼抢），不是替代。
 const PRESSURE_STATE_GAIN: f64 = 0.12;
@@ -611,17 +633,39 @@ fn lineup_event(t: f64, lineup: &[LineupPlayer]) -> Event {
 // ==== v2 并行节拍（P4 parallel-beats）====
 
 /// 固定 tick 时长（秒）
-pub const TICK_SECONDS: f64 = 1.0;
+///
+/// C1 shot-rate-anchor 第二步：2 Hz 决策节拍（第一步的 1 Hz 验证见 note §9.1）。
+/// `TPF` 与 `TICK_SECONDS` 必须手工同步。
+pub const TICK_SECONDS: f64 = 0.5;
+/// 每 1 秒的拍数（== 1/TICK_SECONDS）。所有「秒语义」的 tick 常量写作 `秒数 × TPF`。
+const TPF: u32 = 2;
 /// movers 位移阈值 = 静区（dead-zone），2.0m（移动 ⇔ 发 movers；P7 由 0.5m 放大）
 pub const DEAD_ZONE_METERS: f64 = 2.0; // P7 观感：到位静止距离——前锋到位后目标微变（球位置波动）不追，避免球门旁来回小幅摆动
 /// 松散球拾取半径（米）
 pub const PICKUP_RADIUS_METERS: f64 = 0.5;
 /// 松散球最长持续 tick 数；超时球 hold 等待（不瞬移）
-pub const LOOSE_MAX_TICKS: u32 = 2;
-/// carrier 带球速度上限（m/s）：main 每拍推进 ≤ speed×1s
+pub const LOOSE_MAX_TICKS: u32 = 2 * TPF;
+/// carrier 带球速度上限（m/s）：main 每拍位移 ≤ speed×TICK_SECONDS（2 Hz 下 = 2.5 m/拍）
 pub const CARRIER_SPEED_MS: f64 = 5.0;
-/// 无球跑位速度（m/s）
+/// 无球跑位速度（m/s）——**远端** movers 的队形追踪速度。
 pub const RUN_SPEED_MS: f64 = 4.0;
+/// **近球** movers（双方，距球 ≤ `BALL_LOCAL_SPRINT_RADIUS_M`）的冲刺速度（m/s）。
+///
+/// 机制（C1 movement-coupling）：carrier 带球 5 m/s，而旧的无球跑位上限只有 4 m/s
+/// ⇒ 持球者一动就把所有无球队员甩开（评估点最近防守者 <2m 的占比 8.2%→5.1%），
+/// 抢断/犯规随球程上升而下降。真实比赛里靠近球的球员是冲刺的、远端才是慢跑：
+/// 本常量把「近球」这一段单独提到 7 m/s，让防线在持球者跑动时仍能保持接触。
+/// **只提高度/距离受限的局部队列，不动全队队形速度**——全队同提会同时抬位移量
+/// （lf.disp 出带），只提防守方则会让两队重心间距漂移（分边 6.9→8.6）。
+pub const BALL_LOCAL_SPRINT_MS: f64 = 6.8;
+/// 近球冲刺的**局部半径**（米）：只有距球 ≤ 此值的 movers 用 `BALL_LOCAL_SPRINT_MS`，
+/// 其余保持 `RUN_SPEED_MS`。
+pub const BALL_LOCAL_SPRINT_RADIUS_M: f64 = 30.0;
+/// 普通带球拍里「原地控球」的掷定阈值（百分点，再减去 liveness 前插加成）：
+/// `roll < 此值` → 原地小幅控球；否则向对方球门推进一拍。
+/// 70 = C1 基线（每拍推进概率 30%）；本轮取 45（每拍推进概率 55%）——
+/// 移动层提球程的杠杆（§9.2.4 的 hold 70→45 探针即为本值）。
+pub const CARRIER_HOLD_PP: u64 = 45;
 /// 门将回位速度（m/s）
 pub const GK_SPEED_MS: f64 = 3.0;
 
@@ -683,12 +727,13 @@ fn keeper_line_dist_m(ball_line_dist_m: f64) -> f64 {
 }
 
 /// 持球 hold 门控下限/上限（tick）
-pub const HOLD_MIN_TICKS: u32 = 8;
-pub const HOLD_MAX_TICKS: u32 = 15;
+pub const HOLD_MIN_TICKS: u32 = 8 * TPF;
+pub const HOLD_MAX_TICKS: u32 = 15 * TPF;
 
 // ---- P9 射门质量（按起脚位置分桶 + 推进后射门）----
-/// 带球推进上限（tick）：carrier 向球门推进的步数上限（5 tick × 5m = 25m 覆盖，保证能推进到禁区）
-pub const SHOT_DRIVE_MAX_TICKS: u32 = 5;
+/// 带球推进上限（tick）：carrier 向球门推进的步数上限。**8 秒语义**（8×TPF tick；
+/// 2 Hz 下 16 tick × 2.5 m/拍 = 40 m 覆盖）——保证能推进到禁区（R0 机制现状 #3 的 8）。
+pub const SHOT_DRIVE_MAX_TICKS: u32 = 8 * TPF;
 /// 传球推进阈值（m）：dist > 此值先向前传球推进（复用 pass 高亮），再带球/射门
 pub const SHOT_PASS_ADVANCE_M: f64 = 40.0;
 /// 禁区线距离（m）——分桶边界
@@ -706,18 +751,18 @@ pub const ARC_DIST_M: f64 = 25.0;
 // 「好机会每 tick 概率可用」与「差机会显著更低」（需 ~4 nats 区分度 + 居中）。增益把因子和
 // 映射到 hazard 的 log 尺度（`hazard = e^BASE · e^(GAIN·Σ)`，同一函数族内的标定常数）。
 /// hazard 基线倾向（log 尺度）
-const BASE_SHOT_TENDENCY: f64 = -4.0;
+const BASE_SHOT_TENDENCY: f64 = -4.45;
 /// 五因子增益（log 尺度缩放，见上方说明）
 const SHOT_FACTOR_GAIN: f64 = 2.5;
 /// 起脚窗口长度（tick，D1）：推进到射程后在此窗口内由 hazard 决定射/转/被抢断
-const SHOT_WINDOW_TICKS: u32 = 2;
+const SHOT_WINDOW_TICKS: u32 = 2 * TPF;
 /// 最近防守者压迫尺度（米）：≤ 此距离按满压迫计，≥ 则无压迫
-const SHOT_PRESSURE_NEAR_M: f64 = 8.0;
+const SHOT_PRESSURE_NEAR_M: f64 = 6.0;
 /// 第二防守者压迫尺度（米）
-const SHOT_PRESSURE_SECOND_M: f64 = 16.0;
+const SHOT_PRESSURE_SECOND_M: f64 = 12.0;
 /// 射门冷却（tick）：最近一次射门后的局部衰减窗口。
 /// **只读局部计时器**（最近一射后的 tick 数），不读「本场已射多少次」——C 路原则（D2）。
-const SHOT_COOLDOWN_TICKS: u32 = 8;
+const SHOT_COOLDOWN_TICKS: u32 = 8 * TPF;
 /// 射门空间可用性：防守者距离 ≤ 此值视为完全无空间
 const SHOT_SPACE_MIN_M: f64 = 2.0;
 /// 射门空间可用性：防守者距离 ≥ 此值视为完全自由
@@ -742,6 +787,26 @@ const CIRCULATION_PASS_P: f64 = 0.15;
 /// **射门推进档（②）永久不可达** → 射门被逼抢锁死。收到 4m 后，逼抢者停在 4m 之外时
 /// 持球者获准进入射门推进档；只有真贴身（≤4m）才强制出球。这是四层能共存的前提。
 const OPEN_PLAY_PASS_PRESSURE_M: f64 = 4.0;
+/// In-box clear radius (m): no goal-side defender within this distance => shoot first.
+const OPEN_BOX_SHOT_CLEAR_M: f64 = 8.0;
+/// 箱内「立即起脚」优先档的**每秒 hazard 率**。旧语义是「每机会固定 0.30」——在 1 Hz
+/// 基线（机会间隔实测 ≈ 2.0 s，四 seed due_mean_s = 2.00–2.01）下等价于 0.16334/s，
+/// 但机会变密（deadline 压缩 / 决策节拍提高）时每机会掷定次数上升、射门随球程同步上涨。
+/// 现改为每秒率：单次机会概率 = `per_second_hazard(rate, Δt)`，Δt = 本次机会的 deadline
+/// 秒数 ⇒ 射门/90min ≈ 率 × 可起脚时长，而不是率 × 机会次数（读数与斜率见
+/// `.scratch/notes/c1-subtick-prototype-2026-10-28.md` 的 shot-rate-anchor 节）。
+///
+/// **重锚**：旧「0.30/机会」是低球程基线留下的校准债——1 Hz 基线**射门** 39–47/场
+/// （`fast-ballprobe` 的总射门口径，含头球），已高于真实带 `[14,29]`。⚠️ 带定义在
+/// **regular**（扣头球，`engine/tests/realism.rs` 的 `l1_shot_result_distributions`；
+/// StatsBomb 大五 n=170 mean 21.64 / sd 5.03；Metrica 参照 16.51 见
+/// `.scratch/notes/team-shape-2026-10-25/current-engine-anatomy.md`）。0.015/s 把 1 Hz 基线
+/// 重锚到 **regular 15–25/场（四 seed 均值 18.25，带内）**；同口径总射门 16–30。
+/// 读数与口径：`.scratch/notes/c1-subtick-prototype-2026-10-28/step1-post-anchor-wasm.log`
+/// 与 `probe-opportunity-rates.log`。
+const OPEN_BOX_SHOT_RATE_PER_S: f64 = 0.015;
+const OPEN_BOX_SHOT_MAX_DIST_M: f64 = 12.0;
+const OPEN_BOX_SHOT_MAX_LATERAL_M: f64 = 9.0;
 /// 射门推进档的 hazard 平移（log 尺度）：把 2B 的射门五因子从「起脚窗口内该不该射」平移到
 /// 「开放机会点上该不该启动一次推进」。**离线校准参数**（design D1）。
 ///
@@ -769,7 +834,25 @@ const OPEN_PLAY_PASS_PRESSURE_M: f64 = 4.0;
 /// 让每个机会点都被更频繁地评估，攻击方的「推进档」命中率随之抬高。压得比 vol 单层（−3.95）
 /// 和 vol-j1 档（−4.05）都更深，是因为 def 层的 `OPEN_PLAY_PASS_PRESSURE_M` 4m 又把一部分
 /// 「恒出球」还给了「可推进」——两股力方向相反，净效果是必须比任一单层压得更狠。
-const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.15;
+///
+/// **C1 2 Hz 重标定：−4.15 → −4.50**。2 Hz + fill-to-tick 下，箱内优先档已被
+/// `OPEN_BOX_SHOT_RATE_PER_S` 重锚（只占少量射门），射门体量**由本 hazard 主导**；
+/// −4.15 时 regular 24–29/场（四 seed 28/29/29/24，均值 27.5，带上沿），−4.50 时
+/// regular 15–26/场（均值 21.0，≈ StatsBomb 大五 n=170 的 21.64）；抢断 25–27 在带内，
+/// 传球成功率 .818–.837 **聚合口径**在带内（seed 23 的 .8179 擦下沿）。读数与
+/// 「移动层杠杆会破抢断/犯规带」的实测见 note §9.2。
+///
+/// **R5c 重锚：−4.50 → −4.20（当前取值）**。横向转移（`PASS_W_LATERAL`）把接球点推远、
+/// 射门体量下滑，按 C1 的水平重锚拉回。regular 射门：**V1 19.6/场（贴下沿）→ R5c 23.1/场**
+/// （L1 200 场 23.1 ∈ [14,29]）——**两个数属于两个树，不是一个区间**。
+/// 出处：`.scratch/notes/RECORD.md` R5 节（19.6；同节的 19.40 是 ratchet `p38.shotsReg`，不是射门）与 R5c 节（23.1）+
+/// `.scratch/notes/c1-movement-coupling-2026-10-28.md` §7。
+const OPEN_PLAY_SHOT_ENGAGE_SHIFT: f64 = -4.2;
+/// 射门推进 hazard 的**每秒率参考窗口**（秒）：λ = e^(score+shift) / 本值。
+/// 旧实现是「每机会一次、window=1.0 s」；1 Hz 基线实测机会间隔 ≈ 2.0 s（四 seed
+/// due_mean_s = 2.00–2.01，见同一 note 节），故取 2.0 s 使 1 Hz 基线行为不变；机会间隔
+/// 变化时单次机会概率按 `1 − e^(−λΔt)` 归一（机会变密 → 单次概率变小，每秒率不变）。
+const OPEN_PLAY_SHOT_ENGAGE_WINDOW_S: f64 = 2.0;
 
 /// 起脚窗口压迫桶下标（0=贴身 / 1=无压 / 2=中间），零 RNG。
 fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
@@ -790,10 +873,14 @@ fn shot_pressure_bucket(nearest_defender_m: f64) -> usize {
 /// 机制取舍见 pilot 报告：真实主场优势多因子，但引擎槽位集锦模型下「客队保守/少压上」这类
 /// 持续段差异（如 carrier 前插率）会大幅改写持球段 RNG 流 → 射门归属统计噪声大，**不采用**。
 /// 采用两个落在"单点判定"上的通道（画面可感知且副作用干净）：
-/// 通道① 机会把握：射门/头球判定 goal 阈值。**主队单向更强**（home +2pp / away 不压）——
+/// 通道① 机会把握：射门/头球判定 goal 阈值。原设计「主队单向更强」（home +2pp / away 不压）——
 /// 真实主场优势主要体现为主队把握更多机会，客队进球不被机械压低（任务约束：避免只靠宏观系数压客队）。
 /// saved 窗口宽不变 → 门将扑救表现不随主客变化。画面：主队同位置攻门更常进。
-pub const CLINICAL_GOAL_PP_HOME: i64 = 2;
+///
+/// ⚠️ **当前两通道均关闭（= 0）**：C1 in-box 谱系「去荒谬化」候选 B 把通道①的 `+2pp` 归零
+/// （`ca889fc`；出处 `.scratch/notes/RECORD.md` R0 节「机制现状 #3」）。常量保留为接口；
+/// 实测 L1 主场门 0.807 为已知无分辨力红（RECORD R6）。重新开启前须先证明该门有分辨力。
+pub const CLINICAL_GOAL_PP_HOME: i64 = 0;
 pub const CLINICAL_GOAL_PP_AWAY: i64 = 0;
 /// 通道② 二点争顶：角球 battle 攻方胜率（攻/防基线 55/45）。攻方 home 58（助威争顶更拼）、
 /// 攻方 away 52（主队防守更稳——home 防守胜率 = 100−52 = 48 > 基线 45）——主队无论攻防在
@@ -802,7 +889,7 @@ pub const BATTLE_ATTACK_WIN_HOME: u64 = 58;
 pub const BATTLE_ATTACK_WIN_AWAY: u64 = 52;
 
 /// P7 观感：角球准备期最短持续（tick）——发球者到角旗后继续等攻方球员跑进禁区包抄，再发球
-pub const CORNER_SETUP_MIN_TICKS: u32 = 8;
+pub const CORNER_SETUP_MIN_TICKS: u32 = 8 * TPF;
 
 // ---- P5 队形/攻防转换参数 ----
 /// 球侧平移幅度（归一化）：球到边线时全队横向偏移量（≈6m）
@@ -812,7 +899,7 @@ pub const DEFENSE_PUSH_FACTOR: f64 = 0.12;
 /// 控球阶段压上偏移（归一化）：己方持球前压 / 对方持球回收（≈2m）
 pub const PRESS_UP_OFFSET: f64 = 0.02;
 /// transition 窗口长度（tick）
-pub const TRANSITION_TICKS: u32 = 4;
+pub const TRANSITION_TICKS: u32 = 4 * TPF;
 /// 同队球员最小间距（**米制**，#53）。2.0m（detector `player_overlap` 的 strict `<` 阈值）
 /// + 0.08 安全余量：发射坐标经 `json` 的 `round3`（4 位归一化小数）序列化后，2.05m 级
 /// 间距会被舍入到 2.03–2.04m，0.5s 采样再叠一层舍入——余量不足会让 detector 在 2.00m
@@ -949,18 +1036,19 @@ fn move_toward(from: (f64, f64), to: (f64, f64), step: f64) -> (f64, f64) {
 /// **p143r-v4 重标定：8/12/16 → 2/4/7**（与 deadline 基线 7→2 同步）。依据：三档递进
 /// 是「球权停滞多久后迫使流动」的时钟，dealine 压到 2 tick 后，若档位阈值仍以 8/12/16 秒计，
 /// 则停滞段永远到不了二档（`stalled_unpressed` 恒假）→ 密度层一半的杠杆失效。
-/// 压到 2/4/7 后，档位与决策节奏同尺度：停滞 2 秒即开始介入、4 秒改选出球、7 秒强制前插。
-/// 注意：三档阈值（7）现在**大于** deadline 基线（2）——这是有意的，档位衡量的是
+/// 压到 2/4/7 **秒**（2 Hz 下 = 4/8/14 tick）后，档位与决策节奏同尺度：停滞 2 秒即开始介入、
+/// 4 秒改选出球、7 秒强制前插。
+/// 注意：三档阈值（7 秒）现在**大于** deadline 基线（2 秒）——这是有意的，档位衡量的是
 /// `ticks_since_meaningful_action`（真实行动间隔），不是 deadline。
-pub const LIVENESS_STAGE_1_TICKS: u32 = 2;
-pub const LIVENESS_STAGE_2_TICKS: u32 = 4;
-pub const LIVENESS_STAGE_3_TICKS: u32 = 7;
+pub const LIVENESS_STAGE_1_TICKS: u32 = 2 * TPF;
+pub const LIVENESS_STAGE_2_TICKS: u32 = 4 * TPF;
+pub const LIVENESS_STAGE_3_TICKS: u32 = 7 * TPF;
 /// 各档的前插倾向加成（`carrier_move` 的前插掷定阈值，百分点；基线「原地控球」70 减去它）。
 const LIVENESS_STAGE_FORWARD_PP: [f64; 3] = [12.0, 28.0, 55.0];
 /// 各档的传球风险加成（并入 `open_play_pass_risk`，无量纲）
 const LIVENESS_STAGE_PASS_RISK: [f64; 3] = [0.10, 0.25, 0.45];
 /// 各档的 deadline 压缩（tick）
-const LIVENESS_STAGE_DEADLINE: [u32; 3] = [1, 2, 3];
+const LIVENESS_STAGE_DEADLINE: [u32; 3] = [1 * TPF, 2 * TPF, 3 * TPF];
 
 /// liveness guard 的三档递进行为参数（纯数据；零 RNG、零状态）。
 #[derive(Clone, Copy, PartialEq, Debug, Default)]
@@ -1241,21 +1329,22 @@ fn nearest_any(st: &MatchState, target: (f64, f64)) -> i32 {
 ///
 /// **p143r-v4 重标定：7 → 2**（事件密度 ~2.1×，传球 394 → 830/场）。依据：真实比赛的
 /// 有球权流动远快于「每 7 秒一次决策」。下限同样 3 → 2（见 `MIN_ACTION_DEADLINE_TICKS`），
-/// 使压满档位也能到 2 tick/决策。DANGER/PRESSURE/ESCAPE 三个调制系数不变——deadline
-/// 现落在 `[2, 7]`（基线 2 + 最多 `ESCAPE_BONUS`(5) 的放宽）。
-const BASE_ACTION_DEADLINE_TICKS: u32 = 2;
-/// 危险度压缩系数（越接近球门，决策越急）
-const DANGER_URGENCY: f64 = 4.0;
+/// 使压满档位也能到 2 秒/决策。DANGER/PRESSURE/ESCAPE 三个调制系数按同一秒语义 ×TPF——
+/// deadline 现落在 **2–7 秒**（= `[2×TPF, 7×TPF]` tick；基线 2 秒 + 最多 `ESCAPE_BONUS`(5 秒) 的放宽）。
+const BASE_ACTION_DEADLINE_TICKS: u32 = 2 * TPF;
+/// 危险度压缩系数（越接近球门，决策越急）。**C1 原型**：三个调制系数与 deadline 同量纲（tick），
+/// 须随拍频 ×TPF 才能保持「秒语义」（漏scale会让安全局面的 deadline 变短 → 决策次数虚增）。
+const DANGER_URGENCY: f64 = 4.0 * TPF as f64;
 /// 压迫压缩系数（防守越近，决策越急）
-const PRESSURE_URGENCY: f64 = 3.0;
+const PRESSURE_URGENCY: f64 = 3.0 * TPF as f64;
 /// 出球空间放宽系数（越好出球，越从容）
-const ESCAPE_BONUS: f64 = 5.0;
+const ESCAPE_BONUS: f64 = 5.0 * TPF as f64;
 /// deadline 下界 / 上界（tick）。**p143r-v4：下界 3 → 2**（与基线 7 → 2 同步，
 /// 否则 `compute_action_deadline` 的钳制会把基线又抬回 3，密度上不去）。
-const MIN_ACTION_DEADLINE_TICKS: u32 = 2;
-const MAX_ACTION_DEADLINE_TICKS: u32 = 12;
+const MIN_ACTION_DEADLINE_TICKS: u32 = 2 * TPF;
+const MAX_ACTION_DEADLINE_TICKS: u32 = 12 * TPF;
 /// 门将持球放宽（D2「门将/本方后场持球允许更长」）：门将持球时对手不能合法上抢，决策时间更长
-const GK_DEADLINE_BONUS_TICKS: u32 = 3;
+const GK_DEADLINE_BONUS_TICKS: u32 = 3 * TPF;
 /// 压迫归一化尺度（米）：最近 / 第二防守者
 const PRESSURE_NEAR_M: f64 = 25.0;
 const PRESSURE_SECOND_M: f64 = 35.0;
@@ -1876,6 +1965,18 @@ fn action_deadline_for(st: &MatchState, carrier: i32) -> u32 {
     )
 }
 
+/// 本次自然 deadline 评估距上次评估的秒数（机会持续时长 Δt）。到期评估时
+/// `action_opportunity` 仍是刚过期的那一个 → 取它的 `deadline_ticks`；无机会（防御性兜底）
+/// → 用基线 deadline。零 RNG、零状态。
+fn natural_deadline_dt_s(st: &MatchState) -> f64 {
+    let ticks = st
+        .action_opportunity
+        .as_ref()
+        .map(|o| o.deadline_ticks.max(1))
+        .unwrap_or(BASE_ACTION_DEADLINE_TICKS);
+    ticks as f64 * TICK_SECONDS
+}
+
 /// 开启 / 重置一次行动机会（D1/D2，零 RNG）：deadline 由几何量公式算出。
 /// 同时采样 liveness 档位（护栏可达性的观测口径，只写、不耗 RNG）。
 fn open_action_opportunity(st: &mut MatchState, trigger: OpportunityTrigger) {
@@ -2000,10 +2101,13 @@ fn pass_score(st: &MatchState, carrier: i32, cand: i32) -> f64 {
     let ahead = (1.0 - ((pt - (pc + PASS_AHEAD_TARGET)).abs() / PASS_AHEAD_TARGET)).max(0.0);
     // 反乒乓：上一次传球的**有向对**反转为本次候选 → 扣分
     let anti = if st.last_pass_pair == Some((cand, carrier)) { 1.0 } else { 0.0 };
+    // 横向转移：|Δy| 归一化（0..1）
+    let lat_norm = (p.1 - c.1).abs();
     PASS_W_FORWARD * fwd_norm
         + PASS_W_OPEN * open
         - PASS_W_LENGTH * len_norm
         + PASS_W_SPACE * pass_space_ahead(st, cand)
+        + PASS_W_LATERAL * lat_norm
         + PASS_AHEAD_TARGET * ahead
         - PASS_W_ANTI_PINGPONG * anti
 }
@@ -2112,7 +2216,7 @@ fn shot_hazard_hits(st: &mut MatchState, rng: &mut SeededRng) -> bool {
         t.shot_cooldown_feature_max = t.shot_cooldown_feature_max.max(v);
         t.shot_cooldown_feature_min = t.shot_cooldown_feature_min.min(v);
     }
-    let p = shot_hazard_probability(compute_shot_score(&f), 1.0);
+    let p = shot_hazard_probability(compute_shot_score(&f), TICK_SECONDS);
     let roll = rng.next_u64() % SHOT_ROLL_SCALE as u64;
     (roll as f64) < p * SHOT_ROLL_SCALE
 }
@@ -2127,6 +2231,31 @@ fn shot_hazard_hits(st: &mut MatchState, rng: &mut SeededRng) -> bool {
 ///    已在射程 → 进起脚窗口 / 否则带球推进）。**推进 hazard 不是射门 hazard**：后者仍在
 ///    `shot_window_plan` 里决定射不射（射门的唯一生产者不变）。
 /// 3. **带球档**：其余 → 继续带球（前插倾向受 liveness guard 调制，见 `carrier_move`）。
+/// Goal-side defender distance (m): nearest outfield opponent inside the +/-45deg cone
+/// from the carrier toward the attacking goal. Used to make the forced-pass branch
+/// direction-aware; a trailing defender behind the carrier no longer forces a pass.
+fn nearest_goal_side_defender_m(st: &MatchState, carrier: i32) -> f64 {
+    let home = st.possession == 0;
+    let p = st.pos[carrier as usize];
+    let goal = if home { (1.0, 0.5) } else { (0.0, 0.5) };
+    let gx = (goal.0 - p.0) * PITCH_LENGTH_M;
+    let gy = (goal.1 - p.1) * PITCH_WIDTH_M;
+    let gl = (gx * gx + gy * gy).sqrt().max(1e-9);
+    let mut best = f64::MAX;
+    for id in 0..22i32 {
+        if id == 0 || id == 21 || st.sent_off[id as usize] { continue; }
+        let is_def = if home { id >= 11 } else { id <= 10 };
+        if !is_def { continue; }
+        let q = st.pos[id as usize];
+        let dx = (q.0 - p.0) * PITCH_LENGTH_M;
+        let dy = (q.1 - p.1) * PITCH_WIDTH_M;
+        let d = (dx * dx + dy * dy).sqrt();
+        if d < 1e-9 { return 0.0; }
+        let cos = (dx * gx + dy * gy) / (d * gl);
+        if cos >= 0.70710678 { best = best.min(d); }
+    }
+    best
+}
 fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -> CarrierPlan {
     let carrier = st.carrier;
     if carrier < 0 || carrier > 21 {
@@ -2135,13 +2264,36 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
     let c = st.pos[carrier as usize];
     let (_, _, nearest_defender_m) = nearest_defender(st, c, st.possession != 0);
     let gk_holding = carrier == 0 || carrier == 21;
+    let goal_side_m = nearest_goal_side_defender_m(st, carrier);
     // ① 出球档：被贴身逼抢（或门将持球——门将不推进、不射，直接出球），
     //    或 **liveness 二档起且无压**（D3 接入点④，用户二次拍板）：停滞达
     //    `LIVENESS_STAGE_2_TICKS` 仍未发生 meaningful action 且无人逼抢 → 持球决策改选出球，
     //    让停滞段自行通过**既有传球生产者**恢复流动。guard 本身不 emit——它只改
     //    `ticks_since_meaningful_action` 这一状态，本函数因该状态变化而选出球候选。
     let stalled_unpressed = st.ticks_since_meaningful_action >= LIVENESS_STAGE_2_TICKS;
-    let pressured = nearest_defender_m <= OPEN_PLAY_PASS_PRESSURE_M;
+    // Forced-pass branch uses goal-side pressure only (trailing defender behind does not force a pass).
+    let pressured = goal_side_m <= OPEN_PLAY_PASS_PRESSURE_M;
+    // Inside the box with no goal-side defender within the clear radius: shoot now,
+    // before the stall-forced pass and the low-probability engage roll.
+    let box_shot_gate = !gk_holding
+        && goal_side_m >= OPEN_BOX_SHOT_CLEAR_M
+        && dist_to_goal_m(st, carrier) <= OPEN_BOX_SHOT_MAX_DIST_M
+        && (st.pos[carrier as usize].1 - 0.5).abs() * PITCH_WIDTH_M <= OPEN_BOX_SHOT_MAX_LATERAL_M;
+    // 每机会概率 = 1 − (1 − 每秒率)^Δt（Δt = 本次机会的 deadline 秒数）——
+    // 机会变密时单次概率按 Δt 缩小，每秒率恒定（射门/90 ≈ 率 × 可起脚时长）。
+    let box_shot_p = per_second_hazard(OPEN_BOX_SHOT_RATE_PER_S, natural_deadline_dt_s(st));
+    if box_shot_gate
+        && ((rng.next_u64() % 1000) as f64) < box_shot_p * 1000.0 {
+        let target = sample_shot_target(rng);
+        let dist = dist_to_goal_m(st, carrier);
+        let (action, exec) = if dist <= target {
+            (CarrierAction::Shoot, CarrierExecution::EnterShotWindow { target_dist: target })
+        } else {
+            (CarrierAction::Shoot, CarrierExecution::DriveThenShoot { target_dist: target })
+        };
+        let _ = nearest_defender_m;
+        return CarrierPlan { action: Some(action), exec };
+    }
     // ① 出球档：门将持球 / 被贴身逼抢 → 出球。
     //    **p143r-v4（SHOT_FIRST）**：`stalled_unpressed` 已**移出**本门（见 ②.5）——
     //    停滞不再直接判「出球」，而是先给射门推进档（②）一次机会，避免「停滞 → 恒出球」
@@ -2153,7 +2305,7 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
         };
     }
     // ② 射门推进档：射门推进 hazard 命中 → 复用 2B 的目标距离采样与三态分流
-    if open_play_shot_engage_hits(st, rng) {
+    if open_play_shot_engage_hits(st, rng, natural_deadline_dt_s(st)) {
         let target = sample_shot_target(rng);
         let dist = dist_to_goal_m(st, carrier);
         let (action, exec) = if dist <= target {
@@ -2201,10 +2353,11 @@ fn evaluate_open_play_carrier_action(st: &mut MatchState, rng: &mut SeededRng) -
 /// P31 D1：开放比赛的「射门推进」掷定（1 次 RNG）。复用 2B 的 `compute_shot_score` 五因子，
 /// 整体平移 `OPEN_PLAY_SHOT_ENGAGE_SHIFT` 到「机会点上要不要启动一次推进」的尺度。
 /// **这不是射门 hazard**：命中只表示「值得推进到射程」，射门与否仍由起脚窗口的 hazard 决定。
-fn open_play_shot_engage_hits(st: &MatchState, rng: &mut SeededRng) -> bool {
+fn open_play_shot_engage_hits(st: &MatchState, rng: &mut SeededRng, dt_s: f64) -> bool {
     let f = shot_opportunity_features(st, st.carrier);
     let score = compute_shot_score(&f) + OPEN_PLAY_SHOT_ENGAGE_SHIFT;
-    let p = shot_hazard_probability(score, 1.0);
+    // 每秒率 λ = e^score / WINDOW；机会时长 Δt 归一 → 与机会密度无关的每秒推进率。
+    let p = shot_hazard_probability(score, dt_s / OPEN_PLAY_SHOT_ENGAGE_WINDOW_S);
     let roll = rng.next_u64() % SHOT_ROLL_SCALE as u64;
     (roll as f64) < p * SHOT_ROLL_SCALE
 }
@@ -2572,8 +2725,8 @@ struct MatchState {
 }
 
 /// 两犯规之间的最短间隔（tick）。犯规后哨停/任意球重开在槽位模型中表现为后续事件重排，
-/// 过度连发观感差且挤压槽位——>11 tick（≥11s）才允许下一次犯规。
-pub const FOUL_MIN_GAP_TICKS: u32 = 11;
+/// 过度连发观感差且挤压槽位——>11 秒（11×TPF tick；2 Hz 下 22 tick）才允许下一次犯规。
+pub const FOUL_MIN_GAP_TICKS: u32 = 11 * TPF;
 
 /// P9 射门推进（带球向球门推进）+ P29 起脚窗口。
 ///
@@ -2639,11 +2792,13 @@ impl ShotSetup {
 ///
 /// 推进用精确落点，起脚分布严格跟随此采样。
 fn sample_shot_target(rng: &mut SeededRng) -> f64 {
+    // EXP1 标定：目标占比改为 禁区内 35% / 禁区弧 47% / 远射 18%（射门构成对齐 L1 带，
+    // 见 EXP1-CALIBRATION.md；远射档保证 L1 各桶样本量）。
     let roll = rng.next_u64() % 100;
-    if roll < 70 {
+    if roll < 35 {
         // 禁区内目标：6-16.5m（范围 10.5m → % 1050 / 100）
         6.0 + (rng.next_u64() % 1050) as f64 / 100.0
-    } else if roll < 90 {
+    } else if roll < 82 {
         // 禁区弧目标：16.6-25m（范围 8.4m → % 840 / 100）
         16.6 + (rng.next_u64() % 840) as f64 / 100.0
     } else {
@@ -3152,7 +3307,7 @@ fn match_events(
     st.carrier_from = (0.55, 0.5);
     // P15（开球专线 1）：**首开球在引擎里没有飞行**。`MatchState::new` 已经把
     // `carrier = 10` / `possession = 0` / `ball_pos = (0.55,0.5)` 提交好了，上面的 `pos[10]`
-    // 又把球与接收者放同位——首个 tick 的 beat 直接给 10 号 `main`（实测 `t=1.0 main.subject=10`）。
+    // 又把球与接收者放同位——首个 tick 的 beat 直接给 10 号 `main`（1 Hz 下 `t=1.0`、2 Hz 下 `t=0.5`）。
     // kickoff 事件的 `speed = 14.0` 只是装饰：拨球距离 5.25m / 14.0 = 0.375s < `TICK_SECONDS`，
     // 引擎从未进入飞行态。故 `restart_taken` 与 `control_established` **同在 t=0**，
     // basis 用 `EngineState`（没有高亮 finalize）。**不要**为它等 `kickoff_end`、也不要记
@@ -3462,28 +3617,36 @@ fn emit_beat_with_main(st: &mut MatchState, rng: &mut SeededRng, events: &mut Ve
     events.push(beat_event(t, Some(main), None, movers));
 }
 
-/// carrier 带球（main）**候选相**：多数 tick 零位移控球/短带，步进 ≤ speed×1s；transition 期间高速前插。
+/// carrier 带球（main）**候选相**：多数 tick 零位移控球/短带，步进 ≤ speed×TICK_SECONDS；
+/// transition 期间高速前插。
 ///
 /// **P34 重构（#53 D2）**：本函数只消费 RNG、产候选终点，**不写 `st.pos`/`carrier_from`/
 /// `last_emitted`**（重构前直接写这三处 + 返回 main）。RNG 消费顺序与位置**逐位不变**——
 /// 随机数仍在本函数内抽取，故 golden 只在分离推移处漂移，不因重排而漂。
 /// 提交（写入 st.pos 并回填 main.x2/y2）由调用方在统一分离后完成。
-/// C3（R2）：让**传球飞行时长**填满本 tick（`TICK_FILL_FLIGHT_S` = 0.95s）。
+/// C3（R2）：让**传球飞行时长**填满本 tick（填充时长 = 0.95 拍；1 Hz = 0.95 s、2 Hz = 0.475 s）。
 ///
 /// 背景：事件 `speed` 同时驱动两处——引擎 `t_end`（高亮结束 / finalize tick）与 viewer 的
 /// 球飞行动画（`duration = 距离 / speed`）。实测引擎一次传球的飞行只有 0.2–0.8s，球到落点后
-/// 到下一拍（1s 边界）之间**静止干等**（盲测选窗里占总静止时间约 15%——**本仓内不可自证**：
-/// 该读数出自 commit 6105407 的实施期盲测选窗统计，未落盘为可复算的 note/脚本）。
+/// 到下一拍边界（1 Hz 下 1 s、2 Hz 下 0.5 s）之间**静止干等**（盲测选窗里占总静止时间约 15%）。
 ///
-/// 规则：原飞行 `< 0.95s` 时改写到 0.95s（`speed = 距离 / 0.95`，RNG 抽取次数不变，
-/// **不动任何决策输入**；finalize tick 仍是 t+1，动力学逐位不变——由事件流哈希（掩掉 speed）
-/// 守卫）；原飞行 ≥ 0.95s 的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
+/// 规则：原飞行 `< 填充时长` 时改写到填充时长（`speed = 距离 / 填充时长`，RNG 抽取次数不变，
+/// **不动任何决策输入**；`t_end = t + 填充时长`，高亮在**其后第一个 tick 边界** finalize
+/// （2 Hz 下填充 0.475 s < 0.5 s ⇒ 仍是 t+1 拍），动力学逐位不变——由事件流哈希（掩掉 speed）
+/// 守卫）；原飞行 ≥ 填充时长的长传保持原样（其跨 tick 飞行是真实语义，不能压）。
 /// 返回 `(speed, flight)`：调用方必须同时用这两项的返回值（事件与 `t_end` 一致）。
+///
+/// **C1 2 Hz 决策（fill-to-tick，A 案）**：填充时长 = `0.95 × TICK_SECONDS`（2 Hz 下
+/// 0.475 s），保持「每个 tick 内无死等」的原意。备选 fill-to-second（固定 0.95 s）实测：
+/// 盲测包同窗球程相同（101.6 vs 101.0 m/24s），但 L2 传球速度契约违例 309/场 vs 48/场
+/// （短传被拉长到 0.95 s → `dist/0.95 < 10 m/s`），故弃 B 取 A。A 的代价同样存在：
+/// 2 Hz 下 < 4.75 m 的短传会被压到 < 10 m/s（seed 1 实测 48 例/场）——**L2 速度契约
+/// 必须随 2 Hz 重标**（本步未改契约；读数见 note §9.2）。
 fn tick_filling_flight(dist_m: f64, speed: f64) -> (f64, f64) {
-    const TICK_FILL_FLIGHT_S: f64 = 0.95;
+    let tick_fill_flight_s = 0.95 * TICK_SECONDS;
     let flight = dist_m / speed;
-    if flight < TICK_FILL_FLIGHT_S && dist_m >= 0.5 {
-        (dist_m / TICK_FILL_FLIGHT_S, TICK_FILL_FLIGHT_S)
+    if flight < tick_fill_flight_s && dist_m >= 0.5 {
+        (dist_m / tick_fill_flight_s, tick_fill_flight_s)
     } else {
         (speed, flight)
     }
@@ -3502,22 +3665,25 @@ fn carrier_move(st: &mut MatchState, rng: &mut SeededRng) -> MainAction {
     // 接入点②的执行层绑定：记录**实际应用**的前插加成（恒 0 = 死代码）。
     st.opportunity_tally.liveness_forward_intent_pp_max =
         st.opportunity_tally.liveness_forward_intent_pp_max.max(forward_pp);
-    let hold_pp = 70u64.saturating_sub(forward_pp);
+    let hold_pp = CARRIER_HOLD_PP.saturating_sub(forward_pp);
     let roll = rng.next_u64() % 100;
+    // 抖动幅度按秒语义 ×TICK_SECONDS（1 Hz 时 = ±0.01）。
+    let wob = TICK_SECONDS;
     let (x2, y2) = if is_gk || (!in_transition && roll < hold_pp) {
-        let ox = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
-        let oy = ((rng.next_u64() % 21) as f64 / 1000.0) - 0.01;
+        let ox = ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob;
+        let oy = ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob;
         (clamp01(p.0 + ox), clamp01(p.1 + oy))
     } else if in_transition {
-        // 反击：持球者前插（每拍推进 ~5m）
+        // 反击：持球者前插（D2：每拍推进保持 0.05——决策密度随拍频提高，被 max_step 截流）
         let dir = if home { 1.0 } else { -1.0 };
         let x = p.0 + dir * 0.05;
-        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01));
+        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob);
         (clamp01(x), y)
     } else {
+        // 普通带球：每拍向前推进 0.03（归一化，x 向 ≈3.15 m）；y 抖动按秒语义 ×TICK_SECONDS。
         let dir = if home { 1.0 } else { -1.0 };
         let x = p.0 + dir * 0.03;
-        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01));
+        let y = clamp01(p.1 + ((rng.next_u64() % 21) as f64 / 1000.0 - 0.01) * wob);
         (clamp01(x), y)
     };
     let max_step = norm_step(CARRIER_SPEED_MS * TICK_SECONDS);
@@ -3570,54 +3736,319 @@ fn is_defender(st: &MatchState, id: i32) -> bool {
 /// 队形目标（P5 S1）：目标 = 角色基准 + 队形偏移(球位置, 控球阶段, 球侧)。
 /// 防线随球前压/回撤（不越过球、不塌缩到 base 之后）；全队随球侧平移；控球阶段压上；transition 队形偏移放大。
 /// **门将不走本函数**（调用方 `compute_mover_candidates` 跳过 id 0/21，门将目标单独算，见常量 `GK_COME_OUT_SLOPE`）。
+// ---- EXP1：数据拟合的「球队块定律」实验（只在本 worktree）----
+// 真实锚：Metrica 2 场逐帧、非门将 10 人、离本方门线米制（含控球代理相位）。
+// 拟合产物：本地真实 tracking 数据分析（口径与 P38 判据一致，离线拟合，仅本 worktree）。
+// 控球方块心 = 21.03 + 0.607·球距本方门线；失球方 = 12.21 + 0.631·球距本方门线。
+// 纵深(q10-q90) / 宽度(max-min) 按球深度 7 节点线性插值；横向重心 = 34 + 0.32·(球y−34)。
+const EXP1_BALL_NODES: [f64; 7] = [7.5, 22.0, 36.5, 52.5, 68.5, 83.0, 97.5];
+const EXP1_SPAN_ATT: [f64; 7] = [23.3, 25.4, 25.5, 26.2, 26.9, 29.9, 32.6];
+const EXP1_SPAN_DEF: [f64; 7] = [24.8, 25.2, 23.7, 24.7, 25.4, 27.9, 28.8];
+const EXP1_WIDTH_ATT: [f64; 7] = [33.3, 38.9, 45.5, 47.0, 45.1, 40.8, 37.6];
+const EXP1_WIDTH_DEF: [f64; 7] = [29.2, 34.7, 37.0, 41.3, 41.2, 39.5, 34.1];
+const EXP1_LATERAL_TRACK: f64 = 0.70;
+/// default_lineup 的 y 跨 0.2..0.8 ⇒ 40.8m；用它把「宽度(max-min)」换算成 y 铺开系数。
+const EXP1_BASE_Y_SPAN_M: f64 = 40.8;
+/// 10 人均匀铺满 [0,S] 时 q10-q90 = 0.889·S（n=10 线性插值）。
+const EXP1_HD_TO_FULL: f64 = 0.889;
+
+fn exp1_interp(nodes: &[f64; 7], x: f64) -> f64 {
+    if x <= EXP1_BALL_NODES[0] {
+        return nodes[0];
+    }
+    if x >= EXP1_BALL_NODES[6] {
+        return nodes[6];
+    }
+    for i in 0..6 {
+        let (x0, x1) = (EXP1_BALL_NODES[i], EXP1_BALL_NODES[i + 1]);
+        if x <= x1 {
+            let t = (x - x0) / (x1 - x0);
+            return nodes[i] * (1.0 - t) + nodes[i + 1] * t;
+        }
+    }
+    nodes[6]
+}
+
+/// [EXP1] 球队块定律版队形目标：块心随球、深度/宽度按球位、横向重心跟球。
+/// 门将不走本函数（调用方跳过 id 0/21）。
 fn formation_target(st: &MatchState, id: i32) -> (f64, f64) {
     let base = st.lineup[id as usize];
-    let ball = st.ball_pos;
     let home = id <= 10;
-    let attack_dir = if home { 1.0 } else { -1.0 };
-    // 球侧平移（连续映射，非二分——避免中线附近 shuffle）
-    let shift = (ball.0 - 0.5) * SIDE_SHIFT_FACTOR;
-    // 控球阶段压上（己方 attack 前压 / 对方持球回收）；transition 期间新进攻方队形偏移放大
-    let my_team = if home { 0 } else { 1 };
     let my_attack = (home && st.possession == 0) || (!home && st.possession == 1);
-    let mut press = if my_attack { PRESS_UP_OFFSET } else { -PRESS_UP_OFFSET };
-    if let Some(tr) = &st.transition {
-        if tr.attacking == my_team { press *= 2.0; } // 反击窗口前压放大
-    }
-    let mut tx = base.0 + shift + attack_dir * press;
-    if is_defender(st, id) {
-        // 防线随球前压/回撤：防线沿进攻方向推，且不越过球（不塌缩到 base 之后）
-        let own_goal_x = if home { 0.0 } else { 1.0 };
-        let push = (ball.0 - own_goal_x).abs() * DEFENSE_PUSH_FACTOR;
-        let tx_full = base.0 + shift + attack_dir * press + attack_dir * push;
-        // 不越过球（home line.x ≤ ball.x / away line.x ≥ ball.x），且不下穿角色基准（球在防线身后时停 base）
-        tx = if home {
-            tx_full.min(ball.0).max(base.0)
-        } else {
-            tx_full.max(ball.0).min(base.0)
+    let ball_own_m = (if home { st.ball_pos.0 } else { 1.0 - st.ball_pos.0 }) * PITCH_LENGTH_M;
+    // 静态纵深排名（0 = 最靠后）：用 default_lineup 的基准 x 排序，保证每球员身份固定。
+    let mut order: Vec<i32> = if home { (1..=10).collect() } else { (11..=20).collect() };
+    order.sort_by(|&a, &b| {
+        let own = |pid: i32| {
+            let bx = st.lineup[pid as usize].0;
+            if home { bx } else { 1.0 - bx }
         };
-    }
-    // ── [p143r-v4 / v3] 球导向跑位（弱化档）──
-    // 旧式（保留在 `tx` 里）：目标 = 角色基准 + 球侧平移；y 只随球平移 6% → 轨迹是水平细线。
-    // 新式：把目标拉向一个**以球为原点的相对块**——块心随球纵向牵引、块内角色铺开、
-    // 每个球员叠一路确定性抖动。最终目标是旧/新两式的加权混合（WX/WY）。
-    let mut ty = base.1 + (ball.1 - 0.5) * SIDE_SHIFT_FACTOR * 0.6; // = _ty0：旧式 y
-    let center0 = if home { FORM_CENTER_HOME } else { FORM_CENTER_AWAY };
-    // 块心：以球 x 相对 center0 的偏移牵引（TRACK_X），进攻方沿进攻轴压上（CENTER_OFFSET）。
-    let center_dx = (ball.0 - center0).clamp(-1.0, 1.0);
-    let block_cx = center0 + FORM_TRACK_X * center_dx
-        + attack_dir * if my_attack { FORM_ATTACK_SIGN } else { -1.0 } * FORM_CENTER_OFFSET;
-    // 块内铺开：球员基准相对块心的纵向偏差按 SPREAD_X 展开（+ 个体抖动 ix）。
-    let phase = (st.ticks_since_meaningful_action as f64 + id as f64 * FORM_PHASE_ID_STEP)
+        own(a).partial_cmp(&own(b)).unwrap().then(a.cmp(&b))
+    });
+    let rank = order.iter().position(|&p| p == id).unwrap_or(0) as f64;
+    let (c_int, c_slope, span_nodes, width_nodes) = if my_attack {
+        (21.03, 0.607, &EXP1_SPAN_ATT, &EXP1_WIDTH_ATT)
+    } else {
+        (12.21, 0.631, &EXP1_SPAN_DEF, &EXP1_WIDTH_DEF)
+    };
+    let center_own = c_int + c_slope * ball_own_m;
+    let span_q = exp1_interp(span_nodes, ball_own_m);
+    let full_span = span_q / EXP1_HD_TO_FULL;
+    let x_own = (center_own - full_span * 0.5 + full_span * rank / 9.0)
+        .clamp(1.0, PITCH_LENGTH_M - 1.0);
+    let tx = if home { x_own / PITCH_LENGTH_M } else { 1.0 - x_own / PITCH_LENGTH_M };
+    // 横向：球队重心跟球（实测增益 0.32）+ 角色横向铺开（宽度按球深度）。
+    let ball_y_m = st.ball_pos.1 * PITCH_WIDTH_M;
+    let width_m = exp1_interp(width_nodes, ball_own_m);
+    let cy_m = PITCH_WIDTH_M * 0.5 + EXP1_LATERAL_TRACK * (ball_y_m - PITCH_WIDTH_M * 0.5);
+    let y_m = cy_m + (base.1 - 0.5) * PITCH_WIDTH_M * (width_m / EXP1_BASE_Y_SPAN_M);
+    // 保留个体抖动（横向），避免全队完全同步。
+    let phase = (st.ticks_since_meaningful_action as f64 * TICK_SECONDS
+        + id as f64 * FORM_PHASE_ID_STEP)
         * (6.28318 / FORM_PHASE_PERIOD_S);
-    let ix = (phase * 0.7 + id as f64).sin() * FORM_INDIV;
     let iy = (phase + id as f64 * 1.3).cos() * FORM_INDIV;
-    let block_tx = block_cx + (base.0 - center0) * FORM_SPREAD_X + ix;
-    let block_ty = 0.5 + (ball.1 - 0.5) * FORM_TRACK_Y + (base.1 - 0.5) * FORM_SPREAD_Y + iy;
-    let tx2 = tx * (1.0 - FORM_MIX_X) + block_tx * FORM_MIX_X;
-    ty = ty * (1.0 - FORM_MIX_Y) + block_ty * FORM_MIX_Y;
-    // P7 观感：目标不进小禁区/不顶门线（前锋最多压到禁区边缘 x=0.9，避免顶在球门线来回摆动）
-    (clamp01(tx2).clamp(0.04, 0.9), clamp01(ty))
+    let ty = (y_m / PITCH_WIDTH_M + iy).clamp(0.02, 0.98);
+    (tx.clamp(0.02, 0.95), ty)
+}
+
+// ---- B 层（实验）：无球目标调整层 ----
+//
+// 在 A 层「球队块定律」给出的基准目标之上，加一层**随赛况的个体调整**：
+//   B1 分区触发：球位归一化 3×3（按攻守方向镜像）→ 每条线一个调整类别（保持/收拢/收敛）；
+//   B2 参考点收敛：目标 = 基准 + 朝参考点单位向量 × max(距离 − 停距, 0) × 收敛系数；
+//   B3 单人追抢：每队每拍至多 1 名追抢者（选人成本 = 到球距离 + 时段固定的换人扰动）；
+//   B4 角色横向档位：5 档离散横向偏移，球位三区切换时档位变化。
+//
+// 依据：本地真实 tracking 分析（离线拟合，仅本 worktree）——个体横向方差约占 1/3，
+// 「相对队友的横向位置」主要由参考点驱动。参数全部为**先验、待标定**；
+// 本层只改 mover 目标点，不新增事件类型、不改 tick/beat、不改事件层决策。
+const B_ENABLE: bool = false;
+/// B1 调整类别：0 = 保持（不改目标）/ 1 = 收拢（横向向本队重心收）/ 2 = 收敛（朝参考点）。
+const B_HOLD: u8 = 0;
+const B_COMPACT: u8 = 1;
+const B_CONVERGE: u8 = 2;
+/// B1 球位 3×3 分区 → 每线调整类别（先验，待标定）。
+/// 下标：[球纵深三区（0 本方 / 1 中场 / 2 对方）][球横向三区（0 左 / 1 中 / 2 右）][线（def/mid/att）]。
+/// 先验：球在本方三区 → 后卫线收敛、中场收拢；球在中场 → 中场收敛；球在对方三区 → 锋线收敛（反抢）。
+const B_ZONE_CATEGORY: [[[u8; 3]; 3]; 3] = [
+    [[2, 1, 0], [2, 1, 0], [2, 1, 0]],
+    [[1, 2, 0], [1, 2, 0], [1, 2, 0]],
+    [[1, 1, 2], [1, 1, 2], [1, 1, 2]],
+];
+/// B1 反侧加成：球员站在球的异侧时调整类别 +1（封顶收敛）——让「谁动」依赖球的横向位置。
+const B_FAR_SIDE_BONUS: u8 = 1;
+/// B2 收敛停距（米，先验 4–7）：到参考点不足该距离就不动，避免全队挤上球。
+const B_PRESS_MARGIN_M: [f64; 3] = [4.5, 5.0, 6.0];
+/// B2 收敛比例（先验 0.4–0.7）。
+const B_CONVERGE_GAIN: [f64; 3] = [0.55, 0.60, 0.65];
+/// B2 纵向/横向分量权重：横向收敛是本层的主目标；纵向保持（保护 P38 纵深/间距结构）。
+const B_CONVERGE_X_GAIN: f64 = 0.0;
+const B_CONVERGE_Y_GAIN: f64 = 1.0;
+/// B2 收拢：横向朝本队外场重心收（只动 y）；停距/增益更保守。
+const B_COMPACT_MARGIN_M: f64 = 2.0;
+const B_COMPACT_GAIN: f64 = 0.35;
+/// B3 单人追抢：停距（归一化）与换人扰动时段（秒）。
+const B_CHASER_STOP_DIST: f64 = 0.06;
+const B_CHASER_HOLD_S: f64 = 6.0;
+/// B3 换人扰动幅度（米）：时段内固定，用于抑制「每拍换人」。
+const B_CHASER_SWITCH_M: f64 = 2.5;
+/// B4 角色横向档位（第二增量）：5 档离散横向偏移（米），球位三区切换时档位变化。
+/// 与「全队统一跟球系数」不同：每个角色有独立方向，档位是个体台阶而非全队缩放。
+const B_LANE_ENABLE: bool = true;
+const B_LANE_STEP_M: f64 = 5.0;
+/// 每角色的档位方向（+1 随球侧 / 0 不动 / −1 反向拉扯空间），下标 [中卫, 边卫, 中前卫, 边前卫, 前锋]。
+const B_LANE_DIR: [f64; 5] = [1.0, 1.0, -1.0, -1.0, 1.0];
+/// 档位对球纵深（球位三区）的响应：球在本方三区 / 中场 / 对方三区的额外档位。
+const B_LANE_DEPTH_DIR: [f64; 5] = [0.0, 0.0, 0.0, 0.0, 1.0];
+
+/// B 层用：球员所属线（0 后卫 / 1 中场 / 2 前锋），按静态基准归线。
+fn b_line_of(st: &MatchState, id: i32) -> usize {
+    if is_defender(st, id) {
+        return 0;
+    }
+    let base_own_x = if id <= 10 {
+        st.lineup[id as usize].0
+    } else {
+        1.0 - st.lineup[id as usize].0
+    };
+    if base_own_x < 0.55 { 1 } else { 2 }
+}
+
+/// B 层用：确定性 0..1 扰动（纯整数哈希，零 RNG、不消费随机数序列）。
+fn b_hash01(id: i32, epoch: i64) -> f64 {
+    let mut x = (id as u64)
+        .wrapping_mul(0x9E37_79B9_7F4A_7C15)
+        ^ (epoch as u64).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x ^= x >> 30;
+    x = x.wrapping_mul(0xBF58_476D_1CE4_E5B9);
+    x ^= x >> 27;
+    x = x.wrapping_mul(0x94D0_49BB_1331_11EB);
+    x ^= x >> 31;
+    (x % 10_000) as f64 / 10_000.0
+}
+
+/// B4 用：5 个角色类（0 中卫 / 1 边卫 / 2 中前卫 / 3 边前卫 / 4 前锋）。
+fn b_role_of(st: &MatchState, id: i32) -> usize {
+    let base_y = st.lineup[id as usize].1;
+    match b_line_of(st, id) {
+        0 => if (base_y - 0.5).abs() < 0.1 { 0 } else { 1 },
+        1 => if (base_y - 0.5).abs() < 0.15 { 2 } else { 3 },
+        _ => 4,
+    }
+}
+
+/// B 层主函数（第一增量）：只对**防守方**外场的基准目标做 B1/B2/B3 调整。
+///
+/// 约束：只在开放局生效（高亮/松散球/重开准备/攻防转换期一律跳过），且只改
+/// `action == "run"` 的基准目标（close_down/chase/corner_prep/门将目标不被覆盖）。
+fn b_layer_adjust_targets(
+    st: &MatchState,
+    targets: &mut [Option<(f64, f64)>],
+    actions: &[String],
+    excluded: &[i32],
+    close_down_ids: &[i32],
+    t: f64,
+) {
+    if !B_ENABLE {
+        return;
+    }
+    if st.highlight.is_some() || st.loose.is_some() || st.restart_prep.is_some() || st.transition.is_some() {
+        return;
+    }
+    // possession == 0 表示主队控球 ⇒ 防守方是客队；反之亦然。
+    let def_home = st.possession != 0;
+    let (lo, hi) = if def_home { (1i32, 10i32) } else { (11i32, 20i32) };
+    // B1：球位 3×3（按该队攻守方向镜像）。
+    let ball_own_x = if def_home { st.ball_pos.0 } else { 1.0 - st.ball_pos.0 };
+    let col = ((ball_own_x * 3.0).floor() as i32).clamp(0, 2) as usize;
+    let row = ((st.ball_pos.1 * 3.0).floor() as i32).clamp(0, 2) as usize;
+    // 本队外场横向重心（只读当前站位；用于 B2 收拢）。
+    let mut cy_sum = 0.0;
+    let mut cy_n = 0.0;
+    for pid in lo..=hi {
+        if st.sent_off[pid as usize] {
+            continue;
+        }
+        cy_sum += st.pos[pid as usize].1;
+        cy_n += 1.0;
+    }
+    let cy_norm = if cy_n > 0.0 { cy_sum / cy_n } else { 0.5 };
+    let ball_y_m = st.ball_pos.1 * PITCH_WIDTH_M;
+    for id in lo..=hi {
+        let idx = id as usize;
+        if excluded.contains(&id) || id == st.carrier || st.sent_off[idx] {
+            continue;
+        }
+        if actions[idx] != "run" {
+            continue;
+        }
+        let base = match targets[idx] {
+            Some(v) => v,
+            None => continue,
+        };
+        let line = b_line_of(st, id);
+        let mut cat = B_ZONE_CATEGORY[col][row][line];
+        let base_y_m = st.lineup[idx].1 * PITCH_WIDTH_M;
+        let same_side = (ball_y_m - PITCH_WIDTH_M * 0.5) * (base_y_m - PITCH_WIDTH_M * 0.5) > 0.0;
+        if !same_side {
+            cat = (cat + B_FAR_SIDE_BONUS).min(B_CONVERGE);
+        }
+        if cat == B_HOLD {
+            continue;
+        }
+        let (mut tx, mut ty) = base;
+        if cat == B_CONVERGE {
+            let dx_m = (st.ball_pos.0 - base.0) * PITCH_LENGTH_M;
+            let dy_m = (st.ball_pos.1 - base.1) * PITCH_WIDTH_M;
+            let d = (dx_m * dx_m + dy_m * dy_m).sqrt();
+            let margin = B_PRESS_MARGIN_M[line];
+            if d > margin {
+                let shift = (d - margin) * B_CONVERGE_GAIN[line];
+                tx = base.0 + dx_m / d * shift * B_CONVERGE_X_GAIN / PITCH_LENGTH_M;
+                ty = base.1 + dy_m / d * shift * B_CONVERGE_Y_GAIN / PITCH_WIDTH_M;
+            }
+        } else {
+            // 收拢：只动横向，朝本队外场重心收（停距外的部分按增益收）。
+            let dy_m = (cy_norm - base.1) * PITCH_WIDTH_M;
+            let mag = dy_m.abs();
+            if mag > B_COMPACT_MARGIN_M {
+                ty = base.1 + dy_m.signum() * (mag - B_COMPACT_MARGIN_M) * B_COMPACT_GAIN / PITCH_WIDTH_M;
+            }
+        }
+        targets[idx] = Some((tx.clamp(0.02, 0.95), ty.clamp(0.02, 0.98)));
+    }
+    // B3：单人追抢——仅当本拍还没有既有逼抢者时补 1 名；既有 OPEN_PRESS/transition 已选人则不重复。
+    if close_down_ids.is_empty() && st.carrier >= 0 {
+        let epoch = (t / B_CHASER_HOLD_S).floor() as i64;
+        let mut best: Option<(f64, i32)> = None;
+        for id in lo..=hi {
+            let idx = id as usize;
+            if excluded.contains(&id) || id == st.carrier || st.sent_off[idx] {
+                continue;
+            }
+            if actions[idx] != "run" || targets[idx].is_none() {
+                continue;
+            }
+            let dx_m = (st.ball_pos.0 - st.pos[idx].0) * PITCH_LENGTH_M;
+            let dy_m = (st.ball_pos.1 - st.pos[idx].1) * PITCH_WIDTH_M;
+            let d = (dx_m * dx_m + dy_m * dy_m).sqrt();
+            let cost = d + b_hash01(id, epoch) * B_CHASER_SWITCH_M;
+            if best.map_or(true, |(bc, _)| cost < bc) {
+                best = Some((cost, id));
+            }
+        }
+        if let Some((_, cid)) = best {
+            targets[cid as usize] = Some(close_down_stop_d(
+                st.pos[cid as usize],
+                st.ball_pos,
+                B_CHASER_STOP_DIST,
+            ));
+        }
+    }
+}
+
+/// B4 角色横向档位（第二增量）：把球位三区量化为 5 档离散横向偏移，按角色方向叠加到基准 y。
+///
+/// 与「全队统一跟球系数」的区别：每个角色有独立方向，档位是**个体台阶**；
+/// 只改 y（保护 P38 纵深/间距结构），双方、攻守两相位都生效。
+fn b_lane_adjust_targets(
+    st: &MatchState,
+    targets: &mut [Option<(f64, f64)>],
+    actions: &[String],
+    excluded: &[i32],
+) {
+    if !B_LANE_ENABLE {
+        return;
+    }
+    if st.highlight.is_some() || st.loose.is_some() || st.restart_prep.is_some() || st.transition.is_some() {
+        return;
+    }
+    let col = ((st.ball_pos.0 * 3.0).floor() as i32).clamp(0, 2) as f64;
+    let row = ((st.ball_pos.1 * 3.0).floor() as i32).clamp(0, 2) as f64;
+    for id in 0..22i32 {
+        if id == 0 || id == 21 {
+            continue;
+        }
+        let idx = id as usize;
+        if excluded.contains(&id) || id == st.carrier || st.sent_off[idx] {
+            continue;
+        }
+        if actions[idx] != "run" {
+            continue;
+        }
+        let base = match targets[idx] {
+            Some(v) => v,
+            None => continue,
+        };
+        let role = b_role_of(st, id);
+        let level = 2.0
+            + B_LANE_DIR[role] * (row - 1.0) * 2.0
+            + B_LANE_DEPTH_DIR[role] * (col - 1.0);
+        let level = level.clamp(0.0, 4.0);
+        let off_m = (level - 2.0) * B_LANE_STEP_M;
+        let ty = (base.1 + off_m / PITCH_WIDTH_M).clamp(0.02, 0.98);
+        targets[idx] = Some((base.0, ty));
+    }
 }
 
 /// 角球准备期站位目标：攻方禁区包抄（贴近门线、y 分散）、防方回防（禁区前沿到门线之间）。
@@ -3727,7 +4158,6 @@ fn attacking_forward(st: &MatchState, attacking: u32) -> (f64, f64) {
 /// 统一负责（「候选计算之后、写入 st.pos / 构造 mover 事件之前」这一顺序是 codex 的硬约束）。
 fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, excluded: &[i32]) -> Vec<Mover> {
     let _ = rng;
-    let _ = t;
     let dead_zone = norm_step(DEAD_ZONE_METERS);
     // transition 期间：新防守方 2 名就近外场 close_down（覆盖队形目标）。
     // 目标按来源区分：tackle → 球位（松散球/持球者）；save-caught → 新进攻方就近前插球员（门前/禁区前沿）
@@ -3789,6 +4219,7 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
     // 第一遍：算每个外场球员的目标点（门将单独处理）
     let mut targets: Vec<Option<(f64, f64)>> = vec![None; 22];
     let mut actions = vec!["run".to_string(); 22];
+    // 注意：B 层调整放在第一遍之后、repulsion 之前（见下方 `b_layer_*` 调用）。
     for id in 0..22i32 {
         if excluded.contains(&id) || id == st.carrier { continue; }
         if st.sent_off[id as usize] { continue; } // 罚下球员不产目标（→ 不产 mover、不参与 repulsion）
@@ -3814,6 +4245,10 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
             targets[id as usize] = Some(formation_target(st, id));
         }
     }
+    // B 层（实验）：无球目标调整——只改目标点，不新增事件/动作、不改 tick。
+    b_layer_adjust_targets(st, &mut targets, &actions, excluded, &close_down_ids, t);
+    // B 层（第二增量）：B4 角色横向档位（双方、攻守两相位都生效）。
+    b_lane_adjust_targets(st, &mut targets, &actions, excluded);
     // 第二遍：repulsion（同队目标间距修正，迭代 ≤3；carrier 不参与）。
     // P34（#53）起判定与推开都走**米制**（`same_team_dist_m` + `separate_pair_m`），
     // 与 detector `player_overlap` 口径一致——旧归一化欧氏口径在 y 方向只保证 1.36m。
@@ -3850,7 +4285,18 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
             let ty = 0.5 + (st.ball_pos.1 - 0.5) * GK_TRACK_Y;
             ((tx, ty), "keeper_return".to_string(), GK_SPEED_MS)
         } else if let Some(ta) = targets[id as usize] {
-            (ta, actions[id as usize].clone(), RUN_SPEED_MS)
+            // 逼抢者（close_down 指派）不参与近球冲刺：它的目标是显式停点（开放局 5m /
+            // transition 2m），速度提到 7 会改变接触时序（实测 per-seed 抢断/犯规边角与
+            // latSd 6.77 出带〔带 [7.015,14.015]〕）。近球冲刺只给「按队形目标跑位」的 movers。
+            let near_ball = distance_meters(from, st.ball_pos) <= BALL_LOCAL_SPRINT_RADIUS_M;
+            let spd = if actions[id as usize] == "close_down" {
+                RUN_SPEED_MS
+            } else if near_ball {
+                BALL_LOCAL_SPRINT_MS
+            } else {
+                RUN_SPEED_MS
+            };
+            (ta, actions[id as usize].clone(), spd)
         } else {
             continue;
         };
@@ -3873,6 +4319,14 @@ fn compute_mover_candidates(st: &mut MatchState, rng: &mut SeededRng, t: f64, ex
 /// 从 `emit_pass_highlight_inner` 抽出只为让「cap 边界」「档位边界」可被单元测试直接钉死
 /// （P32 #36 的自洽硬门需要断言 `ceil` 量化在 cap 上的取值）。抽函数不改变任何取值或 RNG 顺序。
 fn open_play_interception_p(def_dist_m: f64, meters: f64) -> f64 {
+    open_play_interception_p_dir(def_dist_m, meters, 1.0)
+}
+
+/// 带方向的拦截概率：`forward_frac` ∈ [0,1] 是传球沿进攻轴的分量占比（|Δx|·dir / 距离）。
+/// **长传加成按前向分量缩放**：风险语义是「把球送进防守者身后」，纯横向转移（forward_frac→0）
+/// 不受长传/超长传加成。`forward_frac = 1` 时与旧行为逐位等价（旧函数即本函数的包装）。
+fn open_play_interception_p_dir(def_dist_m: f64, meters: f64, forward_frac: f64) -> f64 {
+    let fwd = forward_frac.clamp(0.0, 1.0);
     let base = if def_dist_m <= INTERCEPT_D_TIGHT_M {
         INTERCEPT_P_TIGHT
     } else if def_dist_m <= INTERCEPT_D_MID_M {
@@ -3882,8 +4336,8 @@ fn open_play_interception_p(def_dist_m: f64, meters: f64) -> f64 {
     };
     // 加成判据复用 `hits_long_pass` / `hits_very_long_pass`——与记账分层同源，防「公式里的
     // 阈值」与「记账分层的阈值」两处字面量将来漂移（审阅 P3-6）。
-    let long_bonus = if hits_long_pass(meters) { LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
-    let very_long_bonus = if hits_very_long_pass(meters) { VERY_LONG_PASS_INTERCEPT_BONUS } else { 0.0 };
+    let long_bonus = if hits_long_pass(meters) { LONG_PASS_INTERCEPT_BONUS * fwd } else { 0.0 };
+    let very_long_bonus = if hits_very_long_pass(meters) { VERY_LONG_PASS_INTERCEPT_BONUS * fwd } else { 0.0 };
     (base + long_bonus + very_long_bonus).min(INTERCEPT_P_CAP)
 }
 
@@ -4010,7 +4464,8 @@ fn emit_pass_highlight_inner(
             // C3 补齐（2026-10-29 独立审阅 P1.1）：出界 pass 也走填拍。此前这一支是唯一没接
             // `tick_filling_flight` 的 pass 分支——短出界球的 `speed` 与其他 pass 语义不一致，
             // 且 L2 的填拍门会把它当成「未填拍的短传」。填拍不消耗 RNG、不改任何决策输入；
-            // 填后 `t_end` 仍落在 [t, t+1)，finalize tick 照旧是 t+1（与 C3 其余分支同一论证）。
+            // 填后 `t_end` 仍在 [t, t+TICK) 内，finalize tick 照旧是下一个 tick 边界
+            // （与 C3 其余分支同一论证）。
             let (speed, flight) = tick_filling_flight(distance_meters(from_pos, (x2, y2)), speed);
             let t_end = t + flight;
             events.push(Event {
@@ -4056,7 +4511,11 @@ fn emit_pass_highlight_inner(
     // 拦截者 = 离落点最近的对方外场球员；拦截概率按"拦截者到落点距离"分档（贴防高、中距中、远离低），
     // 长传额外加成。传失（失准）固定 PASS_MISS_P，球权不直接丢——球到落点变松散球双方争。
     let (def_id, _, def_dist_m) = nearest_defender(st, (clamp01(lx), clamp01(ly)), !home);
-    let interception_p = open_play_interception_p(def_dist_m, meters);
+    // 前向分量占比：长传拦截加成的方向缩放（纯横向转移免加成；纯前向等价旧行为）
+    let dir = if home { 1.0 } else { -1.0 };
+    let forward_m = ((clamp01(lx) - from_pos.0) * dir) * PITCH_LENGTH_M;
+    let forward_frac = (forward_m / meters.max(1e-9)).clamp(0.0, 1.0);
+    let interception_p = open_play_interception_p_dir(def_dist_m, meters, forward_frac);
     let fail_roll = rng.next_u64() % 100;
     // P32（#36）记账：**必须**在 `fail_roll` 之后、任何分支之前。零 RNG、零事件流写入——
     // 只写 `OpportunityTally`，故事件流逐字节不变（golden-v5 守卫）。
@@ -4267,7 +4726,7 @@ fn emit_shot_highlight(
     let shooter_pos = st.pos[shooter as usize];
     let home = st.possession == 0;
     let speed = 22.0 + (rng.next_u64() % 80) as f64 / 10.0;
-    // P9 射门质量：按起脚距离分桶（禁区内 15/30、禁区弧 3/22、远射 2/11；见 `shot_bucket`）
+    // P9 射门质量：按起脚距离分桶（禁区内 7/48、禁区弧 2/32、远射 1/14；见 `shot_bucket`）
     // 主场优势通道①：判定窗口按射门方主客平移（home goal 上移 / away 不压，saved 宽不变）。
     let (goal_p, saved_p) = shot_bucket(dist_to_goal_m(st, shooter));
     let (goal_lo, saved_hi) = clinical_goal_window(st.possession, goal_p, saved_p);
@@ -4823,7 +5282,7 @@ fn finalize_highlight(
             st.carrier = -1;
             st.dead_ball = Some(DeadBall {
                 goal: true,
-                remaining: 2,
+                remaining: 2 * TPF,
                 preparing: false,
                 kickoff_id,
                 kicked: false,
@@ -5490,7 +5949,7 @@ fn advance_loose(
             let raw = move_toward(s, dir_vec, norm_step(l.speed * TICK_SECONDS));
             let e = (clamp01(raw.0), clamp01(raw.1));
             l.pos = e;
-            l.speed *= 0.5;
+            l.speed *= 0.5f64.powf(TICK_SECONDS);
             (s, e)
         } else {
             (s, s) // 超时：球在当前位置 hold 等待（不瞬移）
@@ -5952,14 +6411,7 @@ fn advance_dead_ball(
     let kickoff_t = observation::ObservedTime::event_emit(t);
     obs.restart_taken(kickoff_t, observation::ControlFactBasis::RestartRule);
     obs_bind(events, obs, obs_last_event(events));
-    // 开球球飞行结束时刻：main 在其后首个 tick 边界恢复（避免 beat-main 在球未到落点就开始）。
-    // ⚠️ 归因边界（2026-10-29 审阅 P1.1/P2.4）：`kickoff` 事件类型是 `"kickoff"`（**不是 pass**），
-    // 它的 `speed` 字段保持 12.0，`kickoff_end` 也不序列化；这里算出的填拍只用于两处——
-    //   ① `advance_dead_ball` 的恢复判定：`t < kickoff_end` 时该 tick 不产 main。判定在**整数
-    //      tick**上做；填拍只作用于「原飞行 < 0.95s」的那一类，此时原飞行与 0.95s 都 < 1s
-    //      ⇒ 恢复 tick 两版都是 t+1（原飞行 ≥0.95s 的保持原值，本就不变），事件流不变；
-    //   ② observation 的 `resumed_t`（`ObservedTime::flight_end(kickoff_end)`）——这是唯一可见差异。
-    // ⇒ 对 viewer 球动画零效果（动画读事件 `speed`=12.0）。不要用这里论证「填拍已覆盖开球」。
+    // kickoff 球飞行结束时刻：main 在其后首个 tick 边界恢复（避免 beat-main 在球未到落点就开始）
     let (kickoff_speed, kickoff_flight) = tick_filling_flight(distance_meters((0.5, 0.5), (kx2, ky2)), 12.0);
     let _ = kickoff_speed; // 事件 speed 字段保持 12.0（开球拨球不按飞行改写，仅拉长飞行时长）
     let kickoff_end = t + kickoff_flight;
@@ -6214,6 +6666,42 @@ fn separate_same_team_m(
                 if b2 && nb != pb {
                     budget[b] = (budget[b] - same_team_dist_m(nb, pb)).max(0.0);
                     pos[b] = nb; changed = true;
+                }
+            }
+        }
+        if !changed { break; }
+    }
+    // ---- 兜底：硬不变量优先于单拍位移预算 ----
+    //
+    // 主循环受两个「软」保护约束：① 每名球员每拍分离位移预算（防横穿球场）；
+    // ② 边界 clamp（贴门线/边线时推移被吃掉）。两者叠加会让个别 pair 在预算耗尽、
+    // 队友又被 clamp 时**整拍残留** < 阈值（实测：门将贴门线 + 中卫被推到同一 y 附近，
+    // 门将已无处可退、中卫预算已耗尽 ⇒ 发车位置 1.97m）。
+    // 同队发射间距是 #53 的硬不变量，故对残留 pair 追加**限额**强制分离：每人最多再用
+    // 一个 `SAME_TEAM_MIN_DIST_M` 的位移（仍受 frozen / sent_off 约束）。
+    // 触发条件只有「主循环退出后仍违规」——正常拍不会执行，事件流零漂移。
+    let mut rescue = [0.0f64; 22];
+    for _ in 0..SAME_TEAM_SEPARATION_MAX_ROUNDS {
+        let mut changed = false;
+        for a in 0..22usize {
+            if sent_off[a] { continue; }
+            for b in a + 1..22usize {
+                if sent_off[b] { continue; }
+                if (a <= 10) != (b <= 10) { continue; }
+                if same_team_ok_m(pos[a], pos[b]) { continue; }
+                let a_movable = !frozen[a] && rescue[a] < SAME_TEAM_MIN_DIST_M - 1e-9;
+                let b_movable = !frozen[b] && rescue[b] < SAME_TEAM_MIN_DIST_M - 1e-9;
+                if !a_movable && !b_movable { continue; }
+                let (na, nb) = separate_pair_m(pos[a], pos[b], SAME_TEAM_MIN_DIST_M, a_movable, b_movable);
+                if a_movable && na != pos[a] {
+                    rescue[a] += same_team_dist_m(na, pos[a]);
+                    pos[a] = na;
+                    changed = true;
+                }
+                if b_movable && nb != pos[b] {
+                    rescue[b] += same_team_dist_m(nb, pos[b]);
+                    pos[b] = nb;
+                    changed = true;
                 }
             }
         }
@@ -6611,7 +7099,10 @@ fn dist_to_goal_m(st: &MatchState, id: i32) -> f64 {
     }
 }
 
-/// P9 射门分桶：(goal%, saved%) 按起脚距离。禁区内 15/30、禁区弧 3/22、远射 2/11。
+/// P9 射门分桶：(goal%, saved%) 按起脚距离。
+/// **当前值：禁区内 (7,48)、禁区弧 (2,32)、远射 (1,14)**（C1 in-box 谱系；出处见本节末）。
+/// ⚠️ 以下 M5 推导（2026-10-17）是**上一代取值**（禁区内 15/30、禁区弧 3/22、远射 2/11）的
+/// 校准依据——保留作历史出处，**不是当前值**；两者不可混引。
 ///
 /// **禁区外两档（M5，2026-10-17 重标定）**：`(7,22)`→`(3,22)`、`(4,11)`→`(2,11)`。
 /// **依据是真实侧的「聚合」锚，不是逐段 xG 取整**：PL 官方 2024-25 / Opta Analyst 给的是
@@ -6645,15 +7136,21 @@ fn dist_to_goal_m(st: &MatchState, id: i32) -> f64 {
 ///
 /// 实测校准自证：同 seed 窗探针逐桶把声明概率求和与实测进球比 —— **禁区内桶 445.0 期望 / 445 实测
 /// （逐位命中）**，禁区弧 +2σ、远射 +0.5σ（见 M5-READINGS「校准自证」）。
-/// 禁区内 `(15,30)` **不动**（真实禁区 14.7% vs 引擎实测 16.1%，本来就在真实之上）。
-/// 加权（70/20/10）：射正率 ~36%、转化 ~11%（见 design D1）。
+///
+/// ⚠️ **当前取值（C1 in-box 谱系「去荒谬化」B 版，R6 重放）**：
+///   禁区内 `(7,48)`、禁区弧 `(2,32)`、远射 `(1,14)`（goal_pp/saved_pp）。
+/// 与上文 M5 时代的 `(15,30)/(3,22)/(2,11)` 相比，门前把握被整体下调到现实转化率
+/// （原因：门前优先档落地后射门集中禁区，旧概率让禁区转化严重超真实）。
+/// 出处：`.scratch/notes/RECORD.md` R0 节「机制现状 #3」（in-box 提交 `3cab5f9`/`ca889fc`）；
+/// 当前 L1 实测禁区 goal 0.062（低于带 [0.10,0.20]，谱系已知红）见 RECORD R6。
+/// 取值由 `tests::c1_shot_bucket_probabilities_are_pinned` 钉死（防静默漂移）。
 fn shot_bucket(dist_m: f64) -> (u64, u64) {
     if dist_m <= BOX_DIST_M {
-        (15, 30)
+        (7, 48)
     } else if dist_m <= ARC_DIST_M {
-        (3, 22)
+        (2, 32)
     } else {
-        (2, 11)
+        (1, 14)
     }
 }
 
@@ -6769,6 +7266,13 @@ fn compute_shot_score(f: &ShotOpportunityFeatures) -> f64 {
 fn shot_hazard_probability(score: f64, window: f64) -> f64 {
     let hazard = score.exp();
     1.0 - (-(hazard * window.max(0.0))).exp()
+}
+
+/// 每秒 hazard 率 `r` 在机会时长 `Δt` 内的累计概率：`1 − (1 − r)^Δt`。
+/// 机会间隔 Δt 由 natural-deadline 的实际 deadline 秒数给出——拍频 / 机会密度变化时
+/// **每秒率恒定**，单机会概率随 Δt 缩放（射门/90min ≈ 率 × 可起脚时长，而不是率 × 机会次数）。
+fn per_second_hazard(rate_per_s: f64, dt_s: f64) -> f64 {
+    1.0 - (1.0 - rate_per_s.clamp(0.0, 1.0)).powf(dt_s.max(0.0))
 }
 
 /// 持球者→所攻球门中心 与 进攻方向 的夹角余弦（真实米，含 y 角向）。
@@ -6914,6 +7418,7 @@ fn score_foul(f: &DefensiveFeatures) -> f64 {
     BASE_DEF_FOUL
         + f.danger * FOUL_DANGER_GAIN
         + f.foul_closeness() * FOUL_CLOSENESS_GAIN
+        + f.bad_angle() * FOUL_BEATEN_GAIN
         - if f.yellowed { FOUL_YELLOW_PENALTY } else { 0.0 }
         - f.foul_cd_ratio * FOUL_CD_PENALTY
 }
@@ -7834,9 +8339,10 @@ mod tests {
         let (a_lo, a_hi) = clinical_goal_window(1, 15, 30);
         assert_eq!(h_hi - h_lo, 30, "home saved 窗口宽应保持 30");
         assert_eq!(a_hi - a_lo, 30, "away saved 窗口宽应保持 30");
-        assert_eq!(h_lo, 17, "home 禁区 goal 阈值应上移 CLINICAL_GOAL_PP_HOME(2)");
-        assert_eq!(a_lo, 15, "away goal 阈值不应被压低");
-        assert!(CLINICAL_GOAL_PP_HOME >= CLINICAL_GOAL_PP_AWAY, "主队把握 ≥ 客队");
+        // 2026-10-26 标定：关闭主队把握优势通道（本分支去荒谬化：主客转化补充相等）。
+        assert_eq!(h_lo, 15, "home 禁区 goal 阈值不上移（CLINICAL_GOAL_PP_HOME=0）");
+        assert_eq!(a_lo, 15, "away goal 阈值同样为 15（主客对称）");
+        assert_eq!(CLINICAL_GOAL_PP_HOME, CLINICAL_GOAL_PP_AWAY, "本标定关闭主队转化优势（主客相等）");
         // 通道② 二点争顶：攻方 home 胜率 ≥ 攻方 away（主队无论攻防争顶更拼），都以 55 为中心对称。
         assert!(BATTLE_ATTACK_WIN_HOME >= BATTLE_ATTACK_WIN_AWAY, "攻方 home 争顶不应弱于攻方 away");
         assert!(BATTLE_ATTACK_WIN_HOME > 50 && BATTLE_ATTACK_WIN_AWAY > 50, "攻方胜率基线应 >50%");
@@ -8898,17 +9404,17 @@ mod tests {
             (f, t)
         };
         let near = mk(2, 0.405); // 同队 mover 终点贴着落点（≈0.5m < 2.0）
-        set_end(&mut st, 10.5); // t_rem = 0.5 < TICK：本拍内完成（有保持段）
+        set_end(&mut st, 10.0 + 0.5 * TICK_SECONDS); // t_rem = 0.25 < TICK：本拍内完成（有保持段）
         let (f, t) = seg_of(&st, &[near.clone()]);
         assert!(f == landing && t == landing, "破阈+本拍内完成应退化为落点一点（f={:?} t={:?}）", f, t);
-        set_end(&mut st, 11.5); // t_rem = 1.5 ∈ (TICK, 2·TICK)：下一拍内完成
+        set_end(&mut st, 10.0 + 1.5 * TICK_SECONDS); // t_rem ∈ (TICK, 2·TICK)：下一拍内完成
         let (_, t) = seg_of(&st, &[near.clone()]);
         assert!(t == landing, "破阈+下一拍内完成应把终点钉在落点");
         let far = mk(2, 0.1); // 同队但 mover 远离落点
         assert!(seg_of(&st, &[far]).1 != landing, "未破阈应保持原口径（终点 = lerp(u(t+1)) ≠ 落点）");
         let cross = mk(12, 0.405); // 同坐标但跨队
         assert!(seg_of(&st, &[cross]).1 != landing, "跨队 mover 不应触发同队约束");
-        set_end(&mut st, 11.0); // t_rem = TICK（抢断式满拍，无保持段）
+        set_end(&mut st, 10.0 + TICK_SECONDS); // t_rem = TICK（抢断式满拍，无保持段）
         // 此档 `to` 恰等于 lerp(u(t+1)) = 落点（数值上不可区分），改看 `from`：原口径 from = 动作前位置。
         assert!(seg_of(&st, &[near]).0 == (0.5, 0.5), "t_rem==TICK 应走原口径（严格 <，from=动作前位置）");
     }
@@ -10251,6 +10757,49 @@ mod tests {
         assert_eq!(shot_hazard_probability(0.0, 0.0), 0.0);
     }
 
+    /// C1 shot-rate anchor：`per_second_hazard` 的语义 = 每秒 Bernoulli 率。
+    /// 关键不变量：**机会变密（Δt 减半、机会数翻倍）时，每秒起脚率不变**——
+    /// 两次独立的 1 s 窗口掷定 ≡ 一次 2 s 窗口掷定（`1-(1-p1)^2`）。
+    #[test]
+    fn c1_per_second_hazard_composes_over_opportunity_windows() {
+        // 边界：rate=0 / dt=0 → 0；单秒 dt=1 时 p 就是 rate；rate≥1 → 必中。
+        assert_eq!(per_second_hazard(0.0, 2.0), 0.0);
+        assert_eq!(per_second_hazard(0.5, 0.0), 0.0);
+        assert!((per_second_hazard(0.25, 1.0) - 0.25).abs() < 1e-12);
+        assert_eq!(per_second_hazard(1.0, 0.5), 1.0);
+        assert_eq!(per_second_hazard(1.5, 0.5), 1.0, "rate > 1 被钳制到必中");
+        // 机会窗口组合律：两个独立 1 s 窗口 = 一个 2 s 窗口（率恒定）。
+        let p1 = per_second_hazard(0.2, 1.0);
+        let p2 = per_second_hazard(0.2, 2.0);
+        assert!((p2 - (1.0 - (1.0 - p1).powi(2))).abs() < 1e-12);
+        // 机会间隔减半 → 单次概率严格下降（但同一时长内的累计率不变）。
+        let dense = per_second_hazard(0.2, 0.5);
+        assert!(dense < p1, "Δt 减半时单次机会概率必须下降");
+        assert!(per_second_hazard(0.2, 4.0) > p2, "Δt 加倍时单次机会概率上升");
+    }
+
+    /// C1 shot-rate anchor：Δt 取自**刚过期**的自然机会（不是重开后的新 deadline）。
+    #[test]
+    fn c1_natural_deadline_dt_uses_expired_opportunity() {
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.action_opportunity = None;
+        assert_eq!(
+            natural_deadline_dt_s(&st),
+            BASE_ACTION_DEADLINE_TICKS as f64 * TICK_SECONDS,
+            "无机会（防御性兜底）→ 基线 deadline 的秒数"
+        );
+        // age ≠ deadline：Δt 必须取 deadline（到期前它可能被重置/继承），不是已走拍数。
+        // 这条 fixture 让「改成读 age」的变异必红（age=1、deadline=4）。
+        st.action_opportunity = Some(ActionOpportunity {
+            carrier: 5,
+            age_ticks: 1,
+            deadline_ticks: 4,
+            reason: OpportunityReason::DeadlineElapsed,
+        });
+        assert_eq!(natural_deadline_dt_s(&st), 4.0 * TICK_SECONDS);
+    }
+
     /// P29 D2：背向球门 → 禁止 Shoot 候选（`facing_goal` 为假）。
     #[test]
     fn p29_back_to_goal_forbids_shoot_candidate() {
@@ -10268,6 +10817,19 @@ mod tests {
                 second_defender_m: 30.0, cooldown_ticks: 0, pressure_state: 0.0 }.angle_quality(),
             0.0
         );
+    }
+
+    /// C1 in-box 谱系：`shot_bucket` 的三桶概率对**钉死**（审阅 P2-4 的补强——
+    /// 此前只有桶边界测试，goal/saved 概率改错不会红，而注释里的旧值 `(15,30)/(3,22)/(2,11)`
+    /// 已经和代码不符）。改这三个数 = 改射门水平，必须同时更新
+    /// `.scratch/notes/RECORD.md` 与 L1 读数，故这里显式钉值。
+    #[test]
+    fn c1_shot_bucket_probabilities_are_pinned() {
+        assert_eq!(shot_bucket(BOX_DIST_M), (7, 48), "禁区内 goal/saved 概率");
+        assert_eq!(shot_bucket(BOX_DIST_M + 0.1), (2, 32), "禁区弧 goal/saved 概率");
+        assert_eq!(shot_bucket(ARC_DIST_M + 0.1), (1, 14), "远射 goal/saved 概率");
+        // 边界是 ≤：恰在边界上属内桶。
+        assert_eq!(shot_bucket(ARC_DIST_M), (2, 32));
     }
 
     /// P29 D2：距离分段复用 `shot_bucket` 边界（6-16.5→0.9-1.0 / 16.5-25→0.45-0.9 /
@@ -11433,10 +11995,19 @@ mod tests {
             "贴防桶非长传平均宽度 {:.3} ≠ {}（应为基线，无加成）",
             avg(tight_non_long_w, tight_non_long_n), base_tight
         );
+        // 方向化后：长传加成按 `forward_frac` 缩放，桶内宽度 ∈ [base, base+LONG]。
+        // 桶均值做上下界 + 严格下界（删加成会塌回 base）；常量本身的精确值（15/23）由
+        // 纯函数测试 `p32_interception_roll_width_quantizes_by_ceil` 钉死。
+        let long_avg = avg(tight_long_only_w, tight_long_only_n);
         assert!(
-            (avg(tight_long_only_w, tight_long_only_n) - expect_long as f64).abs() < 1e-9,
-            "贴防桶长传(22-35m)平均宽度 {:.3} ≠ {}——LONG_PASS_INTERCEPT_BONUS 未接线/被删/被错接",
-            avg(tight_long_only_w, tight_long_only_n), expect_long
+            long_avg <= expect_long as f64 + 1e-9 && long_avg >= base_tight as f64 - 1e-9,
+            "贴防桶长传(22-35m)平均宽度 {:.3} ∉ [{}, {}]——加成被错加/错接（方向缩放只应减不增）",
+            long_avg, base_tight, expect_long
+        );
+        assert!(
+            long_avg > base_tight as f64 + 1e-9,
+            "贴防桶长传平均宽度 {:.3} 未高于基线 {}——LONG_PASS_INTERCEPT_BONUS 未接线/被删",
+            long_avg, base_tight
         );
 
         // 超长档（>35m）样本天然稀少（实测 200 seed 全距离档仅 108 条：贴防 17 / 中距 78 /
@@ -11454,10 +12025,20 @@ mod tests {
             "贴防桶超长样本 {} > 全距离档超长总数 {}——分桶减法口径错",
             tight_very_long_n, total_very_long_n
         );
+        // 方向化后超长档的下界是 base（fwd=0 时无加成）。
+        let base_far = interception_roll_width(INTERCEPT_P_FAR);
         assert!(
-            total_very_long_w >= 17 * total_very_long_n,
-            "超长档平均宽度 {:.2} < 下界 17——VERY_LONG_PASS_INTERCEPT_BONUS 被删或未接线",
-            avg(total_very_long_w, total_very_long_n)
+            total_very_long_w >= base_far * total_very_long_n,
+            "超长档平均宽度 {:.2} < 下界 {}——方向缩放只应减不增，base 被改小/错接",
+            avg(total_very_long_w, total_very_long_n), base_far
+        );
+        // 方向缩放后很纯的「前向」样本不存在（选点偏好横向），精确的 15/23 由纯函数测试
+        // `p32_interception_roll_width_quantizes_by_ceil` 直接断言；此处守住上下界与
+        // 「加成存在」的严格下界（删除 LONG 会使 very-long 均值塌到 base_far）。
+        assert!(
+            avg(total_very_long_w, total_very_long_n) > base_far as f64 + 1e-9,
+            "超长档平均宽度 {:.2} 未高于 base {}——长传加成未接线/全删",
+            avg(total_very_long_w, total_very_long_n), base_far
         );
         // 分层 actual 字段的活性（防死字段，审阅 P3-3）：actual 不可能超过样本数；长传/超长
         // 是嵌套关系（very ⊆ long），故 two actual 也嵌套。这两条把两个字段绑到真实记账。
@@ -12044,9 +12625,12 @@ mod tests {
     /// （p143r-v4 重标定：阈值 8/12/16 → 2/4/7，与 deadline 基线 7→2 同尺度——见常量注释。）
     #[test]
     fn p31_liveness_profile_three_stages_monotone() {
-        assert_eq!(LIVENESS_STAGE_1_TICKS, 2, "一档阈值应为 2s（p143r-v4 重标定）");
-        assert_eq!(LIVENESS_STAGE_2_TICKS, 4, "二档阈值应为 4s（p143r-v4 重标定）");
-        assert_eq!(LIVENESS_STAGE_3_TICKS, 7, "三档阈值应为 7s（p143r-v4 重标定）");
+        // 档位是**秒语义**（2/4/7 s）。v11 起拍长 0.5s ⇒ tick 常量是秒数 / TICK_SECONDS；
+        // 断言按秒换算，拍频再变时这里自动跟随（写死 tick 数会在换拍频时误红）。
+        let ticks_per_sec = (1.0 / TICK_SECONDS) as u32;
+        assert_eq!(LIVENESS_STAGE_1_TICKS, 2 * ticks_per_sec, "一档阈值应为 2s");
+        assert_eq!(LIVENESS_STAGE_2_TICKS, 4 * ticks_per_sec, "二档阈值应为 4s");
+        assert_eq!(LIVENESS_STAGE_3_TICKS, 7 * ticks_per_sec, "三档阈值应为 7s");
 
         // 未达一档：全零（护栏不介入）
         for t in 0..LIVENESS_STAGE_1_TICKS {
@@ -12404,11 +12988,15 @@ mod tests {
             "6 场里停滞从未达到一档（{}）——护栏无触发机会",
             max_seen
         );
+        // 余量是**秒语义**（1 Hz 时代写死 +12 tick = 12 s）；按拍频换算，避免 2 Hz 下
+        // 门槛被意外收紧 2 倍。
+        let margin_ticks = (12.0 / TICK_SECONDS) as u32;
         assert!(
-            max_seen <= LIVENESS_STAGE_3_TICKS + 12,
-            "停滞上限 {} 远超三档({})——护栏未真正拉回比赛",
+            max_seen <= LIVENESS_STAGE_3_TICKS + margin_ticks,
+            "停滞上限 {} 远超三档({})+{}s——护栏未真正拉回比赛",
             max_seen,
-            LIVENESS_STAGE_3_TICKS
+            LIVENESS_STAGE_3_TICKS,
+            12
         );
     }
 
@@ -12434,11 +13022,14 @@ mod tests {
         assert!(reached_1, "40 场里停滞从未达到一档——护栏无触发机会（常量空转）");
         assert!(reached_2, "40 场里停滞从未达到二档——「无压久持→出球」档无触发机会");
         // 拉回有效：全场停滞上限应显著低于「无止境」（实测三档 16 是储备；上限应在二档量级）
+        // 余量秒语义（1 Hz 写死 +8 tick = 8 s）——按拍频换算。
+        let margin_ticks = (8.0 / TICK_SECONDS) as u32;
         assert!(
-            max_seen <= LIVENESS_STAGE_3_TICKS + 8,
-            "停滞上限 {} 远超三档({})——出球档未把比赛拉回",
+            max_seen <= LIVENESS_STAGE_3_TICKS + margin_ticks,
+            "停滞上限 {} 远超三档({})+{}s——出球档未把比赛拉回",
             max_seen,
-            LIVENESS_STAGE_3_TICKS
+            LIVENESS_STAGE_3_TICKS,
+            8
         );
     }
 

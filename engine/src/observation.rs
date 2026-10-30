@@ -55,9 +55,9 @@
 //!   引擎**没有**为它建立高亮或飞行。`MatchState::new` 已经把 `st.carrier = 10`、
 //!   `st.possession = 0`、`st.ball_pos = (0.55,0.5)` 提交好了，`match_events` 又把
 //!   `st.pos[10] = (0.55,0.5)`（球与接收者同位），**首个 tick 的 beat 就直接给 10 号 `main`**
-//!   （实测：`t=1.0 Beat main.subject=10`）。该事件的 `speed = 14.0` 只是装饰——拨球距离
-//!   `distance_meters((0.5,0.5),(0.55,0.5)) = 5.25m`，除以 `speed` 得 0.375s < `TICK_SECONDS`(1s)，
-//!   引擎从未进入飞行态。
+//!   （1 Hz 下首个 beat 在 `t=1.0`；2 Hz 下 `t=0.5`）。该事件的 `speed = 14.0` 只是装饰——拨球距离
+//!   `distance_meters((0.5,0.5),(0.55,0.5)) = 5.25m`，除以 `speed` 得 0.375s < `TICK_SECONDS`
+//!   （1 Hz 下 1 s、2 Hz 下 0.5 s；两种节拍都小于一拍），引擎从未进入飞行态。
 //!   所以这里记 `restart_taken(EngineState)` **紧跟** `control_established(Home, 10, Kickoff)`
 //!   （同一提交点 t=0），basis 用 `EngineState`（不是 `FinalizedOutcome`——没有高亮 finalize）。
 //!   **不要**为它等 `kickoff_end`、也不要记 `BallInFlight`：那会记录一个引擎里不存在的飞行段。
@@ -4863,7 +4863,7 @@ mod tests {
         );
         assert_eq!(a.possession_episodes, b.possession_episodes);
         assert_eq!(a.restart_sequences, b.restart_sequences);
-        assert_eq!(a.gap_count(), 0, "本 seed（默认时长）不该产 gap；\n                 注意：这只是**本样本内**的 0，不是「任何真实路径都无 gap」的全称命题——\n                 终场哨落在未决飞行中途时会合法产 `full_time_during_ball_in_flight`\n                 （实测 seed 562 @ dur 120、seed 348 @ dur 400；同一机制可由多种时长触发，但不是「任何时长」，见\n                 truncated_stream_produces_a_full_time_gap_by_design 的文档）");
+        assert_eq!(a.gap_count(), 0, "本 seed（默认时长）不该产 gap；\n                 注意：这只是**本样本内**的 0，不是「任何真实路径都无 gap」的全称命题——\n                 终场哨落在未决飞行中途时会合法产 `full_time_during_ball_in_flight`\n                 （实测 seed 360 @ dur 400、seed 103 @ dur 900 [R6 重扫]；同一机制可由多种时长触发，但不是「任何时长」，见\n                 truncated_stream_produces_a_full_time_gap_by_design 的文档）");
         assert!(
             a.phase_segments.is_empty(),
             "#15B 之前 phase_segments 必须为空"
@@ -5329,23 +5329,56 @@ mod tests {
     ///
     /// 已复核示例（旧表述曾断言「dur ≥ 300 时 0 例」，**该全称已被证伪**，勿退回）：
     ///
-    /// - `seed 562 @ dur 120`（p143r-v4 重扫；原 `470` 在新事件密度下不再命中）：
-    ///   kickoff restart 在 t=119 发出、飞行被 t=120 的终场哨截断；
-    /// - `seed 348 @ dur 400`（v4 重扫；原 `1228` 在新事件密度下不再命中）：
-    ///   t=399 的 kickoff **飞行中**撞上 t=400 终场哨——**更长时长同样产 gap**。
+    /// - `seed 360 @ dur 400`（**R6 重扫**：C1 子拍/移动层重放到 main 后，原
+    ///   `562 @ dur 120` 与 `348 @ dur 400` 都不再命中——它们末尾没有「进球 → 开球 →
+    ///   开球飞行撞哨」的时序）：该场的 episode 12 在 392s 以 `Goal` 收束，t=399.5 的
+    ///   kickoff 飞行中撞上 t=400 终场哨，restart 以 `MatchEnd` 收束、无
+    ///   `open_play_resumed_t`（复扫口径：seed 1..=800 × dur ∈ {120,300,400,700}，
+    ///   命中 360@400；扩展扫额外得 225@450 / 103@900）；
+    /// - `seed 103 @ dur 900`（同一轮扩展扫：dur ∈ {200,250,350,450,500,600,900,1200,
+    ///   1800,2700}）：t=899.5 的 kickoff **飞行中**撞上 t=900 终场哨——**更长时长同样产 gap**。
     ///
     /// 所以「真实路径 0 gap」**只在**未被截断的干净比赛上成立，不是全称命题——
-    /// `gap_count() == 0` 的几处断言各自限定了样本（本测试用 `dur 120` 只是取一个**稳定复现**的
-    /// 样本，不表示更长时长不会产）。
+    /// `gap_count() == 0` 的几处断言各自限定了样本（本测试从**候选表**里取第一个恰好产
+    /// 1 条合法 gap 的样本；候选在个别编译/机器上可能失效，见测试体的 CI 注记）。
     ///
     /// 判别力（防空转）：若把 `full_time` 里的未决飞行分支删掉，本测试第 2 条断言红。
     #[test]
     fn truncated_stream_produces_a_full_time_gap_by_design() {
-        let config = MatchConfig {
-            match_duration_seconds: 120.0,
-            ..MatchConfig::default_()
-        };
-        let dm = simulate_with_behavior_observations(562, config);
+        // **CI 兜底（2026-10-30）**：与 `every_episode...` 同理，尾哨截断是 knife-edge
+        // 时序——同一个 seed 在不同编译/机器上可能不再命中。这里用候选表扫描**第一个**
+        // 恰好产 1 条 `full_time_during_ball_in_flight` 的样本；判据（恰好 1 条、原因
+        // 具名、restart 以 MatchEnd 收束且无 open_play_resumed_t）全部不变。
+        const GAP_SAMPLE_CANDIDATES: &[(u64, f64)] =
+            &[(360, 400.0), (225, 450.0), (103, 900.0)];
+        let mut tried: Vec<(u64, f64, usize)> = Vec::new();
+        let mut chosen: Option<(u64, f64, DiagnosticMatch)> = None;
+        for &(seed, dur) in GAP_SAMPLE_CANDIDATES {
+            let config = MatchConfig {
+                match_duration_seconds: dur,
+                ..MatchConfig::default_()
+            };
+            let dm = simulate_with_behavior_observations(seed, config);
+            let want = Some(ControlFactDetail::Gap(
+                ObservationGapReason::FullTimeDuringBallInFlight,
+            ));
+            let all_full_time = dm
+                .control_facts
+                .iter()
+                .filter(|f| f.kind == ControlFactKind::ObservationGap)
+                .all(|f| f.detail == want);
+            if dm.gap_count() == 1 && all_full_time {
+                chosen = Some((seed, dur, dm));
+                break;
+            }
+            tried.push((seed, dur, dm.gap_count()));
+        }
+        let (_seed, _dur, dm) = chosen.unwrap_or_else(|| {
+            panic!(
+                "候选表里没有「恰好 1 条 full_time_during_ball_in_flight」样本\
+                 （试过 seed/dur/gaps = {tried:?}）——换样本，不换判据"
+            )
+        });
         assert_eq!(
             dm.gap_count(),
             1,
@@ -5564,11 +5597,32 @@ mod tests {
         // M1b（2026-10-17，门将出/退目标）又改一次事件流，上面那组**一种形态都不命中**。
         // 按同一判据再扫 seed 1..=600：形态① [61,68,73,91,108,139,…]、形态② [79,401,462]、
         // 形态③ [102,337,404,437,440]，取 `[61,68,73,91,79,401,462,102,337]`（计数 4/3/2）。
-        const SEEDS: [u64; 9] = [61, 68, 73, 91, 79, 401, 462, 102, 337];
+        // **R6（2026-10-29，C1 子拍/移动层/横向转移重放到 main）**再改一次事件流：上一组
+        // **一种形态都不命中**（防空转断言红：0/0/0）。按同一判据在 5400 下重扫 seed 1..=600：
+        // 形态① [18,232,456,529,542,350,351,561,196,593]、形态② [428,508]、
+        // 形态③ [253,87,109,492,133,341,569,596]，取
+        // `[18,232,456,529,428,508,253,87,109]`（计数 4/2/3）。**换样本，不是换判据**——
+        // 谓词、豁免条款、防空转断言均未动。（与 p15 的 `TRUNCATION_FORM_SEEDS` 同一次扫描。）
+        //
+        // **CI 兜底（2026-10-30）**：形态命中是尾哨时序的 knife-edge——同一源码在本机
+        // release/debug 都命中 seed 253 的形态③，而 CI（rustc 1.99.1 + GitHub runner）
+        // 上同一 seed 只给出 1/1/0。⇒ 不再把单个 seed 当跨环境常量：用候选表**运行时扫描**
+        // 到三种形态都出现为止（各形态的候选按已知命中顺序排列）。判据（①/②/③ 都必须
+        // 出现 + 每条空对象必须在截断时刻）不变；变的是「样本从哪里来」。
+        const FORM_SEED_CANDIDATES: &[u64] = &[
+            18, 428, 253, 87, 109, 616, 232, 456, 508, 645, 492, 529, 542, 698, 350, 351,
+            561, 748, 196, 593, 133, 842, 341, 569, 596, 957, 1015, 1098, 1112,
+        ];
         let mut truncated_episode = 0usize;
         let mut truncated_restart_untaken = 0usize;
         let mut truncated_restart_taken = 0usize;
-        for seed in SEEDS {
+        for seed in FORM_SEED_CANDIDATES.iter().copied() {
+            if truncated_episode > 0
+                && truncated_restart_untaken > 0
+                && truncated_restart_taken > 0
+            {
+                break; // 三种形态都已覆盖；继续扫只是浪费模拟
+            }
             let dm = simulate_with_behavior_observations(seed, MatchConfig::default_());
             let whistle_t = dm
                 .events
@@ -5631,7 +5685,8 @@ mod tests {
                 && truncated_restart_untaken > 0
                 && truncated_restart_taken > 0,
             "seed 集合没有覆盖全部三种截断形态（episode {} / restart 未 taken {} / \
-             restart 已 taken {}）——豁免条款有分支是空转的；请在 SEEDS 里补命中该形态的 seed",
+             restart 已 taken {}）——豁免条款有分支是空转的；请在 `FORM_SEED_CANDIDATES` \
+             里补命中该形态的 seed（候选表已扫完仍未覆盖）",
             truncated_episode,
             truncated_restart_untaken,
             truncated_restart_taken

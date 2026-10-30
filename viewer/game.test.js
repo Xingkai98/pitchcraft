@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Game, buildGameIndex, PLAYER_TEXTURE } from './game.js';
-import { config } from './config.js';
+import { config } from './config.js?v=20261029-1';
 import { interpretEvent } from './interpretation.js';
 
 // clip 模式测试：每个事件独立片段，默认不播放，点播才播

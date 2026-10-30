@@ -611,15 +611,28 @@ pub fn card_of(
 /// 同刻多条时取**最早**一条（与 P16 `caliber.rs` 的 `closing_fact` 同款理由：
 /// `t == end_t` 上「最后一条」会选到下一个 episode 的开启事实）。
 ///
-/// ⚠️ **不是每条争抢都收束了一段 episode**：实测 300 seed，`contest_started` 事实
-/// 20053 条，其中**同刻是某个 episode 的 `end_t`** 的只有约 70%（见
-/// `by_contest_start` 的分母栏）。余下 30% 发生在「控制已释放、球还在飞」的
+/// ⚠️ **不是每条争抢都收束了一段 episode**：R6 300 seed 实测 `contest_started` 事实
+/// **37401** 条（P17A 时代为 20053），其中**同刻是某个 episode 的 `end_t`** 的
+/// **25078（67.1%）**；余下 **32.9%** 发生在「控制已释放、球还在飞」的
 /// **两段 episode 之间**——它们数得到成因，但挂不到任何一张卡上。
+/// （此处是**全部争抢**的分母；`instant_contest` 的 90.4% 是**零时长子集**的分母，两者不可互换。）
 pub fn closing_contest_fact<'a>(
     dm: &'a DiagnosticMatch,
     ep: &PossessionEpisode,
 ) -> Option<(usize, &'a ControlFact, f64)> {
     let end = ep.end_t?.value;
+    // ⚠️ **流边界收束的段不得认领争抢成因**（`a_contest_fact_closes_at_most_one_episode`
+    //    的 ② 不变量）：收束它的是哨声（FullTime/HalfTime），不是同刻开始的争抢。
+    //    实测 seed 20 在 t=5400 会产出一个**零长度 episode**（start=end=5400，FullTime），
+    //    同刻还有 DeliveryLoose 的 `contest_started`（V1 movement-coupling 改变 RNG 流后
+    //    首次可触达）。若不在此提前返回，卡片会把「哨声收束」误报成「被争抢收束」——
+    //    与下方 seed 24 的多段 tie-break 同源（值看起来合理、但指的是同刻另一过程）。
+    if matches!(
+        ep.end_reason,
+        Some(EpisodeEndReason::FullTime) | Some(EpisodeEndReason::HalfTime)
+    ) {
+        return None;
+    }
     // ⚠️ **同一 `end_t` 可能收束多个 episode**（实测 30 seed 恰好 1 例：
     // seed 24 的 t=5400，episode 102 `control_lost` 与 episode 103 `full_time` 同刻）。
     // 那条争抢事实只属于**真正被它收束**的那一段。用「列表里最靠前的那段」做确定性
@@ -764,7 +777,7 @@ pub const EXC_EMPTY_POSSESSION_SECONDS: f64 = 20.0;
 /// 故 [`classify`] 返回**切片**而不是 `Option`——把多类压成一类会丢信息，
 /// 而 L2 的按类计数会因此**少算**（本仓「假覆盖」的又一种形态）。
 pub const EXCEPTION_CLASSES: &[(&str, &str)] = &[
-    ("instant_contest", "同拍收束：**争抢**时长为 0（口径是 `contest_started`→`contest_ended`，**不是** possession 时长）。\n     ⚠️ **本类只覆盖 P17A A2 母体的 ~70%**：A2 数的是**全部**零时长争抢\n     （300 seed 实测 10564/20053），而诊断卡逐 episode 展开，只能看见其中\n     **收束了一段 episode 的那部分**（实测 7364 = 69.7%）。剩下的约 30% 发生在\n     「控制已释放、球还在飞」的**两段 episode 之间**——它们在 L2 的争抢成因表里\n     数得到，但没有 card 可以挂。**不得**把本类的卡数读成 A2 的全量"),
+    ("instant_contest", "同拍收束：**争抢**时长为 0（口径是 `contest_started`→`contest_ended`，**不是** possession 时长）。\n     ⚠️ **本类只覆盖 P17A A2 母体的一部分**：A2 数的是**全部**零时长争抢\n     （R6 300 seed 实测 17074/37401 = 45.7%，2 Hz 后不再过半，但仍是最大单一类），\n     而诊断卡逐 episode 展开，只能看见其中 **收束了一段 episode 的那部分**\n     （实测 15434 = 90.4%）。剩下的约 10% 发生在「控制已释放、球还在飞」的\n     **两段 episode 之间**——它们在 L2 的争抢成因表里数得到，但没有 card 可以挂。\n     **不得**把本类的卡数读成 A2 的全量"),
     ("empty_possession", "空 possession：时长超过阈值却几乎没有决策动作（P17A A6）"),
     ("long_dwell", "长持球：链内相邻决策动作最大间隔超阈值（P17A A1）"),
     ("shot_rebound_end", "射门被扑/中框后弹回场内收束（P17A A4 关注的过程）"),

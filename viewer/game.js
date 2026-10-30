@@ -7,8 +7,8 @@
 //   clip：每个事件是"独立片段"，选中事件 → 显示初始状态，点播放 → 只在该事件窗口推进，播完停。
 //     （保留为调试/单事件点播工具。）
 
-import { config } from './config.js';
-import { buildTimeline } from './interpretation.js';
+import { config } from './config.js?v=20261029-1';
+import { buildTimeline } from './interpretation.js?v=20261029-1';
 import { parseEventStream } from './protocol.js';
 
 // 每个锚点是否为其事件（`evt`）的**首 / 末**锚点。
@@ -615,6 +615,10 @@ export class Game {
 
   // C5 辅助：为 Catmull–Rom 找相邻的「拍前 / 拍后」锚点（严格早于 prev.t / 晚于 next.t，
   // 跳过拍边界同时间戳的重复锚点）。返回 null = 不满足均匀拍链条件（退回线性）。
+  //
+  // ⚠️ 2 Hz 已知限制（P2，未改）：下面的 [0.5, 1.5] s 窗口是 1 Hz 标定的。beat 间距 0.5 s
+  // 恰好卡在下界（含，仍平滑），而 fill-to-tick 的传球锚点间距 0.475 s 落在窗外 → 这些段
+  // 静默退回线性插值。改窗口会改拍内纹理，必须配视觉验收（本轮未做）；先如实记录。
   _smoothNeighborPositions(arr, pos, prev, next) {
     const s1 = next.t - prev.t;
     if (!(s1 >= 0.5 && s1 <= 1.5)) return null;
