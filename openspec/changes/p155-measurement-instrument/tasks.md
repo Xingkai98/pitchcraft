@@ -57,16 +57,16 @@
 
 ## 4. C：用户尺度基线 + 汇合
 
-- [ ] 4.1 `viewer-match.mjs` 跑 seed42/5min：传球/抢断/犯规/射门、最长无动作段、墙钟
-- [ ] 4.2 90min 聚合（同 seed 或预注册集）与 5min 并列，先写 5min
-- [ ] 4.3 产出 `notes/change0-verdict.md`：viewer 贡献区间 + 条件指标基线 + L1 带审计结论 + Change 1 建议（viewer vs engine motion layer）
-- [ ] 4.4 明确列出「不确定项 / 需要补的实验」，不把不可分解写成已证明
+- [x] 4.1 `viewer-match.mjs` 跑 seed42/5min：传球 48 / 抢断 2 / 犯规 3 / 射门 0
+- [x] 4.2 90min 聚合（同 wasm / seed42）：11737 事件；pass 913 / tackle 28 / foul 24 / shot 24 / beat 10743
+- [x] 4.3 产出 `notes/change0-verdict.md`：viewer 贡献区间 + 条件指标基线 + L1 带审计结论 + Change 1 建议（viewer vs engine motion layer）
+- [x] 4.4 `notes/change0-verdict.md` §8 列出不确定项与最小补实验
 
 ## 5. 验收与收尾
 
-- [ ] 5.1 `git diff --stat main -- engine/ viewer/` 为空
-- [ ] 5.2 `node --test tools/visual-review/*.test.mjs` 通过；既有 viewer/tools 套件不新增红
-- [ ] 5.3 `openspec validate p155-measurement-instrument --strict` 通过
+- [x] 5.1 `git diff --stat main -- engine/ viewer/` 为空（合并后实测）
+- [x] 5.2 `node --test tools/visual-review/*.test.mjs` 通过（合并后 **107/107**）
+- [x] 5.3 `openspec validate p155-measurement-instrument --strict` 通过
 - [ ] 5.4 独立审阅（零上下文）通过；P0/P1 修复后复审
-- [ ] 5.5 产物/notes 全部入库；不把唯一证据留 `/tmp`
+- [x] 5.5 产物/notes 全部入库（本分支；未 push）；不把唯一证据留 `/tmp`
 - [ ] 5.6 GitHub #190 更新状态与结论摘要
