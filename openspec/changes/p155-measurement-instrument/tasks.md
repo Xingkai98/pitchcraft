@@ -10,20 +10,20 @@
 
 ### 2.1 冻结刺激集
 
-- [ ] 2.1.1 从 `main = 16dfaa0` 现构建 wasm（不拷旧实验产物），记录 wasm SHA256 与构建命令
-- [ ] 2.1.2 选定 12 seed × 2 anchor 的引擎窗（沿用 R7i 的 seed/t0；若换集，须在 `notes/stimulus.md` 写理由）
-- [ ] 2.1.3 产出 `notes/stimulus.json`：seed / t0 / t1 / 采样率 / 相位 / 每 seed 事件流 SHA256 / 源码 SHA / `MODEL_VERSION` / `TICK_SECONDS` / 真实数据清单
-- [ ] 2.1.4 产出 `notes/stimulus.md`：口径、缺数据处理、与 R7i `windows.json` 的可比性说明
-- [ ] 2.1.5 `windows.sha256` 落盘；同输入重跑逐位一致
+- [x] 2.1.1 从 `main = 16dfaa0` 现构建 wasm（不拷旧实验产物），记录 wasm SHA256 与构建命令
+- [x] 2.1.2 选定 12 seed × 2 anchor 的引擎窗（沿用 R7i 的 seed/t0；若换集，须在 `notes/stimulus.md` 写理由）
+- [x] 2.1.3 产出 `notes/stimulus.json`：seed / t0 / t1 / 采样率 / 相位 / 每 seed 事件流 SHA256 / 源码 SHA / `MODEL_VERSION` / `TICK_SECONDS` / 真实数据清单
+- [x] 2.1.4 产出 `notes/stimulus.md`：口径、缺数据处理、与 R7i `windows.json` 的可比性说明
+- [x] 2.1.5 `windows.sha256` 落盘；同输入重跑逐位一致
 
 ### 2.2 消融工具与报告
 
-- [ ] 2.2.1 新增 `tools/visual-review/render-ablation.mjs`：linear / catmull / t1 / direct / current 五种渲染路径
-- [ ] 2.2.2 新增 `tools/visual-review/render-ablation.test.mjs`：纯函数/模式选择/同输入可复现/反证条
-- [ ] 2.2.3 每个模式输出同窗 `trajectory.png` / `contact.png`（复用 `render.mjs` / `soft-canvas.js`）
-- [ ] 2.2.4 每个模式输出逐窗特征：旧/条件 `turn120`、`staticFrac`、路径长度、速度分位、加速度尾部、曲率/自转
-- [ ] 2.2.5 产出 `notes/ablation.md`：逐窗配对差与区间；viewer 贡献区间或「不可分解 + 缺什么」；「mover 锚点 vs 渲染帧」对照
-- [ ] 2.2.6 明确结论只回答「viewer 是否值得先修」，不直接给 Change 1 方案
+- [x] 2.2.1 新增 `tools/visual-review/render-ablation.mjs`：linear / catmull / t1 / direct / current 五种渲染路径
+- [x] 2.2.2 新增 `tools/visual-review/render-ablation.test.mjs`：纯函数/模式选择/同输入可复现/反证条
+- [x] 2.2.3 每个模式输出同窗 `trajectory.png` / `contact.png`（复用 `render.mjs` / `soft-canvas.js`）
+- [x] 2.2.4 每个模式输出逐窗特征：旧/条件 `turn120`、`staticFrac`、路径长度、速度分位、加速度尾部、曲率/自转
+- [x] 2.2.5 产出 `notes/ablation.md`：逐窗配对差与区间；viewer 贡献区间或「不可分解 + 缺什么」；「mover 锚点 vs 渲染帧」对照
+- [x] 2.2.6 明确结论只回答「viewer 是否值得先修」，不直接给 Change 1 方案
 
 ## 3. B：条件指标 + 静止分解 + L1/守卫审计（可独立并行）
 
