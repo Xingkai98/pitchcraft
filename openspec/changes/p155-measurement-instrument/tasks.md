@@ -73,7 +73,9 @@
 - [x] 5.5 产物/notes 入库（**本分支**；未 push）；不把唯一证据留 `/tmp`。
   ⚠️ 已知例外：SkillCorner/Metrica 真实数据与旧 worktree 的绝对路径是 gitignored/历史路径，
   不在本分支内；窗口表与身份哈希已入库。
-- [ ] 5.6 GitHub #190 更新状态与结论摘要
+- [x] 5.6 GitHub #190 更新状态与结论摘要
+  （comment: https://github.com/Xingkai98/pitchcraft/issues/190#issuecomment-7004724476；
+  合入 main 后关闭 issue）
 
 ## 6. 审阅修复（Round 1，2026-11-19）
 
