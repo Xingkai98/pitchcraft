@@ -98,9 +98,9 @@ viewer 的额外运动加工（现行链 = 锚点 + Catmull + T1 + 间隙 hold�
    本次裁决因此以 `movers`（拍内线性）而不是 `direct` 作为「引擎意图」。
 5. `t1` 与 `current` 的 7 个配对差**全部 0**（逐帧坐标差 0.00e+0）：现行 viewer 没有 t1 之外的
    运动加工，`current` 列可视为 `t1` 的等价验证。
-6. `ballStaticFrac` 行的多数 0 差值**不是**「viewer 不影响球」：`movers`/`linear`/`catmull`/`t1`
-   共用同一份 viewer 球锚点，只有 `current` 因高亮特判在个别窗不同（1/24）。
-   球的引擎/演绎贡献本次**不可分离**，归 B。
+6. `ballStaticFrac` 行的 0 差值**不是**「viewer 不影响球」：`movers`/`linear`/`catmull`/`t1`/`current`
+   共用同一份 viewer 球锚点（`current` 与其余模式 0/24 窗不同）；唯一不同的是 `direct`
+   （零阶保持，24/24 窗）。球的引擎/演绎贡献本次**不可分离**，归 B。
 
 ## 4. 与真实锚的对照（转述，不是本次复测）
 

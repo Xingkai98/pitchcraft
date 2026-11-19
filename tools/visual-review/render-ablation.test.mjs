@@ -86,6 +86,8 @@ test('每米转向率必须是每球员口径（分子除以人数，不能大 n
   assert.equal(f.nPlayers, 2);
   assert.ok(Math.abs(f.turnsPerMeter - f.turn120Old / f.pathLenPerPlayer) < 1e-12,
     `turnsPerMeter ${f.turnsPerMeter} 应等于 turn120Old/pathLenPerPlayer ${f.turn120Old / f.pathLenPerPlayer}`);
+  assert.ok(Math.abs(f.condTurnsPerMeter - f.turn120Cond / f.pathLenPerPlayer) < 1e-12,
+    `condTurnsPerMeter ${f.condTurnsPerMeter} 应等于 turn120Cond/pathLenPerPlayer`);
   // 反证：若漏了 /nP，值会翻倍（nP=2）。
   const naive = f.turn120OldTotal / f.pathLenPerPlayer;
   assert.ok(Math.abs(f.turnsPerMeter - naive) > 1e-6, '该用例必须能区分「总数/均值」的错误口径');
