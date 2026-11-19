@@ -180,3 +180,17 @@
 - `git diff --stat main..HEAD -- engine/ viewer/` → 空。
 - 手工反证：坏 wasm / 坏事件流 / 缺 stimulus 三种 `--windows` 调用均以退出码 1 拒绝；
   frozen 重跑的 12 个 `eventShaBySeed` 与 `stimulus.json` 逐一一致。
+
+## Round 3 复审（收尾）
+
+日期：2026-11-19。零上下文复审结论：**P0=0，P1=0**，剩 4 条 P2（不阻塞）。本轮处理：
+
+- **P2-1**：tamper 测试增加「清单缺 `viewer/match-metrics.js`」与「记录中出现未跟踪文件」两条断言；
+  删除式变异与未知文件都会红。
+- **P2-2**：新增 `assertStimulusWindowsMatch`：`--windows` 的 engine `(seed,t0)` 集合必须与
+  `stimulus.windows` **完全一致**（t0 漂移、少窗、多窗都拒绝）；已接入 `runWindows` 并单测。
+- **P2-3**：真实侧本就没有事件身份——文档已写明，无需改代码。
+- **P2-4**：`motion-census.md` §7 注明默认 stimulus 路径在归档/搬目录后失效，复现请显式传
+  `--stimulus`。
+- `tasks.md` 5.2 改为「合并时点 107 → 修复后 112/112」；5.4 勾选 Round 3 P0=0/P1=0；
+  5.6 留给主 session 更新 #190。

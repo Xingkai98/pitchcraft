@@ -248,6 +248,8 @@ test('R7i 窗表解析：12 seed × 2 anchor，id 稳定', () => {
 
 test('★ stimulus 源码哈希硬校验：改一个 viewer 源码哈希必须拒绝拼表（P1-7）', () => {
   const current = sourceHashes();
+  // 清单本身必须覆盖 match-metrics：删掉它（而不是只改值）也要能被判红。
+  assert.ok('viewer/match-metrics.js' in current, 'sourceHashes 清单缺 viewer/match-metrics.js');
   const stim = { viewer: { sourceHashes: { ...current } } };
   assert.deepStrictEqual(assertStimulusSourcesMatch(stim), { ok: true, checked: Object.keys(current).length });
   // 单个字段被改（模拟「viewer 源码变了但 wasm 没变」）→ 硬错误。
@@ -261,6 +263,13 @@ test('★ stimulus 源码哈希硬校验：改一个 viewer 源码哈希必须�
   const partial = { viewer: { sourceHashes: { ...current } } };
   delete partial.viewer.sourceHashes['viewer/game.js'];
   assert.throws(() => assertStimulusSourcesMatch(partial), /缺少已跟踪文件/);
+  // 删除 match-metrics（而不是改值）：必须走「缺少已跟踪文件」分支。
+  const noMetrics = { viewer: { sourceHashes: { ...current } } };
+  delete noMetrics.viewer.sourceHashes['viewer/match-metrics.js'];
+  assert.throws(() => assertStimulusSourcesMatch(noMetrics), /缺少已跟踪文件: .*viewer\/match-metrics\.js/);
+  // 记录里出现本工具不跟踪的文件：也必须报错，不能静默忽略。
+  const unknown = { viewer: { sourceHashes: { ...current, 'viewer/not-tracked.js': '0'.repeat(64) } } };
+  assert.throws(() => assertStimulusSourcesMatch(unknown), /不在本工具的源码跟踪清单里/);
 });
 
 test('ablationMarkdown 能渲染合成结果（表格生成不崩）', () => {

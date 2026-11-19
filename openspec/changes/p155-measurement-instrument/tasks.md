@@ -65,9 +65,11 @@
 ## 5. 验收与收尾
 
 - [x] 5.1 `git diff --stat main -- engine/ viewer/` 为空（合并后实测）
-- [x] 5.2 `node --test tools/visual-review/*.test.mjs` 通过（合并时点 **107/107**；当前 **111/111**）
+- [x] 5.2 `node --test tools/visual-review/*.test.mjs` 通过（合并时点 107 → 修复后 **112/112**）
 - [x] 5.3 `openspec validate p155-measurement-instrument --strict` 通过
-- [ ] 5.4 独立审阅（零上下文）通过；P0/P1 修复后复审
+- [x] 5.4 独立审阅（零上下文）通过；P0/P1 修复后复审。
+  Round 3 结论：**P0=0 / P1=0**（见 `notes/review-round1.md` 的「Fix log (Round 2)」与
+  「Round 3 复审（收尾）」）
 - [x] 5.5 产物/notes 入库（**本分支**；未 push）；不把唯一证据留 `/tmp`。
   ⚠️ 已知例外：SkillCorner/Metrica 真实数据与旧 worktree 的绝对路径是 gitignored/历史路径，
   不在本分支内；窗口表与身份哈希已入库。

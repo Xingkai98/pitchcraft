@@ -542,6 +542,23 @@ export function assertStimulusEventIdentity(stim, seed, actualEventSha256) {
   }
 }
 
+// 窗口相位身份：`--windows` 的 engine (seed,t0) 集合必须与 stimulus.windows 完全一致。
+// 只校验事件流不够——同 seed 但 t0 漂移会让「同锚点」对照失效（P2-2）。
+export function assertStimulusWindowsMatch(stim, engineItems) {
+  const key = (seed, t0) => `${Number(seed)}|${Number(t0).toFixed(3)}`;
+  const want = new Set((stim?.windows || []).map((w) => key(w.seed, w.t0)));
+  if (!want.size) throw new Error('stimulus 缺少 windows：没有窗口相位身份，拒绝拼表。');
+  const got = new Set((engineItems || []).map((it) => key(it.seed, it.t0)));
+  const missing = [...got].filter((k) => !want.has(k));
+  const extra = [...want].filter((k) => !got.has(k));
+  if (missing.length || extra.length) {
+    throw new Error('窗口 (seed,t0) 与 stimulus 不一致（相位漂移，拒绝拼表）：\n'
+      + `  - windows 有、stimulus 无: ${missing.length ? missing.join(', ') : '—'}\n`
+      + `  - stimulus 有、windows 无: ${extra.length ? extra.join(', ') : '—'}`);
+  }
+  return { ok: true, n: got.size };
+}
+
 // A 工作流的冻结刺激集（`notes/stimulus.json`）：逐窗测量，事件流 SHA 必须与 A 记录一致。
 // 这是 B 与 A 的唯一共同输入；不一致就抛错（spec「源不一致时拒绝拼表」）。
 async function runStimulus(wasmPath, stimulusPath, outPath) {
@@ -648,6 +665,7 @@ async function runWindows(wasmPath, windowsPath, outPath, stimulusPath = null) {
   const wasmSha256 = sha256(readFileSync(wasmPath));
   // 逐 seed / 逐真实文件加载 → 算完即释放（12 场 × 27k 帧同时驻留会 OOM）。
   const engItems = (W.items || []).filter((x) => x.source === 'engine');
+  assertStimulusWindowsMatch(stim, engItems);
   const bySeed = new Map();
   for (const it of engItems) {
     if (!bySeed.has(it.seed)) bySeed.set(it.seed, []);

@@ -9,7 +9,7 @@ import {
   censusOfWindow, censusWindows, cutTimeWindows, summarizeCensus, quantile,
   phaseTimeline, phaseAt, classifyBallIntervals, aggregateDecomposition, decomposeBallStatic,
   decomposeWindows, BALL_SOURCES, SPEED_GATES, STATIC_GATES, BALL_STATIC_GATES,
-  assertStimulusWasmIdentity, assertStimulusEventIdentity,
+  assertStimulusWasmIdentity, assertStimulusEventIdentity, assertStimulusWindowsMatch,
 } from './motion-census.mjs';
 
 const PITCH = [100, 50]; // 合成球场：x 100m / y 50m，便于手算
@@ -301,6 +301,22 @@ test('★ --windows 源身份：wasm 与逐 seed 事件流 SHA 不符必须抛�
   // 没登记身份的 seed 同样拒绝（不能靠「没记录」蒙混过关）。
   assert.throws(() => assertStimulusEventIdentity(stim, 1204, 'b'.repeat(64)), /不在 stimulus 的 perSeed/);
   assert.throws(() => assertStimulusWasmIdentity({ engine: {} }, 'a'.repeat(64)), /缺少 engine\.wasmSha256/);
+});
+
+test('★ --windows 相位身份：(seed,t0) 集合必须与 stimulus 完全一致（P2-2）', () => {
+  const stim = { windows: [{ seed: 1201, t0: 1960 }, { seed: 1204, t0: 1944 }] };
+  assert.deepStrictEqual(assertStimulusWindowsMatch(stim, [
+    { seed: 1201, t0: 1960 }, { seed: 1204, t0: 1944 },
+  ]), { ok: true, n: 2 });
+  // t0 漂移（同 seed、错相位）必须拒绝。
+  assert.throws(() => assertStimulusWindowsMatch(stim, [{ seed: 1201, t0: 1961 }, { seed: 1204, t0: 1944 }]),
+    /相位漂移/);
+  // 少一个窗 / 多一个窗都必须拒绝（不能「包含即可」）。
+  assert.throws(() => assertStimulusWindowsMatch(stim, [{ seed: 1201, t0: 1960 }]), /stimulus 有、windows 无/);
+  assert.throws(() => assertStimulusWindowsMatch(stim, [
+    { seed: 1201, t0: 1960 }, { seed: 1204, t0: 1944 }, { seed: 1207, t0: 1944 },
+  ]), /windows 有、stimulus 无/);
+  assert.throws(() => assertStimulusWindowsMatch({}, []), /缺少 windows/);
 });
 
 test('门限/档位常量冻结（改口径必须显式改这里）', () => {

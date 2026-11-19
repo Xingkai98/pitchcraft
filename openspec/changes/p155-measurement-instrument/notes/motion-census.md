@@ -3,7 +3,7 @@
 日期：2026-11-19
 分支：`p155-measurement-instrument/2026-11-19`（基于 `d339b29`，引擎与 `main=16dfaa0` 行为一致）
 工具：`tools/visual-review/motion-census.mjs`（新文件；**未改** `motion-metrics.mjs`，理由见 §1）
-测试：`tools/visual-review/motion-census.test.mjs`（**19/19** 全绿；零步反证条做过定向变异，见 §6）
+测试：`tools/visual-review/motion-census.test.mjs`（**20/20** 全绿；零步反证条做过定向变异，见 §6）
 
 证据：
 - **主口径（A 冻结刺激集 + R7i 同锚点真实窗）**：`notes/motion-census-frozen-anchors.{json,log}`
@@ -245,12 +245,12 @@ A 的 `movers` 列说明「即使去掉 viewer，条件 turn120 仍是 0.908」�
 
 ## 6. 测试与定向变异
 
-`node --test tools/visual-review/motion-census.test.mjs` → **19/19 pass**（含 ballFill 主口径反证条、
+`node --test tools/visual-review/motion-census.test.mjs` → **20/20 pass**（含 ballFill 主口径反证条、
 外推点默认跳过的反证条）。
 
 定向变异（已验证并还原）：把条件转向的
 `if (a.speed >= g && b.speed >= g)` 改成 `if (true)`（取消门限），
-**「零步反证条」与「门限边界」两条立即变红**；还原后 19/19 复绿。
+**「零步反证条」与「门限边界」两条立即变红**；还原后 20/20 复绿。
 ⇒ 反证条真的绑定了门限逻辑，不是空转断言。
 
 ## 7. 复现命令
@@ -290,6 +290,8 @@ node tools/visual-review/motion-census.mjs viewer/engine.wasm \
 - R7i 的 `r7i-windows.json` 里 engine item 的 `eventHash` 是**旧树**
   （`c1-trajectory-morphology-2026-10-29`）口径，**不能当当前身份**；工具会对每个 seed 打印
   旧/新哈希差异警告，但身份以 `stimulus.perSeed` 为准。
+- ⚠️ `--windows` 的**默认 stimulus 路径**（`openspec/changes/p155-measurement-instrument/notes/stimulus.json`）
+  在 change 归档/搬目录后会失效。**复现时请显式传 `--stimulus`**（如上），不要依赖默认值。
 
 ## 8. 未完成 / 不确定
 
