@@ -510,6 +510,28 @@ export function sourceHashes(root = ROOT) {
   return out;
 }
 
+// spec「源不一致时拒绝拼表」：只校验 wasm/事件流不够——viewer 源码变而 wasm 不变时，
+// 消融/普查的读数也不可比。**硬错误**，不是警告（P1-7）。
+export function assertStimulusSourcesMatch(stim, root = ROOT) {
+  const recorded = stim && stim.viewer && stim.viewer.sourceHashes;
+  if (!recorded || typeof recorded !== 'object' || Object.keys(recorded).length === 0) {
+    throw new Error('stimulus.json 缺少 viewer.sourceHashes：没有源身份，拒绝拼表。');
+  }
+  const actual = sourceHashes(root);
+  const problems = [];
+  for (const [f, want] of Object.entries(recorded)) {
+    if (!(f in actual)) { problems.push(`${f}: 不在本工具的源码跟踪清单里`); continue; }
+    if (actual[f] !== want) problems.push(`${f}: 现 ${actual[f]} / 记录 ${want}`);
+  }
+  const unrecorded = Object.keys(actual).filter((f) => !(f in recorded));
+  if (unrecorded.length) problems.push(`sourceHashes 缺少已跟踪文件: ${unrecorded.join(', ')}`);
+  if (problems.length) {
+    throw new Error('stimulus.json 的源码哈希与当前树不一致（源不同，拒绝拼表）：\n'
+      + problems.map((p) => `  - ${p}`).join('\n'));
+  }
+  return { ok: true, checked: Object.keys(recorded).length };
+}
+
 // ── 7. 主流程（CLI 调用）──────────────────────────────────────────────────
 function argOf(argv, name, dflt) {
   const i = argv.indexOf(`--${name}`);
@@ -661,6 +683,7 @@ async function runAction(argv) {
   const outDir = resolve(argOf(argv, 'out', join(ROOT, 'openspec/changes/p155-measurement-instrument/notes/ablation-out')));
   const imagesMode = argOf(argv, 'images', 'all');
   const stim = JSON.parse(readFileSync(stimulusPath, 'utf8'));
+  assertStimulusSourcesMatch(stim); // 源码身份（engine/src/lib.rs + viewer/*.js）
   const wasmBytes = readFileSync(wasmPath);
   if (sha256(wasmBytes) !== stim.engine.wasmSha256) {
     throw new Error(`wasm 与 stimulus.json 不同源：现 ${sha256(wasmBytes)} / 记录 ${stim.engine.wasmSha256}。拒绝拼表。`);

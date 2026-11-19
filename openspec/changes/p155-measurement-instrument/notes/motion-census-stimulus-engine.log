@@ -1,5 +1,5 @@
 ═══ 运动普查（A 冻结刺激集）═══
-stimulus=/home/happy/.paseo/worktrees/1g1x3st4/p155-instrument/openspec/changes/p155-measurement-instrument/notes/stimulus-A.json  wasm=viewer/engine.wasm
+stimulus=/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/p155-measurement-instrument/openspec/changes/p155-measurement-instrument/notes/stimulus-A.json  wasm=viewer/engine.wasm
 wasm SHA f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f == stimulus (match)
 seeds=1201,1204,1207,1210,1213,1216,1219,1222,1225,1228,1231,1237  窗=24（24s @ 5Hz）
 帧数检查：121 帧/窗（应 121）

@@ -4,6 +4,9 @@
 - 引擎：wasm sha256 `f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f`；MODEL_VERSION=11；TICK_SECONDS=0.5
 - 构建：`(cd engine && cargo build --target wasm32-unknown-unknown --release) && cp engine/target/wasm32-unknown-unknown/release/fm_engine.wasm viewer/engine.wasm`（从本 worktree 源码现构建；不拷旧实验产物）
 - viewer：config.interpretation.tickSeconds=0.5；源码哈希见 stimulus.json `viewer.sourceHashes`
+- ⚠️ `stimulus.json` 的 `engine.config.off_ball_movement_demo` **不是 `MatchConfig` 字段**
+  （见 `engine/src/lib.rs` 的 `parse_config`）；wasm 侧会忽略它。它只记录冻结时的调用参数，
+  不影响事件流——不要把「配置里写了」当成「引擎读了」。
 
 ## 窗口
 
@@ -55,3 +58,7 @@ node tools/visual-review/render-ablation.mjs freeze --wasm viewer/engine.wasm \
 ⚠️ 可复现性边界：`windows.sha256` 的**切片哈希**环境无关；其文件头另列 wasm **构建产物**哈希
 （随注释行号/工具链变化，不是行为哨兵）。`stimulus.json` 里的 `real.*.path` 是本次机器上的
 真实数据绝对路径（数据本身 gitignored），换机器时该字段会不同，但 `real.*.sha256` 才是数据身份。
+
+⚠️ 切片口径：`windows.sha256` / `stimulus.json` 的 `sliceSha256` 是**解析后事件对象的
+`JSON.stringify`** 哈希，不是原始事件流文本的切片。复算时必须先 `parse` 再 `stringify`
+（字段顺序稳定），直接切 raw JSON 字符串会得到不同值。

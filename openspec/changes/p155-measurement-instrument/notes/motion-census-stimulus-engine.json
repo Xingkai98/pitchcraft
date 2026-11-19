@@ -1,6 +1,6 @@
 {
-  "generatedAt": "2026-11-19T08:24:26.937Z",
-  "stimulusPath": "/home/happy/.paseo/worktrees/1g1x3st4/p155-instrument/openspec/changes/p155-measurement-instrument/notes/stimulus-A.json",
+  "generatedAt": "2026-11-19T08:50:33.028Z",
+  "stimulusPath": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/p155-measurement-instrument/openspec/changes/p155-measurement-instrument/notes/stimulus-A.json",
   "wasmPath": "viewer/engine.wasm",
   "wasmSha256": "f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f",
   "wasmShaMatches": true,
@@ -8,6 +8,7 @@
     "windowSec": 24,
     "sampleHz": 5,
     "activeOnly": false,
+    "includeExtrapolated": false,
     "speedGates": [
       0.3,
       0.5,
@@ -219,6 +220,7 @@
         "pathM": 148.07639025221525,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.6416666666666667,
         "0.2": 0.5083333333333333,
@@ -356,6 +358,7 @@
         "pathM": 109.71501672034242,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.4583333333333333,
         "0.2": 0.041666666666666664,
@@ -493,6 +496,7 @@
         "pathM": 131.44572699516758,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.3333333333333333,
         "0.2": 0.10833333333333334,
@@ -630,6 +634,7 @@
         "pathM": 156.03436274039979,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.21666666666666667,
         "0.2": 0.09166666666666666,
@@ -767,6 +772,7 @@
         "pathM": 187.77642867787063,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.225,
         "0.2": 0.05,
@@ -904,6 +910,7 @@
         "pathM": 134.2701467811124,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.2916666666666667,
         "0.2": 0.05,
@@ -1041,6 +1048,7 @@
         "pathM": 146.65220089346425,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.2916666666666667,
         "0.2": 0.075,
@@ -1178,6 +1186,7 @@
         "pathM": 138.44681060857016,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.30833333333333335,
         "0.2": 0.041666666666666664,
@@ -1315,6 +1324,7 @@
         "pathM": 153.4457965879724,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.44166666666666665,
         "0.2": 0.058333333333333334,
@@ -1452,6 +1462,7 @@
         "pathM": 149.11770303152755,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.2916666666666667,
         "0.2": 0.058333333333333334,
@@ -1589,6 +1600,7 @@
         "pathM": 105.60962134319277,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.5916666666666667,
         "0.2": 0.21666666666666667,
@@ -1726,6 +1738,7 @@
         "pathM": 139.320407597809,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.2916666666666667,
         "0.2": 0.08333333333333333,
@@ -1863,6 +1876,7 @@
         "pathM": 147.05790554622234,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.35,
         "0.2": 0.075,
@@ -2000,6 +2014,7 @@
         "pathM": 157.48436337036932,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.18333333333333332,
         "0.2": 0.03333333333333333,
@@ -2137,6 +2152,7 @@
         "pathM": 127.95417357085385,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.31666666666666665,
         "0.2": 0.1,
@@ -2274,6 +2290,7 @@
         "pathM": 189.4756533821112,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.23333333333333334,
         "0.2": 0.10833333333333334,
@@ -2411,6 +2428,7 @@
         "pathM": 165.73415032611942,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.2916666666666667,
         "0.2": 0.03333333333333333,
@@ -2548,6 +2566,7 @@
         "pathM": 143.51268598623636,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.35,
         "0.2": 0.19166666666666668,
@@ -2685,6 +2704,7 @@
         "pathM": 149.2359950721144,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.30833333333333335,
         "0.2": 0.016666666666666666,
@@ -2822,6 +2842,7 @@
         "pathM": 141.13185050571474,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.8583333333333333,
         "0.2": 0.7833333333333333,
@@ -2959,6 +2980,7 @@
         "pathM": 127.74812724369123,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.6333333333333333,
         "0.2": 0.39166666666666666,
@@ -3096,6 +3118,7 @@
         "pathM": 142.9011922308225,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.6666666666666666,
         "0.2": 0.5416666666666666,
@@ -3233,6 +3256,7 @@
         "pathM": 128.53425449405324,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.25833333333333336,
         "0.2": 0.041666666666666664,
@@ -3370,6 +3394,7 @@
         "pathM": 152.98920698545592,
         "nSteps": 120
       },
+      "skippedExtrapolatedPoints": 0,
       "ballStaticFrac": {
         "2": 0.24166666666666667,
         "0.2": 0.08333333333333333,
@@ -3856,6 +3881,13 @@
           "p10": 120,
           "p90": 120
         }
+      },
+      "skippedExtrapolatedPoints": {
+        "n": 24,
+        "mean": 0,
+        "median": 0,
+        "p10": 0,
+        "p90": 0
       },
       "ballStaticFrac": {
         "2": {

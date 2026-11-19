@@ -271,6 +271,26 @@ test('decomposeBallStatic 五类都应可达（合成事件链）', () => {
   for (const k of BALL_SOURCES) assert.ok(d.sources[k].nIntervals > 0, `${k} 应有区间`);
 });
 
+test('★ 外推点默认跳过（design D3）：extrapolated 帧按缺帧处理，includeExtrapolated 才参与', () => {
+  // 三帧：左 →（外推点）→ 右。默认口径把中间点当缺帧 ⇒ 无步、无转向；
+  // 采信外推时才有 2 步、1 次折返。这条断言在过滤被摘掉时会红（P1-3 的反证条）。
+  const mk = (t, x, extrapolated) => ({
+    t, pitchMeters: PITCH, ball: null,
+    players: [{ id: 1, x, y: 0.5, ...(extrapolated ? { extrapolated: true } : {}) }],
+  });
+  const frames = [mk(0, 0.50), mk(0.2, 0.49, true), mk(0.4, 0.50)];
+  const skipped = censusOfWindow(frames);
+  assert.strictEqual(skipped.nSteps, 0, '外推点两侧的步都必须断开');
+  assert.strictEqual(skipped.turn120Old, null, '断开后没有球员有连续步');
+  assert.strictEqual(skipped.skippedExtrapolatedPoints, 1);
+  assert.strictEqual(skipped.symmetry.n, 2, '外推球员帧不进对称性样本（只剩首末两帧）');
+  const kept = censusOfWindow(frames, { includeExtrapolated: true });
+  assert.strictEqual(kept.nSteps, 2);
+  assert.strictEqual(kept.turn120Old, 1);
+  assert.strictEqual(kept.skippedExtrapolatedPoints, 0);
+  assert.strictEqual(kept.symmetry.n, 3);
+});
+
 test('门限/档位常量冻结（改口径必须显式改这里）', () => {
   assert.deepStrictEqual(SPEED_GATES, [0.3, 0.5, 1.0]);
   assert.deepStrictEqual(STATIC_GATES, [0.2, 0.5, 1.0]);

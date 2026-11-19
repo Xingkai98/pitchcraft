@@ -68,5 +68,13 @@
 - [x] 5.2 `node --test tools/visual-review/*.test.mjs` 通过（合并后 **107/107**）
 - [x] 5.3 `openspec validate p155-measurement-instrument --strict` 通过
 - [ ] 5.4 独立审阅（零上下文）通过；P0/P1 修复后复审
-- [x] 5.5 产物/notes 全部入库（本分支；未 push）；不把唯一证据留 `/tmp`
+- [x] 5.5 产物/notes 入库（**本分支**；未 push）；不把唯一证据留 `/tmp`。
+  ⚠️ 已知例外：SkillCorner/Metrica 真实数据与旧 worktree 的绝对路径是 gitignored/历史路径，
+  不在本分支内；窗口表与身份哈希已入库。
 - [ ] 5.6 GitHub #190 更新状态与结论摘要
+
+## 6. 审阅修复（Round 1，2026-11-19）
+
+- [x] 6.1 P1-1…P1-7 逐条处置；P2 cheap-doc 同步修正（见 `notes/review-round1.md` 的「Fix log (Round 1)」）
+- [x] 6.2 真实侧外推点过滤后重跑 frozen/all/active 三套普查，JSON/log/notes/verdict 同步更新
+- [x] 6.3 `node --test tools/visual-review/*.test.mjs` 全绿；`openspec validate p155-measurement-instrument --strict` 通过

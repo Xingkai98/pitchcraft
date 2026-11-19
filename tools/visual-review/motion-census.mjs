@@ -33,6 +33,9 @@
 // 10. **方向对称性**：底/顶边各 8m 带的使用率与左/右半场使用率（有符号差）。
 // 11. **采样缺口**：Δt ≤ 0 或 > `MAX_STEP_SEC`（默认 1.0s）视为不连续——该步不计，
 //     且不与前后步组成步对（不跨缺口求方向差）。
+// 11b. **外推点**：真实转换器把 SkillCorner 的补全球员点标为 `extrapolated`（p[2]===1）。
+//     主口径**跳过**这些点（按缺帧处理：断开步/步对、不进对称性样本），与 design D3
+//     「外推点按既有规则（真实侧默认跳过）」一致。`includeExtrapolated: true` 可复算旧口径。
 // 12. **球静止来源分解**（`decomposeBallStatic`）：按**引擎事件流**给每个采样区间一个来源：
 //      `carrier_hold` / `carrier_dribble` / `highlight_flight` / `loose` / `restart_dead`。
 //      来源只由事件语义决定；**静止率仍按渲染帧的球速测**（与旧 ballStaticFrac 同帧口径）。
@@ -109,6 +112,10 @@ export function censusOfWindow(frames, opts = {}) {
   // 球相关量的主口径只用**原始球帧**（`ballFill == null`）；SkillCorner 的补全球位是启发式推断，
   // 与 match-metrics / ball-travel 同口径。引擎与 Metrica 无 fill，行为不变。
   const rawBallOnly = opts.rawBallOnly !== false;
+  // 真实侧外推点默认跳过（design D3）；引擎帧没有该标记，行为不变。
+  const includeExtrapolated = opts.includeExtrapolated === true;
+  const isUsablePlayer = (p) => !!p && isNum(p.x) && isNum(p.y)
+    && (includeExtrapolated || !p.extrapolated);
   const out = {
     nFrames: frames ? frames.length : 0,
     nPlayers: 0,
@@ -127,7 +134,16 @@ export function censusOfWindow(frames, opts = {}) {
   const pitch = pitchOf(frames[0], opts.pitchMeters);
   const [L, W] = pitch;
   const idSet = new Set();
-  for (const f of frames) for (const p of f.players || []) if (p && !KEEPER_IDS.includes(p.id)) idSet.add(p.id);
+  let skippedExtrapolatedPoints = 0;
+  for (const f of frames) {
+    for (const p of f.players || []) {
+      if (!p || KEEPER_IDS.includes(p.id)) continue;
+      if (!includeExtrapolated && p.extrapolated) { skippedExtrapolatedPoints += 1; continue; }
+      if (!isNum(p.x) || !isNum(p.y)) continue;
+      idSet.add(p.id);
+    }
+  }
+  out.skippedExtrapolatedPoints = skippedExtrapolatedPoints;
 
   // 逐球员建连续步序列（跨缺口断开）。
   const speeds = [];
@@ -141,7 +157,7 @@ export function censusOfWindow(frames, opts = {}) {
     let prev = null;
     for (const f of frames) {
       const p = (f.players || []).find((q) => q && q.id === id);
-      if (!p || !isNum(p.x) || !isNum(p.y)) { prev = null; steps.push(null); continue; }
+      if (!isUsablePlayer(p)) { prev = null; steps.push(null); continue; }
       const cur = { t: f.t, x: p.x * L, y: p.y * W };
       if (!prev) { steps.push(null); prev = cur; continue; }
       const dt = cur.t - prev.t;
@@ -231,7 +247,7 @@ export function censusOfWindow(frames, opts = {}) {
   // 方向对称性：按球员-帧样本计（非门将）。
   for (const f of frames) {
     for (const p of f.players || []) {
-      if (!p || KEEPER_IDS.includes(p.id) || !isNum(p.x) || !isNum(p.y)) continue;
+      if (!p || KEEPER_IDS.includes(p.id) || !isUsablePlayer(p)) continue;
       const xm = p.x * L; const ym = p.y * W;
       symCount.n += 1;
       if (ym < EDGE_BAND_M) symCount.bottom += 1;
@@ -514,6 +530,10 @@ async function runStimulus(wasmPath, stimulusPath, outPath) {
   const { loadEngineFrames } = await import(join(ROOT, 'tools/visual-review/replay-blind-core.mjs'));
   const sha256 = (x) => createHash('sha256').update(x).digest('hex');
   const stim = JSON.parse(readFileSync(stimulusPath, 'utf8'));
+  // 源码身份硬校验（engine/src/lib.rs + viewer/*.js）：viewer 改而 wasm 不变时读数不可比。
+  // 与 render-ablation 共用同一实现，避免两份清单漂移。
+  const { assertStimulusSourcesMatch } = await import(join(ROOT, 'tools/visual-review/render-ablation.mjs'));
+  assertStimulusSourcesMatch(stim);
   const wasmSha = sha256(readFileSync(wasmPath));
   const wasmMatches = !stim.engine?.wasmSha256 || wasmSha === stim.engine.wasmSha256;
   // 逐 seed 加载 → 算完该 seed 的窗 → 释放（12 场 × 27k 帧同时驻留会 OOM）。
@@ -574,7 +594,7 @@ async function runStimulus(wasmPath, stimulusPath, outPath) {
   const payload = {
     generatedAt: new Date().toISOString(),
     stimulusPath, wasmPath, wasmSha256: wasmSha, wasmShaMatches: wasmMatches,
-    caliber: { windowSec: stim.window?.sec, sampleHz: stim.window?.hz, activeOnly: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
+    caliber: { windowSec: stim.window?.sec, sampleHz: stim.window?.hz, activeOnly: false, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
     eventShaBySeed,
     frameCounts,
     windows: rows.map((r) => ({ ...r, decomposition: decRows.find((d2) => d2.id === r.id) })),
@@ -595,7 +615,9 @@ async function runWindows(wasmPath, windowsPath, outPath) {
   const step = W.window?.canonical_step_sec ?? 0.2;
   const cut = (src, t0) => canonicalWindow(src.frames, t0, { windowSec: winSec, canonicalStepSec: step })
     .map((s) => s.frame).filter(Boolean);
-  const rowsE = []; const rowsR = []; const decE = [];
+  const rowsE = []; const rowsR = []; const decE = []; const eventShaBySeed = {};
+  const sha256 = (x) => createHash('sha256').update(x).digest('hex');
+  const wasmSha256 = sha256(readFileSync(wasmPath));
   // 逐 seed / 逐真实文件加载 → 算完即释放（12 场 × 27k 帧同时驻留会 OOM）。
   const engItems = (W.items || []).filter((x) => x.source === 'engine');
   const bySeed = new Map();
@@ -605,6 +627,7 @@ async function runWindows(wasmPath, windowsPath, outPath) {
   }
   for (const [seed, items] of bySeed) {
     const src = await loadEngineFrames(wasmPath, seed, 5400, { sampleStepSec: step });
+    eventShaBySeed[seed] = sha256(src.eventJson);
     const events = JSON.parse(src.eventJson);
     for (const it of items) {
       const frames = cut(src, it.t0);
@@ -637,6 +660,7 @@ async function runWindows(wasmPath, windowsPath, outPath) {
   console.log('═══ 运动普查（同一批锚点：engine vs real）═══');
   console.log(`windows=${windowsPath}  wasm=${wasmPath}`);
   console.log(`engine 窗 ${rowsE.length}  real 窗 ${rowsR.length}  ${winSec}s@${(1 / step).toFixed(0)}Hz (${Math.round(winSec / step) + 1} 帧)`);
+  console.log('外推点：真实侧跳过（SkillCorner `extrapolated`；design D3 主口径）');
   console.log('');
   const getPath = (o, path) => path.split('/').reduce((v, k) => (v == null ? null : v[k]), o);
   const r = (label, key, n = 3, suffix = '') => {
@@ -662,7 +686,8 @@ async function runWindows(wasmPath, windowsPath, outPath) {
   }
   const payload = {
     generatedAt: new Date().toISOString(), windowsPath, wasmPath,
-    caliber: { windowSec: winSec, sampleStepSec: step, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
+    wasmSha256, eventShaBySeed,
+    caliber: { windowSec: winSec, sampleStepSec: step, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
     engineWindows: rowsE, realWindows: rowsR,
     engineDecomposition: decE,
     summary: { engine: cE, real: cR, engineDecomposition: dE },
@@ -773,11 +798,12 @@ async function main() {
   console.log(`  合计 ballStaticFrac ${pct(eDec['ballStaticFrac'])}（窗内静止时间 / 有时间权重的时间）`);
   console.log('');
   console.log(`⚠ 口径：旧 turn120 对零步调用 atan2(0,0)=0（历史口径，保留对照）；条件列只在相邻两步都 ≥ 门限时计。`);
+  console.log(`⚠ 外推点：真实侧跳过 SkillCorner 的 \`extrapolated\` 球员点（design D3 主口径；引擎帧无此标记）。`);
   console.log(`⚠ 本工具测的是**渲染帧**；mover 锚点 vs 渲染帧的差由 A 的同流消融回答，别把两者混成一张表。`);
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    caliber: { windowSec, sampleHz: 5, framesPerWindow: Math.round(windowSec * 5) + 1, activeOnly, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
+    caliber: { windowSec, sampleHz: 5, framesPerWindow: Math.round(windowSec * 5) + 1, activeOnly, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
     wasmPath,
     seeds,
     engineMatches,

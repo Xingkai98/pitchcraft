@@ -23,6 +23,7 @@ wasm=viewer/engine.wasm  seeds=42,1,7,99,123  窗=24s@5Hz（121 帧）  逐窗�
   合计 ballStaticFrac 16.5%（窗内静止时间 / 有时间权重的时间）
 
 ⚠ 口径：旧 turn120 对零步调用 atan2(0,0)=0（历史口径，保留对照）；条件列只在相邻两步都 ≥ 门限时计。
+⚠ 外推点：真实侧跳过 SkillCorner 的 `extrapolated` 球员点（design D3 主口径；引擎帧无此标记）。
 ⚠ 本工具测的是**渲染帧**；mover 锚点 vs 渲染帧的差由 A 的同流消融回答，别把两者混成一张表。
 
-JSON → .scratch/mc-all-full.json
+JSON → openspec/changes/p155-measurement-instrument/notes/motion-census-all-windows.json

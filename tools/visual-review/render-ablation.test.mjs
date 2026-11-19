@@ -15,6 +15,7 @@ import assert from 'node:assert/strict';
 import {
   MODES, DEFAULT_WINDOW, sha256, sampleEntity, createFrameSampler, sampleWindow,
   windowFeatures, pairedDiff, ablationMarkdown, renderWindowImages, windowsFromR7i,
+  sourceHashes, assertStimulusSourcesMatch,
 } from './render-ablation.mjs';
 
 const L = 105; const W = 68;
@@ -243,6 +244,20 @@ test('R7i 窗表解析：12 seed × 2 anchor，id 稳定', () => {
   };
   const ws = windowsFromR7i(fixture);
   assert.deepEqual(ws.map((w) => `${w.id}:${w.t0}`), ['eng-1204-36:1944', 'eng-1204-60:3240']);
+});
+
+test('★ stimulus 源码哈希硬校验：改一个 viewer 源码哈希必须拒绝拼表（P1-7）', () => {
+  const current = sourceHashes();
+  const stim = { viewer: { sourceHashes: { ...current } } };
+  assert.deepStrictEqual(assertStimulusSourcesMatch(stim), { ok: true, checked: Object.keys(current).length });
+  // 单个字段被改（模拟「viewer 源码变了但 wasm 没变」）→ 硬错误。
+  const tampered = { viewer: { sourceHashes: { ...current, 'viewer/game.js': '0'.repeat(64) } } };
+  assert.throws(() => assertStimulusSourcesMatch(tampered), /源码哈希与当前树不一致/);
+  // 缺清单 / 漏一个已跟踪文件都不得静默通过。
+  assert.throws(() => assertStimulusSourcesMatch({ viewer: {} }), /缺少 viewer\.sourceHashes/);
+  const partial = { viewer: { sourceHashes: { ...current } } };
+  delete partial.viewer.sourceHashes['viewer/game.js'];
+  assert.throws(() => assertStimulusSourcesMatch(partial), /缺少已跟踪文件/);
 });
 
 test('ablationMarkdown 能渲染合成结果（表格生成不崩）', () => {

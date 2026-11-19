@@ -3355,5 +3355,6 @@
         }
       }
     ]
-  }
+  },
+  "note": "历史派生文件：由 .scratch/mc-all-full.json 生成（不要求可复现）。其真实侧分布是 **P1-3 之前的口径（含 SkillCorner extrapolated 点）**；当前主口径（跳过外推点）以 motion-census-all-windows.json / motion-census-active-windows.json 的 per-match summary 为准。"
 }

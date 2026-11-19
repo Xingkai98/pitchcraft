@@ -1,10 +1,13 @@
 {
-  "generatedAt": "2026-11-19T08:12:45.422Z",
+  "generatedAt": "2026-11-19T08:45:32.597Z",
+  "wasmPath": "viewer/engine.wasm",
+  "wasmSha256": "f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f",
   "caliber": {
     "windowSec": 24,
     "sampleHz": 5,
     "framesPerWindow": 121,
     "activeOnly": false,
+    "includeExtrapolated": false,
     "speedGates": [
       0.3,
       0.5,
@@ -23,7 +26,6 @@
     "holdMaxM": 1,
     "maxStepSec": 1
   },
-  "wasmPath": "viewer/engine.wasm",
   "seeds": [
     42,
     1,
@@ -464,6 +466,13 @@
             "p10": 120,
             "p90": 120
           }
+        },
+        "skippedExtrapolatedPoints": {
+          "n": 225,
+          "mean": 0,
+          "median": 0,
+          "p10": 0,
+          "p90": 0
         },
         "ballStaticFrac": {
           "2": {
@@ -1182,6 +1191,13 @@
             "p90": 120
           }
         },
+        "skippedExtrapolatedPoints": {
+          "n": 225,
+          "mean": 0,
+          "median": 0,
+          "p10": 0,
+          "p90": 0
+        },
         "ballStaticFrac": {
           "2": {
             "n": 225,
@@ -1898,6 +1914,13 @@
             "p10": 120,
             "p90": 120
           }
+        },
+        "skippedExtrapolatedPoints": {
+          "n": 225,
+          "mean": 0,
+          "median": 0,
+          "p10": 0,
+          "p90": 0
         },
         "ballStaticFrac": {
           "2": {
@@ -2616,6 +2639,13 @@
             "p90": 120
           }
         },
+        "skippedExtrapolatedPoints": {
+          "n": 225,
+          "mean": 0,
+          "median": 0,
+          "p10": 0,
+          "p90": 0
+        },
         "ballStaticFrac": {
           "2": {
             "n": 225,
@@ -3332,6 +3362,13 @@
             "p10": 120,
             "p90": 120
           }
+        },
+        "skippedExtrapolatedPoints": {
+          "n": 225,
+          "mean": 0,
+          "median": 0,
+          "p10": 0,
+          "p90": 0
         },
         "ballStaticFrac": {
           "2": {
@@ -4051,6 +4088,13 @@
             "p90": 120
           }
         },
+        "skippedExtrapolatedPoints": {
+          "n": 241,
+          "mean": 0,
+          "median": 0,
+          "p10": 0,
+          "p90": 0
+        },
         "ballStaticFrac": {
           "2": {
             "n": 212,
@@ -4508,6 +4552,13 @@
             "p90": 120
           }
         },
+        "skippedExtrapolatedPoints": {
+          "n": 235,
+          "mean": 0,
+          "median": 0,
+          "p10": 0,
+          "p90": 0
+        },
         "ballStaticFrac": {
           "2": {
             "n": 202,
@@ -4534,5 +4585,5 @@
       }
     }
   ],
-  "note": "per-match summaries only; raw per-window rows were used to compute the distributions in motion-census-diagnostics.json and are reproducible with the CLI in motion-census.md"
+  "note": "per-match summaries only; raw per-window rows were used to compute the distributions in motion-census-diagnostics.json and are reproducible with the CLI in motion-census.md. 外推点默认跳过（caliber.includeExtrapolated=false）。历史路径，不要求可复现。"
 }

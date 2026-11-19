@@ -12,10 +12,19 @@
 
 本 note 的所有引擎数字都可用 `motion-census.md` §7 的命令复算；不是历史转述。
 
+> **⚠️ P1-1 口径（必须随数字一起引用）**：这里的「引擎」球位**不是引擎 raw 球位**，而是
+> `replay-blind-core.loadEngineFrames` → `viewer/game.js` 的 `createGame` + `sampleEngineFrames`
+> 对 pass/shot 锚点的**插值/演绎**结果（viewer 链）。因此 `engine 21.6%` 是
+> 「**viewer 链引擎 vs 真实原始球帧**」的对比，**viewer 的贡献未分离**（A 的消融已证明
+> 采样/渲染口径能把 `ballStaticFrac` 从 0.216 推到 0.698）。Change 1 **不应**把
+> `ballStaticFrac` 当纯引擎运动层目标，除非先加一个 raw ball-anchor 模式（直接读引擎事件里的
+> 球锚点，绕过 viewer 插值）并对同一批窗重算。本 note 不假装已分离。
+
 ## 1. 口径（与 motion-census 同源）
 
 - 球速：相邻**原始球帧**（`ball` 非空、`ballFill == null`）的米制位移 / Δt；
   <0.5 m/s 记为静止（与 `ball-travel`、旧 `ballStaticFrac` 同帧口径）。
+  ⚠️ 引擎侧的「原始球帧」仍是 **viewer 链**采样（见文首 P1-1）；真实侧的原始球帧是观测。
 - 来源由**引擎事件流**分类；静止率由**渲染帧**测量。两者分开，避免「用事件语义假装测量」。
 - 窗：24s @5Hz、121 帧；步长 = 窗长；相邻窗共享边界帧（步不重复计）。
 - 主口径 = A 的 12 seed × 2 anchor = 24 窗（wasm/事件流与 A 的 `stimulus.json` 逐位一致）。
@@ -35,17 +44,20 @@
 
 ## 2. 主口径：A frozen engine 24 窗
 
-| 来源 | 时间权重 | 条件静止率 | 对总静止贡献 | 窗级贡献 p10/p50/p90 |
-|---|---:|---:|---:|---|
-| `carrier_hold` | 22.3% | 32.7% | **51.4%** | 0 / 60.7% / 82.5% |
-| `carrier_dribble` | 34.7% | 0.0% | 0.0% | 0 / 0 / 0 |
-| `highlight_flight` | 26.5% | 8.7% | **15.3%** | 2.1% / 14.3% / 26.7% |
-| `loose` | 15.1% | 64.2% | **30.5%** | 0 / 20.0% / 73.7% |
-| `restart_dead` | 1.3% | 81.3% | 2.8% | 0 / 0 / 6.4% |
-| **合计** | 100% | — | 100% | `ballStaticFrac` = **21.6%** |
+| 来源 | 时间权重 | 条件静止率 | 对总静止贡献 | 窗级贡献 p10/p50/p90（R type-7） | 有区间的窗 |
+|---|---:|---:|---:|---|---:|
+| `carrier_hold` | 22.3% | 32.7% | **51.4%** | 3.1% / 61.6% / 84.7% | 21/24 |
+| `carrier_dribble` | 34.7% | 0.0% | 0.0% | 0% / 0% / 0% | 21/24 |
+| `highlight_flight` | 26.5% | 8.7% | **15.3%** | 2.3% / 15.5% / 29.0% | 24/24 |
+| `loose` | 15.1% | 64.2% | **30.5%** | 0% / 20.7% / 80.2% | 14/24 |
+| `restart_dead` | 1.3% | 81.3% | 2.8% | 0% / 0% / 9.8% | 5/24 |
+| **合计** | 100% | — | 100% | `ballStaticFrac` = **21.6%** | 24/24 |
 
 （点估计与窗级分布都来自 frozen 24 窗，见 `notes/motion-census-frozen-anchors.json` 的
-`summary.engineDecomposition` 与 `engineDecomposition[]`。）
+`summary.engineDecomposition` 与 `engineDecomposition[]`。分位是 **R type-7**，与 JSON
+`summary.*.p10/p50/p90` 同口径；旧稿用的是 floor 下位分位，已替换。
+`条件静止率` 只在**该来源有区间的窗**上定义：`carrier_hold` n=21/24、`loose` n=14/24、
+`restart_dead` n=5/24——不是「24 窗」全部都有该来源。表里的 51.4%/30.5% 等贡献是窗级贡献的均值。）
 
 **真实对照（R7i 同锚点 24 窗）**：`ballStaticFrac` <0.5 = **2.15%**；
 frozen 引擎 **21.6%** ⇒ **10.0×**。这与历史转述的 21.6% vs 2.2%（10×）**精确一致**。
@@ -66,7 +78,7 @@ dribble 0.0%，`ballStaticFrac` = **16.5%**。
 
 ## 4. highlight_flight 的静止是什么
 
-一次性探针（seed42/5400s；命令在 `motion-census.md` §7）：
+一次性探针（seed42/5400s；**脚本未入库**，数字在本树内不可独立复现，只作量级参考）：
 
 - 高亮静止段 **740 段**，合计 **134.5s**；每段时长 p50 = p90 = max = **0.20s**（单帧）。
 - 从最近的动作事件（pass/shot/tackle/kickoff）到静止起点：p10/p50/p90 =
@@ -109,6 +121,10 @@ R2（RECORD.md，分支 `c1-trajectory-morphology/2026-10-29`，R2 节）的 12 
 
 ## 6. 交叉核对与已知局限
 
+- **P1-1：引擎侧是 viewer 链，不是 raw 球位。** 下面的 21.6%/16.5%/11.7% 都是
+  「viewer 对 pass/shot 锚点的插值结果」；A 的消融里同一事件流换采样方式就能把
+  `ballStaticFrac` 从 0.216 推到 0.698。⇒ 这些 E/R 比值**不能**直接当「引擎运动层」的靶，
+  Change 1 若要它，先加 raw ball-anchor 模式再重算。真实侧的球位是原始观测。
 - **同尺子上的真实对照**（全部只用原始球帧，`ballFill == null`）：
   - frozen：engine 21.6% vs real 2.15% = **10.0×**
   - 宽扫 active（Metrica 2 场）：11.7% vs 4.5% = **2.6×**
