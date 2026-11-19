@@ -1,0 +1,6551 @@
+{
+  "generatedAt": "2026-11-19T08:19:34.454Z",
+  "windowsPath": "/home/happy/.paseo/worktrees/1g1x3st4/p155-instrument/openspec/changes/p155-measurement-instrument/notes/r7i-windows.json",
+  "wasmPath": "viewer/engine.wasm",
+  "caliber": {
+    "windowSec": 24,
+    "sampleStepSec": 0.2,
+    "speedGates": [
+      0.3,
+      0.5,
+      1
+    ],
+    "staticGates": [
+      0.2,
+      0.5,
+      1
+    ],
+    "ballStaticGates": [
+      0.2,
+      0.5,
+      2
+    ],
+    "holdMaxM": 1,
+    "maxStepSec": 1
+  },
+  "engineWindows": [
+    {
+      "id": "rb-16e5c6c4e7",
+      "seed": 1201,
+      "t0": 1960,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 2.2,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.3,
+          "effectivePairs": 1844,
+          "effectiveSteps": 1896,
+          "effectivePathM": 1646.8503839875025,
+          "turnsPerEffectivePair": 0.0032537960954446853,
+          "turnsPerEffectiveStep": 0.0031645569620253164,
+          "turnsPerMeter": 0.0036433182141733236
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.55,
+          "effectivePairs": 1868,
+          "effectiveSteps": 1920,
+          "effectivePathM": 1650.015660892584,
+          "turnsPerEffectivePair": 0.005888650963597431,
+          "turnsPerEffectiveStep": 0.005729166666666666,
+          "turnsPerMeter": 0.006666603390933572
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.5,
+          "effectivePairs": 1865,
+          "effectiveSteps": 1915,
+          "effectivePathM": 1649.6269106679624,
+          "turnsPerEffectivePair": 0.005361930294906166,
+          "turnsPerEffectiveStep": 0.005221932114882507,
+          "turnsPerMeter": 0.0060619767629462515
+        }
+      },
+      "staticFrac": {
+        "1": 0.21,
+        "0.2": 0.19833333333333333,
+        "0.5": 0.20208333333333334
+      },
+      "transitions": {
+        "moveStop": 34,
+        "stopMove": 35,
+        "moveMove": 1865,
+        "stopStop": 446,
+        "n": 2380,
+        "moveStopShare": 0.014285714285714285,
+        "stopMoveShare": 0.014705882352941176,
+        "moveMoveShare": 0.7836134453781513,
+        "stopStopShare": 0.18739495798319328
+      },
+      "speed": {
+        "p50": 3.9675981077070066,
+        "p90": 6.201514858454597,
+        "p99": 7.200758724045234,
+        "mean": 3.4380869200540927
+      },
+      "accel": {
+        "p95": 13.637870508014808,
+        "p99": 25.26285800255215
+      },
+      "symmetry": {
+        "bottomShare": 0.02727272727272727,
+        "topShare": 0.03595041322314049,
+        "bottomMinusTop": -0.008677685950413223,
+        "leftShare": 0.14917355371900826,
+        "rightShare": 0.8508264462809917,
+        "leftMinusRight": -0.7016528925619835,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 0,
+        "p90": 19.50000000000065,
+        "p99": 19.935985715202538,
+        "meanSpeed": 6.16984959384244,
+        "pathM": 148.07639025221525,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.6416666666666667,
+        "0.2": 0.5083333333333333,
+        "0.5": 0.5166666666666667
+      }
+    },
+    {
+      "id": "rb-180ce7f572",
+      "seed": 1225,
+      "t0": 3242,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 7.2,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.55,
+          "effectivePairs": 1724,
+          "effectiveSteps": 1845,
+          "effectivePathM": 1632.3503611176698,
+          "turnsPerEffectivePair": 0.0063805104408352666,
+          "turnsPerEffectiveStep": 0.005962059620596206,
+          "turnsPerMeter": 0.006738749389848086
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.7,
+          "effectivePairs": 1756,
+          "effectiveSteps": 1874,
+          "effectivePathM": 1636.7501552852186,
+          "turnsPerEffectivePair": 0.007972665148063782,
+          "turnsPerEffectiveStep": 0.007470651013874066,
+          "turnsPerMeter": 0.008553535159164455
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.7,
+          "effectivePairs": 1751,
+          "effectiveSteps": 1870,
+          "effectivePathM": 1636.4656078684209,
+          "turnsPerEffectivePair": 0.00799543118218161,
+          "turnsPerEffectiveStep": 0.0074866310160427805,
+          "turnsPerMeter": 0.008555022441464997
+        }
+      },
+      "staticFrac": {
+        "1": 0.23125,
+        "0.2": 0.21875,
+        "0.5": 0.22083333333333333
+      },
+      "transitions": {
+        "moveStop": 105,
+        "stopMove": 118,
+        "moveMove": 1751,
+        "stopStop": 406,
+        "n": 2380,
+        "moveStopShare": 0.04411764705882353,
+        "stopMoveShare": 0.04957983193277311,
+        "moveMoveShare": 0.7357142857142858,
+        "stopStopShare": 0.17058823529411765
+      },
+      "speed": {
+        "p50": 3.603723691990586,
+        "p90": 6.31506840665869,
+        "p99": 7.448966943310977,
+        "mean": 3.4102888129304403
+      },
+      "accel": {
+        "p95": 23.002224400250487,
+        "p99": 29.74122528593579
+      },
+      "symmetry": {
+        "bottomShare": 0.043801652892561986,
+        "topShare": 0.05619834710743802,
+        "bottomMinusTop": -0.012396694214876033,
+        "leftShare": 0.3371900826446281,
+        "rightShare": 0.6628099173553719,
+        "leftMinusRight": -0.3256198347107438,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.966736650961041,
+        "p90": 19.79999999999335,
+        "p99": 22.100000000005526,
+        "meanSpeed": 5.979695249426422,
+        "pathM": 143.51268598623636,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.35,
+        "0.2": 0.19166666666666668,
+        "0.5": 0.25833333333333336
+      }
+    },
+    {
+      "id": "rb-1be0bfc743",
+      "seed": 1231,
+      "t0": 3304,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 1.7,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.25,
+          "effectivePairs": 1703,
+          "effectiveSteps": 1754,
+          "effectivePathM": 1505.9652414088066,
+          "turnsPerEffectivePair": 0.002935995302407516,
+          "turnsPerEffectiveStep": 0.0028506271379703536,
+          "turnsPerMeter": 0.0033201297496896934
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.35,
+          "effectivePairs": 1719,
+          "effectiveSteps": 1770,
+          "effectivePathM": 1507.9436707726925,
+          "turnsPerEffectivePair": 0.004072134962187318,
+          "turnsPerEffectiveStep": 0.0039548022598870055,
+          "turnsPerMeter": 0.004642083212838512
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.3,
+          "effectivePairs": 1715,
+          "effectiveSteps": 1765,
+          "effectivePathM": 1507.581448856636,
+          "turnsPerEffectivePair": 0.003498542274052478,
+          "turnsPerEffectiveStep": 0.0033994334277620396,
+          "turnsPerMeter": 0.003979884472942047
+        }
+      },
+      "staticFrac": {
+        "1": 0.26916666666666667,
+        "0.2": 0.26208333333333333,
+        "0.5": 0.26458333333333334
+      },
+      "transitions": {
+        "moveStop": 30,
+        "stopMove": 34,
+        "moveMove": 1715,
+        "stopStop": 601,
+        "n": 2380,
+        "moveStopShare": 0.012605042016806723,
+        "stopMoveShare": 0.014285714285714285,
+        "moveMoveShare": 0.7205882352941176,
+        "stopStopShare": 0.25252100840336134
+      },
+      "speed": {
+        "p50": 3.730114179871835,
+        "p90": 6.240529392014572,
+        "p99": 7.025390732620911,
+        "mean": 3.1417689378004354
+      },
+      "accel": {
+        "p95": 12.588653227534781,
+        "p99": 23.504425962071924
+      },
+      "symmetry": {
+        "bottomShare": 0.02933884297520661,
+        "topShare": 0.011983471074380166,
+        "bottomMinusTop": 0.017355371900826446,
+        "leftShare": 0.08925619834710743,
+        "rightShare": 0.9107438016528926,
+        "leftMinusRight": -0.8214876033057851,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 0,
+        "p90": 21.682685904397506,
+        "p99": 21.79999999999969,
+        "meanSpeed": 5.954216342950883,
+        "pathM": 142.9011922308225,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.6666666666666666,
+        "0.2": 0.5416666666666666,
+        "0.5": 0.55
+      }
+    },
+    {
+      "id": "rb-278c258f86",
+      "seed": 1207,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 7.6,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.55,
+          "effectivePairs": 1570,
+          "effectiveSteps": 1744,
+          "effectivePathM": 1647.2647059676033,
+          "turnsPerEffectivePair": 0.0070063694267515925,
+          "turnsPerEffectiveStep": 0.006307339449541285,
+          "turnsPerMeter": 0.006677736711136903
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.85,
+          "effectivePairs": 1600,
+          "effectiveSteps": 1769,
+          "effectivePathM": 1650.8398273871794,
+          "turnsPerEffectivePair": 0.010625,
+          "turnsPerEffectiveStep": 0.009609949123798756,
+          "turnsPerMeter": 0.01029778886962418
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.85,
+          "effectivePairs": 1596,
+          "effectiveSteps": 1767,
+          "effectivePathM": 1650.6848357441854,
+          "turnsPerEffectivePair": 0.010651629072681704,
+          "turnsPerEffectiveStep": 0.009620826259196379,
+          "turnsPerMeter": 0.010298755784192938
+        }
+      },
+      "staticFrac": {
+        "1": 0.2733333333333333,
+        "0.2": 0.26125,
+        "0.5": 0.26375
+      },
+      "transitions": {
+        "moveStop": 162,
+        "stopMove": 169,
+        "moveMove": 1596,
+        "stopStop": 453,
+        "n": 2380,
+        "moveStopShare": 0.0680672268907563,
+        "stopMoveShare": 0.07100840336134454,
+        "moveMoveShare": 0.6705882352941176,
+        "stopStopShare": 0.1903361344537815
+      },
+      "speed": {
+        "p50": 4.215565346444331,
+        "p90": 6.184665558103426,
+        "p99": 7.5623793005737445,
+        "mean": 3.4397896596994078
+      },
+      "accel": {
+        "p95": 25.37498457816622,
+        "p99": 31.298109620912086
+      },
+      "symmetry": {
+        "bottomShare": 0.005785123966942148,
+        "topShare": 0.06652892561983471,
+        "bottomMinusTop": -0.06074380165289256,
+        "leftShare": 0.19049586776859503,
+        "rightShare": 0.8095041322314049,
+        "leftMinusRight": -0.6190082644628099,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.970608075477257,
+        "p90": 15.358501823664852,
+        "p99": 24.196999999986662,
+        "meanSpeed": 5.594589449213072,
+        "pathM": 134.2701467811124,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.2916666666666667,
+        "0.2": 0.05,
+        "0.5": 0.125
+      }
+    },
+    {
+      "id": "rb-2e8bec867b",
+      "seed": 1210,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 7.8,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.65,
+          "effectivePairs": 1903,
+          "effectiveSteps": 2034,
+          "effectivePathM": 1825.6295623693493,
+          "turnsPerEffectivePair": 0.006831318970047294,
+          "turnsPerEffectiveStep": 0.006391347099311701,
+          "turnsPerMeter": 0.007120831228832789
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.85,
+          "effectivePairs": 1924,
+          "effectiveSteps": 2051,
+          "effectivePathM": 1827.7772213312335,
+          "turnsPerEffectivePair": 0.008835758835758836,
+          "turnsPerEffectiveStep": 0.008288639687957094,
+          "turnsPerMeter": 0.009300914685663011
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.75,
+          "effectivePairs": 1917,
+          "effectiveSteps": 2047,
+          "effectivePathM": 1827.46572952094,
+          "turnsPerEffectivePair": 0.00782472613458529,
+          "turnsPerEffectiveStep": 0.0073277967757694185,
+          "turnsPerMeter": 0.008208088259981853
+        }
+      },
+      "staticFrac": {
+        "1": 0.1525,
+        "0.2": 0.14541666666666667,
+        "0.5": 0.14708333333333334
+      },
+      "transitions": {
+        "moveStop": 112,
+        "stopMove": 110,
+        "moveMove": 1917,
+        "stopStop": 241,
+        "n": 2380,
+        "moveStopShare": 0.047058823529411764,
+        "stopMoveShare": 0.046218487394957986,
+        "moveMoveShare": 0.8054621848739496,
+        "stopStopShare": 0.10126050420168067
+      },
+      "speed": {
+        "p50": 4.455913843003992,
+        "p90": 6.208284977632958,
+        "p99": 7.425570436887882,
+        "mean": 3.807960765392144
+      },
+      "accel": {
+        "p95": 21.372439104897264,
+        "p99": 29.1367585910633
+      },
+      "symmetry": {
+        "bottomShare": 0.011570247933884297,
+        "topShare": 0.045867768595041325,
+        "bottomMinusTop": -0.03429752066115702,
+        "leftShare": 0.2574380165289256,
+        "rightShare": 0.7425619834710744,
+        "leftMinusRight": -0.48512396694214877,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.9707898499089795,
+        "p90": 20.699999999993537,
+        "p99": 23.399999999985344,
+        "meanSpeed": 5.76861710869052,
+        "pathM": 138.44681060857016,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.30833333333333335,
+        "0.2": 0.041666666666666664,
+        "0.5": 0.11666666666666667
+      }
+    },
+    {
+      "id": "rb-3265b2d028",
+      "seed": 1216,
+      "t0": 1944,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 8.55,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.65,
+          "effectivePairs": 1234,
+          "effectiveSteps": 1385,
+          "effectivePathM": 1057.1354470636252,
+          "turnsPerEffectivePair": 0.01053484602917342,
+          "turnsPerEffectiveStep": 0.009386281588447653,
+          "turnsPerMeter": 0.01229738349623005
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.85,
+          "effectivePairs": 1281,
+          "effectiveSteps": 1429,
+          "effectivePathM": 1064.0517118180073,
+          "turnsPerEffectivePair": 0.01327088212334114,
+          "turnsPerEffectiveStep": 0.011896431070678797,
+          "turnsPerMeter": 0.01597666712170812
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.75,
+          "effectivePairs": 1276,
+          "effectiveSteps": 1425,
+          "effectivePathM": 1063.7359700842626,
+          "turnsPerEffectivePair": 0.011755485893416929,
+          "turnsPerEffectiveStep": 0.010526315789473684,
+          "turnsPerMeter": 0.014101243562170594
+        }
+      },
+      "staticFrac": {
+        "1": 0.42291666666666666,
+        "0.2": 0.40291666666666665,
+        "0.5": 0.40625
+      },
+      "transitions": {
+        "moveStop": 129,
+        "stopMove": 134,
+        "moveMove": 1276,
+        "stopStop": 841,
+        "n": 2380,
+        "moveStopShare": 0.05420168067226891,
+        "stopMoveShare": 0.05630252100840336,
+        "moveMoveShare": 0.5361344537815126,
+        "stopStopShare": 0.35336134453781515
+      },
+      "speed": {
+        "p50": 2.6081448786261245,
+        "p90": 5.096787547035122,
+        "p99": 6.796830161683935,
+        "mean": 2.2174091704603263
+      },
+      "accel": {
+        "p95": 17.55618181245238,
+        "p99": 31.512973304768728
+      },
+      "symmetry": {
+        "bottomShare": 0.04049586776859504,
+        "topShare": 0.023966942148760332,
+        "bottomMinusTop": 0.01652892561983471,
+        "leftShare": 1,
+        "rightShare": 0,
+        "leftMinusRight": 1,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 0.8560373032886406,
+        "p90": 13.840367200638033,
+        "p99": 24.899999999996773,
+        "meanSpeed": 4.400400889299705,
+        "pathM": 105.60962134319277,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.5916666666666667,
+        "0.2": 0.21666666666666667,
+        "0.5": 0.325
+      }
+    },
+    {
+      "id": "rb-486a8d80ee",
+      "seed": 1237,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 10.1,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 1,
+          "effectivePairs": 1756,
+          "effectiveSteps": 1906,
+          "effectivePathM": 1549.86643155597,
+          "turnsPerEffectivePair": 0.011389521640091117,
+          "turnsPerEffectiveStep": 0.01049317943336831,
+          "turnsPerMeter": 0.012904337814402004
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.15,
+          "effectivePairs": 1779,
+          "effectiveSteps": 1925,
+          "effectivePathM": 1552.5122917114418,
+          "turnsPerEffectivePair": 0.012928611579539067,
+          "turnsPerEffectiveStep": 0.011948051948051949,
+          "turnsPerMeter": 0.014814697521425424
+        },
+        "0.5": {
+          "turnsPerPlayer": 1.05,
+          "effectivePairs": 1772,
+          "effectiveSteps": 1921,
+          "effectivePathM": 1552.16407907428,
+          "turnsPerEffectivePair": 0.011851015801354402,
+          "turnsPerEffectiveStep": 0.010931806350858927,
+          "turnsPerMeter": 0.013529497482330946
+        }
+      },
+      "staticFrac": {
+        "1": 0.20583333333333334,
+        "0.2": 0.19708333333333333,
+        "0.5": 0.19958333333333333
+      },
+      "transitions": {
+        "moveStop": 130,
+        "stopMove": 133,
+        "moveMove": 1772,
+        "stopStop": 345,
+        "n": 2380,
+        "moveStopShare": 0.0546218487394958,
+        "stopMoveShare": 0.05588235294117647,
+        "moveMoveShare": 0.7445378151260504,
+        "stopStopShare": 0.14495798319327732
+      },
+      "speed": {
+        "p50": 3.397911752610426,
+        "p90": 5.537283476317161,
+        "p99": 7.513597708870823,
+        "mean": 3.2346295294473197
+      },
+      "accel": {
+        "p95": 25.11483814190162,
+        "p99": 30.676224994698412
+      },
+      "symmetry": {
+        "bottomShare": 0.03429752066115702,
+        "topShare": 0.006198347107438017,
+        "bottomMinusTop": 0.02809917355371901,
+        "leftShare": 0.9871900826446282,
+        "rightShare": 0.0128099173553719,
+        "leftMinusRight": 0.9743801652892562,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.9796750134923435,
+        "p90": 16.499999999996085,
+        "p99": 20.27151759310085,
+        "meanSpeed": 6.374550291060729,
+        "pathM": 152.98920698545592,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.24166666666666667,
+        "0.2": 0.08333333333333333,
+        "0.5": 0.125
+      }
+    },
+    {
+      "id": "rb-63d063436a",
+      "seed": 1222,
+      "t0": 1944,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 1.25,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.7,
+          "effectivePairs": 1772,
+          "effectiveSteps": 1913,
+          "effectivePathM": 1775.966469114868,
+          "turnsPerEffectivePair": 0.007900677200902935,
+          "turnsPerEffectiveStep": 0.007318348144276007,
+          "turnsPerMeter": 0.007883031714544433
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.05,
+          "effectivePairs": 1803,
+          "effectiveSteps": 1933,
+          "effectivePathM": 1778.642295638598,
+          "turnsPerEffectivePair": 0.011647254575707155,
+          "turnsPerEffectiveStep": 0.010863942058975685,
+          "turnsPerMeter": 0.011806758476110695
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.95,
+          "effectivePairs": 1794,
+          "effectiveSteps": 1928,
+          "effectivePathM": 1778.2414232522087,
+          "turnsPerEffectivePair": 0.010590858416945374,
+          "turnsPerEffectiveStep": 0.009854771784232365,
+          "turnsPerMeter": 0.010684713420549547
+        }
+      },
+      "staticFrac": {
+        "1": 0.20291666666666666,
+        "0.2": 0.19416666666666665,
+        "0.5": 0.19666666666666666
+      },
+      "transitions": {
+        "moveStop": 123,
+        "stopMove": 114,
+        "moveMove": 1794,
+        "stopStop": 349,
+        "n": 2380,
+        "moveStopShare": 0.05168067226890756,
+        "stopMoveShare": 0.04789915966386555,
+        "moveMoveShare": 0.753781512605042,
+        "stopStopShare": 0.14663865546218488
+      },
+      "speed": {
+        "p50": 4.465984874179256,
+        "p90": 6.1870580687135845,
+        "p99": 7.51672135444552,
+        "mean": 3.7057609972866317
+      },
+      "accel": {
+        "p95": 23.11121760941679,
+        "p99": 31.04037371285677
+      },
+      "symmetry": {
+        "bottomShare": 0.15495867768595042,
+        "topShare": 0.01859504132231405,
+        "bottomMinusTop": 0.13636363636363635,
+        "leftShare": 0.5512396694214876,
+        "rightShare": 0.4487603305785124,
+        "leftMinusRight": 0.1024793388429752,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.978806282634428,
+        "p90": 15.200000000001635,
+        "p99": 22.3309999999986,
+        "meanSpeed": 5.331423898785505,
+        "pathM": 127.95417357085385,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.31666666666666665,
+        "0.2": 0.1,
+        "0.5": 0.15
+      }
+    },
+    {
+      "id": "rb-772a242a3f",
+      "seed": 1222,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 1.55,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.35,
+          "effectivePairs": 1850,
+          "effectiveSteps": 1960,
+          "effectivePathM": 1716.7257279162493,
+          "turnsPerEffectivePair": 0.0037837837837837837,
+          "turnsPerEffectiveStep": 0.0035714285714285713,
+          "turnsPerMeter": 0.004077529617090643
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.45,
+          "effectivePairs": 1880,
+          "effectiveSteps": 1983,
+          "effectivePathM": 1719.8123238566207,
+          "turnsPerEffectivePair": 0.0047872340425531915,
+          "turnsPerEffectiveStep": 0.0045385779122541605,
+          "turnsPerMeter": 0.005233129147381504
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.4,
+          "effectivePairs": 1872,
+          "effectiveSteps": 1978,
+          "effectivePathM": 1719.4299080141393,
+          "turnsPerEffectivePair": 0.004273504273504274,
+          "turnsPerEffectiveStep": 0.004044489383215369,
+          "turnsPerMeter": 0.004652704924296463
+        }
+      },
+      "staticFrac": {
+        "1": 0.18333333333333332,
+        "0.2": 0.17375,
+        "0.5": 0.17583333333333334
+      },
+      "transitions": {
+        "moveStop": 86,
+        "stopMove": 98,
+        "moveMove": 1872,
+        "stopStop": 324,
+        "n": 2380,
+        "moveStopShare": 0.03613445378151261,
+        "stopMoveShare": 0.041176470588235294,
+        "moveMoveShare": 0.7865546218487395,
+        "stopStopShare": 0.1361344537815126
+      },
+      "speed": {
+        "p50": 3.9434890474201185,
+        "p90": 6.001734611313894,
+        "p99": 7.182390265937868,
+        "mean": 3.5829958913678417
+      },
+      "accel": {
+        "p95": 20.483409181142193,
+        "p99": 29.209013388754187
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.05826446280991736,
+        "bottomMinusTop": -0.05826446280991736,
+        "leftShare": 0.2983471074380165,
+        "rightShare": 0.7016528925619835,
+        "leftMinusRight": -0.4033057851239669,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.998000000000003,
+        "p90": 16.40000000000026,
+        "p99": 32.12645947475661,
+        "meanSpeed": 7.894818890921616,
+        "pathM": 189.4756533821112,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.23333333333333334,
+        "0.2": 0.10833333333333334,
+        "0.5": 0.14166666666666666
+      }
+    },
+    {
+      "id": "rb-80f26aa5b5",
+      "seed": 1204,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 10.45,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.55,
+          "effectivePairs": 1709,
+          "effectiveSteps": 1856,
+          "effectivePathM": 1605.6417039950913,
+          "turnsPerEffectivePair": 0.006436512580456407,
+          "turnsPerEffectiveStep": 0.005926724137931034,
+          "turnsPerMeter": 0.0068508434806035835
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.75,
+          "effectivePairs": 1730,
+          "effectiveSteps": 1870,
+          "effectivePathM": 1607.4747112116,
+          "turnsPerEffectivePair": 0.008670520231213872,
+          "turnsPerEffectiveStep": 0.008021390374331552,
+          "turnsPerMeter": 0.009331406519418318
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.75,
+          "effectivePairs": 1726,
+          "effectiveSteps": 1866,
+          "effectivePathM": 1607.09232126642,
+          "turnsPerEffectivePair": 0.00869061413673233,
+          "turnsPerEffectiveStep": 0.008038585209003215,
+          "turnsPerMeter": 0.009333626824985206
+        }
+      },
+      "staticFrac": {
+        "1": 0.22666666666666666,
+        "0.2": 0.21791666666666668,
+        "0.5": 0.2225
+      },
+      "transitions": {
+        "moveStop": 120,
+        "stopMove": 136,
+        "moveMove": 1726,
+        "stopStop": 398,
+        "n": 2380,
+        "moveStopShare": 0.05042016806722689,
+        "stopMoveShare": 0.05714285714285714,
+        "moveMoveShare": 0.7252100840336134,
+        "stopStopShare": 0.1672268907563025
+      },
+      "speed": {
+        "p50": 3.9909661799076614,
+        "p90": 5.867740589738442,
+        "p99": 7.38193128125705,
+        "mean": 3.3500402883509004
+      },
+      "accel": {
+        "p95": 25.237365753066033,
+        "p99": 30.702098005627512
+      },
+      "symmetry": {
+        "bottomShare": 0.022727272727272728,
+        "topShare": 0.06198347107438017,
+        "bottomMinusTop": -0.03925619834710744,
+        "leftShare": 0.9194214876033058,
+        "rightShare": 0.08057851239669421,
+        "leftMinusRight": 0.8388429752066116,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.998000000000003,
+        "p90": 14.200000000000761,
+        "p99": 22.217000000005793,
+        "meanSpeed": 6.501431780849967,
+        "pathM": 156.03436274039979,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.21666666666666667,
+        "0.2": 0.09166666666666666,
+        "0.5": 0.125
+      }
+    },
+    {
+      "id": "rb-86678e43f0",
+      "seed": 1228,
+      "t0": 1946,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 9.55,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.5,
+          "effectivePairs": 1689,
+          "effectiveSteps": 1849,
+          "effectivePathM": 1625.721825744192,
+          "turnsPerEffectivePair": 0.005920663114268798,
+          "turnsPerEffectiveStep": 0.005408328826392645,
+          "turnsPerMeter": 0.006151113826267535
+        },
+        "0.3": {
+          "turnsPerPlayer": 1,
+          "effectivePairs": 1737,
+          "effectiveSteps": 1885,
+          "effectivePathM": 1630.7669974085738,
+          "turnsPerEffectivePair": 0.011514104778353483,
+          "turnsPerEffectiveStep": 0.010610079575596816,
+          "turnsPerMeter": 0.012264167739340866
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.8,
+          "effectivePairs": 1721,
+          "effectiveSteps": 1874,
+          "effectivePathM": 1629.89427496167,
+          "turnsPerEffectivePair": 0.009296920395119116,
+          "turnsPerEffectiveStep": 0.008537886872998933,
+          "turnsPerMeter": 0.009816587643622634
+        }
+      },
+      "staticFrac": {
+        "1": 0.22958333333333333,
+        "0.2": 0.21416666666666667,
+        "0.5": 0.21916666666666668
+      },
+      "transitions": {
+        "moveStop": 140,
+        "stopMove": 134,
+        "moveMove": 1721,
+        "stopStop": 385,
+        "n": 2380,
+        "moveStopShare": 0.058823529411764705,
+        "stopMoveShare": 0.05630252100840336,
+        "moveMoveShare": 0.723109243697479,
+        "stopStopShare": 0.16176470588235295
+      },
+      "speed": {
+        "p50": 4.399440056722102,
+        "p90": 5.879937903208067,
+        "p99": 7.558778170709153,
+        "mean": 3.3976512531631484
+      },
+      "accel": {
+        "p95": 23.56386575892943,
+        "p99": 30.35204338661356
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.04090909090909091,
+        "bottomMinusTop": -0.04090909090909091,
+        "leftShare": 0.9574380165289256,
+        "rightShare": 0.04256198347107438,
+        "leftMinusRight": 0.9148760330578513,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.975071360292203,
+        "p90": 20.199999999998408,
+        "p99": 22.014999999998555,
+        "meanSpeed": 6.2181664613378675,
+        "pathM": 149.2359950721144,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.30833333333333335,
+        "0.2": 0.016666666666666666,
+        "0.5": 0.11666666666666667
+      }
+    },
+    {
+      "id": "rb-8995d055ac",
+      "seed": 1219,
+      "t0": 2010,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 2.9,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 1.25,
+          "effectivePairs": 1651,
+          "effectiveSteps": 1773,
+          "effectivePathM": 1455.2881537883566,
+          "turnsPerEffectivePair": 0.015142337976983646,
+          "turnsPerEffectiveStep": 0.01410039481105471,
+          "turnsPerMeter": 0.01717872844283165
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.55,
+          "effectivePairs": 1701,
+          "effectiveSteps": 1812,
+          "effectivePathM": 1460.5714613349023,
+          "turnsPerEffectivePair": 0.018224573780129337,
+          "turnsPerEffectiveStep": 0.017108167770419427,
+          "turnsPerMeter": 0.021224569163954
+        },
+        "0.5": {
+          "turnsPerPlayer": 1.35,
+          "effectivePairs": 1685,
+          "effectiveSteps": 1803,
+          "effectivePathM": 1459.8406923383855,
+          "turnsPerEffectivePair": 0.016023738872403562,
+          "turnsPerEffectiveStep": 0.014975041597337771,
+          "turnsPerMeter": 0.018495168782253334
+        }
+      },
+      "staticFrac": {
+        "1": 0.26125,
+        "0.2": 0.23708333333333334,
+        "0.5": 0.24875
+      },
+      "transitions": {
+        "moveStop": 106,
+        "stopMove": 100,
+        "moveMove": 1685,
+        "stopStop": 489,
+        "n": 2380,
+        "moveStopShare": 0.04453781512605042,
+        "stopMoveShare": 0.04201680672268908,
+        "moveMoveShare": 0.707983193277311,
+        "stopStopShare": 0.20546218487394957
+      },
+      "speed": {
+        "p50": 3.3720982302704163,
+        "p90": 5.275856781813428,
+        "p99": 7.039875827922548,
+        "mean": 3.045182090542155
+      },
+      "accel": {
+        "p95": 20.32006435301758,
+        "p99": 29.992377193357385
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.1847107438016529,
+        "bottomMinusTop": -0.1847107438016529,
+        "leftShare": 0,
+        "rightShare": 1,
+        "leftMinusRight": -1,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.978806282634465,
+        "p90": 13.700000000001063,
+        "p99": 20.50000000000237,
+        "meanSpeed": 6.127412731092645,
+        "pathM": 147.05790554622234,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.35,
+        "0.2": 0.075,
+        "0.5": 0.13333333333333333
+      }
+    },
+    {
+      "id": "rb-98c16914b1",
+      "seed": 1213,
+      "t0": 1944,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 7.8,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 1.45,
+          "effectivePairs": 1390,
+          "effectiveSteps": 1541,
+          "effectivePathM": 1174.673753509847,
+          "turnsPerEffectivePair": 0.020863309352517987,
+          "turnsPerEffectiveStep": 0.01881894873458793,
+          "turnsPerMeter": 0.02468770576796317
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.55,
+          "effectivePairs": 1462,
+          "effectiveSteps": 1601,
+          "effectivePathM": 1181.9386870392707,
+          "turnsPerEffectivePair": 0.021203830369357045,
+          "turnsPerEffectiveStep": 0.019362898188632106,
+          "turnsPerMeter": 0.026228094857994953
+        },
+        "0.5": {
+          "turnsPerPlayer": 1.45,
+          "effectivePairs": 1436,
+          "effectiveSteps": 1578,
+          "effectivePathM": 1180.2325045738055,
+          "turnsPerEffectivePair": 0.0201949860724234,
+          "turnsPerEffectiveStep": 0.018377693282636248,
+          "turnsPerMeter": 0.02457142968662112
+        }
+      },
+      "staticFrac": {
+        "1": 0.35791666666666666,
+        "0.2": 0.33125,
+        "0.5": 0.3425
+      },
+      "transitions": {
+        "moveStop": 125,
+        "stopMove": 137,
+        "moveMove": 1436,
+        "stopStop": 682,
+        "n": 2380,
+        "moveStopShare": 0.052521008403361345,
+        "stopMoveShare": 0.05756302521008403,
+        "moveMoveShare": 0.6033613445378151,
+        "stopStopShare": 0.2865546218487395
+      },
+      "speed": {
+        "p50": 2.614789680697455,
+        "p90": 5.070221323098459,
+        "p99": 6.746473765432498,
+        "mean": 2.4633653012374714
+      },
+      "accel": {
+        "p95": 22.072571923197444,
+        "p99": 31.446626365451916
+      },
+      "symmetry": {
+        "bottomShare": 0.06074380165289256,
+        "topShare": 0,
+        "bottomMinusTop": 0.06074380165289256,
+        "leftShare": 1,
+        "rightShare": 0,
+        "leftMinusRight": 1,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 3.18057323295798,
+        "p90": 18.20000000000126,
+        "p99": 22.94217899199012,
+        "meanSpeed": 6.393574857832178,
+        "pathM": 153.4457965879724,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.44166666666666665,
+        "0.2": 0.058333333333333334,
+        "0.5": 0.175
+      }
+    },
+    {
+      "id": "rb-9bd04d5362",
+      "seed": 1207,
+      "t0": 1944,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 6.4,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.55,
+          "effectivePairs": 1987,
+          "effectiveSteps": 2092,
+          "effectivePathM": 1754.1924887115701,
+          "turnsPerEffectivePair": 0.0055359838953195776,
+          "turnsPerEffectiveStep": 0.005258126195028681,
+          "turnsPerMeter": 0.006270691540857837
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.7,
+          "effectivePairs": 2021,
+          "effectiveSteps": 2118,
+          "effectivePathM": 1757.4160828896402,
+          "turnsPerEffectivePair": 0.006927263730826323,
+          "turnsPerEffectiveStep": 0.0066100094428706326,
+          "turnsPerMeter": 0.007966240969514989
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.6,
+          "effectivePairs": 2008,
+          "effectiveSteps": 2111,
+          "effectivePathM": 1756.868279336626,
+          "turnsPerEffectivePair": 0.00597609561752988,
+          "turnsPerEffectiveStep": 0.005684509711037423,
+          "turnsPerMeter": 0.006830335626829729
+        }
+      },
+      "staticFrac": {
+        "1": 0.12833333333333333,
+        "0.2": 0.1175,
+        "0.5": 0.12041666666666667
+      },
+      "transitions": {
+        "moveStop": 87,
+        "stopMove": 83,
+        "moveMove": 2008,
+        "stopStop": 202,
+        "n": 2380,
+        "moveStopShare": 0.0365546218487395,
+        "stopMoveShare": 0.034873949579831934,
+        "moveMoveShare": 0.8436974789915966,
+        "stopStopShare": 0.08487394957983194
+      },
+      "speed": {
+        "p50": 3.8362303645208895,
+        "p90": 6.190423478684477,
+        "p99": 7.485412481248683,
+        "mean": 3.6612835060200335
+      },
+      "accel": {
+        "p95": 22.554060778437517,
+        "p99": 30.357018655986614
+      },
+      "symmetry": {
+        "bottomShare": 0.15578512396694214,
+        "topShare": 0.01818181818181818,
+        "bottomMinusTop": 0.13760330578512397,
+        "leftShare": 0.7863636363636364,
+        "rightShare": 0.21363636363636362,
+        "leftMinusRight": 0.5727272727272728,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.984427048317578,
+        "p90": 17.90000000000135,
+        "p99": 20.70000000000021,
+        "meanSpeed": 7.824017861577863,
+        "pathM": 187.77642867787063,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.225,
+        "0.2": 0.05,
+        "0.5": 0.08333333333333333
+      }
+    },
+    {
+      "id": "rb-d060017d14",
+      "seed": 1228,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 3.35,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.95,
+          "effectivePairs": 1533,
+          "effectiveSteps": 1602,
+          "effectivePathM": 1398.7842686659274,
+          "turnsPerEffectivePair": 0.012393998695368558,
+          "turnsPerEffectiveStep": 0.011860174781523096,
+          "turnsPerMeter": 0.013583223964994263
+        },
+        "0.3": {
+          "turnsPerPlayer": 1,
+          "effectivePairs": 1545,
+          "effectiveSteps": 1612,
+          "effectivePathM": 1400.158138322961,
+          "turnsPerEffectivePair": 0.012944983818770227,
+          "turnsPerEffectiveStep": 0.01240694789081886,
+          "turnsPerMeter": 0.014284100811609034
+        },
+        "0.5": {
+          "turnsPerPlayer": 1,
+          "effectivePairs": 1542,
+          "effectiveSteps": 1609,
+          "effectivePathM": 1399.908193812218,
+          "turnsPerEffectivePair": 0.01297016861219196,
+          "turnsPerEffectiveStep": 0.012430080795525171,
+          "turnsPerMeter": 0.014286651144984137
+        }
+      },
+      "staticFrac": {
+        "1": 0.3325,
+        "0.2": 0.32666666666666666,
+        "0.5": 0.32958333333333334
+      },
+      "transitions": {
+        "moveStop": 47,
+        "stopMove": 61,
+        "moveMove": 1542,
+        "stopStop": 730,
+        "n": 2380,
+        "moveStopShare": 0.019747899159663865,
+        "stopMoveShare": 0.025630252100840335,
+        "moveMoveShare": 0.6478991596638656,
+        "stopStopShare": 0.3067226890756303
+      },
+      "speed": {
+        "p50": 3.049434419475207,
+        "p90": 6.519452509317614,
+        "p99": 7.339709632215798,
+        "mean": 2.9175853578844224
+      },
+      "accel": {
+        "p95": 16.11901712603649,
+        "p99": 31.818287622007933
+      },
+      "symmetry": {
+        "bottomShare": 0.02768595041322314,
+        "topShare": 0.00371900826446281,
+        "bottomMinusTop": 0.023966942148760332,
+        "leftShare": 0.9855371900826446,
+        "rightShare": 0.014462809917355372,
+        "leftMinusRight": 0.9710743801652892,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 0,
+        "p90": 18.531491221017127,
+        "p99": 136.12618677482305,
+        "meanSpeed": 5.880493771074863,
+        "pathM": 141.13185050571474,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.8583333333333333,
+        "0.2": 0.7833333333333333,
+        "0.5": 0.7916666666666666
+      }
+    },
+    {
+      "id": "rb-d5b7114cc5",
+      "seed": 1219,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 7.95,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.85,
+          "effectivePairs": 1828,
+          "effectiveSteps": 1969,
+          "effectivePathM": 1797.1570754149054,
+          "turnsPerEffectivePair": 0.009299781181619256,
+          "turnsPerEffectiveStep": 0.008633824276282377,
+          "turnsPerMeter": 0.009459384620609888
+        },
+        "0.3": {
+          "turnsPerPlayer": 1,
+          "effectivePairs": 1865,
+          "effectiveSteps": 1999,
+          "effectivePathM": 1801.4697363983155,
+          "turnsPerEffectivePair": 0.010723860589812333,
+          "turnsPerEffectiveStep": 0.010005002501250625,
+          "turnsPerMeter": 0.011102046066000569
+        },
+        "0.5": {
+          "turnsPerPlayer": 1,
+          "effectivePairs": 1862,
+          "effectiveSteps": 1997,
+          "effectivePathM": 1801.2815088056207,
+          "turnsPerEffectivePair": 0.010741138560687433,
+          "turnsPerEffectiveStep": 0.010015022533800702,
+          "turnsPerMeter": 0.011103206190831015
+        }
+      },
+      "staticFrac": {
+        "1": 0.17958333333333334,
+        "0.2": 0.16625,
+        "0.5": 0.16791666666666666
+      },
+      "transitions": {
+        "moveStop": 116,
+        "stopMove": 117,
+        "moveMove": 1862,
+        "stopStop": 285,
+        "n": 2380,
+        "moveStopShare": 0.04873949579831933,
+        "stopMoveShare": 0.04915966386554622,
+        "moveMoveShare": 0.7823529411764706,
+        "stopStopShare": 0.11974789915966387
+      },
+      "speed": {
+        "p50": 4.442283464653544,
+        "p90": 6.188407068202812,
+        "p99": 7.61954332079141,
+        "mean": 3.753275940189342
+      },
+      "accel": {
+        "p95": 24.915521652715366,
+        "p99": 31.0250131336175
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.11363636363636363,
+        "bottomMinusTop": -0.11363636363636363,
+        "leftShare": 0.8884297520661157,
+        "rightShare": 0.1115702479338843,
+        "leftMinusRight": 0.7768595041322314,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.992409956264704,
+        "p90": 15.599999999999275,
+        "p99": 16.400000000000578,
+        "meanSpeed": 6.561848473765127,
+        "pathM": 157.48436337036932,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.18333333333333332,
+        "0.2": 0.03333333333333333,
+        "0.5": 0.08333333333333333
+      }
+    },
+    {
+      "id": "rb-d86c96c413",
+      "seed": 1201,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 2.3,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.65,
+          "effectivePairs": 1234,
+          "effectiveSteps": 1389,
+          "effectivePathM": 1071.7323963059805,
+          "turnsPerEffectivePair": 0.01053484602917342,
+          "turnsPerEffectiveStep": 0.009359251259899209,
+          "turnsPerMeter": 0.012129893660775827
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.85,
+          "effectivePairs": 1290,
+          "effectiveSteps": 1437,
+          "effectivePathM": 1077.987738714009,
+          "turnsPerEffectivePair": 0.01317829457364341,
+          "turnsPerEffectiveStep": 0.011830201809324982,
+          "turnsPerMeter": 0.015770123712427597
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.8,
+          "effectivePairs": 1278,
+          "effectiveSteps": 1426,
+          "effectivePathM": 1077.1384220603309,
+          "turnsPerEffectivePair": 0.012519561815336464,
+          "turnsPerEffectiveStep": 0.011220196353436185,
+          "turnsPerMeter": 0.014854172567157608
+        }
+      },
+      "staticFrac": {
+        "1": 0.42125,
+        "0.2": 0.39958333333333335,
+        "0.5": 0.4058333333333333
+      },
+      "transitions": {
+        "moveStop": 131,
+        "stopMove": 134,
+        "moveMove": 1278,
+        "stopStop": 837,
+        "n": 2380,
+        "moveStopShare": 0.05504201680672269,
+        "stopMoveShare": 0.05630252100840336,
+        "moveMoveShare": 0.5369747899159664,
+        "stopStopShare": 0.3516806722689076
+      },
+      "speed": {
+        "p50": 2.5917342425064493,
+        "p90": 4.990827542266422,
+        "p99": 6.708673029127324,
+        "mean": 2.246757339758544
+      },
+      "accel": {
+        "p95": 21.421333775813586,
+        "p99": 30.70904774086138
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.14421487603305785,
+        "bottomMinusTop": -0.14421487603305785,
+        "leftShare": 0,
+        "rightShare": 1,
+        "leftMinusRight": -1,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 2.7480460104000906,
+        "p90": 14.099999999997348,
+        "p99": 20.314999999990686,
+        "meanSpeed": 4.571459030014309,
+        "pathM": 109.71501672034242,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.4583333333333333,
+        "0.2": 0.041666666666666664,
+        "0.5": 0.16666666666666666
+      }
+    },
+    {
+      "id": "rb-da503ea8a6",
+      "seed": 1231,
+      "t0": 1976,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 3.75,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.95,
+          "effectivePairs": 1486,
+          "effectiveSteps": 1578,
+          "effectivePathM": 1312.3151689821345,
+          "turnsPerEffectivePair": 0.01278600269179004,
+          "turnsPerEffectiveStep": 0.012040557667934094,
+          "turnsPerMeter": 0.014478229353042448
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.05,
+          "effectivePairs": 1513,
+          "effectiveSteps": 1602,
+          "effectivePathM": 1315.6665700300875,
+          "turnsPerEffectivePair": 0.013879709187045605,
+          "turnsPerEffectiveStep": 0.013108614232209739,
+          "turnsPerMeter": 0.01596149091142428
+        },
+        "0.5": {
+          "turnsPerPlayer": 1,
+          "effectivePairs": 1505,
+          "effectiveSteps": 1596,
+          "effectivePathM": 1315.2010277221743,
+          "turnsPerEffectivePair": 0.013289036544850499,
+          "turnsPerEffectiveStep": 0.012531328320802004,
+          "turnsPerMeter": 0.015206800769186169
+        }
+      },
+      "staticFrac": {
+        "1": 0.3425,
+        "0.2": 0.3325,
+        "0.5": 0.335
+      },
+      "transitions": {
+        "moveStop": 73,
+        "stopMove": 79,
+        "moveMove": 1505,
+        "stopStop": 723,
+        "n": 2380,
+        "moveStopShare": 0.030672268907563024,
+        "stopMoveShare": 0.03319327731092437,
+        "moveMoveShare": 0.6323529411764706,
+        "stopStopShare": 0.303781512605042
+      },
+      "speed": {
+        "p50": 2.7273370061765907,
+        "p90": 5.675793003196531,
+        "p99": 7.007957126237787,
+        "mean": 2.7410461431431967
+      },
+      "accel": {
+        "p95": 16.958961918923816,
+        "p99": 26.515433239642697
+      },
+      "symmetry": {
+        "bottomShare": 0.14380165289256197,
+        "topShare": 0,
+        "bottomMinusTop": 0.14380165289256197,
+        "leftShare": 0,
+        "rightShare": 1,
+        "leftMinusRight": -1,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 0.6470270473481098,
+        "p90": 18.500000000000515,
+        "p99": 22.899999999999494,
+        "meanSpeed": 5.322838635153599,
+        "pathM": 127.74812724369123,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.6333333333333333,
+        "0.2": 0.39166666666666666,
+        "0.5": 0.44166666666666665
+      }
+    },
+    {
+      "id": "rb-de0956e241",
+      "seed": 1237,
+      "t0": 2072,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.9,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.1,
+          "effectivePairs": 1840,
+          "effectiveSteps": 1995,
+          "effectivePathM": 1838.0350729631748,
+          "turnsPerEffectivePair": 0.0010869565217391304,
+          "turnsPerEffectiveStep": 0.0010025062656641604,
+          "turnsPerMeter": 0.0010881185182041791
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.25,
+          "effectivePairs": 1867,
+          "effectiveSteps": 2017,
+          "effectivePathM": 1840.753931298053,
+          "turnsPerEffectivePair": 0.002678093197643278,
+          "turnsPerEffectiveStep": 0.002478929102627665,
+          "turnsPerMeter": 0.0027162783221514712
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.2,
+          "effectivePairs": 1859,
+          "effectiveSteps": 2012,
+          "effectivePathM": 1840.3493122947855,
+          "turnsPerEffectivePair": 0.002151694459386767,
+          "turnsPerEffectiveStep": 0.0019880715705765406,
+          "turnsPerMeter": 0.0021735004182506434
+        }
+      },
+      "staticFrac": {
+        "1": 0.16875,
+        "0.2": 0.15916666666666668,
+        "0.5": 0.16166666666666665
+      },
+      "transitions": {
+        "moveStop": 138,
+        "stopMove": 133,
+        "moveMove": 1859,
+        "stopStop": 250,
+        "n": 2380,
+        "moveStopShare": 0.05798319327731093,
+        "stopMoveShare": 0.05588235294117647,
+        "moveMoveShare": 0.7810924369747899,
+        "stopStopShare": 0.10504201680672269
+      },
+      "speed": {
+        "p50": 4.509334501622774,
+        "p90": 6.24076620290623,
+        "p99": 7.643335540333506,
+        "mean": 3.83514960491218
+      },
+      "accel": {
+        "p95": 23.42754330083769,
+        "p99": 30.54521148425634
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.10867768595041322,
+        "bottomMinusTop": -0.10867768595041322,
+        "leftShare": 0.4599173553719008,
+        "rightShare": 0.5400826446280992,
+        "leftMinusRight": -0.08016528925619834,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.979247850830472,
+        "p90": 13.100000000004602,
+        "p99": 16.90000000000476,
+        "meanSpeed": 5.355593937252128,
+        "pathM": 128.53425449405324,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.25833333333333336,
+        "0.2": 0.041666666666666664,
+        "0.5": 0.08333333333333333
+      }
+    },
+    {
+      "id": "rb-e35ce092aa",
+      "seed": 1210,
+      "t0": 1944,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 11.8,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.35,
+          "effectivePairs": 1663,
+          "effectiveSteps": 1846,
+          "effectivePathM": 1610.2230397794488,
+          "turnsPerEffectivePair": 0.004209260372820205,
+          "turnsPerEffectiveStep": 0.003791982665222102,
+          "turnsPerMeter": 0.004347223848541371
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.75,
+          "effectivePairs": 1715,
+          "effectiveSteps": 1887,
+          "effectivePathM": 1615.9605378867016,
+          "turnsPerEffectivePair": 0.008746355685131196,
+          "turnsPerEffectiveStep": 0.00794912559618442,
+          "turnsPerMeter": 0.009282404890664281
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.6,
+          "effectivePairs": 1697,
+          "effectiveSteps": 1873,
+          "effectivePathM": 1614.7810800001544,
+          "turnsPerEffectivePair": 0.007071302298173247,
+          "turnsPerEffectiveStep": 0.006406833956219968,
+          "turnsPerMeter": 0.007431347907543512
+        }
+      },
+      "staticFrac": {
+        "1": 0.23083333333333333,
+        "0.2": 0.21375,
+        "0.5": 0.21958333333333332
+      },
+      "transitions": {
+        "moveStop": 162,
+        "stopMove": 156,
+        "moveMove": 1697,
+        "stopStop": 365,
+        "n": 2380,
+        "moveStopShare": 0.0680672268907563,
+        "stopMoveShare": 0.06554621848739496,
+        "moveMoveShare": 0.7130252100840336,
+        "stopStopShare": 0.15336134453781514
+      },
+      "speed": {
+        "p50": 3.9982014359492717,
+        "p90": 5.875353408717682,
+        "p99": 7.6322371637996085,
+        "mean": 3.3667166119149226
+      },
+      "accel": {
+        "p95": 25.28332010270528,
+        "p99": 31.375652830086647
+      },
+      "symmetry": {
+        "bottomShare": 0.003305785123966942,
+        "topShare": 0.05619834710743802,
+        "bottomMinusTop": -0.05289256198347107,
+        "leftShare": 0.7913223140495868,
+        "rightShare": 0.20867768595041322,
+        "leftMinusRight": 0.5826446280991735,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.972328017545754,
+        "p90": 19.000000000000618,
+        "p99": 22.900000000002738,
+        "meanSpeed": 6.110508370560938,
+        "pathM": 146.65220089346425,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.2916666666666667,
+        "0.2": 0.075,
+        "0.5": 0.15833333333333333
+      }
+    },
+    {
+      "id": "rb-e48bd6a2ad",
+      "seed": 1204,
+      "t0": 1944,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 5.25,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.95,
+          "effectivePairs": 1926,
+          "effectiveSteps": 2056,
+          "effectivePathM": 1702.8884238344845,
+          "turnsPerEffectivePair": 0.009865005192107996,
+          "turnsPerEffectiveStep": 0.00924124513618677,
+          "turnsPerMeter": 0.011157513160619584
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.35,
+          "effectivePairs": 1973,
+          "effectiveSteps": 2090,
+          "effectivePathM": 1708.0020904840367,
+          "turnsPerEffectivePair": 0.013684744044602128,
+          "turnsPerEffectiveStep": 0.01291866028708134,
+          "turnsPerMeter": 0.015807943181350776
+        },
+        "0.5": {
+          "turnsPerPlayer": 1.2,
+          "effectivePairs": 1965,
+          "effectiveSteps": 2084,
+          "effectivePathM": 1707.511656588613,
+          "turnsPerEffectivePair": 0.012213740458015267,
+          "turnsPerEffectiveStep": 0.011516314779270634,
+          "turnsPerMeter": 0.01405554094309897
+        }
+      },
+      "staticFrac": {
+        "1": 0.14333333333333334,
+        "0.2": 0.12875,
+        "0.5": 0.13166666666666665
+      },
+      "transitions": {
+        "moveStop": 105,
+        "stopMove": 100,
+        "moveMove": 1965,
+        "stopStop": 210,
+        "n": 2380,
+        "moveStopShare": 0.04411764705882353,
+        "stopMoveShare": 0.04201680672268908,
+        "moveMoveShare": 0.8256302521008403,
+        "stopStopShare": 0.08823529411764706
+      },
+      "speed": {
+        "p50": 3.9180132052402756,
+        "p90": 5.790775191498674,
+        "p99": 7.145914606782636,
+        "mean": 3.5585086631289626
+      },
+      "accel": {
+        "p95": 22.07807785654345,
+        "p99": 29.5539019474681
+      },
+      "symmetry": {
+        "bottomShare": 0.047933884297520664,
+        "topShare": 0.12727272727272726,
+        "bottomMinusTop": -0.07933884297520662,
+        "leftShare": 0.1669421487603306,
+        "rightShare": 0.8330578512396695,
+        "leftMinusRight": -0.6661157024793388,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.969584674799298,
+        "p90": 16.199999999999783,
+        "p99": 16.199999999999818,
+        "meanSpeed": 5.476905291465311,
+        "pathM": 131.44572699516758,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.3333333333333333,
+        "0.2": 0.10833333333333334,
+        "0.5": 0.14166666666666666
+      }
+    },
+    {
+      "id": "rb-f6f11da37b",
+      "seed": 1225,
+      "t0": 2084,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 6.65,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.85,
+          "effectivePairs": 1746,
+          "effectiveSteps": 1869,
+          "effectivePathM": 1584.3605954961652,
+          "turnsPerEffectivePair": 0.009736540664375716,
+          "turnsPerEffectiveStep": 0.00909577314071696,
+          "turnsPerMeter": 0.010729880589258285
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.15,
+          "effectivePairs": 1791,
+          "effectiveSteps": 1904,
+          "effectivePathM": 1589.5654503393596,
+          "turnsPerEffectivePair": 0.012841987716359575,
+          "turnsPerEffectiveStep": 0.01207983193277311,
+          "turnsPerMeter": 0.014469363306235477
+        },
+        "0.5": {
+          "turnsPerPlayer": 1.15,
+          "effectivePairs": 1788,
+          "effectiveSteps": 1902,
+          "effectivePathM": 1589.4082337474013,
+          "turnsPerEffectivePair": 0.012863534675615212,
+          "turnsPerEffectiveStep": 0.012092534174553101,
+          "turnsPerMeter": 0.01447079454582422
+        }
+      },
+      "staticFrac": {
+        "1": 0.22125,
+        "0.2": 0.20666666666666667,
+        "0.5": 0.2075
+      },
+      "transitions": {
+        "moveStop": 100,
+        "stopMove": 97,
+        "moveMove": 1788,
+        "stopStop": 395,
+        "n": 2380,
+        "moveStopShare": 0.04201680672268908,
+        "stopMoveShare": 0.040756302521008404,
+        "moveMoveShare": 0.7512605042016807,
+        "stopStopShare": 0.16596638655462184
+      },
+      "speed": {
+        "p50": 3.59939679143215,
+        "p90": 6.125635616354814,
+        "p99": 7.619087462130014,
+        "mean": 3.3117036269218474
+      },
+      "accel": {
+        "p95": 23.982914914741713,
+        "p99": 30.8541344279359
+      },
+      "symmetry": {
+        "bottomShare": 0.047107438016528926,
+        "topShare": 0.015289256198347107,
+        "bottomMinusTop": 0.031818181818181815,
+        "leftShare": 0.9900826446280991,
+        "rightShare": 0.009917355371900827,
+        "leftMinusRight": 0.9801652892561984,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.983574119808526,
+        "p90": 18.699999999999218,
+        "p99": 23.728999999987064,
+        "meanSpeed": 6.905589596921828,
+        "pathM": 165.73415032611942,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.2916666666666667,
+        "0.2": 0.03333333333333333,
+        "0.5": 0.09166666666666666
+      }
+    },
+    {
+      "id": "rb-fcfd5b15f1",
+      "seed": 1213,
+      "t0": 3240,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 10.05,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 1.15,
+          "effectivePairs": 1520,
+          "effectiveSteps": 1688,
+          "effectivePathM": 1360.8879728578618,
+          "turnsPerEffectivePair": 0.015131578947368421,
+          "turnsPerEffectiveStep": 0.013625592417061612,
+          "turnsPerMeter": 0.01690072986073942
+        },
+        "0.3": {
+          "turnsPerPlayer": 1.45,
+          "effectivePairs": 1552,
+          "effectiveSteps": 1716,
+          "effectivePathM": 1364.3465850744271,
+          "turnsPerEffectivePair": 0.018685567010309278,
+          "turnsPerEffectiveStep": 0.0168997668997669,
+          "turnsPerMeter": 0.021255596134627335
+        },
+        "0.5": {
+          "turnsPerPlayer": 1.25,
+          "effectivePairs": 1538,
+          "effectiveSteps": 1705,
+          "effectivePathM": 1363.495117765277,
+          "turnsPerEffectivePair": 0.016254876462938883,
+          "turnsPerEffectiveStep": 0.01466275659824047,
+          "turnsPerMeter": 0.018335232502316667
+        }
+      },
+      "staticFrac": {
+        "1": 0.2966666666666667,
+        "0.2": 0.2833333333333333,
+        "0.5": 0.28958333333333336
+      },
+      "transitions": {
+        "moveStop": 154,
+        "stopMove": 149,
+        "moveMove": 1538,
+        "stopStop": 539,
+        "n": 2380,
+        "moveStopShare": 0.06470588235294118,
+        "stopMoveShare": 0.06260504201680672,
+        "moveMoveShare": 0.646218487394958,
+        "stopStopShare": 0.22647058823529412
+      },
+      "speed": {
+        "p50": 2.821458937521238,
+        "p90": 5.413442913386105,
+        "p99": 7.23628283787011,
+        "mean": 2.8430400045689947
+      },
+      "accel": {
+        "p95": 24.3911290842705,
+        "p99": 31.58894670316868
+      },
+      "symmetry": {
+        "bottomShare": 0.02024793388429752,
+        "topShare": 0.0049586776859504135,
+        "bottomMinusTop": 0.015289256198347107,
+        "leftShare": 1,
+        "rightShare": 0,
+        "leftMinusRight": 1,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.97823758538938,
+        "p90": 15.400000000001464,
+        "p99": 21.299999999994697,
+        "meanSpeed": 6.213237626313609,
+        "pathM": 149.11770303152755,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.2916666666666667,
+        "0.2": 0.058333333333333334,
+        "0.5": 0.15833333333333333
+      }
+    },
+    {
+      "id": "rb-ff7780c4e7",
+      "seed": 1216,
+      "t0": 3256,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 4.2,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.5,
+          "effectivePairs": 1569,
+          "effectiveSteps": 1753,
+          "effectivePathM": 1517.3091842675901,
+          "turnsPerEffectivePair": 0.006373486297004461,
+          "turnsPerEffectiveStep": 0.005704506560182544,
+          "turnsPerMeter": 0.006590614558776978
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.6,
+          "effectivePairs": 1594,
+          "effectiveSteps": 1770,
+          "effectivePathM": 1519.5595820268773,
+          "turnsPerEffectivePair": 0.0075282308657465494,
+          "turnsPerEffectiveStep": 0.006779661016949152,
+          "turnsPerMeter": 0.007897024994566978
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.5,
+          "effectivePairs": 1591,
+          "effectiveSteps": 1768,
+          "effectivePathM": 1519.3912874819323,
+          "turnsPerEffectivePair": 0.006285355122564425,
+          "turnsPerEffectiveStep": 0.005656108597285068,
+          "turnsPerMeter": 0.006581583086851098
+        }
+      },
+      "staticFrac": {
+        "1": 0.26958333333333334,
+        "0.2": 0.26125,
+        "0.5": 0.2633333333333333
+      },
+      "transitions": {
+        "moveStop": 162,
+        "stopMove": 162,
+        "moveMove": 1591,
+        "stopStop": 465,
+        "n": 2380,
+        "moveStopShare": 0.0680672268907563,
+        "stopMoveShare": 0.0680672268907563,
+        "moveMoveShare": 0.6684873949579831,
+        "stopStopShare": 0.1953781512605042
+      },
+      "speed": {
+        "p50": 3.5797465615805404,
+        "p90": 6.019320852341048,
+        "p99": 7.569509605679837,
+        "mean": 3.1660634724353507
+      },
+      "accel": {
+        "p95": 25.649938408201606,
+        "p99": 31.35914690567376
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.04214876033057851,
+        "bottomMinusTop": -0.04214876033057851,
+        "leftShare": 0.9099173553719008,
+        "rightShare": 0.09008264462809917,
+        "leftMinusRight": 0.8198347107438017,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.975071360292227,
+        "p90": 16.212358623562125,
+        "p99": 22.699999999997857,
+        "meanSpeed": 5.8050169832418455,
+        "pathM": 139.320407597809,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.2916666666666667,
+        "0.2": 0.08333333333333333,
+        "0.5": 0.125
+      }
+    }
+  ],
+  "realWindows": [
+    {
+      "id": "rb-018eb0862e",
+      "framesKey": "skillcorner-2013725",
+      "t0": 3211.995,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.2,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1779,
+          "effectiveSteps": 1850,
+          "effectivePathM": 885.5600678400571,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2324,
+          "effectiveSteps": 2360,
+          "effectivePathM": 958.2195326290268,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2216,
+          "effectiveSteps": 2270,
+          "effectivePathM": 950.9484874373652,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.22916666666666666,
+        "0.2": 0.00625,
+        "0.5": 0.05416666666666667
+      },
+      "transitions": {
+        "moveStop": 35,
+        "stopMove": 35,
+        "moveMove": 2216,
+        "stopStop": 94,
+        "n": 2380,
+        "moveStopShare": 0.014705882352941176,
+        "stopMoveShare": 0.014705882352941176,
+        "moveMoveShare": 0.9310924369747899,
+        "stopStopShare": 0.03949579831932773
+      },
+      "speed": {
+        "p50": 1.7543691918390043,
+        "p90": 3.6081054506879893,
+        "p99": 5.921310927959755,
+        "mean": 1.9997233420061278
+      },
+      "accel": {
+        "p95": 3.136634213679819,
+        "p99": 4.524265053552737
+      },
+      "symmetry": {
+        "bottomShare": 0.128099173553719,
+        "topShare": 0.016115702479338842,
+        "bottomMinusTop": 0.11198347107438017,
+        "leftShare": 0.6995867768595041,
+        "rightShare": 0.30041322314049584,
+        "leftMinusRight": 0.39917355371900826,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 3.9564059019366504,
+        "p90": 13.220170324840117,
+        "p99": 22.528985304799825,
+        "meanSpeed": 6.0827900613579935,
+        "pathM": 145.98696147259193,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.25,
+        "0.2": 0,
+        "0.5": 0.016666666666666666
+      }
+    },
+    {
+      "id": "rb-10c50f930b",
+      "framesKey": "metrica-1",
+      "t0": 3001.245,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.35,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.1,
+          "effectivePairs": 2112,
+          "effectiveSteps": 2153,
+          "effectivePathM": 1359.7334193268714,
+          "turnsPerEffectivePair": 0.000946969696969697,
+          "turnsPerEffectiveStep": 0.0009289363678588017,
+          "turnsPerMeter": 0.0014708765494563553
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.1,
+          "effectivePairs": 2328,
+          "effectiveSteps": 2357,
+          "effectivePathM": 1388.5719667209341,
+          "turnsPerEffectivePair": 0.000859106529209622,
+          "turnsPerEffectiveStep": 0.0008485362749257531,
+          "turnsPerMeter": 0.001440328659898653
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.1,
+          "effectivePairs": 2297,
+          "effectiveSteps": 2329,
+          "effectivePathM": 1386.312864570583,
+          "turnsPerEffectivePair": 0.0008707009142359599,
+          "turnsPerEffectiveStep": 0.0008587376556462001,
+          "turnsPerMeter": 0.0014426757848918247
+        }
+      },
+      "staticFrac": {
+        "1": 0.10291666666666667,
+        "0.2": 0.012916666666666667,
+        "0.5": 0.029583333333333333
+      },
+      "transitions": {
+        "moveStop": 12,
+        "stopMove": 14,
+        "moveMove": 2297,
+        "stopStop": 57,
+        "n": 2380,
+        "moveStopShare": 0.005042016806722689,
+        "stopMoveShare": 0.0058823529411764705,
+        "moveMoveShare": 0.9651260504201681,
+        "stopStopShare": 0.023949579831932775
+      },
+      "speed": {
+        "p50": 2.628827961062748,
+        "p90": 5.407172388256604,
+        "p99": 7.124830523726121,
+        "mean": 2.8952740704823694
+      },
+      "accel": {
+        "p95": 3.4149334069235655,
+        "p99": 4.764883724752181
+      },
+      "symmetry": {
+        "bottomShare": 0.05743801652892562,
+        "topShare": 0.043801652892561986,
+        "bottomMinusTop": 0.013636363636363636,
+        "leftShare": 0.806198347107438,
+        "rightShare": 0.193801652892562,
+        "leftMinusRight": 0.6123966942148761,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 7.197742309398587,
+        "p90": 12.8210895141899,
+        "p99": 27.690221552403088,
+        "meanSpeed": 7.47456846327137,
+        "pathM": 179.3896431185085,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.125,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-15e56c2642",
+      "framesKey": "skillcorner-2006229",
+      "t0": 1108.418,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.35,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2046,
+          "effectiveSteps": 2112,
+          "effectivePathM": 1035.1196524310033,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.1,
+          "effectivePairs": 2341,
+          "effectiveSteps": 2374,
+          "effectivePathM": 1074.1092155544275,
+          "turnsPerEffectivePair": 0.0008543357539513029,
+          "turnsPerEffectiveStep": 0.0008424599831508003,
+          "turnsPerMeter": 0.0018620080444684125
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2291,
+          "effectiveSteps": 2335,
+          "effectivePathM": 1070.8243473937075,
+          "turnsPerEffectivePair": 0.00043649061545176777,
+          "turnsPerEffectiveStep": 0.00042826552462526765,
+          "turnsPerMeter": 0.0009338599766001886
+        }
+      },
+      "staticFrac": {
+        "1": 0.12,
+        "0.2": 0.005416666666666667,
+        "0.5": 0.027083333333333334
+      },
+      "transitions": {
+        "moveStop": 25,
+        "stopMove": 24,
+        "moveMove": 2291,
+        "stopStop": 40,
+        "n": 2380,
+        "moveStopShare": 0.01050420168067227,
+        "stopMoveShare": 0.010084033613445379,
+        "moveMoveShare": 0.9626050420168067,
+        "stopStopShare": 0.01680672268907563
+      },
+      "speed": {
+        "p50": 2.136000936328903,
+        "p90": 3.6709328839013518,
+        "p99": 5.021354179681903,
+        "mean": 2.2398448355733303
+      },
+      "accel": {
+        "p95": 3.010398644696363,
+        "p99": 4.279310692153996
+      },
+      "symmetry": {
+        "bottomShare": 0.06074380165289256,
+        "topShare": 0.12892561983471074,
+        "bottomMinusTop": -0.06818181818181818,
+        "leftShare": 0.29049586776859504,
+        "rightShare": 0.709504132231405,
+        "leftMinusRight": -0.4190082644628099,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.208715309687808,
+        "p90": 13.229860351970876,
+        "p99": 16.115351920297854,
+        "meanSpeed": 5.924919050795648,
+        "pathM": 142.19805721909498,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.3,
+        "0.2": 0.008333333333333333,
+        "0.5": 0.03333333333333333
+      }
+    },
+    {
+      "id": "rb-26f698daf6",
+      "framesKey": "skillcorner-2010085",
+      "t0": 3344.095,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.15,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2183,
+          "effectiveSteps": 2228,
+          "effectivePathM": 1599.3312873874788,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2358,
+          "effectiveSteps": 2384,
+          "effectivePathM": 1621.6047103316516,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2317,
+          "effectiveSteps": 2350,
+          "effectivePathM": 1618.8778720039388,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.07166666666666667,
+        "0.2": 0.004583333333333333,
+        "0.5": 0.020833333333333332
+      },
+      "transitions": {
+        "moveStop": 15,
+        "stopMove": 13,
+        "moveMove": 2317,
+        "stopStop": 35,
+        "n": 2380,
+        "moveStopShare": 0.0063025210084033615,
+        "stopMoveShare": 0.0054621848739495795,
+        "moveMoveShare": 0.9735294117647059,
+        "stopStopShare": 0.014705882352941176
+      },
+      "speed": {
+        "p50": 3.4503890127613044,
+        "p90": 5.3281011528200555,
+        "p99": 6.640073381371357,
+        "mean": 3.3793890491974663
+      },
+      "accel": {
+        "p95": 3.350335035335981,
+        "p99": 4.5790208224814535
+      },
+      "symmetry": {
+        "bottomShare": 0.03140495867768595,
+        "topShare": 0.07231404958677685,
+        "bottomMinusTop": -0.04090909090909091,
+        "leftShare": 0.5822314049586776,
+        "rightShare": 0.4177685950413223,
+        "leftMinusRight": 0.16446280991735537,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 6.157060929182835,
+        "p90": 12.305204765554802,
+        "p99": 19.3866679527583,
+        "meanSpeed": 7.051884497183795,
+        "pathM": 169.24522793240752,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.05,
+        "0.2": 0,
+        "0.5": 0.008333333333333333
+      }
+    },
+    {
+      "id": "rb-2b6657e3a1",
+      "framesKey": "metrica-2",
+      "t0": 3081.165,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.4,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 1952,
+          "effectiveSteps": 2011,
+          "effectivePathM": 1102.6530281885252,
+          "turnsPerEffectivePair": 0.0005122950819672131,
+          "turnsPerEffectiveStep": 0.0004972650422675286,
+          "turnsPerMeter": 0.0009069035992608055
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2315,
+          "effectiveSteps": 2349,
+          "effectivePathM": 1150.14870751394,
+          "turnsPerEffectivePair": 0.00043196544276457883,
+          "turnsPerEffectiveStep": 0.0004257130693912303,
+          "turnsPerMeter": 0.0008694527876847437
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2237,
+          "effectiveSteps": 2283,
+          "effectivePathM": 1144.813005077345,
+          "turnsPerEffectivePair": 0.0004470272686633885,
+          "turnsPerEffectiveStep": 0.0004380201489268506,
+          "turnsPerMeter": 0.0008735051013265164
+        }
+      },
+      "staticFrac": {
+        "1": 0.16208333333333333,
+        "0.2": 0.01375,
+        "0.5": 0.04875
+      },
+      "transitions": {
+        "moveStop": 28,
+        "stopMove": 28,
+        "moveMove": 2237,
+        "stopStop": 87,
+        "n": 2380,
+        "moveStopShare": 0.011764705882352941,
+        "stopMoveShare": 0.011764705882352941,
+        "moveMoveShare": 0.9399159663865546,
+        "stopStopShare": 0.0365546218487395
+      },
+      "speed": {
+        "p50": 2.2397392613075704,
+        "p90": 4.387878110643746,
+        "p99": 6.350407994061251,
+        "mean": 2.399580108311856
+      },
+      "accel": {
+        "p95": 2.7361014067874945,
+        "p99": 3.9194412794520126
+      },
+      "symmetry": {
+        "bottomShare": 0.0603305785123967,
+        "topShare": 0.0603305785123967,
+        "bottomMinusTop": 0,
+        "leftShare": 0.44958677685950416,
+        "rightShare": 0.5504132231404959,
+        "leftMinusRight": -0.10082644628099173,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 3.80795790674021,
+        "p90": 10.194706249268986,
+        "p99": 18.52379282330226,
+        "meanSpeed": 5.363376453793887,
+        "pathM": 128.72103489105803,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.25833333333333336,
+        "0.2": 0.008333333333333333,
+        "0.5": 0.041666666666666664
+      }
+    },
+    {
+      "id": "rb-2c2284dab9",
+      "framesKey": "skillcorner-1874553",
+      "t0": 3294.055,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.3,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2095,
+          "effectiveSteps": 2152,
+          "effectivePathM": 1251.7586566163031,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2333,
+          "effectiveSteps": 2369,
+          "effectivePathM": 1283.1673767623176,
+          "turnsPerEffectivePair": 0.0004286326618088298,
+          "turnsPerEffectiveStep": 0.00042211903756859433,
+          "turnsPerMeter": 0.0007793215585975975
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2291,
+          "effectiveSteps": 2328,
+          "effectivePathM": 1279.9237269478479,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.10333333333333333,
+        "0.2": 0.005833333333333334,
+        "0.5": 0.03
+      },
+      "transitions": {
+        "moveStop": 20,
+        "stopMove": 19,
+        "moveMove": 2291,
+        "stopStop": 50,
+        "n": 2380,
+        "moveStopShare": 0.008403361344537815,
+        "stopMoveShare": 0.007983193277310924,
+        "moveMoveShare": 0.9626050420168067,
+        "stopStopShare": 0.02100840336134454
+      },
+      "speed": {
+        "p50": 2.3100320711936555,
+        "p90": 5.022199826127546,
+        "p99": 7.692587027684357,
+        "mean": 2.6757296341749583
+      },
+      "accel": {
+        "p95": 3.0103986447050497,
+        "p99": 4.149267075330978
+      },
+      "symmetry": {
+        "bottomShare": 0.0012396694214876034,
+        "topShare": 0.0512396694214876,
+        "bottomMinusTop": -0.05,
+        "leftShare": 0.6512396694214876,
+        "rightShare": 0.3487603305785124,
+        "leftMinusRight": 0.30247933884297523,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 6.3504600574333505,
+        "p90": 14.682293046904661,
+        "p99": 20.788215519261108,
+        "meanSpeed": 7.456988086635363,
+        "pathM": 178.96771407924743,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.08333333333333333,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-2e1c41a6ac",
+      "framesKey": "skillcorner-2013725",
+      "t0": 1119.562,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.25,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1971,
+          "effectiveSteps": 2035,
+          "effectivePathM": 966.1224735301407,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2333,
+          "effectiveSteps": 2371,
+          "effectivePathM": 1012.8942900268772,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2253,
+          "effectiveSteps": 2301,
+          "effectivePathM": 1007.2758546830813,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.15208333333333332,
+        "0.2": 0.005,
+        "0.5": 0.04125
+      },
+      "transitions": {
+        "moveStop": 30,
+        "stopMove": 28,
+        "moveMove": 2253,
+        "stopStop": 69,
+        "n": 2380,
+        "moveStopShare": 0.012605042016806723,
+        "stopMoveShare": 0.011764705882352941,
+        "moveMoveShare": 0.9466386554621848,
+        "stopStopShare": 0.028991596638655463
+      },
+      "speed": {
+        "p50": 1.8239679996046165,
+        "p90": 3.6744258224128044,
+        "p99": 6.013827256473557,
+        "mean": 2.1126557731292355
+      },
+      "accel": {
+        "p95": 3.611113969600907,
+        "p99": 5.483556317285789
+      },
+      "symmetry": {
+        "bottomShare": 0.047933884297520664,
+        "topShare": 0.019834710743801654,
+        "bottomMinusTop": 0.02809917355371901,
+        "leftShare": 0.30454545454545456,
+        "rightShare": 0.6954545454545454,
+        "leftMinusRight": -0.39090909090909093,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.210407767143321,
+        "p90": 12.488372968453138,
+        "p99": 21.821531356310558,
+        "meanSpeed": 5.864335848677718,
+        "pathM": 140.7440603682641,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.225,
+        "0.2": 0,
+        "0.5": 0.05
+      }
+    },
+    {
+      "id": "rb-4379c343f7",
+      "framesKey": "skillcorner-1996435",
+      "t0": 1192.862,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.65,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1730,
+          "effectiveSteps": 1814,
+          "effectivePathM": 1021.5310036242433,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2266,
+          "effectiveSteps": 2321,
+          "effectivePathM": 1092.9220777311862,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2157,
+          "effectiveSteps": 2220,
+          "effectivePathM": 1084.907383466451,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.24416666666666667,
+        "0.2": 0.015833333333333335,
+        "0.5": 0.075
+      },
+      "transitions": {
+        "moveStop": 43,
+        "stopMove": 46,
+        "moveMove": 2157,
+        "stopStop": 134,
+        "n": 2380,
+        "moveStopShare": 0.018067226890756304,
+        "stopMoveShare": 0.019327731092436976,
+        "moveMoveShare": 0.9063025210084034,
+        "stopStopShare": 0.05630252100840336
+      },
+      "speed": {
+        "p50": 1.7219175357718854,
+        "p90": 4.760829665829151,
+        "p99": 6.110253283162213,
+        "mean": 2.2831125066339983
+      },
+      "accel": {
+        "p95": 2.795084971872022,
+        "p99": 3.915146507774848
+      },
+      "symmetry": {
+        "bottomShare": 0.06694214876033058,
+        "topShare": 0.015289256198347107,
+        "bottomMinusTop": 0.05165289256198347,
+        "leftShare": 0.25950413223140495,
+        "rightShare": 0.740495867768595,
+        "leftMinusRight": -0.4809917355371901,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.538159367644749,
+        "p90": 12.132987196149342,
+        "p99": 16.351595088465686,
+        "meanSpeed": 5.644541120942953,
+        "pathM": 135.4689869026301,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.31666666666666665,
+        "0.2": 0,
+        "0.5": 0.008333333333333333
+      }
+    },
+    {
+      "id": "rb-514e51c49d",
+      "framesKey": "skillcorner-2017461",
+      "t0": 1253.928,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.2,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2061,
+          "effectiveSteps": 2128,
+          "effectivePathM": 1115.7528412748027,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2352,
+          "effectiveSteps": 2385,
+          "effectivePathM": 1151.3792698852728,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2278,
+          "effectiveSteps": 2327,
+          "effectivePathM": 1146.6162262043617,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.11333333333333333,
+        "0.2": 0.00375,
+        "0.5": 0.030416666666666668
+      },
+      "transitions": {
+        "moveStop": 29,
+        "stopMove": 30,
+        "moveMove": 2278,
+        "stopStop": 43,
+        "n": 2380,
+        "moveStopShare": 0.012184873949579832,
+        "stopMoveShare": 0.012605042016806723,
+        "moveMoveShare": 0.9571428571428572,
+        "stopStopShare": 0.018067226890756304
+      },
+      "speed": {
+        "p50": 2.181455465477514,
+        "p90": 4.180639479312578,
+        "p99": 6.100497237126563,
+        "mean": 2.3999460089652387
+      },
+      "accel": {
+        "p95": 3.758324094591316,
+        "p99": 4.833724174924324
+      },
+      "symmetry": {
+        "bottomShare": 0.10371900826446281,
+        "topShare": 0.007851239669421488,
+        "bottomMinusTop": 0.09586776859504133,
+        "leftShare": 0.8161157024793388,
+        "rightShare": 0.18388429752066116,
+        "leftMinusRight": 0.6322314049586777,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 6.952874497464665,
+        "p90": 14.282931532075096,
+        "p99": 22.43213113234042,
+        "meanSpeed": 8.06970176534754,
+        "pathM": 193.67284236834212,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.1,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-515558ea25",
+      "framesKey": "metrica-1",
+      "t0": 2061.684,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.05,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2111,
+          "effectiveSteps": 2164,
+          "effectivePathM": 1271.2196186480394,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2336,
+          "effectiveSteps": 2371,
+          "effectivePathM": 1299.9607320959333,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2289,
+          "effectiveSteps": 2327,
+          "effectivePathM": 1296.637932149927,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.09833333333333333,
+        "0.2": 0.005416666666666667,
+        "0.5": 0.030416666666666668
+      },
+      "transitions": {
+        "moveStop": 19,
+        "stopMove": 19,
+        "moveMove": 2289,
+        "stopStop": 53,
+        "n": 2380,
+        "moveStopShare": 0.007983193277310924,
+        "stopMoveShare": 0.007983193277310924,
+        "moveMoveShare": 0.961764705882353,
+        "stopStopShare": 0.02226890756302521
+      },
+      "speed": {
+        "p50": 2.6866365480706946,
+        "p90": 4.393115082563888,
+        "p99": 6.536123400303611,
+        "mean": 2.7107316269628297
+      },
+      "accel": {
+        "p95": 3.3556845147856706,
+        "p99": 4.5225864299796354
+      },
+      "symmetry": {
+        "bottomShare": 0.11446280991735537,
+        "topShare": 0.008677685950413223,
+        "bottomMinusTop": 0.10578512396694215,
+        "leftShare": 0.4033057851239669,
+        "rightShare": 0.596694214876033,
+        "leftMinusRight": -0.1933884297520661,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 8.762048057397294,
+        "p90": 14.20632146065186,
+        "p99": 18.166794590874986,
+        "meanSpeed": 7.806051920305246,
+        "pathM": 184.22282531920928,
+        "nSteps": 118
+      },
+      "ballStaticFrac": {
+        "2": 0.0423728813559322,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-59fecc2821",
+      "framesKey": "skillcorner-2006229",
+      "t0": 3451.055,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2132,
+          "effectiveSteps": 2180,
+          "effectivePathM": 1308.5426337346494,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2366,
+          "effectiveSteps": 2392,
+          "effectivePathM": 1338.5176817944177,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2322,
+          "effectiveSteps": 2358,
+          "effectivePathM": 1335.6547059310967,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.09166666666666666,
+        "0.2": 0.0008333333333333334,
+        "0.5": 0.0175
+      },
+      "transitions": {
+        "moveStop": 17,
+        "stopMove": 16,
+        "moveMove": 2322,
+        "stopStop": 25,
+        "n": 2380,
+        "moveStopShare": 0.007142857142857143,
+        "stopMoveShare": 0.0067226890756302525,
+        "moveMoveShare": 0.9756302521008403,
+        "stopStopShare": 0.01050420168067227
+      },
+      "speed": {
+        "p50": 2.6883995642787823,
+        "p90": 4.850643902457993,
+        "p99": 6.61910114744288,
+        "mean": 2.789357829272545
+      },
+      "accel": {
+        "p95": 3.4003676271774155,
+        "p99": 5.405695088113334
+      },
+      "symmetry": {
+        "bottomShare": 0.1847107438016529,
+        "topShare": 0.048760330578512395,
+        "bottomMinusTop": 0.1359504132231405,
+        "leftShare": 0.606198347107438,
+        "rightShare": 0.39380165289256197,
+        "leftMinusRight": 0.21239669421487603,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 7.492883379874574,
+        "p90": 14.007185249078983,
+        "p99": 17.933637327791537,
+        "meanSpeed": 8.023990909532724,
+        "pathM": 192.57578182878575,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.05,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-86847dbcfd",
+      "framesKey": "skillcorner-1899585",
+      "t0": 1121.622,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.5,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1923,
+          "effectiveSteps": 1992,
+          "effectivePathM": 1031.7570995976494,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2307,
+          "effectiveSteps": 2349,
+          "effectivePathM": 1082.4235179275208,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2249,
+          "effectiveSteps": 2297,
+          "effectivePathM": 1078.2421805297254,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.17,
+        "0.2": 0.009166666666666667,
+        "0.5": 0.042916666666666665
+      },
+      "transitions": {
+        "moveStop": 28,
+        "stopMove": 29,
+        "moveMove": 2249,
+        "stopStop": 74,
+        "n": 2380,
+        "moveStopShare": 0.011764705882352941,
+        "stopMoveShare": 0.012184873949579832,
+        "moveMoveShare": 0.9449579831932773,
+        "stopStopShare": 0.031092436974789917
+      },
+      "speed": {
+        "p50": 2.0315769842311444,
+        "p90": 4.090191123956962,
+        "p99": 5.765753223494232,
+        "mean": 2.259037108174691
+      },
+      "accel": {
+        "p95": 3.337044997294713,
+        "p99": 4.477634364753126
+      },
+      "symmetry": {
+        "bottomShare": 0.0256198347107438,
+        "topShare": 0,
+        "bottomMinusTop": 0.0256198347107438,
+        "leftShare": 0.10082644628099173,
+        "rightShare": 0.8991735537190083,
+        "leftMinusRight": -0.7983471074380165,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.914034488177231,
+        "p90": 12.452083101349702,
+        "p99": 25.995580086069506,
+        "meanSpeed": 6.2742483090612335,
+        "pathM": 143.05286144659263,
+        "nSteps": 114
+      },
+      "ballStaticFrac": {
+        "2": 0.07894736842105263,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-96b067ee86",
+      "framesKey": "skillcorner-1959846",
+      "t0": 3192.965,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.4,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1689,
+          "effectiveSteps": 1759,
+          "effectivePathM": 752.7540457124551,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2259,
+          "effectiveSteps": 2304,
+          "effectivePathM": 830.1042165584554,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2150,
+          "effectiveSteps": 2206,
+          "effectivePathM": 821.9635151749778,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.26708333333333334,
+        "0.2": 0.020833333333333332,
+        "0.5": 0.08083333333333333
+      },
+      "transitions": {
+        "moveStop": 36,
+        "stopMove": 39,
+        "moveMove": 2150,
+        "stopStop": 155,
+        "n": 2380,
+        "moveStopShare": 0.015126050420168067,
+        "stopMoveShare": 0.01638655462184874,
+        "moveMoveShare": 0.9033613445378151,
+        "stopStopShare": 0.06512605042016807
+      },
+      "speed": {
+        "p50": 1.5729177390939868,
+        "p90": 3.1064284667792856,
+        "p99": 4.618792247051977,
+        "mean": 1.7366798222875384
+      },
+      "accel": {
+        "p95": 2.491535153060837,
+        "p99": 3.394976920948099
+      },
+      "symmetry": {
+        "bottomShare": 0.08429752066115702,
+        "topShare": 0.026859504132231406,
+        "bottomMinusTop": 0.05743801652892562,
+        "leftShare": 0.33925619834710746,
+        "rightShare": 0.6607438016528926,
+        "leftMinusRight": -0.32148760330578513,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 6.190032834146161,
+        "p90": 13.328231448459846,
+        "p99": 16.32059116122089,
+        "meanSpeed": 6.821850472474989,
+        "pathM": 163.72441133939412,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.19166666666666668,
+        "0.2": 0,
+        "0.5": 0.041666666666666664
+      }
+    },
+    {
+      "id": "rb-9970c5a298",
+      "framesKey": "skillcorner-2010085",
+      "t0": 1099.522,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2194,
+          "effectiveSteps": 2236,
+          "effectivePathM": 1240.4364735537295,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2363,
+          "effectiveSteps": 2386,
+          "effectivePathM": 1260.6916492258306,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2320,
+          "effectiveSteps": 2353,
+          "effectivePathM": 1257.9089497050663,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.06833333333333333,
+        "0.2": 0.0025,
+        "0.5": 0.019583333333333335
+      },
+      "transitions": {
+        "moveStop": 16,
+        "stopMove": 14,
+        "moveMove": 2320,
+        "stopStop": 30,
+        "n": 2380,
+        "moveStopShare": 0.0067226890756302525,
+        "stopMoveShare": 0.0058823529411764705,
+        "moveMoveShare": 0.9747899159663865,
+        "stopStopShare": 0.012605042016806723
+      },
+      "speed": {
+        "p50": 2.518821438585169,
+        "p90": 4.195468158902973,
+        "p99": 6.033620490129205,
+        "mean": 2.6276415564285966
+      },
+      "accel": {
+        "p95": 2.9828140248209185,
+        "p99": 4.198230144563082
+      },
+      "symmetry": {
+        "bottomShare": 0.03553719008264463,
+        "topShare": 0.05702479338842975,
+        "bottomMinusTop": -0.021487603305785124,
+        "leftShare": 0.38636363636363635,
+        "rightShare": 0.6136363636363636,
+        "leftMinusRight": -0.22727272727272727,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 3.3320963443044174,
+        "p90": 14.841401364616091,
+        "p99": 24.914670874424022,
+        "meanSpeed": 6.286379376576959,
+        "pathM": 150.87310503784602,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.25833333333333336,
+        "0.2": 0,
+        "0.5": 0.008333333333333333
+      }
+    },
+    {
+      "id": "rb-ac1b382eb2",
+      "framesKey": "metrica-2",
+      "t0": 2019.784,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.3,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2015,
+          "effectiveSteps": 2078,
+          "effectivePathM": 1096.3038296411114,
+          "turnsPerEffectivePair": 0.0004962779156327543,
+          "turnsPerEffectiveStep": 0.00048123195380173246,
+          "turnsPerMeter": 0.0009121558941624443
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2336,
+          "effectiveSteps": 2368,
+          "effectivePathM": 1136.3313788756557,
+          "turnsPerEffectivePair": 0.0004280821917808219,
+          "turnsPerEffectiveStep": 0.0004222972972972973,
+          "turnsPerMeter": 0.000880024980907815
+        },
+        "0.5": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2266,
+          "effectiveSteps": 2313,
+          "effectivePathM": 1131.8127382815574,
+          "turnsPerEffectivePair": 0.000441306266548985,
+          "turnsPerEffectiveStep": 0.00043233895373973193,
+          "turnsPerMeter": 0.00088353838596861
+        }
+      },
+      "staticFrac": {
+        "1": 0.13416666666666666,
+        "0.2": 0.00375,
+        "0.5": 0.03625
+      },
+      "transitions": {
+        "moveStop": 27,
+        "stopMove": 27,
+        "moveMove": 2266,
+        "stopStop": 60,
+        "n": 2380,
+        "moveStopShare": 0.01134453781512605,
+        "stopMoveShare": 0.01134453781512605,
+        "moveMoveShare": 0.9521008403361344,
+        "stopStopShare": 0.025210084033613446
+      },
+      "speed": {
+        "p50": 2.095350355043327,
+        "p90": 4.115407133751372,
+        "p99": 5.654469475218826,
+        "mean": 2.370463319655766
+      },
+      "accel": {
+        "p95": 3.2207371442619483,
+        "p99": 4.911441334243198
+      },
+      "symmetry": {
+        "bottomShare": 0.04008264462809917,
+        "topShare": 0,
+        "bottomMinusTop": 0.04008264462809917,
+        "leftShare": 0.7673553719008265,
+        "rightShare": 0.23264462809917355,
+        "leftMinusRight": 0.5347107438016528,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.409649659835936,
+        "p90": 15.371688931504757,
+        "p99": 16.31064747879626,
+        "meanSpeed": 6.421524795055345,
+        "pathM": 150.26368020428868,
+        "nSteps": 117
+      },
+      "ballStaticFrac": {
+        "2": 0.1452991452991453,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-bb98fd8498",
+      "framesKey": "skillcorner-1899585",
+      "t0": 3397.845,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.2,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2086,
+          "effectiveSteps": 2133,
+          "effectivePathM": 1365.0458069352512,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2326,
+          "effectiveSteps": 2357,
+          "effectivePathM": 1396.4209319323534,
+          "turnsPerEffectivePair": 0.0004299226139294927,
+          "turnsPerEffectiveStep": 0.00042426813746287653,
+          "turnsPerMeter": 0.0007161164496554845
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2286,
+          "effectiveSteps": 2320,
+          "effectivePathM": 1393.464885507922,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.11125,
+        "0.2": 0.007916666666666667,
+        "0.5": 0.03333333333333333
+      },
+      "transitions": {
+        "moveStop": 16,
+        "stopMove": 16,
+        "moveMove": 2286,
+        "stopStop": 62,
+        "n": 2380,
+        "moveStopShare": 0.0067226890756302525,
+        "stopMoveShare": 0.0067226890756302525,
+        "moveMoveShare": 0.9605042016806723,
+        "stopStopShare": 0.026050420168067228
+      },
+      "speed": {
+        "p50": 2.593697637256102,
+        "p90": 5.414323966956195,
+        "p99": 7.0759842942816364,
+        "mean": 2.912668107979558
+      },
+      "accel": {
+        "p95": 4.00039777757346,
+        "p99": 6.061433095887469
+      },
+      "symmetry": {
+        "bottomShare": 0,
+        "topShare": 0.05537190082644628,
+        "bottomMinusTop": -0.05537190082644628,
+        "leftShare": 0.16033057851239668,
+        "rightShare": 0.8396694214876033,
+        "leftMinusRight": -0.6793388429752066,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.9523363049577025,
+        "p90": 10.9620770624153,
+        "p99": 17.651809800385433,
+        "meanSpeed": 5.870345423787172,
+        "pathM": 140.88829017089023,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.016666666666666666,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-bc3d0e869a",
+      "framesKey": "skillcorner-1927964",
+      "t0": 3225.8,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.2,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1936,
+          "effectiveSteps": 2004,
+          "effectivePathM": 1017.4578759204635,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2306,
+          "effectiveSteps": 2345,
+          "effectivePathM": 1064.7237795761548,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2220,
+          "effectiveSteps": 2274,
+          "effectivePathM": 1059.0187453310625,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.165,
+        "0.2": 0.012916666666666667,
+        "0.5": 0.0525
+      },
+      "transitions": {
+        "moveStop": 34,
+        "stopMove": 35,
+        "moveMove": 2220,
+        "stopStop": 91,
+        "n": 2380,
+        "moveStopShare": 0.014285714285714285,
+        "stopMoveShare": 0.014705882352941176,
+        "moveMoveShare": 0.9327731092436975,
+        "stopStopShare": 0.03823529411764706
+      },
+      "speed": {
+        "p50": 1.8601075237734124,
+        "p90": 4.224156705659066,
+        "p99": 6.316090550719155,
+        "mean": 2.2222555244508087
+      },
+      "accel": {
+        "p95": 3.0207614934040814,
+        "p99": 4.273536724758639
+      },
+      "symmetry": {
+        "bottomShare": 0.008677685950413223,
+        "topShare": 0.04173553719008265,
+        "bottomMinusTop": -0.03305785123966942,
+        "leftShare": 0.8735537190082645,
+        "rightShare": 0.12644628099173555,
+        "leftMinusRight": 0.7471074380165289,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.061003267476196,
+        "p90": 13.72551972150929,
+        "p99": 20.399255965578597,
+        "meanSpeed": 5.685811465660824,
+        "pathM": 136.4594751758593,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.225,
+        "0.2": 0.008333333333333333,
+        "0.5": 0.03333333333333333
+      }
+    },
+    {
+      "id": "rb-c1d9b15868",
+      "framesKey": "skillcorner-1927964",
+      "t0": 1132.08,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.4,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1812,
+          "effectiveSteps": 1881,
+          "effectivePathM": 877.3190709587884,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2291,
+          "effectiveSteps": 2336,
+          "effectivePathM": 941.2341314339446,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2200,
+          "effectiveSteps": 2244,
+          "effectivePathM": 933.6811922917626,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.21625,
+        "0.2": 0.00875,
+        "0.5": 0.065
+      },
+      "transitions": {
+        "moveStop": 28,
+        "stopMove": 25,
+        "moveMove": 2200,
+        "stopStop": 127,
+        "n": 2380,
+        "moveStopShare": 0.011764705882352941,
+        "stopMoveShare": 0.01050420168067227,
+        "moveMoveShare": 0.9243697478991597,
+        "stopStopShare": 0.053361344537815124
+      },
+      "speed": {
+        "p50": 1.7117242768619896,
+        "p90": 3.565634547115222,
+        "p99": 4.856459611489766,
+        "mean": 1.9664764695924088
+      },
+      "accel": {
+        "p95": 2.915475947411658,
+        "p99": 4.304208996815667
+      },
+      "symmetry": {
+        "bottomShare": 0.03264462809917355,
+        "topShare": 0.1103305785123967,
+        "bottomMinusTop": -0.07768595041322314,
+        "leftShare": 0.37644628099173555,
+        "rightShare": 0.6235537190082645,
+        "leftMinusRight": -0.24710743801652893,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 3.8364411284064235,
+        "p90": 13.993105216300702,
+        "p99": 19.860300438598077,
+        "meanSpeed": 5.588345529539326,
+        "pathM": 134.12029270894274,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.2833333333333333,
+        "0.2": 0.041666666666666664,
+        "0.5": 0.075
+      }
+    },
+    {
+      "id": "rb-ce3d1063e3",
+      "framesKey": "skillcorner-1874553",
+      "t0": 1118.418,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.1,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2019,
+          "effectiveSteps": 2083,
+          "effectivePathM": 1015.3769739273291,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2334,
+          "effectiveSteps": 2370,
+          "effectivePathM": 1054.8940059339714,
+          "turnsPerEffectivePair": 0.0004284490145672665,
+          "turnsPerEffectiveStep": 0.0004219409282700422,
+          "turnsPerMeter": 0.000947962538771495
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2252,
+          "effectiveSteps": 2301,
+          "effectivePathM": 1049.2515962000384,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.13208333333333333,
+        "0.2": 0.002916666666666667,
+        "0.5": 0.04125
+      },
+      "transitions": {
+        "moveStop": 35,
+        "stopMove": 33,
+        "moveMove": 2252,
+        "stopStop": 60,
+        "n": 2380,
+        "moveStopShare": 0.014705882352941176,
+        "stopMoveShare": 0.013865546218487394,
+        "moveMoveShare": 0.946218487394958,
+        "stopStopShare": 0.025210084033613446
+      },
+      "speed": {
+        "p50": 2.088659857420084,
+        "p90": 3.6586197518349977,
+        "p99": 5.3036063917212575,
+        "mean": 2.2005688287968916
+      },
+      "accel": {
+        "p95": 3.2015621187135372,
+        "p99": 4.149267075303557
+      },
+      "symmetry": {
+        "bottomShare": 0.04173553719008265,
+        "topShare": 0.06446280991735537,
+        "bottomMinusTop": -0.022727272727272728,
+        "leftShare": 0.6909090909090909,
+        "rightShare": 0.3090909090909091,
+        "leftMinusRight": 0.38181818181818183,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.373344317823659,
+        "p90": 13.38414093419467,
+        "p99": 17.308596917740616,
+        "meanSpeed": 5.7443283890171335,
+        "pathM": 137.86388133641435,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.15833333333333333,
+        "0.2": 0,
+        "0.5": 0.041666666666666664
+      }
+    },
+    {
+      "id": "rb-d48b468bad",
+      "framesKey": "skillcorner-1959846",
+      "t0": 1157.334,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.05,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1914,
+          "effectiveSteps": 1968,
+          "effectivePathM": 956.1381449166877,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2340,
+          "effectiveSteps": 2371,
+          "effectivePathM": 1011.7947259066244,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2225,
+          "effectiveSteps": 2275,
+          "effectivePathM": 1003.8075578832998,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.18,
+        "0.2": 0.004166666666666667,
+        "0.5": 0.052083333333333336
+      },
+      "transitions": {
+        "moveStop": 30,
+        "stopMove": 34,
+        "moveMove": 2225,
+        "stopStop": 91,
+        "n": 2380,
+        "moveStopShare": 0.012605042016806723,
+        "stopMoveShare": 0.014285714285714285,
+        "moveMoveShare": 0.9348739495798319,
+        "stopStopShare": 0.03823529411764706
+      },
+      "speed": {
+        "p50": 1.855957293201652,
+        "p90": 3.616890474631462,
+        "p99": 5.320797599356062,
+        "mean": 2.110408368914454
+      },
+      "accel": {
+        "p95": 2.8337134104862076,
+        "p99": 3.8796318970708077
+      },
+      "symmetry": {
+        "bottomShare": 0.011570247933884297,
+        "topShare": 0.024380165289256198,
+        "bottomMinusTop": -0.0128099173553719,
+        "leftShare": 0.9805785123966942,
+        "rightShare": 0.019421487603305785,
+        "leftMinusRight": 0.9611570247933884,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.433344932251096,
+        "p90": 11.591716977332945,
+        "p99": 16.4317829699023,
+        "meanSpeed": 5.547405405723024,
+        "pathM": 133.13772973735186,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.225,
+        "0.2": 0.008333333333333333,
+        "0.5": 0.08333333333333333
+      }
+    },
+    {
+      "id": "rb-e5117afb41",
+      "framesKey": "skillcorner-2007448",
+      "t0": 3271.275,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.35,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 1963,
+          "effectiveSteps": 2012,
+          "effectivePathM": 1191.5286012059719,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.1,
+          "effectivePairs": 2264,
+          "effectiveSteps": 2309,
+          "effectivePathM": 1229.0297927734234,
+          "turnsPerEffectivePair": 0.0008833922261484099,
+          "turnsPerEffectiveStep": 0.0008661758336942399,
+          "turnsPerMeter": 0.0016272998520945603
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2171,
+          "effectiveSteps": 2223,
+          "effectivePathM": 1222.2343611140452,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.16166666666666665,
+        "0.2": 0.020416666666666666,
+        "0.5": 0.07375
+      },
+      "transitions": {
+        "moveStop": 32,
+        "stopMove": 40,
+        "moveMove": 2171,
+        "stopStop": 137,
+        "n": 2380,
+        "moveStopShare": 0.013445378151260505,
+        "stopMoveShare": 0.01680672268907563,
+        "moveMoveShare": 0.9121848739495798,
+        "stopStopShare": 0.05756302521008403
+      },
+      "speed": {
+        "p50": 2.548774109021728,
+        "p90": 4.453734253712358,
+        "p99": 6.020874057515221,
+        "mean": 2.567501677595872
+      },
+      "accel": {
+        "p95": 3.400367627188374,
+        "p99": 4.472135954964384
+      },
+      "symmetry": {
+        "bottomShare": 0.05578512396694215,
+        "topShare": 0.06694214876033058,
+        "bottomMinusTop": -0.01115702479338843,
+        "leftShare": 0.5607438016528926,
+        "rightShare": 0.43925619834710744,
+        "leftMinusRight": 0.12148760330578512,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.613399394914943,
+        "p90": 14.199034257162287,
+        "p99": 19.60051484633211,
+        "meanSpeed": 6.363150096293846,
+        "pathM": 152.71560231105448,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.20833333333333334,
+        "0.2": 0.008333333333333333,
+        "0.5": 0.05
+      }
+    },
+    {
+      "id": "rb-ecf511ed8d",
+      "framesKey": "skillcorner-2017461",
+      "t0": 3228.78,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.15,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2190,
+          "effectiveSteps": 2241,
+          "effectivePathM": 1557.1306306187348,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2364,
+          "effectiveSteps": 2391,
+          "effectivePathM": 1578.6339407584323,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2327,
+          "effectiveSteps": 2363,
+          "effectivePathM": 1576.3684115261683,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.06625,
+        "0.2": 0.00125,
+        "0.5": 0.015416666666666667
+      },
+      "transitions": {
+        "moveStop": 16,
+        "stopMove": 16,
+        "moveMove": 2327,
+        "stopStop": 21,
+        "n": 2380,
+        "moveStopShare": 0.0067226890756302525,
+        "stopMoveShare": 0.0067226890756302525,
+        "moveMoveShare": 0.9777310924369748,
+        "stopStopShare": 0.008823529411764706
+      },
+      "speed": {
+        "p50": 3.190611226704392,
+        "p90": 5.488806764807728,
+        "p99": 7.213290134368168,
+        "mean": 3.289711122817567
+      },
+      "accel": {
+        "p95": 3.7165171868522404,
+        "p99": 5.523422008435816
+      },
+      "symmetry": {
+        "bottomShare": 0.05454545454545454,
+        "topShare": 0.04214876033057851,
+        "bottomMinusTop": 0.012396694214876033,
+        "leftShare": 0.20743801652892563,
+        "rightShare": 0.7925619834710744,
+        "leftMinusRight": -0.5851239669421487,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 5.4500900065070415,
+        "p90": 16.17496503036657,
+        "p99": 20.94671472311735,
+        "meanSpeed": 7.227978880887836,
+        "pathM": 173.47149314130922,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.10833333333333334,
+        "0.2": 0,
+        "0.5": 0.008333333333333333
+      }
+    },
+    {
+      "id": "rb-fd30495901",
+      "framesKey": "skillcorner-2007448",
+      "t0": 1078.89,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.25,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2049,
+          "effectiveSteps": 2108,
+          "effectivePathM": 1245.3774931281532,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0.05,
+          "effectivePairs": 2349,
+          "effectiveSteps": 2379,
+          "effectivePathM": 1282.1803050656324,
+          "turnsPerEffectivePair": 0.0004257130693912303,
+          "turnsPerEffectiveStep": 0.0004203446826397646,
+          "turnsPerMeter": 0.0007799215102971121
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2271,
+          "effectiveSteps": 2315,
+          "effectivePathM": 1276.894075145101,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.12166666666666667,
+        "0.2": 0.005416666666666667,
+        "0.5": 0.035416666666666666
+      },
+      "transitions": {
+        "moveStop": 25,
+        "stopMove": 24,
+        "moveMove": 2271,
+        "stopStop": 60,
+        "n": 2380,
+        "moveStopShare": 0.01050420168067227,
+        "stopMoveShare": 0.010084033613445379,
+        "moveMoveShare": 0.954201680672269,
+        "stopStopShare": 0.025210084033613446
+      },
+      "speed": {
+        "p50": 2.6499999999993813,
+        "p90": 4.412340464656069,
+        "p99": 6.052485026514583,
+        "mean": 2.6727355251017246
+      },
+      "accel": {
+        "p95": 3.8898891735956864,
+        "p99": 5.550900827808046
+      },
+      "symmetry": {
+        "bottomShare": 0.10495867768595041,
+        "topShare": 0.009504132231404958,
+        "bottomMinusTop": 0.09545454545454546,
+        "leftShare": 0.05619834710743802,
+        "rightShare": 0.943801652892562,
+        "leftMinusRight": -0.8876033057851239,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 4.453405723765323,
+        "p90": 12.078654279640956,
+        "p99": 19.54184608691333,
+        "meanSpeed": 5.7873155221856845,
+        "pathM": 138.89557253245718,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.10833333333333334,
+        "0.2": 0,
+        "0.5": 0
+      }
+    },
+    {
+      "id": "rb-febcae1fcd",
+      "framesKey": "skillcorner-1996435",
+      "t0": 3220.745,
+      "nFrames": 121,
+      "nPlayers": 20,
+      "nSteps": 2400,
+      "turn120Old": 0.05,
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2256,
+          "effectiveSteps": 2293,
+          "effectivePathM": 1406.1484226430048,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.3": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2376,
+          "effectiveSteps": 2398,
+          "effectivePathM": 1421.6302452388006,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        },
+        "0.5": {
+          "turnsPerPlayer": 0,
+          "effectivePairs": 2359,
+          "effectiveSteps": 2386,
+          "effectivePathM": 1420.6226193726047,
+          "turnsPerEffectivePair": 0,
+          "turnsPerEffectiveStep": 0,
+          "turnsPerMeter": 0
+        }
+      },
+      "staticFrac": {
+        "1": 0.044583333333333336,
+        "0.2": 0,
+        "0.5": 0.005833333333333334
+      },
+      "transitions": {
+        "moveStop": 7,
+        "stopMove": 7,
+        "moveMove": 2359,
+        "stopStop": 7,
+        "n": 2380,
+        "moveStopShare": 0.0029411764705882353,
+        "stopMoveShare": 0.0029411764705882353,
+        "moveMoveShare": 0.9911764705882353,
+        "stopStopShare": 0.0029411764705882353
+      },
+      "speed": {
+        "p50": 2.864000698323269,
+        "p90": 4.656338863108213,
+        "p99": 6.952294452560906,
+        "mean": 2.9619460351810014
+      },
+      "accel": {
+        "p95": 3.0413812651550516,
+        "p99": 4.383925141595389
+      },
+      "symmetry": {
+        "bottomShare": 0.11074380165289256,
+        "topShare": 0.03925619834710744,
+        "bottomMinusTop": 0.07148760330578513,
+        "leftShare": 0.4727272727272727,
+        "rightShare": 0.5272727272727272,
+        "leftMinusRight": -0.05454545454545454,
+        "n": 2420
+      },
+      "ball": {
+        "p50": 6.083356227025394,
+        "p90": 14.247080914220193,
+        "p99": 19.233687512884185,
+        "meanSpeed": 7.213413889220168,
+        "pathM": 173.12193334128148,
+        "nSteps": 120
+      },
+      "ballStaticFrac": {
+        "2": 0.08333333333333333,
+        "0.2": 0.008333333333333333,
+        "0.5": 0.016666666666666666
+      }
+    }
+  ],
+  "engineDecomposition": [
+    {
+      "id": "rb-16e5c6c4e7",
+      "seed": 1201,
+      "t0": 1960,
+      "totalTimeSec": 24,
+      "totalStaticSec": 12.400000000000318,
+      "ballStaticFrac": 0.5166666666666799,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "carrier_dribble": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "highlight_flight": {
+          "timeSec": 8,
+          "timeShare": 0.3333333333333333,
+          "staticRate": 0.07500000000001705,
+          "staticSec": 0.6000000000001364,
+          "staticContribution": 0.04838709677420331,
+          "nIntervals": 42
+        },
+        "loose": {
+          "timeSec": 16,
+          "timeShare": 0.6666666666666666,
+          "staticRate": 0.7375000000000114,
+          "staticSec": 11.800000000000182,
+          "staticContribution": 0.9516129032257967,
+          "nIntervals": 96
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 138
+    },
+    {
+      "id": "rb-180ce7f572",
+      "seed": 1225,
+      "t0": 3242,
+      "totalTimeSec": 24,
+      "totalStaticSec": 6.200000000000273,
+      "ballStaticFrac": 0.2583333333333447,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.5090909090909421,
+          "staticSec": 2.800000000000182,
+          "staticContribution": 0.45161290322581593,
+          "nIntervals": 33
+        },
+        "carrier_dribble": {
+          "timeSec": 10,
+          "timeShare": 0.4166666666666667,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 60
+        },
+        "highlight_flight": {
+          "timeSec": 5.729935187621322,
+          "timeShare": 0.23874729948422177,
+          "staticRate": 0.13961763507002026,
+          "staticSec": 0.8000000000001819,
+          "staticContribution": 0.1290322580645398,
+          "nIntervals": 31
+        },
+        "loose": {
+          "timeSec": 2,
+          "timeShare": 0.08333333333333333,
+          "staticRate": 0.9500000000000455,
+          "staticSec": 1.900000000000091,
+          "staticContribution": 0.306451612903227,
+          "nIntervals": 12
+        },
+        "restart_dead": {
+          "timeSec": 0.7700648123786777,
+          "timeShare": 0.03208603384911157,
+          "staticRate": 0.9090143956033594,
+          "staticSec": 0.6999999999998181,
+          "staticContribution": 0.1129032258064173,
+          "nIntervals": 5
+        }
+      },
+      "nIntervals": 141
+    },
+    {
+      "id": "rb-1be0bfc743",
+      "seed": 1231,
+      "t0": 3304,
+      "totalTimeSec": 24,
+      "totalStaticSec": 13.199999999999818,
+      "ballStaticFrac": 0.5499999999999924,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "carrier_dribble": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "highlight_flight": {
+          "timeSec": 7,
+          "timeShare": 0.2916666666666667,
+          "staticRate": 0.028571428571402584,
+          "staticSec": 0.1999999999998181,
+          "staticContribution": 0.01515151515150158,
+          "nIntervals": 36
+        },
+        "loose": {
+          "timeSec": 17,
+          "timeShare": 0.7083333333333334,
+          "staticRate": 0.7647058823529411,
+          "staticSec": 13,
+          "staticContribution": 0.9848484848484984,
+          "nIntervals": 102
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 138
+    },
+    {
+      "id": "rb-278c258f86",
+      "seed": 1207,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.0000000000004547,
+      "ballStaticFrac": 0.12500000000001896,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 7,
+          "timeShare": 0.2916666666666667,
+          "staticRate": 0.30000000000005195,
+          "staticSec": 2.100000000000364,
+          "staticContribution": 0.7000000000000152,
+          "nIntervals": 42
+        },
+        "carrier_dribble": {
+          "timeSec": 11.5,
+          "timeShare": 0.4791666666666667,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 69
+        },
+        "highlight_flight": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.16363636363638018,
+          "staticSec": 0.900000000000091,
+          "staticContribution": 0.29999999999998483,
+          "nIntervals": 30
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 141
+    },
+    {
+      "id": "rb-2e8bec867b",
+      "seed": 1210,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 2.8000000000006366,
+      "ballStaticFrac": 0.11666666666669319,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.3090909090909587,
+          "staticSec": 1.7000000000002728,
+          "staticContribution": 0.6071428571428166,
+          "nIntervals": 33
+        },
+        "carrier_dribble": {
+          "timeSec": 11.5,
+          "timeShare": 0.4791666666666667,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 69
+        },
+        "highlight_flight": {
+          "timeSec": 4.5,
+          "timeShare": 0.1875,
+          "staticRate": 0.11111111111121216,
+          "staticSec": 0.5000000000004547,
+          "staticContribution": 0.17857142857155037,
+          "nIntervals": 25
+        },
+        "loose": {
+          "timeSec": 2.5,
+          "timeShare": 0.10416666666666667,
+          "staticRate": 0.23999999999996363,
+          "staticSec": 0.599999999999909,
+          "staticContribution": 0.2142857142856331,
+          "nIntervals": 15
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 142
+    },
+    {
+      "id": "rb-3265b2d028",
+      "seed": 1216,
+      "t0": 1944,
+      "totalTimeSec": 24,
+      "totalStaticSec": 7.799999999999727,
+      "ballStaticFrac": 0.32499999999998863,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 7.5,
+          "timeShare": 0.3125,
+          "staticRate": 0.39999999999993935,
+          "staticSec": 2.9999999999995453,
+          "staticContribution": 0.3846153846153398,
+          "nIntervals": 45
+        },
+        "carrier_dribble": {
+          "timeSec": 5,
+          "timeShare": 0.20833333333333334,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 30
+        },
+        "highlight_flight": {
+          "timeSec": 4.811661346956271,
+          "timeShare": 0.20048588945651127,
+          "staticRate": 0.08313137005228356,
+          "staticSec": 0.40000000000009095,
+          "staticContribution": 0.051282051282064735,
+          "nIntervals": 27
+        },
+        "loose": {
+          "timeSec": 6,
+          "timeShare": 0.25,
+          "staticRate": 0.6500000000000151,
+          "staticSec": 3.900000000000091,
+          "staticContribution": 0.5000000000000292,
+          "nIntervals": 36
+        },
+        "restart_dead": {
+          "timeSec": 0.6883386530437292,
+          "timeShare": 0.028680777210155384,
+          "staticRate": 0.7263866380146978,
+          "staticSec": 0.5,
+          "staticContribution": 0.06410256410256635,
+          "nIntervals": 4
+        }
+      },
+      "nIntervals": 142
+    },
+    {
+      "id": "rb-486a8d80ee",
+      "seed": 1237,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.0000000000004547,
+      "ballStaticFrac": 0.12500000000001896,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.36363636363636365,
+          "staticSec": 2,
+          "staticContribution": 0.6666666666665656,
+          "nIntervals": 33
+        },
+        "carrier_dribble": {
+          "timeSec": 11,
+          "timeShare": 0.4583333333333333,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 66
+        },
+        "highlight_flight": {
+          "timeSec": 7.5,
+          "timeShare": 0.3125,
+          "staticRate": 0.13333333333339398,
+          "staticSec": 1.0000000000004547,
+          "staticContribution": 0.3333333333334344,
+          "nIntervals": 39
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 138
+    },
+    {
+      "id": "rb-63d063436a",
+      "seed": 1222,
+      "t0": 1944,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.599999999999909,
+      "ballStaticFrac": 0.14999999999999622,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.19999999999998347,
+          "staticSec": 1.099999999999909,
+          "staticContribution": 0.30555555555553804,
+          "nIntervals": 33
+        },
+        "carrier_dribble": {
+          "timeSec": 11.5,
+          "timeShare": 0.4791666666666667,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 69
+        },
+        "highlight_flight": {
+          "timeSec": 5,
+          "timeShare": 0.20833333333333334,
+          "staticRate": 0.1,
+          "staticSec": 0.5,
+          "staticContribution": 0.1388888888888924,
+          "nIntervals": 27
+        },
+        "loose": {
+          "timeSec": 2,
+          "timeShare": 0.08333333333333333,
+          "staticRate": 1,
+          "staticSec": 2,
+          "staticContribution": 0.5555555555555696,
+          "nIntervals": 12
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 141
+    },
+    {
+      "id": "rb-772a242a3f",
+      "seed": 1222,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.4000000000005457,
+      "ballStaticFrac": 0.1416666666666894,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 2.5,
+          "timeShare": 0.10416666666666667,
+          "staticRate": 0.4800000000001091,
+          "staticSec": 1.2000000000002728,
+          "staticContribution": 0.35294117647061185,
+          "nIntervals": 15
+        },
+        "carrier_dribble": {
+          "timeSec": 9,
+          "timeShare": 0.375,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 54
+        },
+        "highlight_flight": {
+          "timeSec": 9,
+          "timeShare": 0.375,
+          "staticRate": 0.0888888888889091,
+          "staticSec": 0.8000000000001819,
+          "staticContribution": 0.23529411764707456,
+          "nIntervals": 46
+        },
+        "loose": {
+          "timeSec": 3.5,
+          "timeShare": 0.14583333333333334,
+          "staticRate": 0.400000000000026,
+          "staticSec": 1.400000000000091,
+          "staticContribution": 0.4117647058823136,
+          "nIntervals": 21
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 136
+    },
+    {
+      "id": "rb-80f26aa5b5",
+      "seed": 1204,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3,
+      "ballStaticFrac": 0.125,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 4.5,
+          "timeShare": 0.1875,
+          "staticRate": 0.48888888888884846,
+          "staticSec": 2.199999999999818,
+          "staticContribution": 0.7333333333332727,
+          "nIntervals": 27
+        },
+        "carrier_dribble": {
+          "timeSec": 12.5,
+          "timeShare": 0.5208333333333334,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 75
+        },
+        "highlight_flight": {
+          "timeSec": 7,
+          "timeShare": 0.2916666666666667,
+          "staticRate": 0.11428571428574028,
+          "staticSec": 0.8000000000001819,
+          "staticContribution": 0.2666666666667273,
+          "nIntervals": 37
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 139
+    },
+    {
+      "id": "rb-86678e43f0",
+      "seed": 1228,
+      "t0": 1946,
+      "totalTimeSec": 24,
+      "totalStaticSec": 2.7999999999999545,
+      "ballStaticFrac": 0.11666666666666477,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 8,
+          "timeShare": 0.3333333333333333,
+          "staticRate": 0.3125,
+          "staticSec": 2.5,
+          "staticContribution": 0.8928571428571573,
+          "nIntervals": 48
+        },
+        "carrier_dribble": {
+          "timeSec": 10.5,
+          "timeShare": 0.4375,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 63
+        },
+        "highlight_flight": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.05454545454544628,
+          "staticSec": 0.2999999999999545,
+          "staticContribution": 0.10714285714284265,
+          "nIntervals": 30
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 141
+    },
+    {
+      "id": "rb-8995d055ac",
+      "seed": 1219,
+      "t0": 2010,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.200000000000273,
+      "ballStaticFrac": 0.1333333333333447,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 8,
+          "timeShare": 0.3333333333333333,
+          "staticRate": 0.25,
+          "staticSec": 2,
+          "staticContribution": 0.6249999999999467,
+          "nIntervals": 48
+        },
+        "carrier_dribble": {
+          "timeSec": 7,
+          "timeShare": 0.2916666666666667,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 42
+        },
+        "highlight_flight": {
+          "timeSec": 9,
+          "timeShare": 0.375,
+          "staticRate": 0.13333333333336364,
+          "staticSec": 1.2000000000002728,
+          "staticContribution": 0.3750000000000533,
+          "nIntervals": 47
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 137
+    },
+    {
+      "id": "rb-98c16914b1",
+      "seed": 1213,
+      "t0": 1944,
+      "totalTimeSec": 24,
+      "totalStaticSec": 4.199999999999591,
+      "ballStaticFrac": 0.17499999999998295,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 10,
+          "timeShare": 0.4166666666666667,
+          "staticRate": 0.3599999999999454,
+          "staticSec": 3.5999999999994543,
+          "staticContribution": 0.8571428571428107,
+          "nIntervals": 60
+        },
+        "carrier_dribble": {
+          "timeSec": 6.5,
+          "timeShare": 0.2708333333333333,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 39
+        },
+        "highlight_flight": {
+          "timeSec": 7.5,
+          "timeShare": 0.3125,
+          "staticRate": 0.0800000000000182,
+          "staticSec": 0.6000000000001364,
+          "staticContribution": 0.14285714285718926,
+          "nIntervals": 39
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 138
+    },
+    {
+      "id": "rb-9bd04d5362",
+      "seed": 1207,
+      "t0": 1944,
+      "totalTimeSec": 24,
+      "totalStaticSec": 1.9999999999997726,
+      "ballStaticFrac": 0.08333333333332386,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 3.5,
+          "timeShare": 0.14583333333333334,
+          "staticRate": 0.17142857142854545,
+          "staticSec": 0.599999999999909,
+          "staticContribution": 0.2999999999999886,
+          "nIntervals": 21
+        },
+        "carrier_dribble": {
+          "timeSec": 9,
+          "timeShare": 0.375,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 54
+        },
+        "highlight_flight": {
+          "timeSec": 8.5,
+          "timeShare": 0.3541666666666667,
+          "staticRate": 0.047058823529395714,
+          "staticSec": 0.3999999999998636,
+          "staticContribution": 0.19999999999995452,
+          "nIntervals": 44
+        },
+        "loose": {
+          "timeSec": 3,
+          "timeShare": 0.125,
+          "staticRate": 0.3333333333333333,
+          "staticSec": 1,
+          "staticContribution": 0.5000000000000568,
+          "nIntervals": 18
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 137
+    },
+    {
+      "id": "rb-d060017d14",
+      "seed": 1228,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 19.000000000000455,
+      "ballStaticFrac": 0.7916666666666856,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "carrier_dribble": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "highlight_flight": {
+          "timeSec": 3.1771296956740116,
+          "timeShare": 0.13238040398641715,
+          "staticRate": 0.1258998021216232,
+          "staticSec": 0.40000000000009095,
+          "staticContribution": 0.021052631578951653,
+          "nIntervals": 17
+        },
+        "loose": {
+          "timeSec": 16,
+          "timeShare": 0.6666666666666666,
+          "staticRate": 0.875,
+          "staticSec": 14,
+          "staticContribution": 0.7368421052631403,
+          "nIntervals": 96
+        },
+        "restart_dead": {
+          "timeSec": 4.822870304325988,
+          "timeShare": 0.2009529293469162,
+          "staticRate": 0.9537888663259894,
+          "staticSec": 4.600000000000364,
+          "staticContribution": 0.2421052631579081,
+          "nIntervals": 25
+        }
+      },
+      "nIntervals": 138
+    },
+    {
+      "id": "rb-d5b7114cc5",
+      "seed": 1219,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 2,
+      "ballStaticFrac": 0.08333333333333333,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 4.5,
+          "timeShare": 0.1875,
+          "staticRate": 0.35555555555553536,
+          "staticSec": 1.599999999999909,
+          "staticContribution": 0.7999999999999545,
+          "nIntervals": 27
+        },
+        "carrier_dribble": {
+          "timeSec": 12.5,
+          "timeShare": 0.5208333333333334,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 75
+        },
+        "highlight_flight": {
+          "timeSec": 7,
+          "timeShare": 0.2916666666666667,
+          "staticRate": 0.05714285714287014,
+          "staticSec": 0.40000000000009095,
+          "staticContribution": 0.20000000000004547,
+          "nIntervals": 37
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 139
+    },
+    {
+      "id": "rb-d86c96c413",
+      "seed": 1201,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 4,
+      "ballStaticFrac": 0.16666666666666666,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 11,
+          "timeShare": 0.4583333333333333,
+          "staticRate": 0.2999999999999752,
+          "staticSec": 3.299999999999727,
+          "staticContribution": 0.8249999999999318,
+          "nIntervals": 66
+        },
+        "carrier_dribble": {
+          "timeSec": 8,
+          "timeShare": 0.3333333333333333,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 48
+        },
+        "highlight_flight": {
+          "timeSec": 5,
+          "timeShare": 0.20833333333333334,
+          "staticRate": 0.14000000000005458,
+          "staticSec": 0.7000000000002728,
+          "staticContribution": 0.1750000000000682,
+          "nIntervals": 27
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 141
+    },
+    {
+      "id": "rb-da503ea8a6",
+      "seed": 1231,
+      "t0": 1976,
+      "totalTimeSec": 24,
+      "totalStaticSec": 10.600000000000136,
+      "ballStaticFrac": 0.44166666666667237,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 4,
+          "timeShare": 0.16666666666666666,
+          "staticRate": 0.27499999999997726,
+          "staticSec": 1.099999999999909,
+          "staticContribution": 0.10377358490565046,
+          "nIntervals": 24
+        },
+        "carrier_dribble": {
+          "timeSec": 2,
+          "timeShare": 0.08333333333333333,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 12
+        },
+        "highlight_flight": {
+          "timeSec": 6.412557983443321,
+          "timeShare": 0.267189915976805,
+          "staticRate": 0.04678320270546153,
+          "staticSec": 0.2999999999999545,
+          "staticContribution": 0.028301886792448175,
+          "nIntervals": 36
+        },
+        "loose": {
+          "timeSec": 11,
+          "timeShare": 0.4583333333333333,
+          "staticRate": 0.8000000000000166,
+          "staticSec": 8.800000000000182,
+          "staticContribution": 0.8301886792452895,
+          "nIntervals": 66
+        },
+        "restart_dead": {
+          "timeSec": 0.5874420165566789,
+          "timeShare": 0.02447675068986162,
+          "staticRate": 0.6809182672099472,
+          "staticSec": 0.40000000000009095,
+          "staticContribution": 0.03773584905661187,
+          "nIntervals": 3
+        }
+      },
+      "nIntervals": 141
+    },
+    {
+      "id": "rb-de0956e241",
+      "seed": 1237,
+      "t0": 2072,
+      "totalTimeSec": 24,
+      "totalStaticSec": 2,
+      "ballStaticFrac": 0.08333333333333333,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 5,
+          "timeShare": 0.20833333333333334,
+          "staticRate": 0.2800000000000182,
+          "staticSec": 1.400000000000091,
+          "staticContribution": 0.7000000000000455,
+          "nIntervals": 30
+        },
+        "carrier_dribble": {
+          "timeSec": 13,
+          "timeShare": 0.5416666666666666,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 78
+        },
+        "highlight_flight": {
+          "timeSec": 4.5,
+          "timeShare": 0.1875,
+          "staticRate": 0.04444444444440402,
+          "staticSec": 0.1999999999998181,
+          "staticContribution": 0.09999999999990905,
+          "nIntervals": 24
+        },
+        "loose": {
+          "timeSec": 1.5,
+          "timeShare": 0.0625,
+          "staticRate": 0.2666666666667273,
+          "staticSec": 0.40000000000009095,
+          "staticContribution": 0.20000000000004547,
+          "nIntervals": 9
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 141
+    },
+    {
+      "id": "rb-e35ce092aa",
+      "seed": 1210,
+      "t0": 1944,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.8000000000004093,
+      "ballStaticFrac": 0.1583333333333504,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 6.5,
+          "timeShare": 0.2708333333333333,
+          "staticRate": 0.4153846153846574,
+          "staticSec": 2.700000000000273,
+          "staticContribution": 0.710526315789469,
+          "nIntervals": 39
+        },
+        "carrier_dribble": {
+          "timeSec": 11,
+          "timeShare": 0.4583333333333333,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 66
+        },
+        "highlight_flight": {
+          "timeSec": 6,
+          "timeShare": 0.25,
+          "staticRate": 0.11666666666667425,
+          "staticSec": 0.7000000000000455,
+          "staticContribution": 0.1842105263157816,
+          "nIntervals": 32
+        },
+        "loose": {
+          "timeSec": 0.5,
+          "timeShare": 0.020833333333333332,
+          "staticRate": 0.8000000000001819,
+          "staticSec": 0.40000000000009095,
+          "staticContribution": 0.10526315789474944,
+          "nIntervals": 3
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 140
+    },
+    {
+      "id": "rb-e48bd6a2ad",
+      "seed": 1204,
+      "t0": 1944,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.3999999999998636,
+      "ballStaticFrac": 0.14166666666666097,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 4.5,
+          "timeShare": 0.1875,
+          "staticRate": 0.17777777777771714,
+          "staticSec": 0.7999999999997272,
+          "staticContribution": 0.23529411764698802,
+          "nIntervals": 27
+        },
+        "carrier_dribble": {
+          "timeSec": 9,
+          "timeShare": 0.375,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 54
+        },
+        "highlight_flight": {
+          "timeSec": 5.621869516181505,
+          "timeShare": 0.23424456317422937,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 30
+        },
+        "loose": {
+          "timeSec": 4,
+          "timeShare": 0.16666666666666666,
+          "staticRate": 0.47500000000002274,
+          "staticSec": 1.900000000000091,
+          "staticContribution": 0.5588235294118139,
+          "nIntervals": 24
+        },
+        "restart_dead": {
+          "timeSec": 0.8781304838184951,
+          "timeShare": 0.036588770159103966,
+          "staticRate": 0.79714804678701,
+          "staticSec": 0.7000000000000455,
+          "staticContribution": 0.2058823529411981,
+          "nIntervals": 5
+        }
+      },
+      "nIntervals": 140
+    },
+    {
+      "id": "rb-f6f11da37b",
+      "seed": 1225,
+      "t0": 2084,
+      "totalTimeSec": 24,
+      "totalStaticSec": 2.200000000000273,
+      "ballStaticFrac": 0.09166666666667804,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 7.5,
+          "timeShare": 0.3125,
+          "staticRate": 0.24000000000002425,
+          "staticSec": 1.800000000000182,
+          "staticContribution": 0.8181818181817994,
+          "nIntervals": 45
+        },
+        "carrier_dribble": {
+          "timeSec": 9,
+          "timeShare": 0.375,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 54
+        },
+        "highlight_flight": {
+          "timeSec": 7.5,
+          "timeShare": 0.3125,
+          "staticRate": 0.05333333333334546,
+          "staticSec": 0.40000000000009095,
+          "staticContribution": 0.1818181818182006,
+          "nIntervals": 40
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 139
+    },
+    {
+      "id": "rb-fcfd5b15f1",
+      "seed": 1213,
+      "t0": 3240,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3.799999999999727,
+      "ballStaticFrac": 0.15833333333332197,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 7,
+          "timeShare": 0.2916666666666667,
+          "staticRate": 0.4857142857142987,
+          "staticSec": 3.400000000000091,
+          "staticContribution": 0.8947368421053513,
+          "nIntervals": 42
+        },
+        "carrier_dribble": {
+          "timeSec": 9.5,
+          "timeShare": 0.3958333333333333,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 57
+        },
+        "highlight_flight": {
+          "timeSec": 7.5,
+          "timeShare": 0.3125,
+          "staticRate": 0.05333333333328483,
+          "staticSec": 0.3999999999996362,
+          "staticContribution": 0.10526315789464867,
+          "nIntervals": 40
+        },
+        "loose": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 139
+    },
+    {
+      "id": "rb-ff7780c4e7",
+      "seed": 1216,
+      "t0": 3256,
+      "totalTimeSec": 24,
+      "totalStaticSec": 3,
+      "ballStaticFrac": 0.125,
+      "sources": {
+        "carrier_hold": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.19999999999998347,
+          "staticSec": 1.099999999999909,
+          "staticContribution": 0.36666666666663633,
+          "nIntervals": 33
+        },
+        "carrier_dribble": {
+          "timeSec": 11,
+          "timeShare": 0.4583333333333333,
+          "staticRate": 0,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 66
+        },
+        "highlight_flight": {
+          "timeSec": 5.5,
+          "timeShare": 0.22916666666666666,
+          "staticRate": 0.09090909090909091,
+          "staticSec": 0.5,
+          "staticContribution": 0.16666666666666666,
+          "nIntervals": 30
+        },
+        "loose": {
+          "timeSec": 2,
+          "timeShare": 0.08333333333333333,
+          "staticRate": 0.7000000000000455,
+          "staticSec": 1.400000000000091,
+          "staticContribution": 0.466666666666697,
+          "nIntervals": 12
+        },
+        "restart_dead": {
+          "timeSec": 0,
+          "timeShare": 0,
+          "staticRate": null,
+          "staticSec": 0,
+          "staticContribution": 0,
+          "nIntervals": 0
+        }
+      },
+      "nIntervals": 141
+    }
+  ],
+  "summary": {
+    "engine": {
+      "id": null,
+      "seed": {
+        "n": 24,
+        "mean": 1217.75,
+        "median": 1217.5,
+        "p10": 1204,
+        "p90": 1231
+      },
+      "t0": {
+        "n": 24,
+        "mean": 2611.4166666666665,
+        "median": 2662,
+        "p10": 1944,
+        "p90": 3241.4
+      },
+      "nFrames": {
+        "n": 24,
+        "mean": 121,
+        "median": 121,
+        "p10": 121,
+        "p90": 121
+      },
+      "nPlayers": {
+        "n": 24,
+        "mean": 20,
+        "median": 20,
+        "p10": 20,
+        "p90": 20
+      },
+      "nSteps": {
+        "n": 24,
+        "mean": 2400,
+        "median": 2400,
+        "p10": 2400,
+        "p90": 2400
+      },
+      "turn120Old": {
+        "n": 24,
+        "mean": 5.885416666666667,
+        "median": 6.525,
+        "p10": 1.595,
+        "p90": 10.084999999999999
+      },
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": {
+            "n": 24,
+            "mean": 0.6916666666666665,
+            "median": 0.65,
+            "p10": 0.315,
+            "p90": 1.1049999999999998
+          },
+          "effectivePairs": {
+            "n": 24,
+            "mean": 1671.9583333333333,
+            "median": 1706,
+            "p10": 1418.8,
+            "p90": 1887.1
+          },
+          "effectiveSteps": {
+            "n": 24,
+            "mean": 1803.875,
+            "median": 1847.5,
+            "p10": 1552.1,
+            "p90": 2022.3
+          },
+          "effectivePathM": {
+            "n": 24,
+            "mean": 1548.6235606174323,
+            "median": 1607.9323718872702,
+            "p10": 1215.9661781515333,
+            "p90": 1790.7998935248943
+          },
+          "turnsPerEffectivePair": {
+            "n": 24,
+            "mean": 0.008555545100097966,
+            "median": 0.007453523313827264,
+            "p10": 0.003412792401946415,
+            "p90": 0.014427906070694906
+          },
+          "turnsPerEffectiveStep": {
+            "n": 24,
+            "mean": 0.007888046036776388,
+            "median": 0.006854847621793853,
+            "p10": 0.003286618444846293,
+            "p90": 0.013150081992323355
+          },
+          "turnsPerMeter": {
+            "n": 24,
+            "mean": 0.009427789297084748,
+            "median": 0.007501931471688611,
+            "p10": 0.0037735816350485197,
+            "p90": 0.016173979708430326
+          }
+        },
+        "0.3": {
+          "turnsPerPlayer": {
+            "n": 24,
+            "mean": 0.9083333333333335,
+            "median": 0.85,
+            "p10": 0.48000000000000004,
+            "p90": 1.42
+          },
+          "effectivePairs": {
+            "n": 24,
+            "mean": 1706.9166666666667,
+            "median": 1733.5,
+            "p10": 1477.3,
+            "p90": 1910.8
+          },
+          "effectiveSteps": {
+            "n": 24,
+            "mean": 1832.25,
+            "median": 1879.5,
+            "p10": 1601.3,
+            "p90": 2040.8
+          },
+          "effectivePathM": {
+            "n": 24,
+            "mean": 1552.4993107980163,
+            "median": 1611.7176245491507,
+            "p10": 1222.0570519365158,
+            "p90": 1794.6215041704002
+          },
+          "turnsPerEffectivePair": {
+            "n": 24,
+            "mean": 0.01089417965873715,
+            "median": 0.011118982684082908,
+            "p10": 0.005117659118866464,
+            "p90": 0.016921114402204215
+          },
+          "turnsPerEffectiveStep": {
+            "n": 24,
+            "mean": 0.01010289576512423,
+            "median": 0.01030754103842372,
+            "p10": 0.004895754538577913,
+            "p90": 0.015762421099499747
+          },
+          "turnsPerMeter": {
+            "n": 24,
+            "mean": 0.012202209548588765,
+            "median": 0.011454402271055632,
+            "p10": 0.005663171420447125,
+            "p90": 0.01965019855128023
+          }
+        },
+        "0.5": {
+          "turnsPerPlayer": {
+            "n": 24,
+            "mean": 0.8291666666666667,
+            "median": 0.8,
+            "p10": 0.43000000000000005,
+            "p90": 1.2349999999999999
+          },
+          "effectivePairs": {
+            "n": 24,
+            "mean": 1698.2916666666667,
+            "median": 1723.5,
+            "p10": 1456.7,
+            "p90": 1903.5
+          },
+          "effectiveSteps": {
+            "n": 24,
+            "mean": 1825.8333333333333,
+            "median": 1871.5,
+            "p10": 1583.4,
+            "p90": 2036.5
+          },
+          "effectivePathM": {
+            "n": 24,
+            "mean": 1551.9912427432685,
+            "median": 1610.9367006332873,
+            "p10": 1220.7230615183162,
+            "p90": 1794.3694831395972
+          },
+          "turnsPerEffectivePair": {
+            "n": 24,
+            "mean": 0.010014411976983195,
+            "median": 0.01062124374481354,
+            "p10": 0.004600032079924842,
+            "p90": 0.01520332817413764
+          },
+          "turnsPerEffectiveStep": {
+            "n": 24,
+            "mean": 0.009272790302256537,
+            "median": 0.009737799021714372,
+            "p10": 0.004397722202715511,
+            "p90": 0.01402332811500893
+          },
+          "turnsPerMeter": {
+            "n": 24,
+            "mean": 0.011150744406301321,
+            "median": 0.010491734602371242,
+            "p10": 0.0050754864758914,
+            "p90": 0.017396702982377516
+          }
+        }
+      },
+      "staticFrac": {
+        "1": {
+          "n": 24,
+          "mean": 0.24838541666666666,
+          "median": 0.23020833333333335,
+          "p10": 0.15737500000000001,
+          "p90": 0.35329166666666667
+        },
+        "0.2": {
+          "n": 24,
+          "mean": 0.23539930555555558,
+          "median": 0.2160416666666667,
+          "p10": 0.14954166666666668,
+          "p90": 0.332125
+        },
+        "0.5": {
+          "n": 24,
+          "mean": 0.23923611111111112,
+          "median": 0.22020833333333334,
+          "p10": 0.15145833333333333,
+          "p90": 0.34025
+        }
+      },
+      "transitions": {
+        "moveStop": {
+          "n": 24,
+          "mean": 111.54166666666667,
+          "median": 118,
+          "p10": 54.800000000000004,
+          "p90": 159.6
+        },
+        "stopMove": {
+          "n": 24,
+          "mean": 113.45833333333333,
+          "median": 117.5,
+          "p10": 66.4,
+          "p90": 153.9
+        },
+        "moveMove": {
+          "n": 24,
+          "mean": 1698.2916666666667,
+          "median": 1723.5,
+          "p10": 1456.7,
+          "p90": 1903.5
+        },
+        "stopStop": {
+          "n": 24,
+          "mean": 456.7083333333333,
+          "median": 402,
+          "p10": 243.7,
+          "p90": 727.9
+        },
+        "n": {
+          "n": 24,
+          "mean": 2380,
+          "median": 2380,
+          "p10": 2380,
+          "p90": 2380
+        },
+        "moveStopShare": {
+          "n": 24,
+          "mean": 0.04686624649859945,
+          "median": 0.049579831932773114,
+          "p10": 0.023025210084033614,
+          "p90": 0.06705882352941175
+        },
+        "stopMoveShare": {
+          "n": 24,
+          "mean": 0.047671568627450985,
+          "median": 0.04936974789915966,
+          "p10": 0.02789915966386555,
+          "p90": 0.06466386554621849
+        },
+        "moveMoveShare": {
+          "n": 24,
+          "mean": 0.7135679271708684,
+          "median": 0.7241596638655462,
+          "p10": 0.6120588235294118,
+          "p90": 0.7997899159663866
+        },
+        "stopStopShare": {
+          "n": 24,
+          "mean": 0.19189425770308122,
+          "median": 0.1689075630252101,
+          "p10": 0.10239495798319329,
+          "p90": 0.30584033613445377
+        }
+      },
+      "speed": {
+        "p50": {
+          "n": 24,
+          "mean": 3.6599546166720933,
+          "median": 3.7831722721963623,
+          "p10": 2.6485538783411955,
+          "p90": 4.451824729498857
+        },
+        "p90": {
+          "n": 24,
+          "mean": 5.8790367200406175,
+          "median": 6.010527731827471,
+          "p10": 5.150508317468614,
+          "p90": 6.240695159638733
+        },
+        "p99": {
+          "n": 24,
+          "mean": 7.308638644996453,
+          "median": 7.403750859072466,
+          "p10": 6.86016825105009,
+          "p90": 7.619406563192991
+        },
+        "mean": {
+          "n": 24,
+          "mean": 3.2348358286920877,
+          "median": 3.3583784501329115,
+          "p10": 2.5466695538091892,
+          "p90": 3.739021457318529
+        }
+      },
+      "accel": {
+        "p95": {
+          "n": 24,
+          "mean": 21.675729386300585,
+          "median": 22.778142589344,
+          "p10": 16.371000563902687,
+          "p90": 25.269533797813505
+        },
+        "p99": {
+          "n": 24,
+          "mean": 29.98237093772372,
+          "median": 30.68916150016296,
+          "p10": 27.301830845068878,
+          "p90": 31.493069222973684
+        }
+      },
+      "symmetry": {
+        "bottomShare": {
+          "n": 24,
+          "mean": 0.03653581267217631,
+          "median": 0.025,
+          "p10": 0,
+          "p90": 0.1188842975206611
+        },
+        "topShare": {
+          "n": 24,
+          "mean": 0.0518939393939394,
+          "median": 0.041528925619834706,
+          "p10": 0.004090909090909091,
+          "p90": 0.12318181818181816
+        },
+        "bottomMinusTop": {
+          "n": 24,
+          "mean": -0.015358126721763071,
+          "median": -0.023347107438016528,
+          "p10": -0.11214876033057851,
+          "p90": 0.11367768595041317
+        },
+        "leftShare": {
+          "n": 24,
+          "mean": 0.5714876033057851,
+          "median": 0.668801652892562,
+          "p10": 0.026776859504132253,
+          "p90": 0.9970247933884298
+        },
+        "rightShare": {
+          "n": 24,
+          "mean": 0.4285123966942148,
+          "median": 0.331198347107438,
+          "p10": 0.002975206611570251,
+          "p90": 0.9732231404958677
+        },
+        "leftMinusRight": {
+          "n": 24,
+          "mean": 0.14297520661157015,
+          "median": 0.337603305785124,
+          "p10": -0.9464462809917354,
+          "p90": 0.9940495867768595
+        },
+        "n": {
+          "n": 24,
+          "mean": 2420,
+          "median": 2420,
+          "p10": 2420,
+          "p90": 2420
+        }
+      },
+      "ball": {
+        "p50": {
+          "n": 24,
+          "mean": 3.8367940717768114,
+          "median": 4.973699688918979,
+          "p10": 0.1941081142044331,
+          "p90": 4.990015083880566
+        },
+        "p90": {
+          "n": 24,
+          "mean": 17.02189186555295,
+          "median": 16.449999999998173,
+          "p10": 13.918257040445827,
+          "p90": 20.07999999999689
+        },
+        "p99": {
+          "n": 24,
+          "mean": 26.621097022909606,
+          "median": 22.15850000000566,
+          "p10": 17.810795714564094,
+          "p90": 24.68909999999374
+        },
+        "meanSpeed": {
+          "n": 24,
+          "mean": 6.030677380110206,
+          "median": 6.04510180999368,
+          "p10": 5.325414214243171,
+          "p90": 6.802467259974818
+        },
+        "pathM": {
+          "n": 24,
+          "mean": 144.73625712264206,
+          "median": 145.0824434398503,
+          "p10": 127.80994114184001,
+          "p90": 163.2592142393944
+        },
+        "nSteps": {
+          "n": 24,
+          "mean": 120,
+          "median": 120,
+          "p10": 120,
+          "p90": 120
+        }
+      },
+      "ballStaticFrac": {
+        "2": {
+          "n": 24,
+          "mean": 0.3781249999999999,
+          "median": 0.30833333333333335,
+          "p10": 0.2275,
+          "p90": 0.6391666666666667
+        },
+        "0.2": {
+          "n": 24,
+          "mean": 0.15763888888888888,
+          "median": 0.07916666666666666,
+          "p10": 0.035833333333333335,
+          "p90": 0.4733333333333332
+        },
+        "0.5": {
+          "n": 24,
+          "mean": 0.2159722222222222,
+          "median": 0.14166666666666666,
+          "p10": 0.08583333333333333,
+          "p90": 0.49416666666666664
+        }
+      }
+    },
+    "real": {
+      "id": null,
+      "framesKey": null,
+      "t0": {
+        "n": 24,
+        "mean": 2266.0468333333333,
+        "median": 2531.4645,
+        "p10": 1111.418,
+        "p90": 3329.0829999999996
+      },
+      "nFrames": {
+        "n": 24,
+        "mean": 121,
+        "median": 121,
+        "p10": 121,
+        "p90": 121
+      },
+      "nPlayers": {
+        "n": 24,
+        "mean": 20,
+        "median": 20,
+        "p10": 20,
+        "p90": 20
+      },
+      "nSteps": {
+        "n": 24,
+        "mean": 2400,
+        "median": 2400,
+        "p10": 2400,
+        "p90": 2400
+      },
+      "turn120Old": {
+        "n": 24,
+        "mean": 0.24375000000000002,
+        "median": 0.225,
+        "p10": 0.05,
+        "p90": 0.4
+      },
+      "conditional": {
+        "1": {
+          "turnsPerPlayer": {
+            "n": 24,
+            "mean": 0.008333333333333333,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.03499999999999997
+          },
+          "effectivePairs": {
+            "n": 24,
+            "mean": 2009.0833333333333,
+            "median": 2032.5,
+            "p10": 1788.9,
+            "p90": 2187.9
+          },
+          "effectiveSteps": {
+            "n": 24,
+            "mean": 2067.2916666666665,
+            "median": 2095.5,
+            "p10": 1859.3,
+            "p90": 2233.6
+          },
+          "effectivePathM": {
+            "n": 24,
+            "mean": 1152.9207979733937,
+            "median": 1109.2029347316638,
+            "p10": 906.7334909630463,
+            "p90": 1393.8176379306788
+          },
+          "turnsPerEffectivePair": {
+            "n": 24,
+            "mean": 0.00008148094560706936,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.00034739454094292766
+          },
+          "turnsPerEffectiveStep": {
+            "n": 24,
+            "mean": 0.00007947639016366927,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.0003368623676612124
+          },
+          "turnsPerMeter": {
+            "n": 24,
+            "mean": 0.00013708066845331688,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.0006348325194825632
+          }
+        },
+        "0.3": {
+          "turnsPerPlayer": {
+            "n": 24,
+            "mean": 0.024999999999999998,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.08499999999999996
+          },
+          "effectivePairs": {
+            "n": 24,
+            "mean": 2327.7916666666665,
+            "median": 2333.5,
+            "p10": 2273.5,
+            "p90": 2363.7
+          },
+          "effectiveSteps": {
+            "n": 24,
+            "mean": 2362.3333333333335,
+            "median": 2369.5,
+            "p10": 2325.5,
+            "p90": 2389.5
+          },
+          "effectivePathM": {
+            "n": 24,
+            "mean": 1194.2328409271993,
+            "median": 1150.7639886996064,
+            "p10": 974.2920906123061,
+            "p90": 1414.0674512468665
+          },
+          "turnsPerEffectivePair": {
+            "n": 24,
+            "mean": 0.00021539997931464814,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.0007276246605952854
+          },
+          "turnsPerEffectiveStep": {
+            "n": 24,
+            "mean": 0.0002122439685166916,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.000717435909022929
+          },
+          "turnsPerMeter": {
+            "n": 24,
+            "mean": 0.0004126015159323281,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.001292618823560505
+          }
+        },
+        "0.5": {
+          "turnsPerPlayer": {
+            "n": 24,
+            "mean": 0.010416666666666666,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.05
+          },
+          "effectivePairs": {
+            "n": 24,
+            "mean": 2260.1666666666665,
+            "median": 2268.5,
+            "p10": 2179.7,
+            "p90": 2321.4
+          },
+          "effectiveSteps": {
+            "n": 24,
+            "mean": 2304.0833333333335,
+            "median": 2314,
+            "p10": 2229.3,
+            "p90": 2356.5
+          },
+          "effectivePathM": {
+            "n": 24,
+            "mean": 1189.5026347470432,
+            "median": 1145.7146156408535,
+            "p10": 966.8062085711456,
+            "p90": 1412.4752992131998
+          },
+          "turnsPerEffectivePair": {
+            "n": 24,
+            "mean": 0.00009148021103750422,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.0004398615712198198
+          },
+          "turnsPerEffectiveStep": {
+            "n": 24,
+            "mean": 0.00008989009512241875,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.00043111692500539265
+          },
+          "turnsPerMeter": {
+            "n": 24,
+            "mean": 0.00017223246869946417,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.0008805284005759819
+          }
+        }
+      },
+      "staticFrac": {
+        "1": {
+          "n": 24,
+          "mean": 0.13862847222222222,
+          "median": 0.12687500000000002,
+          "p10": 0.06933333333333333,
+          "p90": 0.22529166666666664
+        },
+        "0.2": {
+          "n": 24,
+          "mean": 0.007482638888888889,
+          "median": 0.005416666666666667,
+          "p10": 0.0016250000000000004,
+          "p90": 0.015208333333333332
+        },
+        "0.5": {
+          "n": 24,
+          "mean": 0.03996527777777778,
+          "median": 0.03583333333333333,
+          "p10": 0.018125000000000002,
+          "p90": 0.071125
+        }
+      },
+      "transitions": {
+        "moveStop": {
+          "n": 24,
+          "mean": 25.125,
+          "median": 27.5,
+          "p10": 15.3,
+          "p90": 35
+        },
+        "stopMove": {
+          "n": 24,
+          "mean": 25.458333333333332,
+          "median": 26,
+          "p10": 14,
+          "p90": 37.8
+        },
+        "moveMove": {
+          "n": 24,
+          "mean": 2260.1666666666665,
+          "median": 2268.5,
+          "p10": 2179.7,
+          "p90": 2321.4
+        },
+        "stopStop": {
+          "n": 24,
+          "mean": 69.25,
+          "median": 60,
+          "p10": 26.5,
+          "p90": 131.9
+        },
+        "n": {
+          "n": 24,
+          "mean": 2380,
+          "median": 2380,
+          "p10": 2380,
+          "p90": 2380
+        },
+        "moveStopShare": {
+          "n": 24,
+          "mean": 0.010556722689075633,
+          "median": 0.011554621848739496,
+          "p10": 0.006428571428571429,
+          "p90": 0.014705882352941176
+        },
+        "stopMoveShare": {
+          "n": 24,
+          "mean": 0.010696778711484596,
+          "median": 0.010924369747899159,
+          "p10": 0.0058823529411764705,
+          "p90": 0.01588235294117647
+        },
+        "moveMoveShare": {
+          "n": 24,
+          "mean": 0.9496498599439774,
+          "median": 0.9531512605042016,
+          "p10": 0.9158403361344538,
+          "p90": 0.9753781512605042
+        },
+        "stopStopShare": {
+          "n": 24,
+          "mean": 0.029096638655462182,
+          "median": 0.025210084033613446,
+          "p10": 0.011134453781512607,
+          "p90": 0.05542016806722689
+        }
+      },
+      "speed": {
+        "p50": {
+          "n": 24,
+          "mean": 2.3001639453005125,
+          "median": 2.210597363392542,
+          "p10": 1.7316530325920212,
+          "p90": 2.811320358109923
+        },
+        "p90": {
+          "n": 24,
+          "mean": 4.345099351703566,
+          "median": 4.306017408151407,
+          "p10": 3.610740957871031,
+          "p90": 5.38345101762564
+        },
+        "p99": {
+          "n": 24,
+          "mean": 6.13812016305894,
+          "median": 6.076491131820573,
+          "p10": 5.106029843293709,
+          "p90": 7.110176654892776
+        },
+        "mean": {
+          "n": 24,
+          "mean": 2.4909765938202844,
+          "median": 2.3997630586385474,
+          "p10": 2.032928850078626,
+          "p90": 2.9471626570205682
+        }
+      },
+      "accel": {
+        "p95": {
+          "n": 24,
+          "mean": 3.2346489104155967,
+          "median": 3.211149631487743,
+          "p10": 2.806673503456278,
+          "p90": 3.7457820222695934
+        },
+        "p99": {
+          "n": 24,
+          "mean": 4.581568402206191,
+          "median": 4.474885159858754,
+          "p10": 3.9164349392779974,
+          "p90": 5.511462301090807
+        }
+      },
+      "symmetry": {
+        "bottomShare": {
+          "n": 24,
+          "mean": 0.06096763085399449,
+          "median": 0.05516528925619835,
+          "p10": 0.009545454545454546,
+          "p90": 0.11334710743801653
+        },
+        "topShare": {
+          "n": 24,
+          "mean": 0.04213154269972452,
+          "median": 0.041942148760330575,
+          "p10": 0.00809917355371901,
+          "p90": 0.07070247933884297
+        },
+        "bottomMinusTop": {
+          "n": 24,
+          "mean": 0.018836088154269976,
+          "median": 0.013016528925619834,
+          "p10": -0.0537603305785124,
+          "p90": 0.1028099173553719
+        },
+        "leftShare": {
+          "n": 24,
+          "mean": 0.49340564738292003,
+          "median": 0.46115702479338844,
+          "p10": 0.17446280991735538,
+          "p90": 0.8131404958677686
+        },
+        "rightShare": {
+          "n": 24,
+          "mean": 0.5065943526170799,
+          "median": 0.5388429752066115,
+          "p10": 0.1868595041322314,
+          "p90": 0.8255371900826446
+        },
+        "leftMinusRight": {
+          "n": 24,
+          "mean": -0.013188705234159784,
+          "median": -0.07768595041322314,
+          "p10": -0.6510743801652893,
+          "p90": 0.6262809917355372
+        },
+        "n": {
+          "n": 24,
+          "mean": 2420,
+          "median": 2420,
+          "p10": 2420,
+          "p90": 2420
+        }
+      },
+      "ball": {
+        "p50": {
+          "n": 24,
+          "mean": 5.197385421395649,
+          "median": 4.575779381279846,
+          "p10": 3.8724305604654914,
+          "p90": 7.12428196581841
+        },
+        "p90": {
+          "n": 24,
+          "mean": 13.330034245758796,
+          "median": 13.356186191327257,
+          "p10": 11.737798168025348,
+          "p90": 14.793668869302662
+        },
+        "p99": {
+          "n": 24,
+          "mean": 19.84395514294035,
+          "median": 19.464257019835816,
+          "p10": 16.329892339394327,
+          "p90": 24.198965203536762
+        },
+        "meanSpeed": {
+          "n": 24,
+          "mean": 6.483135238888657,
+          "median": 6.280313842819096,
+          "p10": 5.605204206960414,
+          "p90": 7.706606883195083
+        },
+        "pathM": {
+          "n": 24,
+          "mean": 154.99089433265925,
+          "median": 148.1253208384403,
+          "p10": 134.52490096704895,
+          "p90": 182.77287065899904
+        },
+        "nSteps": {
+          "n": 24,
+          "mean": 119.54166666666667,
+          "median": 120,
+          "p10": 118.6,
+          "p90": 120
+        }
+      },
+      "ballStaticFrac": {
+        "2": {
+          "n": 24,
+          "mean": 0.16215080812817206,
+          "median": 0.15181623931623933,
+          "p10": 0.05,
+          "p90": 0.2758333333333333
+        },
+        "0.2": {
+          "n": 24,
+          "mean": 0.0038194444444444443,
+          "median": 0,
+          "p10": 0,
+          "p90": 0.008333333333333333
+        },
+        "0.5": {
+          "n": 24,
+          "mean": 0.021527777777777774,
+          "median": 0.008333333333333333,
+          "p10": 0,
+          "p90": 0.05
+        }
+      }
+    },
+    "engineDecomposition": {
+      "id": null,
+      "seed": {
+        "n": 24,
+        "mean": 1217.75,
+        "median": 1217.5,
+        "p10": 1204,
+        "p90": 1231
+      },
+      "t0": {
+        "n": 24,
+        "mean": 2611.4166666666665,
+        "median": 2662,
+        "p10": 1944,
+        "p90": 3241.4
+      },
+      "totalTimeSec": {
+        "n": 24,
+        "mean": 24,
+        "median": 24,
+        "p10": 24,
+        "p90": 24
+      },
+      "totalStaticSec": {
+        "n": 24,
+        "mean": 5.183333333333441,
+        "median": 3.4000000000002046,
+        "p10": 2.0600000000000818,
+        "p90": 11.860000000000262
+      },
+      "ballStaticFrac": {
+        "n": 24,
+        "mean": 0.2159722222222267,
+        "median": 0.14166666666667518,
+        "p10": 0.08583333333333674,
+        "p90": 0.49416666666667763
+      },
+      "sources": {
+        "carrier_hold": {
+          "timeSec": {
+            "n": 24,
+            "mean": 5.354166666666667,
+            "median": 5.5,
+            "p10": 0.7500000000000007,
+            "p90": 8
+          },
+          "timeShare": {
+            "n": 24,
+            "mean": 0.22309027777777776,
+            "median": 0.22916666666666666,
+            "p10": 0.03125000000000003,
+            "p90": 0.3333333333333333
+          },
+          "staticRate": {
+            "n": 21,
+            "mean": 0.32733656555085117,
+            "median": 0.3090909090909587,
+            "p10": 0.19999999999998347,
+            "p90": 0.4857142857142987
+          },
+          "staticSec": {
+            "n": 24,
+            "mean": 1.7499999999999811,
+            "median": 1.7500000000002274,
+            "p10": 0.17999999999997288,
+            "p90": 3.2099999999996722
+          },
+          "staticContribution": {
+            "n": 24,
+            "mean": 0.5137936342627377,
+            "median": 0.6160714285713816,
+            "p10": 0.031132075471695164,
+            "p90": 0.847499999999947
+          },
+          "nIntervals": {
+            "n": 24,
+            "mean": 32.125,
+            "median": 33,
+            "p10": 4.5000000000000036,
+            "p90": 48
+          }
+        },
+        "carrier_dribble": {
+          "timeSec": {
+            "n": 24,
+            "mean": 8.333333333333334,
+            "median": 9.25,
+            "p10": 0.6000000000000005,
+            "p90": 12.2
+          },
+          "timeShare": {
+            "n": 24,
+            "mean": 0.34722222222222215,
+            "median": 0.38541666666666663,
+            "p10": 0.025000000000000022,
+            "p90": 0.5083333333333333
+          },
+          "staticRate": {
+            "n": 21,
+            "mean": 0,
+            "median": 0,
+            "p10": 0,
+            "p90": 0
+          },
+          "staticSec": {
+            "n": 24,
+            "mean": 0,
+            "median": 0,
+            "p10": 0,
+            "p90": 0
+          },
+          "staticContribution": {
+            "n": 24,
+            "mean": 0,
+            "median": 0,
+            "p10": 0,
+            "p90": 0
+          },
+          "nIntervals": {
+            "n": 24,
+            "mean": 50,
+            "median": 55.5,
+            "p10": 3.600000000000003,
+            "p90": 73.19999999999999
+          }
+        },
+        "highlight_flight": {
+          "timeSec": {
+            "n": 24,
+            "mean": 6.364714738744851,
+            "median": 6.2062789917216605,
+            "p10": 4.593498404086882,
+            "p90": 8.35
+          },
+          "timeShare": {
+            "n": 24,
+            "mean": 0.26519644744770215,
+            "median": 0.2585949579884025,
+            "p10": 0.1913957668369534,
+            "p90": 0.34791666666666665
+          },
+          "staticRate": {
+            "n": 24,
+            "mean": 0.08670942445893298,
+            "median": 0.08601012947059633,
+            "p10": 0.04514607192272128,
+            "p90": 0.13773234454903238
+          },
+          "staticSec": {
+            "n": 24,
+            "mean": 0.5416666666667425,
+            "median": 0.5,
+            "p10": 0.22999999999985904,
+            "p90": 0.8700000000001181
+          },
+          "staticContribution": {
+            "n": 24,
+            "mean": 0.15349668364361388,
+            "median": 0.15476190476192797,
+            "p10": 0.02322740814300061,
+            "p90": 0.29000000000000753
+          },
+          "nIntervals": {
+            "n": 24,
+            "mean": 33.875,
+            "median": 34,
+            "p10": 25.6,
+            "p90": 43.4
+          }
+        },
+        "loose": {
+          "timeSec": {
+            "n": 24,
+            "mean": 3.625,
+            "median": 1.75,
+            "p10": 0,
+            "p90": 14.499999999999996
+          },
+          "timeShare": {
+            "n": 24,
+            "mean": 0.15104166666666666,
+            "median": 0.07291666666666666,
+            "p10": 0,
+            "p90": 0.6041666666666665
+          },
+          "staticRate": {
+            "n": 14,
+            "mean": 0.642300420168095,
+            "median": 0.7187500000000284,
+            "p10": 0.2866666666667091,
+            "p90": 0.927500000000032
+          },
+          "staticSec": {
+            "n": 24,
+            "mean": 2.6041666666667047,
+            "median": 0.5,
+            "p10": 0,
+            "p90": 10.90000000000018
+          },
+          "staticContribution": {
+            "n": 24,
+            "mean": 0.30509596313261916,
+            "median": 0.20714285714283928,
+            "p10": 0,
+            "p90": 0.8021847070506447
+          },
+          "nIntervals": {
+            "n": 24,
+            "mean": 21.75,
+            "median": 10.5,
+            "p10": 0,
+            "p90": 86.99999999999997
+          }
+        },
+        "restart_dead": {
+          "timeSec": {
+            "n": 24,
+            "mean": 0.3227852612551487,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.7455469645781931
+          },
+          "timeShare": {
+            "n": 24,
+            "mean": 0.013449385885631196,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.031064456857424712
+          },
+          "staticRate": {
+            "n": 5,
+            "mean": 0.8134512427882008,
+            "median": 0.79714804678701,
+            "p10": 0.6991056155318475,
+            "p90": 0.9358790780369374
+          },
+          "staticSec": {
+            "n": 24,
+            "mean": 0.28750000000001324,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.6399999999998726
+          },
+          "staticContribution": {
+            "n": 24,
+            "mean": 0.027613718961029238,
+            "median": 0,
+            "p10": 0,
+            "p90": 0.09826302729526198
+          },
+          "nIntervals": {
+            "n": 24,
+            "mean": 1.75,
+            "median": 0,
+            "p10": 0,
+            "p90": 4.699999999999999
+          }
+        }
+      },
+      "nIntervals": {
+        "n": 24,
+        "mean": 139.5,
+        "median": 139.5,
+        "p10": 137.3,
+        "p90": 141
+      }
+    }
+  }
+}

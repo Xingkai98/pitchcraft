@@ -128,6 +128,9 @@
 **B（仪器/守卫）**：
 
 - 新 `tools/visual-review/motion-census.mjs` + `motion-census.test.mjs`（或在不破坏既有 API 的前提下扩展 `motion-metrics.mjs`，二选一，须在 design 落地时定）
+  - **已定（2026-11-19）**：新建 `motion-census.mjs`。理由：`motion-metrics.windowStats` 是
+    `discriminator-census.mjs` / `like-football.mjs` 的稳定 API，原地改口径会静默改写历史读数；
+    新文件只加纯函数，旧文件一行不动。选择写在工具头注释 §1 与 `notes/motion-census.md` §1。
 - `notes/ball-static-decomposition.md` / `notes/l1-band-audit.md` / `notes/guard-audit.md`
 - 只读 `engine/tests/realism.rs`、`viewer/match-metrics.js`；不改其断言。
 
