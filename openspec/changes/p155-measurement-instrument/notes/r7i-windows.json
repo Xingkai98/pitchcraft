@@ -1,0 +1,4654 @@
+{
+  "version": "replay-blind-v1",
+  "frozen_at": "2026-10-30",
+  "window": {
+    "sec": 24,
+    "canonical_hz": 5,
+    "canonical_step_sec": 0.2,
+    "samples_per_window": 121,
+    "contact_frames": 8,
+    "contact_step_sec": 3.4285714285714284
+  },
+  "selection": {
+    "usable_margin_sec": 60,
+    "search_step_sec": 2,
+    "max_search_offset_sec": 360,
+    "anchors_main": {
+      "metrica": [
+        0.35,
+        0.52
+      ],
+      "skillcorner": [
+        0.18,
+        0.55
+      ],
+      "engine": [
+        0.36,
+        0.6
+      ]
+    },
+    "anchors_control": {
+      "metrica": [
+        0.35,
+        0.9
+      ],
+      "skillcorner": [
+        0.75
+      ],
+      "engine": [
+        0.2,
+        0.65,
+        0.92
+      ]
+    },
+    "thresholds": {
+      "coverage": 0.98,
+      "all_players_frac": 0.98,
+      "raw_ball_frac": 0.9,
+      "max_ball_fill_sec": 1,
+      "ball_in_field_frac": 0.98,
+      "min_ball_path_m": 30,
+      "min_outfield_median_path_m": 1,
+      "max_duplicate_coord_frac": 0.1,
+      "contact_samples_ok": true,
+      "contact_raw_ball": true,
+      "contact_ball_in_field": true,
+      "contact_min_team_blobs": 6
+    },
+    "rule": "从 anchor 起每 2s 向前搜索，取第一个满足全部阈值的窗口；最多 360s。8 个 contact 取样时刻与 121 个 canonical 取样时刻都必须能就近取到源帧（<=0.3s）。若无候选通过，则在搜索范围内取 quality 最大者并标 fallback=true（同分取更小 t）。quality=2*cov+2*all22+3*raw+2*ballIn+min(ball_path_m/100,1)-max_fill_sec/10-dup_frac。",
+    "quality_formula": "2*coverage + 2*all_players_frac + 3*raw_ball_frac + 2*ball_in_field_frac + min(ball_path_m/100,1) - max_fill_sec/10 - duplicate_coord_frac",
+    "no_manual_replacement": true,
+    "freeze": "窗口表在渲图前写入 windows.json + windows.sha256；渲图只读该表，不重新选窗。"
+  },
+  "engine": {
+    "wasm": ".scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+    "commit": "c1-trajectory-morphology/2026-10-29（宽 0.90 + 松散球修复 + p30 守卫维护）",
+    "seeds": [
+      1201,
+      1204,
+      1207,
+      1210,
+      1213,
+      1216,
+      1219,
+      1222,
+      1225,
+      1228,
+      1231,
+      1234,
+      1237,
+      1240,
+      1243,
+      1246
+    ],
+    "duration_sec": 5400,
+    "config": {
+      "demo_mode": false,
+      "off_ball_movement_demo": true,
+      "match_duration_seconds": 5400
+    }
+  },
+  "sources": {
+    "real": {
+      "metrica-1": {
+        "frames": 29002,
+        "tEnd": 5800.24,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-1.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "metrica-2": {
+        "frames": 28232,
+        "tEnd": 5646.24,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-2.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1874553": {
+        "frames": 22122,
+        "tEnd": 6024.1,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1874553.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1899585": {
+        "frames": 20341,
+        "tEnd": 6041.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1899585.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1927964": {
+        "frames": 22380,
+        "tEnd": 5900,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1927964.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1959846": {
+        "frames": 21370,
+        "tEnd": 5840.3,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1959846.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-1996435": {
+        "frames": 21766,
+        "tEnd": 5759.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1996435.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2006229": {
+        "frames": 22086,
+        "tEnd": 5924.1,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2006229.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2007448": {
+        "frames": 22142,
+        "tEnd": 5804.5,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2007448.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2010085": {
+        "frames": 22761,
+        "tEnd": 5896.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2010085.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2013725": {
+        "frames": 22496,
+        "tEnd": 5674.9,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2013725.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      },
+      "skillcorner-2017461": {
+        "frames": 20202,
+        "tEnd": 5843.6,
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2017461.json",
+        "pitchMeters": [
+          105,
+          68
+        ]
+      }
+    },
+    "engine": {
+      "seed-1201": {
+        "frames": 27004,
+        "tEnd": 5400.6,
+        "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8",
+        "eventLength": 16068694
+      },
+      "seed-1204": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "d97eb870a40131b12ff2c4e8d454dffaa2b8e2979fcbb8dac947e43a767a0f4f",
+        "eventLength": 16352218
+      },
+      "seed-1207": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "902875e92d0c4f558d6eaf1fb348ab3cf171e18e138e50773bee8717ca9e0bc8",
+        "eventLength": 16174990
+      },
+      "seed-1210": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "3e59dbc41d9be5486a1dce55148da04b9acbe53c106d0d584e2d600a8e46a494",
+        "eventLength": 16440068
+      },
+      "seed-1213": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "752cf57f250a9c1f993ecd1a1c78ce8daaa9d4aa15b9ecb4d1043b70b5d7a01b",
+        "eventLength": 15957534
+      },
+      "seed-1216": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "95864e11e11c35b768856f830b7bd2971d22c884b02fdbf5c50f570fdd1a7227",
+        "eventLength": 16172526
+      },
+      "seed-1219": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "ba43e992d74a45c5c4d911adca882fd10145475ad2142e422612e5f1c15ee1bd",
+        "eventLength": 15932108
+      },
+      "seed-1222": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "2250b205780e443a6f44f618a4f5fb4f60cbac25e6ee57cfa8944ed60590492e",
+        "eventLength": 16237309
+      },
+      "seed-1225": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "7aa1210fc0679bd1d58ee02f4efdd3e25d5a330cf9375d936fe85c93c5e0b60d",
+        "eventLength": 16281781
+      },
+      "seed-1228": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "f414a032d087ccd3641b43db21adbc69c4b78a97e767ae860c5b21d582d83144",
+        "eventLength": 15917700
+      },
+      "seed-1231": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "016a2e67457d1720883b57d3be02a3acccd394e4ea25866d65008bfc469e3865",
+        "eventLength": 16325122
+      },
+      "seed-1237": {
+        "frames": 27001,
+        "tEnd": 5400,
+        "eventHash": "09cdfe4c8a927cbc0a1a77f71840644e4a7a67becef4f861e002c85b10f67b7f",
+        "eventLength": 15905005
+      }
+    }
+  },
+  "items": [
+    {
+      "framesKey": "metrica-1",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-1",
+      "anchorFrac": 0.35,
+      "anchorT": 2039.684,
+      "t0": 2061.684,
+      "t1": 2085.684,
+      "offsetSec": 22,
+      "searched": 12,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9917355371900827,
+        "maxFillSec": 0.2,
+        "ballInFieldFrac": 1,
+        "ballPathM": 184.22282531920925,
+        "outfieldMedianPathM": 65.56475172387903,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        2061.684,
+        2065.113,
+        2068.541,
+        2071.97,
+        2075.398,
+        2078.827,
+        2082.255,
+        2085.684
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-1.json",
+      "id": "rb-515558ea25"
+    },
+    {
+      "framesKey": "metrica-1",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-1",
+      "anchorFrac": 0.52,
+      "anchorT": 3001.245,
+      "t0": 3001.245,
+      "t1": 3025.245,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 179.3896431185085,
+        "outfieldMedianPathM": 71.79068154156855,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3001.245,
+        3004.674,
+        3008.102,
+        3011.531,
+        3014.959,
+        3018.388,
+        3021.816,
+        3025.245
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-1.json",
+      "id": "rb-10c50f930b"
+    },
+    {
+      "framesKey": "metrica-2",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-2",
+      "anchorFrac": 0.35,
+      "anchorT": 1985.784,
+      "t0": 2019.784,
+      "t1": 2043.784,
+      "offsetSec": 34,
+      "searched": 18,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9834710743801653,
+        "maxFillSec": 0.4,
+        "ballInFieldFrac": 1,
+        "ballPathM": 150.26368020428876,
+        "outfieldMedianPathM": 56.33923402968914,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        2019.784,
+        2023.213,
+        2026.641,
+        2030.07,
+        2033.498,
+        2036.927,
+        2040.355,
+        2043.784
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-2.json",
+      "id": "rb-ac1b382eb2"
+    },
+    {
+      "framesKey": "metrica-2",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-2",
+      "anchorFrac": 0.52,
+      "anchorT": 2921.165,
+      "t0": 3081.165,
+      "t1": 3105.165,
+      "offsetSec": 160,
+      "searched": 81,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 128.72103489105803,
+        "outfieldMedianPathM": 55.14979565134016,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3081.165,
+        3084.594,
+        3088.022,
+        3091.451,
+        3094.879,
+        3098.308,
+        3101.736,
+        3105.165
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-2.json",
+      "id": "rb-2b6657e3a1"
+    },
+    {
+      "framesKey": "skillcorner-1874553",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1874553",
+      "anchorFrac": 0.18,
+      "anchorT": 1118.418,
+      "t0": 1118.418,
+      "t1": 1142.418,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 137.8638813364143,
+        "outfieldMedianPathM": 50.39657746895043,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1118.418,
+        1121.847,
+        1125.275,
+        1128.704,
+        1132.132,
+        1135.561,
+        1138.989,
+        1142.418
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1874553.json",
+      "id": "rb-ce3d1063e3"
+    },
+    {
+      "framesKey": "skillcorner-1874553",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1874553",
+      "anchorFrac": 0.55,
+      "anchorT": 3294.055,
+      "t0": 3294.055,
+      "t1": 3318.055,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 178.96771407924743,
+        "outfieldMedianPathM": 65.21331916928014,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3294.055,
+        3297.484,
+        3300.912,
+        3304.341,
+        3307.769,
+        3311.198,
+        3314.626,
+        3318.055
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1874553.json",
+      "id": "rb-2c2284dab9"
+    },
+    {
+      "framesKey": "skillcorner-1899585",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1899585",
+      "anchorFrac": 0.18,
+      "anchorT": 1121.622,
+      "t0": 1121.622,
+      "t1": 1145.622,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9586776859504132,
+        "maxFillSec": 1,
+        "ballInFieldFrac": 1,
+        "ballPathM": 143.0528614465927,
+        "outfieldMedianPathM": 53.25039398532478,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        1121.622,
+        1125.051,
+        1128.479,
+        1131.908,
+        1135.336,
+        1138.765,
+        1142.193,
+        1145.622
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1899585.json",
+      "id": "rb-86847dbcfd"
+    },
+    {
+      "framesKey": "skillcorner-1899585",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1899585",
+      "anchorFrac": 0.55,
+      "anchorT": 3303.845,
+      "t0": 3397.845,
+      "t1": 3421.845,
+      "offsetSec": 94,
+      "searched": 48,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 140.8882901708903,
+        "outfieldMedianPathM": 64.8143486560603,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        3397.845,
+        3401.274,
+        3404.702,
+        3408.131,
+        3411.559,
+        3414.988,
+        3418.416,
+        3421.845
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1899585.json",
+      "id": "rb-bb98fd8498"
+    },
+    {
+      "framesKey": "skillcorner-1927964",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1927964",
+      "anchorFrac": 0.18,
+      "anchorT": 1096.08,
+      "t0": 1132.08,
+      "t1": 1156.08,
+      "offsetSec": 36,
+      "searched": 19,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 134.12029270894263,
+        "outfieldMedianPathM": 45.11717436269752,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        1132.08,
+        1135.509,
+        1138.937,
+        1142.366,
+        1145.794,
+        1149.223,
+        1152.651,
+        1156.08
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1927964.json",
+      "id": "rb-c1d9b15868"
+    },
+    {
+      "framesKey": "skillcorner-1927964",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1927964",
+      "anchorFrac": 0.55,
+      "anchorT": 3225.8,
+      "t0": 3225.8,
+      "t1": 3249.8,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 136.4594751758593,
+        "outfieldMedianPathM": 50.62951577420752,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3225.8,
+        3229.229,
+        3232.657,
+        3236.086,
+        3239.514,
+        3242.943,
+        3246.371,
+        3249.8
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1927964.json",
+      "id": "rb-bc3d0e869a"
+    },
+    {
+      "framesKey": "skillcorner-1959846",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1959846",
+      "anchorFrac": 0.18,
+      "anchorT": 1085.334,
+      "t0": 1157.334,
+      "t1": 1181.334,
+      "offsetSec": 72,
+      "searched": 37,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 133.13772973735183,
+        "outfieldMedianPathM": 48.97569716169549,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 6
+      },
+      "contactTimes": [
+        1157.334,
+        1160.763,
+        1164.191,
+        1167.62,
+        1171.048,
+        1174.477,
+        1177.905,
+        1181.334
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1959846.json",
+      "id": "rb-d48b468bad"
+    },
+    {
+      "framesKey": "skillcorner-1959846",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1959846",
+      "anchorFrac": 0.55,
+      "anchorT": 3192.965,
+      "t0": 3192.965,
+      "t1": 3216.965,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 163.72441133939412,
+        "outfieldMedianPathM": 41.01641495814924,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        3192.965,
+        3196.394,
+        3199.822,
+        3203.251,
+        3206.679,
+        3210.108,
+        3213.536,
+        3216.965
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1959846.json",
+      "id": "rb-96b067ee86"
+    },
+    {
+      "framesKey": "skillcorner-1996435",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1996435",
+      "anchorFrac": 0.18,
+      "anchorT": 1070.862,
+      "t0": 1192.862,
+      "t1": 1216.862,
+      "offsetSec": 122,
+      "searched": 62,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 135.4689869026301,
+        "outfieldMedianPathM": 55.25594030256352,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1192.862,
+        1196.291,
+        1199.719,
+        1203.148,
+        1206.576,
+        1210.005,
+        1213.433,
+        1216.862
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1996435.json",
+      "id": "rb-4379c343f7"
+    },
+    {
+      "framesKey": "skillcorner-1996435",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1996435",
+      "anchorFrac": 0.55,
+      "anchorT": 3148.745,
+      "t0": 3220.745,
+      "t1": 3244.745,
+      "offsetSec": 72,
+      "searched": 37,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 173.12193334128148,
+        "outfieldMedianPathM": 73.45298312487097,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3220.745,
+        3224.174,
+        3227.602,
+        3231.031,
+        3234.459,
+        3237.888,
+        3241.316,
+        3244.745
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1996435.json",
+      "id": "rb-febcae1fcd"
+    },
+    {
+      "framesKey": "skillcorner-2006229",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2006229",
+      "anchorFrac": 0.18,
+      "anchorT": 1100.418,
+      "t0": 1108.418,
+      "t1": 1132.418,
+      "offsetSec": 8,
+      "searched": 5,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 142.198057219095,
+        "outfieldMedianPathM": 51.87364369008584,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        1108.418,
+        1111.847,
+        1115.275,
+        1118.704,
+        1122.132,
+        1125.561,
+        1128.989,
+        1132.418
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2006229.json",
+      "id": "rb-15e56c2642"
+    },
+    {
+      "framesKey": "skillcorner-2006229",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2006229",
+      "anchorFrac": 0.55,
+      "anchorT": 3239.055,
+      "t0": 3451.055,
+      "t1": 3475.055,
+      "offsetSec": 212,
+      "searched": 107,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 192.5757818287857,
+        "outfieldMedianPathM": 64.78885811432687,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3451.055,
+        3454.484,
+        3457.912,
+        3461.341,
+        3464.769,
+        3468.198,
+        3471.626,
+        3475.055
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2006229.json",
+      "id": "rb-59fecc2821"
+    },
+    {
+      "framesKey": "skillcorner-2007448",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2007448",
+      "anchorFrac": 0.18,
+      "anchorT": 1078.89,
+      "t0": 1078.89,
+      "t1": 1102.89,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 138.89557253245724,
+        "outfieldMedianPathM": 65.34080964795814,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1078.89,
+        1082.319,
+        1085.747,
+        1089.176,
+        1092.604,
+        1096.033,
+        1099.461,
+        1102.89
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2007448.json",
+      "id": "rb-fd30495901"
+    },
+    {
+      "framesKey": "skillcorner-2007448",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2007448",
+      "anchorFrac": 0.55,
+      "anchorT": 3173.275,
+      "t0": 3271.275,
+      "t1": 3295.275,
+      "offsetSec": 98,
+      "searched": 50,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 152.7156023110545,
+        "outfieldMedianPathM": 62.70481218230144,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        3271.275,
+        3274.704,
+        3278.132,
+        3281.561,
+        3284.989,
+        3288.418,
+        3291.846,
+        3295.275
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2007448.json",
+      "id": "rb-e5117afb41"
+    },
+    {
+      "framesKey": "skillcorner-2010085",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2010085",
+      "anchorFrac": 0.18,
+      "anchorT": 1095.522,
+      "t0": 1099.522,
+      "t1": 1123.522,
+      "offsetSec": 4,
+      "searched": 3,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 150.8731050378461,
+        "outfieldMedianPathM": 62.49126306886226,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1099.522,
+        1102.951,
+        1106.379,
+        1109.808,
+        1113.236,
+        1116.665,
+        1120.093,
+        1123.522
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2010085.json",
+      "id": "rb-9970c5a298"
+    },
+    {
+      "framesKey": "skillcorner-2010085",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2010085",
+      "anchorFrac": 0.55,
+      "anchorT": 3224.095,
+      "t0": 3344.095,
+      "t1": 3368.095,
+      "offsetSec": 120,
+      "searched": 61,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 169.24522793240754,
+        "outfieldMedianPathM": 82.40769465740266,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3344.095,
+        3347.524,
+        3350.952,
+        3354.381,
+        3357.809,
+        3361.238,
+        3364.666,
+        3368.095
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2010085.json",
+      "id": "rb-26f698daf6"
+    },
+    {
+      "framesKey": "skillcorner-2013725",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2013725",
+      "anchorFrac": 0.18,
+      "anchorT": 1055.562,
+      "t0": 1119.562,
+      "t1": 1143.562,
+      "offsetSec": 64,
+      "searched": 33,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 140.7440603682641,
+        "outfieldMedianPathM": 50.269279974854726,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1119.562,
+        1122.991,
+        1126.419,
+        1129.848,
+        1133.276,
+        1136.705,
+        1140.133,
+        1143.562
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2013725.json",
+      "id": "rb-2e1c41a6ac"
+    },
+    {
+      "framesKey": "skillcorner-2013725",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2013725",
+      "anchorFrac": 0.55,
+      "anchorT": 3101.995,
+      "t0": 3211.995,
+      "t1": 3235.995,
+      "offsetSec": 110,
+      "searched": 56,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 145.98696147259196,
+        "outfieldMedianPathM": 46.41468926196079,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3211.995,
+        3215.424,
+        3218.852,
+        3222.281,
+        3225.709,
+        3229.138,
+        3232.566,
+        3235.995
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2013725.json",
+      "id": "rb-018eb0862e"
+    },
+    {
+      "framesKey": "skillcorner-2017461",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2017461",
+      "anchorFrac": 0.18,
+      "anchorT": 1085.928,
+      "t0": 1253.928,
+      "t1": 1277.928,
+      "offsetSec": 168,
+      "searched": 85,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 193.67284236834217,
+        "outfieldMedianPathM": 54.86199761082179,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1253.928,
+        1257.357,
+        1260.785,
+        1264.214,
+        1267.642,
+        1271.071,
+        1274.499,
+        1277.928
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2017461.json",
+      "id": "rb-514e51c49d"
+    },
+    {
+      "framesKey": "skillcorner-2017461",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2017461",
+      "anchorFrac": 0.55,
+      "anchorT": 3194.78,
+      "t0": 3228.78,
+      "t1": 3252.78,
+      "offsetSec": 34,
+      "searched": 18,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 173.4714931413092,
+        "outfieldMedianPathM": 81.86761882280723,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 6
+      },
+      "contactTimes": [
+        3228.78,
+        3232.209,
+        3235.637,
+        3239.066,
+        3242.494,
+        3245.923,
+        3249.351,
+        3252.78
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2017461.json",
+      "id": "rb-ecf511ed8d"
+    },
+    {
+      "framesKey": "seed-1201",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1201",
+      "seed": 1201,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1960,
+      "t1": 1984,
+      "offsetSec": 16,
+      "searched": 9,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 191.92098645236393,
+        "outfieldMedianPathM": 80.96223186800313,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1960,
+        1963.429,
+        1966.857,
+        1970.286,
+        1973.714,
+        1977.143,
+        1980.571,
+        1984
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8",
+      "id": "rb-16e5c6c4e7"
+    },
+    {
+      "framesKey": "seed-1201",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1201",
+      "seed": 1201,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 121.65320868247296,
+        "outfieldMedianPathM": 67.20648613182688,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8",
+      "id": "rb-d86c96c413"
+    },
+    {
+      "framesKey": "seed-1204",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1204",
+      "seed": 1204,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 233.9839587249699,
+        "outfieldMedianPathM": 88.27016299149403,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "d97eb870a40131b12ff2c4e8d454dffaa2b8e2979fcbb8dac947e43a767a0f4f",
+      "id": "rb-e48bd6a2ad"
+    },
+    {
+      "framesKey": "seed-1204",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1204",
+      "seed": 1204,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 157.8212274142624,
+        "outfieldMedianPathM": 89.71805397278703,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "d97eb870a40131b12ff2c4e8d454dffaa2b8e2979fcbb8dac947e43a767a0f4f",
+      "id": "rb-80f26aa5b5"
+    },
+    {
+      "framesKey": "seed-1207",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1207",
+      "seed": 1207,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 143.03988099346384,
+        "outfieldMedianPathM": 86.06064138652421,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "902875e92d0c4f558d6eaf1fb348ab3cf171e18e138e50773bee8717ca9e0bc8",
+      "id": "rb-9bd04d5362"
+    },
+    {
+      "framesKey": "seed-1207",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1207",
+      "seed": 1207,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 180.8207162233231,
+        "outfieldMedianPathM": 90.49664396473145,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "902875e92d0c4f558d6eaf1fb348ab3cf171e18e138e50773bee8717ca9e0bc8",
+      "id": "rb-278c258f86"
+    },
+    {
+      "framesKey": "seed-1210",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1210",
+      "seed": 1210,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 121.9342521820812,
+        "outfieldMedianPathM": 87.73681418228264,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "3e59dbc41d9be5486a1dce55148da04b9acbe53c106d0d584e2d600a8e46a494",
+      "id": "rb-e35ce092aa"
+    },
+    {
+      "framesKey": "seed-1210",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1210",
+      "seed": 1210,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 154.5840395813699,
+        "outfieldMedianPathM": 86.55931179269251,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "3e59dbc41d9be5486a1dce55148da04b9acbe53c106d0d584e2d600a8e46a494",
+      "id": "rb-2e8bec867b"
+    },
+    {
+      "framesKey": "seed-1213",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1213",
+      "seed": 1213,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 171.15456566316809,
+        "outfieldMedianPathM": 84.96167818538508,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "752cf57f250a9c1f993ecd1a1c78ce8daaa9d4aa15b9ecb4d1043b70b5d7a01b",
+      "id": "rb-98c16914b1"
+    },
+    {
+      "framesKey": "seed-1213",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1213",
+      "seed": 1213,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 147.32960766118117,
+        "outfieldMedianPathM": 79.99426901630062,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "752cf57f250a9c1f993ecd1a1c78ce8daaa9d4aa15b9ecb4d1043b70b5d7a01b",
+      "id": "rb-fcfd5b15f1"
+    },
+    {
+      "framesKey": "seed-1216",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1216",
+      "seed": 1216,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 161.07793108122786,
+        "outfieldMedianPathM": 82.3718838567749,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "95864e11e11c35b768856f830b7bd2971d22c884b02fdbf5c50f570fdd1a7227",
+      "id": "rb-3265b2d028"
+    },
+    {
+      "framesKey": "seed-1216",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1216",
+      "seed": 1216,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3256,
+      "t1": 3280,
+      "offsetSec": 16,
+      "searched": 9,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 130.3347852363907,
+        "outfieldMedianPathM": 87.15733831645761,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3256,
+        3259.429,
+        3262.857,
+        3266.286,
+        3269.714,
+        3273.143,
+        3276.571,
+        3280
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "95864e11e11c35b768856f830b7bd2971d22c884b02fdbf5c50f570fdd1a7227",
+      "id": "rb-ff7780c4e7"
+    },
+    {
+      "framesKey": "seed-1219",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1219",
+      "seed": 1219,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 2010,
+      "t1": 2034,
+      "offsetSec": 66,
+      "searched": 34,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 112.96702953079411,
+        "outfieldMedianPathM": 82.94899535234555,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        2010,
+        2013.429,
+        2016.857,
+        2020.286,
+        2023.714,
+        2027.143,
+        2030.571,
+        2034
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "ba43e992d74a45c5c4d911adca882fd10145475ad2142e422612e5f1c15ee1bd",
+      "id": "rb-8995d055ac"
+    },
+    {
+      "framesKey": "seed-1219",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1219",
+      "seed": 1219,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 126.77378883249536,
+        "outfieldMedianPathM": 87.55592956293313,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "ba43e992d74a45c5c4d911adca882fd10145475ad2142e422612e5f1c15ee1bd",
+      "id": "rb-d5b7114cc5"
+    },
+    {
+      "framesKey": "seed-1222",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1222",
+      "seed": 1222,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1944,
+      "t1": 1968,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 92.97263197719316,
+        "outfieldMedianPathM": 91.99022472419333,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1944,
+        1947.429,
+        1950.857,
+        1954.286,
+        1957.714,
+        1961.143,
+        1964.571,
+        1968
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "2250b205780e443a6f44f618a4f5fb4f60cbac25e6ee57cfa8944ed60590492e",
+      "id": "rb-63d063436a"
+    },
+    {
+      "framesKey": "seed-1222",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1222",
+      "seed": 1222,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 152.94215444957572,
+        "outfieldMedianPathM": 92.75912924990322,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "2250b205780e443a6f44f618a4f5fb4f60cbac25e6ee57cfa8944ed60590492e",
+      "id": "rb-772a242a3f"
+    },
+    {
+      "framesKey": "seed-1225",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1225",
+      "seed": 1225,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 2084,
+      "t1": 2108,
+      "offsetSec": 140,
+      "searched": 71,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 161.00905754996518,
+        "outfieldMedianPathM": 97.91810096537458,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        2084,
+        2087.429,
+        2090.857,
+        2094.286,
+        2097.714,
+        2101.143,
+        2104.571,
+        2108
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "7aa1210fc0679bd1d58ee02f4efdd3e25d5a330cf9375d936fe85c93c5e0b60d",
+      "id": "rb-f6f11da37b"
+    },
+    {
+      "framesKey": "seed-1225",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1225",
+      "seed": 1225,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3242,
+      "t1": 3266,
+      "offsetSec": 2,
+      "searched": 2,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 182.31746318779864,
+        "outfieldMedianPathM": 100.11934459626607,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3242,
+        3245.429,
+        3248.857,
+        3252.286,
+        3255.714,
+        3259.143,
+        3262.571,
+        3266
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "7aa1210fc0679bd1d58ee02f4efdd3e25d5a330cf9375d936fe85c93c5e0b60d",
+      "id": "rb-180ce7f572"
+    },
+    {
+      "framesKey": "seed-1228",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1228",
+      "seed": 1228,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1946,
+      "t1": 1970,
+      "offsetSec": 2,
+      "searched": 2,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 188.51167117303055,
+        "outfieldMedianPathM": 87.97118354426465,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1946,
+        1949.429,
+        1952.857,
+        1956.286,
+        1959.714,
+        1963.143,
+        1966.571,
+        1970
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "f414a032d087ccd3641b43db21adbc69c4b78a97e767ae860c5b21d582d83144",
+      "id": "rb-86678e43f0"
+    },
+    {
+      "framesKey": "seed-1228",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1228",
+      "seed": 1228,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 172.14260439534422,
+        "outfieldMedianPathM": 88.7025325604634,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "f414a032d087ccd3641b43db21adbc69c4b78a97e767ae860c5b21d582d83144",
+      "id": "rb-d060017d14"
+    },
+    {
+      "framesKey": "seed-1231",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1231",
+      "seed": 1231,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 1976,
+      "t1": 2000,
+      "offsetSec": 32,
+      "searched": 17,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 115.70959337793829,
+        "outfieldMedianPathM": 79.79371489409917,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1976,
+        1979.429,
+        1982.857,
+        1986.286,
+        1989.714,
+        1993.143,
+        1996.571,
+        2000
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "016a2e67457d1720883b57d3be02a3acccd394e4ea25866d65008bfc469e3865",
+      "id": "rb-da503ea8a6"
+    },
+    {
+      "framesKey": "seed-1231",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1231",
+      "seed": 1231,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3304,
+      "t1": 3328,
+      "offsetSec": 64,
+      "searched": 33,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 148.88665120821418,
+        "outfieldMedianPathM": 80.42712984874665,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3304,
+        3307.429,
+        3310.857,
+        3314.286,
+        3317.714,
+        3321.143,
+        3324.571,
+        3328
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "016a2e67457d1720883b57d3be02a3acccd394e4ea25866d65008bfc469e3865",
+      "id": "rb-1be0bfc743"
+    },
+    {
+      "framesKey": "seed-1237",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1237",
+      "seed": 1237,
+      "anchorFrac": 0.36,
+      "anchorT": 1944,
+      "t0": 2072,
+      "t1": 2096,
+      "offsetSec": 128,
+      "searched": 65,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 114.73008494118476,
+        "outfieldMedianPathM": 80.09876012383953,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        2072,
+        2075.429,
+        2078.857,
+        2082.286,
+        2085.714,
+        2089.143,
+        2092.571,
+        2096
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "09cdfe4c8a927cbc0a1a77f71840644e4a7a67becef4f861e002c85b10f67b7f",
+      "id": "rb-de0956e241"
+    },
+    {
+      "framesKey": "seed-1237",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1237",
+      "seed": 1237,
+      "anchorFrac": 0.6,
+      "anchorT": 3240,
+      "t0": 3240,
+      "t1": 3264,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 149.9998775916444,
+        "outfieldMedianPathM": 92.16226126593077,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3240,
+        3243.429,
+        3246.857,
+        3250.286,
+        3253.714,
+        3257.143,
+        3260.571,
+        3264
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "09cdfe4c8a927cbc0a1a77f71840644e4a7a67becef4f861e002c85b10f67b7f",
+      "id": "rb-486a8d80ee"
+    }
+  ],
+  "controls": [
+    {
+      "id": "ctl-f5200325ee",
+      "type": "real-real",
+      "aItem": {
+        "framesKey": "metrica-1",
+        "source": "real",
+        "dataset": "metrica",
+        "match": "metrica-1",
+        "anchorFrac": 0.35,
+        "anchorT": 2039.684,
+        "t0": 2061.684,
+        "t1": 2085.684,
+        "offsetSec": 22,
+        "searched": 12,
+        "fallback": false,
+        "stats": {
+          "coverage": 1,
+          "all22": 1,
+          "rawBallFrac": 0.9917355371900827,
+          "maxFillSec": 0.2,
+          "ballInFieldFrac": 1,
+          "ballPathM": 184.22282531920925,
+          "outfieldMedianPathM": 65.56475172387903,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 11
+        },
+        "contactTimes": [
+          2061.684,
+          2065.113,
+          2068.541,
+          2071.97,
+          2075.398,
+          2078.827,
+          2082.255,
+          2085.684
+        ],
+        "pitchMeters": [
+          105,
+          68
+        ],
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-1.json"
+      },
+      "bItem": {
+        "framesKey": "metrica-2",
+        "source": "real",
+        "dataset": "metrica",
+        "match": "metrica-2",
+        "anchorFrac": 0.9,
+        "anchorT": 5012.016,
+        "t0": 5034.016,
+        "t1": 5058.016,
+        "offsetSec": 22,
+        "searched": 12,
+        "fallback": false,
+        "stats": {
+          "coverage": 1,
+          "all22": 1,
+          "rawBallFrac": 1,
+          "maxFillSec": 0,
+          "ballInFieldFrac": 1,
+          "ballPathM": 172.99428956498716,
+          "outfieldMedianPathM": 48.56811104177619,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 9
+        },
+        "contactTimes": [
+          5034.016,
+          5037.445,
+          5040.873,
+          5044.302,
+          5047.73,
+          5051.159,
+          5054.587,
+          5058.016
+        ],
+        "pitchMeters": [
+          105,
+          68
+        ],
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-2.json"
+      },
+      "composition": "metrica-1@0.35 vs metrica-2@0.9"
+    },
+    {
+      "id": "ctl-25f67d2530",
+      "type": "engine-engine",
+      "aItem": {
+        "framesKey": "seed-1201",
+        "source": "engine",
+        "dataset": "engine",
+        "match": "seed-1201",
+        "seed": 1201,
+        "anchorFrac": 0.2,
+        "anchorT": 1080,
+        "t0": 1098,
+        "t1": 1122,
+        "offsetSec": 18,
+        "searched": 10,
+        "fallback": false,
+        "stats": {
+          "coverage": 1,
+          "all22": 1,
+          "rawBallFrac": 1,
+          "maxFillSec": 0,
+          "ballInFieldFrac": 1,
+          "ballPathM": 139.99189779151624,
+          "outfieldMedianPathM": 96.55121452600662,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 7
+        },
+        "contactTimes": [
+          1098,
+          1101.429,
+          1104.857,
+          1108.286,
+          1111.714,
+          1115.143,
+          1118.571,
+          1122
+        ],
+        "pitchMeters": [
+          105,
+          68
+        ],
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+        "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8"
+      },
+      "bItem": {
+        "framesKey": "seed-1201",
+        "source": "engine",
+        "dataset": "engine",
+        "match": "seed-1201",
+        "seed": 1201,
+        "anchorFrac": 0.65,
+        "anchorT": 3510,
+        "t0": 3550,
+        "t1": 3574,
+        "offsetSec": 40,
+        "searched": 21,
+        "fallback": false,
+        "stats": {
+          "coverage": 1,
+          "all22": 1,
+          "rawBallFrac": 1,
+          "maxFillSec": 0,
+          "ballInFieldFrac": 0.9917355371900827,
+          "ballPathM": 210.74210938422303,
+          "outfieldMedianPathM": 98.73150011054875,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 7
+        },
+        "contactTimes": [
+          3550,
+          3553.429,
+          3556.857,
+          3560.286,
+          3563.714,
+          3567.143,
+          3570.571,
+          3574
+        ],
+        "pitchMeters": [
+          105,
+          68
+        ],
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+        "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8"
+      },
+      "composition": "seed1201@0.2 vs seed1201@0.65"
+    },
+    {
+      "id": "ctl-96c575fbd8",
+      "type": "real-engine",
+      "aItem": {
+        "framesKey": "metrica-1",
+        "source": "real",
+        "dataset": "metrica",
+        "match": "metrica-1",
+        "anchorFrac": 0.9,
+        "anchorT": 5150.616,
+        "t0": 5186.616,
+        "t1": 5210.616,
+        "offsetSec": 36,
+        "searched": 19,
+        "fallback": false,
+        "stats": {
+          "coverage": 1,
+          "all22": 1,
+          "rawBallFrac": 1,
+          "maxFillSec": 0,
+          "ballInFieldFrac": 1,
+          "ballPathM": 187.41221059654671,
+          "outfieldMedianPathM": 55.698438706807586,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 7
+        },
+        "contactTimes": [
+          5186.616,
+          5190.045,
+          5193.473,
+          5196.902,
+          5200.33,
+          5203.759,
+          5207.187,
+          5210.616
+        ],
+        "pitchMeters": [
+          105,
+          68
+        ],
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-1.json"
+      },
+      "bItem": {
+        "framesKey": "seed-1204",
+        "source": "engine",
+        "dataset": "engine",
+        "match": "seed-1204",
+        "seed": 1204,
+        "anchorFrac": 0.92,
+        "anchorT": 4968,
+        "t0": 5008,
+        "t1": 5032,
+        "offsetSec": 40,
+        "searched": 21,
+        "fallback": false,
+        "stats": {
+          "coverage": 1,
+          "all22": 1,
+          "rawBallFrac": 1,
+          "maxFillSec": 0,
+          "ballInFieldFrac": 0.9917355371900827,
+          "ballPathM": 163.6428213536342,
+          "outfieldMedianPathM": 96.58996630279455,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 9
+        },
+        "contactTimes": [
+          5008,
+          5011.429,
+          5014.857,
+          5018.286,
+          5021.714,
+          5025.143,
+          5028.571,
+          5032
+        ],
+        "pitchMeters": [
+          105,
+          68
+        ],
+        "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+        "eventHash": "d97eb870a40131b12ff2c4e8d454dffaa2b8e2979fcbb8dac947e43a767a0f4f"
+      },
+      "composition": "metrica-1@0.9 vs seed1204@0.92"
+    }
+  ],
+  "rejected_engine_seeds": [
+    {
+      "seed": 1234,
+      "reason": "anchor 窗口 fallback（阈值未全过，常见形态：21 人 / 球缺失 / 死球）",
+      "stats": [
+        {
+          "coverage": 1,
+          "all22": 0,
+          "rawBallFrac": 1,
+          "maxFillSec": 0,
+          "ballInFieldFrac": 1,
+          "ballPathM": 152.3209060339628,
+          "outfieldMedianPathM": 89.03986995474274,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 0
+        },
+        {
+          "coverage": 1,
+          "all22": 0,
+          "rawBallFrac": 1,
+          "maxFillSec": 0,
+          "ballInFieldFrac": 1,
+          "ballPathM": 136.21956588216767,
+          "outfieldMedianPathM": 72.58599844627881,
+          "duplicateCoordFrac": 0,
+          "contactMinTeamBlobs": 0
+        }
+      ]
+    }
+  ],
+  "control_windows": [
+    {
+      "key": "metrica-1@0.35",
+      "framesKey": "metrica-1",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-1",
+      "anchorFrac": 0.35,
+      "anchorT": 2039.684,
+      "t0": 2061.684,
+      "t1": 2085.684,
+      "offsetSec": 22,
+      "searched": 12,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9917355371900827,
+        "maxFillSec": 0.2,
+        "ballInFieldFrac": 1,
+        "ballPathM": 184.22282531920925,
+        "outfieldMedianPathM": 65.56475172387903,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        2061.684,
+        2065.113,
+        2068.541,
+        2071.97,
+        2075.398,
+        2078.827,
+        2082.255,
+        2085.684
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-1.json"
+    },
+    {
+      "key": "metrica-1@0.9",
+      "framesKey": "metrica-1",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-1",
+      "anchorFrac": 0.9,
+      "anchorT": 5150.616,
+      "t0": 5186.616,
+      "t1": 5210.616,
+      "offsetSec": 36,
+      "searched": 19,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 187.41221059654671,
+        "outfieldMedianPathM": 55.698438706807586,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        5186.616,
+        5190.045,
+        5193.473,
+        5196.902,
+        5200.33,
+        5203.759,
+        5207.187,
+        5210.616
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-1.json"
+    },
+    {
+      "key": "metrica-2@0.35",
+      "framesKey": "metrica-2",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-2",
+      "anchorFrac": 0.35,
+      "anchorT": 1985.784,
+      "t0": 2019.784,
+      "t1": 2043.784,
+      "offsetSec": 34,
+      "searched": 18,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9834710743801653,
+        "maxFillSec": 0.4,
+        "ballInFieldFrac": 1,
+        "ballPathM": 150.26368020428876,
+        "outfieldMedianPathM": 56.33923402968914,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        2019.784,
+        2023.213,
+        2026.641,
+        2030.07,
+        2033.498,
+        2036.927,
+        2040.355,
+        2043.784
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-2.json"
+    },
+    {
+      "key": "metrica-2@0.9",
+      "framesKey": "metrica-2",
+      "source": "real",
+      "dataset": "metrica",
+      "match": "metrica-2",
+      "anchorFrac": 0.9,
+      "anchorT": 5012.016,
+      "t0": 5034.016,
+      "t1": 5058.016,
+      "offsetSec": 22,
+      "searched": 12,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 172.99428956498716,
+        "outfieldMedianPathM": 48.56811104177619,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        5034.016,
+        5037.445,
+        5040.873,
+        5044.302,
+        5047.73,
+        5051.159,
+        5054.587,
+        5058.016
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/real-game-2.json"
+    },
+    {
+      "key": "skillcorner-1874553@0.75",
+      "framesKey": "skillcorner-1874553",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1874553",
+      "anchorFrac": 0.75,
+      "anchorT": 4470.075,
+      "t0": 4532.075,
+      "t1": 4556.075,
+      "offsetSec": 62,
+      "searched": 32,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 155.49298153552695,
+        "outfieldMedianPathM": 57.402246282518504,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4532.075,
+        4535.504,
+        4538.932,
+        4542.361,
+        4545.789,
+        4549.218,
+        4552.646,
+        4556.075
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1874553.json"
+    },
+    {
+      "key": "skillcorner-1899585@0.75",
+      "framesKey": "skillcorner-1899585",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1899585",
+      "anchorFrac": 0.75,
+      "anchorT": 4483.425,
+      "t0": 4565.425,
+      "t1": 4589.425,
+      "offsetSec": 82,
+      "searched": 42,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 189.4856584771431,
+        "outfieldMedianPathM": 56.38058533230072,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4565.425,
+        4568.854,
+        4572.282,
+        4575.711,
+        4579.139,
+        4582.568,
+        4585.996,
+        4589.425
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1899585.json"
+    },
+    {
+      "key": "skillcorner-1927964@0.75",
+      "framesKey": "skillcorner-1927964",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1927964",
+      "anchorFrac": 0.75,
+      "anchorT": 4377,
+      "t0": 4377,
+      "t1": 4401,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 181.54748479037264,
+        "outfieldMedianPathM": 74.76254669310273,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4377,
+        4380.429,
+        4383.857,
+        4387.286,
+        4390.714,
+        4394.143,
+        4397.571,
+        4401
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1927964.json"
+    },
+    {
+      "key": "skillcorner-1959846@0.75",
+      "framesKey": "skillcorner-1959846",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1959846",
+      "anchorFrac": 0.75,
+      "anchorT": 4332.225,
+      "t0": 4366.225,
+      "t1": 4390.225,
+      "offsetSec": 34,
+      "searched": 18,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 132.97508834419997,
+        "outfieldMedianPathM": 77.75434017281219,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        4366.225,
+        4369.654,
+        4373.082,
+        4376.511,
+        4379.939,
+        4383.368,
+        4386.796,
+        4390.225
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1959846.json"
+    },
+    {
+      "key": "skillcorner-1996435@0.75",
+      "framesKey": "skillcorner-1996435",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-1996435",
+      "anchorFrac": 0.75,
+      "anchorT": 4271.925,
+      "t0": 4277.925,
+      "t1": 4301.925,
+      "offsetSec": 6,
+      "searched": 4,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 156.96622471770712,
+        "outfieldMedianPathM": 50.84301459488979,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        4277.925,
+        4281.354,
+        4284.782,
+        4288.211,
+        4291.639,
+        4295.068,
+        4298.496,
+        4301.925
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-1996435.json"
+    },
+    {
+      "key": "skillcorner-2006229@0.75",
+      "framesKey": "skillcorner-2006229",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2006229",
+      "anchorFrac": 0.75,
+      "anchorT": 4395.075,
+      "t0": 4683.075,
+      "t1": 4707.075,
+      "offsetSec": 288,
+      "searched": 181,
+      "fallback": true,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 0.9834710743801653,
+        "maxFillSec": 0.4,
+        "ballInFieldFrac": 1,
+        "ballPathM": 191.674105314916,
+        "outfieldMedianPathM": 70.10688787904803,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4683.075,
+        4686.504,
+        4689.932,
+        4693.361,
+        4696.789,
+        4700.218,
+        4703.646,
+        4707.075
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2006229.json"
+    },
+    {
+      "key": "skillcorner-2007448@0.75",
+      "framesKey": "skillcorner-2007448",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2007448",
+      "anchorFrac": 0.75,
+      "anchorT": 4305.375,
+      "t0": 4305.375,
+      "t1": 4329.375,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 166.0364322471678,
+        "outfieldMedianPathM": 42.699089151822065,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4305.375,
+        4308.804,
+        4312.232,
+        4315.661,
+        4319.089,
+        4322.518,
+        4325.946,
+        4329.375
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2007448.json"
+    },
+    {
+      "key": "skillcorner-2010085@0.75",
+      "framesKey": "skillcorner-2010085",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2010085",
+      "anchorFrac": 0.75,
+      "anchorT": 4374.675,
+      "t0": 4374.675,
+      "t1": 4398.675,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 152.66551181090065,
+        "outfieldMedianPathM": 52.07709305554822,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4374.675,
+        4378.104,
+        4381.532,
+        4384.961,
+        4388.389,
+        4391.818,
+        4395.246,
+        4398.675
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2010085.json"
+    },
+    {
+      "key": "skillcorner-2013725@0.75",
+      "framesKey": "skillcorner-2013725",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2013725",
+      "anchorFrac": 0.75,
+      "anchorT": 4208.175,
+      "t0": 4208.175,
+      "t1": 4232.175,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 166.74192375621607,
+        "outfieldMedianPathM": 43.23289327478961,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 11
+      },
+      "contactTimes": [
+        4208.175,
+        4211.604,
+        4215.032,
+        4218.461,
+        4221.889,
+        4225.318,
+        4228.746,
+        4232.175
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2013725.json"
+    },
+    {
+      "key": "skillcorner-2017461@0.75",
+      "framesKey": "skillcorner-2017461",
+      "source": "real",
+      "dataset": "skillcorner",
+      "match": "skillcorner-2017461",
+      "anchorFrac": 0.75,
+      "anchorT": 4334.7,
+      "t0": 4334.7,
+      "t1": 4358.7,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 142.77653537478824,
+        "outfieldMedianPathM": 53.6695102355483,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4334.7,
+        4338.129,
+        4341.557,
+        4344.986,
+        4348.414,
+        4351.843,
+        4355.271,
+        4358.7
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/viewer/data/skillcorner-2017461.json"
+    },
+    {
+      "key": "seed1201@0.2",
+      "framesKey": "seed-1201",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1201",
+      "seed": 1201,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1098,
+      "t1": 1122,
+      "offsetSec": 18,
+      "searched": 10,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 139.99189779151624,
+        "outfieldMedianPathM": 96.55121452600662,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        1098,
+        1101.429,
+        1104.857,
+        1108.286,
+        1111.714,
+        1115.143,
+        1118.571,
+        1122
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8"
+    },
+    {
+      "key": "seed1201@0.65",
+      "framesKey": "seed-1201",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1201",
+      "seed": 1201,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3550,
+      "t1": 3574,
+      "offsetSec": 40,
+      "searched": 21,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 210.74210938422303,
+        "outfieldMedianPathM": 98.73150011054875,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3550,
+        3553.429,
+        3556.857,
+        3560.286,
+        3563.714,
+        3567.143,
+        3570.571,
+        3574
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8"
+    },
+    {
+      "key": "seed1201@0.92",
+      "framesKey": "seed-1201",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1201",
+      "seed": 1201,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 5006,
+      "t1": 5030,
+      "offsetSec": 38,
+      "searched": 20,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 135.0664801493614,
+        "outfieldMedianPathM": 85.1147509388102,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        5006,
+        5009.429,
+        5012.857,
+        5016.286,
+        5019.714,
+        5023.143,
+        5026.571,
+        5030
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "e1b0d199b02696a281e29fcc70dcd3f5a5eb61d946e31bee5dc151c80fbb51f8"
+    },
+    {
+      "key": "seed1204@0.2",
+      "framesKey": "seed-1204",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1204",
+      "seed": 1204,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1100,
+      "t1": 1124,
+      "offsetSec": 20,
+      "searched": 11,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 127.89373456117698,
+        "outfieldMedianPathM": 84.69160036639673,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1100,
+        1103.429,
+        1106.857,
+        1110.286,
+        1113.714,
+        1117.143,
+        1120.571,
+        1124
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "d97eb870a40131b12ff2c4e8d454dffaa2b8e2979fcbb8dac947e43a767a0f4f"
+    },
+    {
+      "key": "seed1204@0.65",
+      "framesKey": "seed-1204",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1204",
+      "seed": 1204,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3514,
+      "t1": 3538,
+      "offsetSec": 4,
+      "searched": 3,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 196.2005239765421,
+        "outfieldMedianPathM": 94.83596560304076,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3514,
+        3517.429,
+        3520.857,
+        3524.286,
+        3527.714,
+        3531.143,
+        3534.571,
+        3538
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "d97eb870a40131b12ff2c4e8d454dffaa2b8e2979fcbb8dac947e43a767a0f4f"
+    },
+    {
+      "key": "seed1204@0.92",
+      "framesKey": "seed-1204",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1204",
+      "seed": 1204,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 5008,
+      "t1": 5032,
+      "offsetSec": 40,
+      "searched": 21,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 163.6428213536342,
+        "outfieldMedianPathM": 96.58996630279455,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        5008,
+        5011.429,
+        5014.857,
+        5018.286,
+        5021.714,
+        5025.143,
+        5028.571,
+        5032
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "d97eb870a40131b12ff2c4e8d454dffaa2b8e2979fcbb8dac947e43a767a0f4f"
+    },
+    {
+      "key": "seed1207@0.2",
+      "framesKey": "seed-1207",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1207",
+      "seed": 1207,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1094,
+      "t1": 1118,
+      "offsetSec": 14,
+      "searched": 8,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 154.01983472244842,
+        "outfieldMedianPathM": 92.35701934233995,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1094,
+        1097.429,
+        1100.857,
+        1104.286,
+        1107.714,
+        1111.143,
+        1114.571,
+        1118
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "902875e92d0c4f558d6eaf1fb348ab3cf171e18e138e50773bee8717ca9e0bc8"
+    },
+    {
+      "key": "seed1207@0.65",
+      "framesKey": "seed-1207",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1207",
+      "seed": 1207,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3530,
+      "t1": 3554,
+      "offsetSec": 20,
+      "searched": 11,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 158.8652916941857,
+        "outfieldMedianPathM": 87.35409051798663,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3530,
+        3533.429,
+        3536.857,
+        3540.286,
+        3543.714,
+        3547.143,
+        3550.571,
+        3554
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "902875e92d0c4f558d6eaf1fb348ab3cf171e18e138e50773bee8717ca9e0bc8"
+    },
+    {
+      "key": "seed1207@0.92",
+      "framesKey": "seed-1207",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1207",
+      "seed": 1207,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4974,
+      "t1": 4998,
+      "offsetSec": 6,
+      "searched": 4,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 135.844558388421,
+        "outfieldMedianPathM": 87.35956280890754,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4974,
+        4977.429,
+        4980.857,
+        4984.286,
+        4987.714,
+        4991.143,
+        4994.571,
+        4998
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "902875e92d0c4f558d6eaf1fb348ab3cf171e18e138e50773bee8717ca9e0bc8"
+    },
+    {
+      "key": "seed1210@0.2",
+      "framesKey": "seed-1210",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1210",
+      "seed": 1210,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 137.06505116955816,
+        "outfieldMedianPathM": 85.90064388007599,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "3e59dbc41d9be5486a1dce55148da04b9acbe53c106d0d584e2d600a8e46a494"
+    },
+    {
+      "key": "seed1210@0.65",
+      "framesKey": "seed-1210",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1210",
+      "seed": 1210,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3540,
+      "t1": 3564,
+      "offsetSec": 30,
+      "searched": 16,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 131.25163338695654,
+        "outfieldMedianPathM": 72.97031672781728,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3540,
+        3543.429,
+        3546.857,
+        3550.286,
+        3553.714,
+        3557.143,
+        3560.571,
+        3564
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "3e59dbc41d9be5486a1dce55148da04b9acbe53c106d0d584e2d600a8e46a494"
+    },
+    {
+      "key": "seed1210@0.92",
+      "framesKey": "seed-1210",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1210",
+      "seed": 1210,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4986,
+      "t1": 5010,
+      "offsetSec": 18,
+      "searched": 10,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 161.00105567245507,
+        "outfieldMedianPathM": 89.27662813267173,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4986,
+        4989.429,
+        4992.857,
+        4996.286,
+        4999.714,
+        5003.143,
+        5006.571,
+        5010
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "3e59dbc41d9be5486a1dce55148da04b9acbe53c106d0d584e2d600a8e46a494"
+    },
+    {
+      "key": "seed1213@0.2",
+      "framesKey": "seed-1213",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1213",
+      "seed": 1213,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 133.19140935038845,
+        "outfieldMedianPathM": 80.11138555477797,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "752cf57f250a9c1f993ecd1a1c78ce8daaa9d4aa15b9ecb4d1043b70b5d7a01b"
+    },
+    {
+      "key": "seed1213@0.65",
+      "framesKey": "seed-1213",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1213",
+      "seed": 1213,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3512,
+      "t1": 3536,
+      "offsetSec": 2,
+      "searched": 2,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 122.93034119718051,
+        "outfieldMedianPathM": 75.84712817608863,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        3512,
+        3515.429,
+        3518.857,
+        3522.286,
+        3525.714,
+        3529.143,
+        3532.571,
+        3536
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "752cf57f250a9c1f993ecd1a1c78ce8daaa9d4aa15b9ecb4d1043b70b5d7a01b"
+    },
+    {
+      "key": "seed1213@0.92",
+      "framesKey": "seed-1213",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1213",
+      "seed": 1213,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 5012,
+      "t1": 5036,
+      "offsetSec": 44,
+      "searched": 23,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 131.52138001147688,
+        "outfieldMedianPathM": 86.77699574758667,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        5012,
+        5015.429,
+        5018.857,
+        5022.286,
+        5025.714,
+        5029.143,
+        5032.571,
+        5036
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "752cf57f250a9c1f993ecd1a1c78ce8daaa9d4aa15b9ecb4d1043b70b5d7a01b"
+    },
+    {
+      "key": "seed1216@0.2",
+      "framesKey": "seed-1216",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1216",
+      "seed": 1216,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 139.98004043195624,
+        "outfieldMedianPathM": 74.24681509602588,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "95864e11e11c35b768856f830b7bd2971d22c884b02fdbf5c50f570fdd1a7227"
+    },
+    {
+      "key": "seed1216@0.65",
+      "framesKey": "seed-1216",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1216",
+      "seed": 1216,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 170.95219304212395,
+        "outfieldMedianPathM": 83.42645728295454,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "95864e11e11c35b768856f830b7bd2971d22c884b02fdbf5c50f570fdd1a7227"
+    },
+    {
+      "key": "seed1216@0.92",
+      "framesKey": "seed-1216",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1216",
+      "seed": 1216,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9834710743801653,
+        "ballPathM": 177.14047108085344,
+        "outfieldMedianPathM": 87.21506646979617,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "95864e11e11c35b768856f830b7bd2971d22c884b02fdbf5c50f570fdd1a7227"
+    },
+    {
+      "key": "seed1219@0.2",
+      "framesKey": "seed-1219",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1219",
+      "seed": 1219,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1184,
+      "t1": 1208,
+      "offsetSec": 104,
+      "searched": 53,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 123.64338070100422,
+        "outfieldMedianPathM": 86.08764033461193,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        1184,
+        1187.429,
+        1190.857,
+        1194.286,
+        1197.714,
+        1201.143,
+        1204.571,
+        1208
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "ba43e992d74a45c5c4d911adca882fd10145475ad2142e422612e5f1c15ee1bd"
+    },
+    {
+      "key": "seed1219@0.65",
+      "framesKey": "seed-1219",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1219",
+      "seed": 1219,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3512,
+      "t1": 3536,
+      "offsetSec": 2,
+      "searched": 2,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 146.35327652835483,
+        "outfieldMedianPathM": 78.20971743955316,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3512,
+        3515.429,
+        3518.857,
+        3522.286,
+        3525.714,
+        3529.143,
+        3532.571,
+        3536
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "ba43e992d74a45c5c4d911adca882fd10145475ad2142e422612e5f1c15ee1bd"
+    },
+    {
+      "key": "seed1219@0.92",
+      "framesKey": "seed-1219",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1219",
+      "seed": 1219,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4980,
+      "t1": 5004,
+      "offsetSec": 12,
+      "searched": 7,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 155.04120669948637,
+        "outfieldMedianPathM": 89.01622404357877,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        4980,
+        4983.429,
+        4986.857,
+        4990.286,
+        4993.714,
+        4997.143,
+        5000.571,
+        5004
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "ba43e992d74a45c5c4d911adca882fd10145475ad2142e422612e5f1c15ee1bd"
+    },
+    {
+      "key": "seed1222@0.2",
+      "framesKey": "seed-1222",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1222",
+      "seed": 1222,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1102,
+      "t1": 1126,
+      "offsetSec": 22,
+      "searched": 12,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 137.67192241965276,
+        "outfieldMedianPathM": 83.75778211804834,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        1102,
+        1105.429,
+        1108.857,
+        1112.286,
+        1115.714,
+        1119.143,
+        1122.571,
+        1126
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "2250b205780e443a6f44f618a4f5fb4f60cbac25e6ee57cfa8944ed60590492e"
+    },
+    {
+      "key": "seed1222@0.65",
+      "framesKey": "seed-1222",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1222",
+      "seed": 1222,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 122.89474879296311,
+        "outfieldMedianPathM": 73.30046261613687,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "2250b205780e443a6f44f618a4f5fb4f60cbac25e6ee57cfa8944ed60590492e"
+    },
+    {
+      "key": "seed1222@0.92",
+      "framesKey": "seed-1222",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1222",
+      "seed": 1222,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 138.04632333023446,
+        "outfieldMedianPathM": 77.64422188449319,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "2250b205780e443a6f44f618a4f5fb4f60cbac25e6ee57cfa8944ed60590492e"
+    },
+    {
+      "key": "seed1225@0.2",
+      "framesKey": "seed-1225",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1225",
+      "seed": 1225,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1112,
+      "t1": 1136,
+      "offsetSec": 32,
+      "searched": 17,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 137.4407706359133,
+        "outfieldMedianPathM": 73.96368332227651,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 8
+      },
+      "contactTimes": [
+        1112,
+        1115.429,
+        1118.857,
+        1122.286,
+        1125.714,
+        1129.143,
+        1132.571,
+        1136
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "7aa1210fc0679bd1d58ee02f4efdd3e25d5a330cf9375d936fe85c93c5e0b60d"
+    },
+    {
+      "key": "seed1225@0.65",
+      "framesKey": "seed-1225",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1225",
+      "seed": 1225,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3510,
+      "t1": 3534,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 136.7658049586195,
+        "outfieldMedianPathM": 86.98871615143673,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 7
+      },
+      "contactTimes": [
+        3510,
+        3513.429,
+        3516.857,
+        3520.286,
+        3523.714,
+        3527.143,
+        3530.571,
+        3534
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "7aa1210fc0679bd1d58ee02f4efdd3e25d5a330cf9375d936fe85c93c5e0b60d"
+    },
+    {
+      "key": "seed1225@0.92",
+      "framesKey": "seed-1225",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1225",
+      "seed": 1225,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 4968,
+      "t1": 4992,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 134.6152828687958,
+        "outfieldMedianPathM": 83.6007690739365,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        4968,
+        4971.429,
+        4974.857,
+        4978.286,
+        4981.714,
+        4985.143,
+        4988.571,
+        4992
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "7aa1210fc0679bd1d58ee02f4efdd3e25d5a330cf9375d936fe85c93c5e0b60d"
+    },
+    {
+      "key": "seed1228@0.2",
+      "framesKey": "seed-1228",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1228",
+      "seed": 1228,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 0.9917355371900827,
+        "ballPathM": 129.23761145569605,
+        "outfieldMedianPathM": 87.57886990263387,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "f414a032d087ccd3641b43db21adbc69c4b78a97e767ae860c5b21d582d83144"
+    },
+    {
+      "key": "seed1228@0.65",
+      "framesKey": "seed-1228",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1228",
+      "seed": 1228,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3536,
+      "t1": 3560,
+      "offsetSec": 26,
+      "searched": 14,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 125.51290233245511,
+        "outfieldMedianPathM": 98.5921955695828,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3536,
+        3539.429,
+        3542.857,
+        3546.286,
+        3549.714,
+        3553.143,
+        3556.571,
+        3560
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "f414a032d087ccd3641b43db21adbc69c4b78a97e767ae860c5b21d582d83144"
+    },
+    {
+      "key": "seed1228@0.92",
+      "framesKey": "seed-1228",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1228",
+      "seed": 1228,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 5034,
+      "t1": 5058,
+      "offsetSec": 66,
+      "searched": 34,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 140.35172158931994,
+        "outfieldMedianPathM": 94.55627780263136,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        5034,
+        5037.429,
+        5040.857,
+        5044.286,
+        5047.714,
+        5051.143,
+        5054.571,
+        5058
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "f414a032d087ccd3641b43db21adbc69c4b78a97e767ae860c5b21d582d83144"
+    },
+    {
+      "key": "seed1231@0.2",
+      "framesKey": "seed-1231",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1231",
+      "seed": 1231,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 139.75824368212434,
+        "outfieldMedianPathM": 81.08259301170125,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "016a2e67457d1720883b57d3be02a3acccd394e4ea25866d65008bfc469e3865"
+    },
+    {
+      "key": "seed1231@0.65",
+      "framesKey": "seed-1231",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1231",
+      "seed": 1231,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3548,
+      "t1": 3572,
+      "offsetSec": 38,
+      "searched": 20,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 149.60163640149366,
+        "outfieldMedianPathM": 77.71647482967322,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3548,
+        3551.429,
+        3554.857,
+        3558.286,
+        3561.714,
+        3565.143,
+        3568.571,
+        3572
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "016a2e67457d1720883b57d3be02a3acccd394e4ea25866d65008bfc469e3865"
+    },
+    {
+      "key": "seed1231@0.92",
+      "framesKey": "seed-1231",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1231",
+      "seed": 1231,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 5040,
+      "t1": 5064,
+      "offsetSec": 72,
+      "searched": 37,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 137.64539005282415,
+        "outfieldMedianPathM": 81.101866954164,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        5040,
+        5043.429,
+        5046.857,
+        5050.286,
+        5053.714,
+        5057.143,
+        5060.571,
+        5064
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "016a2e67457d1720883b57d3be02a3acccd394e4ea25866d65008bfc469e3865"
+    },
+    {
+      "key": "seed1237@0.2",
+      "framesKey": "seed-1237",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1237",
+      "seed": 1237,
+      "anchorFrac": 0.2,
+      "anchorT": 1080,
+      "t0": 1080,
+      "t1": 1104,
+      "offsetSec": 0,
+      "searched": 1,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 117.2599734446966,
+        "outfieldMedianPathM": 71.2611980540963,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        1080,
+        1083.429,
+        1086.857,
+        1090.286,
+        1093.714,
+        1097.143,
+        1100.571,
+        1104
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "09cdfe4c8a927cbc0a1a77f71840644e4a7a67becef4f861e002c85b10f67b7f"
+    },
+    {
+      "key": "seed1237@0.65",
+      "framesKey": "seed-1237",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1237",
+      "seed": 1237,
+      "anchorFrac": 0.65,
+      "anchorT": 3510,
+      "t0": 3516,
+      "t1": 3540,
+      "offsetSec": 6,
+      "searched": 4,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 135.17665337022297,
+        "outfieldMedianPathM": 90.00454070247184,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        3516,
+        3519.429,
+        3522.857,
+        3526.286,
+        3529.714,
+        3533.143,
+        3536.571,
+        3540
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "09cdfe4c8a927cbc0a1a77f71840644e4a7a67becef4f861e002c85b10f67b7f"
+    },
+    {
+      "key": "seed1237@0.92",
+      "framesKey": "seed-1237",
+      "source": "engine",
+      "dataset": "engine",
+      "match": "seed-1237",
+      "seed": 1237,
+      "anchorFrac": 0.92,
+      "anchorT": 4968,
+      "t0": 5060,
+      "t1": 5084,
+      "offsetSec": 92,
+      "searched": 47,
+      "fallback": false,
+      "stats": {
+        "coverage": 1,
+        "all22": 1,
+        "rawBallFrac": 1,
+        "maxFillSec": 0,
+        "ballInFieldFrac": 1,
+        "ballPathM": 127.9134469165891,
+        "outfieldMedianPathM": 80.9999354786309,
+        "duplicateCoordFrac": 0,
+        "contactMinTeamBlobs": 9
+      },
+      "contactTimes": [
+        5060,
+        5063.429,
+        5066.857,
+        5070.286,
+        5073.714,
+        5077.143,
+        5080.571,
+        5084
+      ],
+      "pitchMeters": [
+        105,
+        68
+      ],
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/c1-trajectory-morphology-2026-10-29/.scratch/notes/c1-trajectory-morphology-2026-10-30/acceptance-r7d48/engine.wasm",
+      "eventHash": "09cdfe4c8a927cbc0a1a77f71840644e4a7a67becef4f861e002c85b10f67b7f"
+    }
+  ],
+  "unused_control_windows": [
+    "metrica-2@0.35",
+    "skillcorner-1874553@0.75",
+    "skillcorner-1899585@0.75",
+    "skillcorner-1927964@0.75",
+    "skillcorner-1959846@0.75",
+    "skillcorner-1996435@0.75",
+    "skillcorner-2006229@0.75",
+    "skillcorner-2007448@0.75",
+    "skillcorner-2010085@0.75",
+    "skillcorner-2013725@0.75",
+    "skillcorner-2017461@0.75",
+    "seed1201@0.92",
+    "seed1204@0.2",
+    "seed1204@0.65",
+    "seed1207@0.2",
+    "seed1207@0.65",
+    "seed1207@0.92",
+    "seed1210@0.2",
+    "seed1210@0.65",
+    "seed1210@0.92",
+    "seed1213@0.2",
+    "seed1213@0.65",
+    "seed1213@0.92",
+    "seed1216@0.2",
+    "seed1216@0.65",
+    "seed1216@0.92",
+    "seed1219@0.2",
+    "seed1219@0.65",
+    "seed1219@0.92",
+    "seed1222@0.2",
+    "seed1222@0.65",
+    "seed1222@0.92",
+    "seed1225@0.2",
+    "seed1225@0.65",
+    "seed1225@0.92",
+    "seed1228@0.2",
+    "seed1228@0.65",
+    "seed1228@0.92",
+    "seed1231@0.2",
+    "seed1231@0.65",
+    "seed1231@0.92",
+    "seed1237@0.2",
+    "seed1237@0.65",
+    "seed1237@0.92"
+  ]
+}

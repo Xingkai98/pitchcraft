@@ -1,0 +1,31 @@
+═══ 运动普查（同一批锚点：engine vs real）═══
+windows=/home/happy/.paseo/worktrees/1g1x3st4/p155-instrument/openspec/changes/p155-measurement-instrument/notes/r7i-windows.json  wasm=viewer/engine.wasm
+engine 窗 24  real 窗 24  24s@5Hz (121 帧)
+
+[转向]
+  旧 turn120            引擎    5.885  真实    0.244  E/R 24.1×
+  条件 @0.3              引擎    0.908  真实    0.025  E/R 36.3×
+  条件 @0.5              引擎    0.829  真实    0.010  E/R 79.6×
+  条件 @1                引擎    0.692  真实    0.008  E/R 83.0×
+  有效步对 引擎 1698.3  真实 2260.2
+  每有效步对 引擎 0.0100  真实 0.0001
+  每米       引擎 0.0112  真实 0.0002
+[静止]
+  staticFrac <0.2      引擎   0.2354  真实   0.0075  E/R 31.5×
+  staticFrac <0.5      引擎   0.2392  真实   0.0400  E/R 6.0×
+  staticFrac <1        引擎   0.2484  真实   0.1386  E/R 1.8×
+  ballStaticFrac <0.2  引擎   0.1576  真实   0.0038  E/R 41.3×
+  ballStaticFrac <0.5  引擎   0.2160  真实   0.0215  E/R 10.0×
+  ballStaticFrac <2    引擎   0.3781  真实   0.1622  E/R 2.3×
+[速度]
+  速度 p50               引擎     3.66  真实     2.30  E/R 1.6×
+  速度 p90               引擎     5.88  真实     4.35  E/R 1.4×
+  加速度 p95              引擎    21.68  真实     3.23  E/R 6.7×
+[球静止来源] 引擎
+  carrier_hold      时间 22.3%  静止率 32.7%  贡献 51.4%
+  carrier_dribble   时间 34.7%  静止率 0.0%  贡献 0.0%
+  highlight_flight  时间 26.5%  静止率 8.7%  贡献 15.3%
+  loose             时间 15.1%  静止率 64.2%  贡献 30.5%
+  restart_dead      时间 1.3%  静止率 81.3%  贡献 2.8%
+
+JSON → openspec/changes/p155-measurement-instrument/notes/motion-census-frozen-anchors.json
