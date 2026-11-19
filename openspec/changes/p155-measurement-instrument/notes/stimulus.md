@@ -50,8 +50,8 @@ node tools/visual-review/render-ablation.mjs freeze --wasm viewer/engine.wasm \
   --windows <R7i windows.json> --out openspec/changes/p155-measurement-instrument/notes
 ```
 
-同输入重跑：`stimulus.json` 与 `windows.sha256` 逐位一致（工具内已对每 seed 模拟两次比对流哈希）。
+同一环境同输入重跑：`stimulus.json` 与 `windows.sha256` 逐位一致（工具内已对每 seed 模拟两次比对流哈希）。
 
-⚠️ 可复现性边界：`windows.sha256` 是**环境无关**的（只含事件流切片哈希）；`stimulus.json`
-里的 `real.*.path` 是本次机器上的真实数据绝对路径（数据本身 gitignored），换机器时该字段会不同，
-但 `real.*.sha256` 才是数据身份。
+⚠️ 可复现性边界：`windows.sha256` 的**切片哈希**环境无关；其文件头另列 wasm **构建产物**哈希
+（随注释行号/工具链变化，不是行为哨兵）。`stimulus.json` 里的 `real.*.path` 是本次机器上的
+真实数据绝对路径（数据本身 gitignored），换机器时该字段会不同，但 `real.*.sha256` 才是数据身份。

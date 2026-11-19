@@ -1,4 +1,6 @@
-# 逐窗事件切片 sha256（环境无关，可由同 wasm + seed + 窗口重建）
+# 逐窗事件切片 sha256（切片哈希环境无关，可由同 wasm + seed + 窗口重建）
+# ⚠️ 文件头的 engine.wasm.sha256 是**构建产物**哈希：随注释行号/工具链变化，不是行为哨兵；
+#    另一会话即使复现全部切片，也未必得到同一个 wasm 文件哈希（行为等价仍成立）。
 # 切片口径：该 seed 完整事件流中 t∈[t0,t1] 的事件，JSON.stringify 后取 sha256（稳定顺序）
 # engine.wasm.sha256 f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f
 # window sec=24 hz=5 samples=121 step=0.2

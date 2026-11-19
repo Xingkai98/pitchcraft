@@ -77,6 +77,20 @@ test('门限边界：步速恰为 0.5 m/s 计入（>=），1.0 档不计', () =>
   assert.equal(f.staticFrac, 0, '0.5 m/s 不 <0.5，不得计入静止');
 });
 
+test('每米转向率必须是每球员口径（分子除以人数，不能大 nP 倍）', () => {
+  // 球员 5 走 3 步各 1m 并折返（2 次 180°）；球员 12 静止（路径 0）。
+  // 每球员路径均值 = (3 + 0)/2 = 1.5m；漏掉 /nP 会让每米转向率正好翻倍。
+  const base = framesFromXMeters([50, 51, 50, 51]); // 3 步，2 次 180° 折返
+  const frames = base.map((fr) => ({ ...fr, players: [...fr.players, { id: 12, x: 0.8, y: 0.5 }] }));
+  const f = windowFeatures(frames, { dt: 0.2 });
+  assert.equal(f.nPlayers, 2);
+  assert.ok(Math.abs(f.turnsPerMeter - f.turn120Old / f.pathLenPerPlayer) < 1e-12,
+    `turnsPerMeter ${f.turnsPerMeter} 应等于 turn120Old/pathLenPerPlayer ${f.turn120Old / f.pathLenPerPlayer}`);
+  // 反证：若漏了 /nP，值会翻倍（nP=2）。
+  const naive = f.turn120OldTotal / f.pathLenPerPlayer;
+  assert.ok(Math.abs(f.turnsPerMeter - naive) > 1e-6, '该用例必须能区分「总数/均值」的错误口径');
+});
+
 test('空输入与剔门将', () => {
   const empty = windowFeatures([]);
   assert.equal(empty.nPlayers, 0);

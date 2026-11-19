@@ -385,8 +385,10 @@ export function windowFeatures(frames, opts = {}) {
     turn120CondByThreshold: condRates, // 窗内总数（跨球员）
     turn120CondByThresholdPerPlayer: condRatesPerPlayer,
     turnsPerEffectiveStep: effectiveSteps05 ? condTurns05 / effectiveSteps05 : null,
-    turnsPerMeter: meanPath > 1e-9 ? turns / meanPath : null,
-    condTurnsPerMeter: meanPath > 1e-9 ? condTurns05 / meanPath : null,
+    // ⚠️ 分子是**跨球员总数**、分母是**每球员均值**：必须先把分子除以 nP，
+    // 否则会大 nP 倍（2026-11-19 审阅 P1；与 census 的 mean(turns)/mean(path) 对齐）。
+    turnsPerMeter: meanPath > 1e-9 ? (turns / nP) / meanPath : null,
+    condTurnsPerMeter: meanPath > 1e-9 ? (condTurns05 / nP) / meanPath : null,
     staticFrac: steps ? staticSteps / steps : null,
     staticFrac02: steps ? staticSteps02 / steps : null,
     staticFrac10: steps ? staticSteps10 / steps : null,
@@ -599,7 +601,9 @@ async function freezeAction(argv) {
   // 只列**环境无关**的身份：事件流切片。不含 stimulus.json 自身哈希（它含真实数据的绝对路径，
   // 换机器会变，不可比）。复现口径：同 wasm + 同 seed → 同 slice sha。
   const lines = [
-    '# 逐窗事件切片 sha256（环境无关，可由同 wasm + seed + 窗口重建）',
+    '# 逐窗事件切片 sha256（切片哈希环境无关，可由同 wasm + seed + 窗口重建）',
+    '# ⚠️ 文件头的 engine.wasm.sha256 是**构建产物**哈希：随注释行号/工具链变化，不是行为哨兵；',
+    '#    另一会话即使复现全部切片，也未必得到同一个 wasm 文件哈希（行为等价仍成立）。',
     '# 切片口径：该 seed 完整事件流中 t∈[t0,t1] 的事件，JSON.stringify 后取 sha256（稳定顺序）',
     `# engine.wasm.sha256 ${stimulus.engine.wasmSha256}`,
     `# window sec=${DEFAULT_WINDOW.sec} hz=${DEFAULT_WINDOW.hz} samples=${DEFAULT_WINDOW.samples} step=${DEFAULT_WINDOW.stepSec}`,
@@ -641,11 +645,11 @@ function stimulusMarkdown(s) {
     '  --windows <R7i windows.json> --out openspec/changes/p155-measurement-instrument/notes',
     '```',
     '',
-    '同输入重跑：`stimulus.json` 与 `windows.sha256` 逐位一致（工具内已对每 seed 模拟两次比对流哈希）。',
+    '同一环境同输入重跑：`stimulus.json` 与 `windows.sha256` 逐位一致（工具内已对每 seed 模拟两次比对流哈希）。',
     '',
-    '⚠️ 可复现性边界：`windows.sha256` 是**环境无关**的（只含事件流切片哈希）；`stimulus.json`',
-    '里的 `real.*.path` 是本次机器上的真实数据绝对路径（数据本身 gitignored），换机器时该字段会不同，',
-    '但 `real.*.sha256` 才是数据身份。',
+    '⚠️ 可复现性边界：`windows.sha256` 的**切片哈希**环境无关；其文件头另列 wasm **构建产物**哈希',
+    '（随注释行号/工具链变化，不是行为哨兵）。`stimulus.json` 里的 `real.*.path` 是本次机器上的',
+    '真实数据绝对路径（数据本身 gitignored），换机器时该字段会不同，但 `real.*.sha256` 才是数据身份。',
     '',
   ].join('\n');
 }
@@ -748,7 +752,8 @@ async function runAction(argv) {
   // t1 与 current 的逐帧一致性（复刻自证；也回答「现行链是否有 t1 之外的运动加工」）
   const result = {
     version: 'p155-ablation-v1',
-    stimulus: { path: stimulusPath, wasmSha256: stim.engine.wasmSha256, window: stim.window },
+    // 相对路径（换 checkout 不改变 JSON）——与 images.dir 同一理由。
+    stimulus: { path: relative(ROOT, stimulusPath), wasmSha256: stim.engine.wasmSha256, window: stim.window },
     modes: MODES,
     metrics: REPORT_METRICS.map(([k, label]) => ({ key: k, label })),
     t1VsCurrent: t1Equivalence,
