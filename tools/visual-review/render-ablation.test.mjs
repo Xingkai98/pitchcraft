@@ -253,6 +253,9 @@ test('★ stimulus 源码哈希硬校验：改一个 viewer 源码哈希必须�
   // 单个字段被改（模拟「viewer 源码变了但 wasm 没变」）→ 硬错误。
   const tampered = { viewer: { sourceHashes: { ...current, 'viewer/game.js': '0'.repeat(64) } } };
   assert.throws(() => assertStimulusSourcesMatch(tampered), /源码哈希与当前树不一致/);
+  // P1-A：match-metrics.js 也决定全部运动读数，必须在跟踪清单里且被校验。
+  const tamperedMetrics = { viewer: { sourceHashes: { ...current, 'viewer/match-metrics.js': 'f'.repeat(64) } } };
+  assert.throws(() => assertStimulusSourcesMatch(tamperedMetrics), /viewer\/match-metrics\.js/);
   // 缺清单 / 漏一个已跟踪文件都不得静默通过。
   assert.throws(() => assertStimulusSourcesMatch({ viewer: {} }), /缺少 viewer\.sourceHashes/);
   const partial = { viewer: { sourceHashes: { ...current } } };

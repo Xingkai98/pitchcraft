@@ -1,5 +1,5 @@
 {
-  "generatedFrom": ".scratch/mc-all-full.json (seeds 42,1,7,99,123; all 24s windows)",
+  "generatedFrom": ".scratch/mc-all-full.json (seeds 42,1,7,99,123; all 24s windows)（历史路径，不要求可复现；当前口径见 motion-census-*-windows.json）",
   "caliber": "24s@5Hz, non-overlapping step=24s, keepers excluded, per-window then distribute",
   "engine_windows": 1125,
   "engine": {

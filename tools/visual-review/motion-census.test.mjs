@@ -9,6 +9,7 @@ import {
   censusOfWindow, censusWindows, cutTimeWindows, summarizeCensus, quantile,
   phaseTimeline, phaseAt, classifyBallIntervals, aggregateDecomposition, decomposeBallStatic,
   decomposeWindows, BALL_SOURCES, SPEED_GATES, STATIC_GATES, BALL_STATIC_GATES,
+  assertStimulusWasmIdentity, assertStimulusEventIdentity,
 } from './motion-census.mjs';
 
 const PITCH = [100, 50]; // 合成球场：x 100m / y 50m，便于手算
@@ -289,6 +290,17 @@ test('★ 外推点默认跳过（design D3）：extrapolated 帧按缺帧处理
   assert.strictEqual(kept.turn120Old, 1);
   assert.strictEqual(kept.skippedExtrapolatedPoints, 0);
   assert.strictEqual(kept.symmetry.n, 3);
+});
+
+test('★ --windows 源身份：wasm 与逐 seed 事件流 SHA 不符必须抛错（P1-B）', () => {
+  const stim = { engine: { wasmSha256: 'a'.repeat(64) }, perSeed: { 1201: { eventStreamSha256: 'b'.repeat(64) } } };
+  assertStimulusWasmIdentity(stim, 'a'.repeat(64));
+  assertStimulusEventIdentity(stim, 1201, 'b'.repeat(64));
+  assert.throws(() => assertStimulusWasmIdentity(stim, 'c'.repeat(64)), /wasm 与 stimulus 不同源/);
+  assert.throws(() => assertStimulusEventIdentity(stim, 1201, 'd'.repeat(64)), /事件流 SHA 与 stimulus 不一致/);
+  // 没登记身份的 seed 同样拒绝（不能靠「没记录」蒙混过关）。
+  assert.throws(() => assertStimulusEventIdentity(stim, 1204, 'b'.repeat(64)), /不在 stimulus 的 perSeed/);
+  assert.throws(() => assertStimulusWasmIdentity({ engine: {} }, 'a'.repeat(64)), /缺少 engine\.wasmSha256/);
 });
 
 test('门限/档位常量冻结（改口径必须显式改这里）', () => {

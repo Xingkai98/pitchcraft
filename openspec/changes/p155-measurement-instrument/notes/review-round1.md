@@ -142,3 +142,41 @@
 - `openspec validate p155-measurement-instrument --strict` → valid。
 - `git diff --stat main..HEAD -- engine/ viewer/` → 空。
 - frozen 的 `eventShaBySeed` 与 `stimulus.json` 的 12 个 per-seed 流哈希逐一一致。
+
+## Fix log（Round 2）
+
+日期：2026-11-19。零上下文复审 P0=0 / P1=2（均为 P1-7 残留）。**未改 engine/viewer、未 push。**
+
+### P1
+
+- **P1-A `viewer/match-metrics.js` 漏入 sourceHashes**：`render-ablation.mjs` 的
+  `sourceHashes()` 现包含 `viewer/match-metrics.js`（`sampleEngineFrames` 的实现，
+  直接决定全部运动读数）。`notes/stimulus.json` 与 `notes/stimulus-A.json` 各加这一条
+  （`5fc00e9e…`），其他值未动。`render-ablation.test.mjs` 的 tamper 测试扩到该文件：
+  改它会抛错。
+- **P1-B `--windows` 无源身份校验**：`runWindows` 现接受 `--stimulus`（缺省读
+  `notes/stimulus.json`，缺失即抛错），并硬校验：
+  ① `viewer.sourceHashes`；② wasm SHA；③ 逐 seed 事件流 SHA。
+  新增纯函数 `assertStimulusWasmIdentity` / `assertStimulusEventIdentity` 并单测
+  （错 wasm、错事件流、未登记 seed、缺 wasm 身份都抛错）。
+  R7i `r7i-windows.json` 的 `eventHash` 是旧树（`c1-trajectory-morphology-2026-10-29`）口径：
+  工具逐 seed 打印差异警告，身份以 `stimulus.perSeed` 为准；JSON 的 `note` 已登记。
+  重跑 frozen anchors 后，JSON 的 `windowsPath` / `wasmPath` / `stimulusPath` 改为**仓内相对路径**。
+- **P2**：
+  - `motion-census.md` §7 的身份校验说明改为代码实际行为：`--stimulus` 的 wasm 不符**只 WARN**
+    （事件流才是行为哨兵），源码/事件流不符才抛错；`--windows` 三者都硬校验。
+  - 分支名 `p155-instrument/…` → `p155-measurement-instrument/…`；测试数统一为 **19/19**
+    （motion-census）/ **111/111**（全部）；`tasks.md` 5.2 标「合并时点 107，当前 111」。
+  - `includeExtrapolated` 明确为**函数选项，CLI 未暴露 flag**。
+  - `motion-census.md` §4.2 表前补「ballStatic 是 viewer 链、贡献未分离」caveat。
+  - `carrier_dribble` 的 active 贡献 `0.1%` → **<0.01%**（复算 0.0094%），两处。
+  - `motion-census-diagnostics.json` 的 `generatedFrom` 加「历史路径，不要求可复现」；
+    frozen JSON 已改相对路径（见上）。
+
+### 验证
+
+- `node --test tools/visual-review/*.test.mjs` → **111/111 pass**。
+- `openspec validate p155-measurement-instrument --strict` → valid。
+- `git diff --stat main..HEAD -- engine/ viewer/` → 空。
+- 手工反证：坏 wasm / 坏事件流 / 缺 stimulus 三种 `--windows` 调用均以退出码 1 拒绝；
+  frozen 重跑的 12 个 `eventShaBySeed` 与 `stimulus.json` 逐一一致。

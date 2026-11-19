@@ -1,5 +1,18 @@
+⚠ seed 1201: r7i-windows.json 的 eventHash 是旧树口径（e1b0d199b026…），当前流是 d9c091376543…；本次以 stimulus 的身份为准。
+⚠ seed 1204: r7i-windows.json 的 eventHash 是旧树口径（d97eb870a401…），当前流是 ab36db89aba4…；本次以 stimulus 的身份为准。
+⚠ seed 1207: r7i-windows.json 的 eventHash 是旧树口径（902875e92d0c…），当前流是 94bdbe3223c1…；本次以 stimulus 的身份为准。
+⚠ seed 1210: r7i-windows.json 的 eventHash 是旧树口径（3e59dbc41d9b…），当前流是 4cc908cac3c9…；本次以 stimulus 的身份为准。
+⚠ seed 1213: r7i-windows.json 的 eventHash 是旧树口径（752cf57f250a…），当前流是 059225edd15e…；本次以 stimulus 的身份为准。
+⚠ seed 1216: r7i-windows.json 的 eventHash 是旧树口径（95864e11e11c…），当前流是 b7ed9252c465…；本次以 stimulus 的身份为准。
+⚠ seed 1219: r7i-windows.json 的 eventHash 是旧树口径（ba43e992d74a…），当前流是 a369dca28161…；本次以 stimulus 的身份为准。
+⚠ seed 1222: r7i-windows.json 的 eventHash 是旧树口径（2250b205780e…），当前流是 03e2074795bf…；本次以 stimulus 的身份为准。
+⚠ seed 1225: r7i-windows.json 的 eventHash 是旧树口径（7aa1210fc067…），当前流是 7480fd802260…；本次以 stimulus 的身份为准。
+⚠ seed 1228: r7i-windows.json 的 eventHash 是旧树口径（f414a032d087…），当前流是 ecd4cae36efe…；本次以 stimulus 的身份为准。
+⚠ seed 1231: r7i-windows.json 的 eventHash 是旧树口径（016a2e67457d…），当前流是 191278bbb016…；本次以 stimulus 的身份为准。
+⚠ seed 1237: r7i-windows.json 的 eventHash 是旧树口径（09cdfe4c8a92…），当前流是 2a3ba71e85b0…；本次以 stimulus 的身份为准。
 ═══ 运动普查（同一批锚点：engine vs real）═══
 windows=/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/p155-measurement-instrument/openspec/changes/p155-measurement-instrument/notes/r7i-windows.json  wasm=viewer/engine.wasm
+stimulus=/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/p155-measurement-instrument/openspec/changes/p155-measurement-instrument/notes/stimulus.json（源码 + wasm + 逐 seed 事件流身份已硬校验）
 engine 窗 24  real 窗 24  24s@5Hz (121 帧)
 外推点：真实侧跳过（SkillCorner `extrapolated`；design D3 主口径）
 

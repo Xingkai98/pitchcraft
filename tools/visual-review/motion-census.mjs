@@ -60,7 +60,7 @@
 //   宽扫模式自动读 viewer/data/real-game-*.json（缺文件时真实列 n/a，退出码 0）。
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -524,6 +524,24 @@ function perMatchMean(rowsByMatch) {
   return keys;
 }
 
+// 源身份断言（P1-B）：`--windows` 也不能只信窗口表里的旧 `eventHash`。
+// 导出为纯函数，便于单测（CLI 失败路径不靠手测）。
+export function assertStimulusWasmIdentity(stim, actualWasmSha256) {
+  const want = stim?.engine?.wasmSha256;
+  if (!want) throw new Error('stimulus 缺少 engine.wasmSha256：没有 wasm 身份，拒绝拼表。');
+  if (want !== actualWasmSha256) {
+    throw new Error(`wasm 与 stimulus 不同源：现 ${actualWasmSha256} / 记录 ${want}。拒绝拼表。`);
+  }
+}
+
+export function assertStimulusEventIdentity(stim, seed, actualEventSha256) {
+  const want = stim?.perSeed?.[seed]?.eventStreamSha256;
+  if (!want) throw new Error(`seed ${seed} 不在 stimulus 的 perSeed 里：没有事件流身份，拒绝拼表。`);
+  if (want !== actualEventSha256) {
+    throw new Error(`seed ${seed}: 事件流 SHA 与 stimulus 不一致（现 ${actualEventSha256} / 记录 ${want}）。拒绝拼表。`);
+  }
+}
+
 // A 工作流的冻结刺激集（`notes/stimulus.json`）：逐窗测量，事件流 SHA 必须与 A 记录一致。
 // 这是 B 与 A 的唯一共同输入；不一致就抛错（spec「源不一致时拒绝拼表」）。
 async function runStimulus(wasmPath, stimulusPath, outPath) {
@@ -608,11 +626,21 @@ async function runStimulus(wasmPath, stimulusPath, outPath) {
 // R7i 式「同一批锚点」：windows.json 同时含 engine 与 real 窗（同一 t0/窗长），
 // 用 canonicalWindow 取同一批帧；真实侧只算帧口径（无事件分解）。这是 A 的 stimulus 之外、
 // 但**同一批 anchor** 的对照，用于给出 A 留作「待 B」的真实条件 turn120。
-async function runWindows(wasmPath, windowsPath, outPath) {
+async function runWindows(wasmPath, windowsPath, outPath, stimulusPath = null) {
   const { loadEngineFrames, loadRealFrames, canonicalWindow } = await import(join(ROOT, 'tools/visual-review/replay-blind-core.mjs'));
   const W = JSON.parse(readFileSync(windowsPath, 'utf8'));
   const winSec = W.window?.sec ?? 24;
   const step = W.window?.canonical_step_sec ?? 0.2;
+  // ── 源身份（P1-B）：--windows 路径同样必须先过冻结刺激集，否则「同锚点」可能来自别的树。──
+  // 默认读本 change 的 notes/stimulus.json；没有它就没有事件流身份，拒绝拼表。
+  const stimPath = stimulusPath || join(ROOT, 'openspec/changes/p155-measurement-instrument/notes/stimulus.json');
+  if (!existsSync(stimPath)) {
+    throw new Error(`--windows 需要冻结刺激集做源身份校验；找不到 ${stimPath}。请传 --stimulus <stimulus.json>。`);
+  }
+  const stim = JSON.parse(readFileSync(stimPath, 'utf8'));
+  const { assertStimulusSourcesMatch } = await import(join(ROOT, 'tools/visual-review/render-ablation.mjs'));
+  assertStimulusSourcesMatch(stim);
+  assertStimulusWasmIdentity(stim, createHash('sha256').update(readFileSync(wasmPath)).digest('hex'));
   const cut = (src, t0) => canonicalWindow(src.frames, t0, { windowSec: winSec, canonicalStepSec: step })
     .map((s) => s.frame).filter(Boolean);
   const rowsE = []; const rowsR = []; const decE = []; const eventShaBySeed = {};
@@ -628,6 +656,12 @@ async function runWindows(wasmPath, windowsPath, outPath) {
   for (const [seed, items] of bySeed) {
     const src = await loadEngineFrames(wasmPath, seed, 5400, { sampleStepSec: step });
     eventShaBySeed[seed] = sha256(src.eventJson);
+    assertStimulusEventIdentity(stim, seed, eventShaBySeed[seed]);
+    const legacyHashes = [...new Set(items.map((x) => x.eventHash).filter(Boolean))];
+    if (legacyHashes.length && !legacyHashes.includes(eventShaBySeed[seed])) {
+      console.warn(`⚠ seed ${seed}: r7i-windows.json 的 eventHash 是旧树口径（${legacyHashes[0].slice(0, 12)}…），`
+        + `当前流是 ${eventShaBySeed[seed].slice(0, 12)}…；本次以 stimulus 的身份为准。`);
+    }
     const events = JSON.parse(src.eventJson);
     for (const it of items) {
       const frames = cut(src, it.t0);
@@ -659,6 +693,7 @@ async function runWindows(wasmPath, windowsPath, outPath) {
   const pct = (v) => (v == null ? 'n/a' : `${(v * 100).toFixed(1)}%`);
   console.log('═══ 运动普查（同一批锚点：engine vs real）═══');
   console.log(`windows=${windowsPath}  wasm=${wasmPath}`);
+  console.log(`stimulus=${stimPath}（源码 + wasm + 逐 seed 事件流身份已硬校验）`);
   console.log(`engine 窗 ${rowsE.length}  real 窗 ${rowsR.length}  ${winSec}s@${(1 / step).toFixed(0)}Hz (${Math.round(winSec / step) + 1} 帧)`);
   console.log('外推点：真实侧跳过（SkillCorner `extrapolated`；design D3 主口径）');
   console.log('');
@@ -685,12 +720,17 @@ async function runWindows(wasmPath, windowsPath, outPath) {
     console.log(`  ${k.padEnd(17)} 时间 ${pct(dE.sources?.[k]?.timeShare?.mean)}  静止率 ${pct(dE.sources?.[k]?.staticRate?.mean)}  贡献 ${pct(dE.sources?.[k]?.staticContribution?.mean)}`);
   }
   const payload = {
-    generatedAt: new Date().toISOString(), windowsPath, wasmPath,
+    generatedAt: new Date().toISOString(),
+    // 相对路径：换 checkout 不改变 JSON；绝对路径只出现在旧版产物的 note 里。
+    windowsPath: relative(ROOT, windowsPath), wasmPath: relative(ROOT, wasmPath),
+    stimulusPath: relative(ROOT, stimPath),
     wasmSha256, eventShaBySeed,
     caliber: { windowSec: winSec, sampleStepSec: step, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
     engineWindows: rowsE, realWindows: rowsR,
     engineDecomposition: decE,
     summary: { engine: cE, real: cR, engineDecomposition: dE },
+    note: 'windows 来自 R7i：其 engine items 的 eventHash 是旧树（c1-trajectory-morphology-2026-10-29）口径，不能当当前身份；'
+      + '当前身份 = stimulus.perSeed 的事件流 SHA + wasm SHA（本文件已逐 seed 校验）。历史路径，不要求可复现。',
   };
   mkdirSync(dirname(outPath), { recursive: true });
   writeFileSync(outPath, JSON.stringify(payload, null, 2));
@@ -699,11 +739,13 @@ async function runWindows(wasmPath, windowsPath, outPath) {
 
 async function main() {
   const wasmPath = process.argv[2];
-  if (!wasmPath || wasmPath.startsWith('--')) { console.error('用法: node motion-census.mjs <engine.wasm> [--seeds 42,1,7] [--window-sec 24] [--active-only] [--stimulus <stimulus.json>] [--windows <windows.json>] [--out file.json]'); process.exit(2); }
+  if (!wasmPath || wasmPath.startsWith('--')) { console.error('用法: node motion-census.mjs <engine.wasm> [--seeds 42,1,7] [--window-sec 24] [--active-only] [--stimulus <stimulus.json>] [--windows <windows.json> [--stimulus <stimulus.json>]] [--out file.json]'); process.exit(2); }
   const windowsPath = argOf('--windows', null);
   if (windowsPath) {
     const outPath = argOf('--out', join(ROOT, '.scratch/motion-census-windows.json'));
-    await runWindows(wasmPath, resolve(windowsPath), outPath);
+    const stimArg = argOf('--stimulus', null);
+    // --windows 也必须过冻结刺激集（默认 notes/stimulus.json）：校验源码/wasm/逐 seed 事件流。
+    await runWindows(wasmPath, resolve(windowsPath), outPath, stimArg ? resolve(stimArg) : null);
     return;
   }
   const stimulusPath = argOf('--stimulus', null);
@@ -805,6 +847,7 @@ async function main() {
     generatedAt: new Date().toISOString(),
     caliber: { windowSec, sampleHz: 5, framesPerWindow: Math.round(windowSec * 5) + 1, activeOnly, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
     wasmPath,
+    wasmSha256: sha256(readFileSync(wasmPath)),
     seeds,
     engineMatches,
     realMatches,

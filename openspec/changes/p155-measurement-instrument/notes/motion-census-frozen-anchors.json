@@ -1,7 +1,8 @@
 {
-  "generatedAt": "2026-11-19T08:44:52.354Z",
-  "windowsPath": "/home/shared/deep-research-playground/projects/football-manager-clone/.claude/worktrees/p155-measurement-instrument/openspec/changes/p155-measurement-instrument/notes/r7i-windows.json",
+  "generatedAt": "2026-11-19T09:00:36.741Z",
+  "windowsPath": "openspec/changes/p155-measurement-instrument/notes/r7i-windows.json",
   "wasmPath": "viewer/engine.wasm",
+  "stimulusPath": "openspec/changes/p155-measurement-instrument/notes/stimulus.json",
   "wasmSha256": "f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f",
   "eventShaBySeed": {
     "1201": "d9c091376543f4628e7c06254520c1e3d42739137798bf8011519973206ce107",
@@ -6625,5 +6626,6 @@
         "p90": 141
       }
     }
-  }
+  },
+  "note": "windows 来自 R7i：其 engine items 的 eventHash 是旧树（c1-trajectory-morphology-2026-10-29）口径，不能当当前身份；当前身份 = stimulus.perSeed 的事件流 SHA + wasm SHA（本文件已逐 seed 校验）。历史路径，不要求可复现。"
 }

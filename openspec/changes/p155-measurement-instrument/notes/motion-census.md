@@ -1,9 +1,9 @@
 # 运动普查：条件 turn120 + 静止分布（P155 / B 工作流）
 
 日期：2026-11-19
-分支：`p155-instrument/2026-11-19`（基于 `d339b29`，引擎与 `main=16dfaa0` 行为一致）
+分支：`p155-measurement-instrument/2026-11-19`（基于 `d339b29`，引擎与 `main=16dfaa0` 行为一致）
 工具：`tools/visual-review/motion-census.mjs`（新文件；**未改** `motion-metrics.mjs`，理由见 §1）
-测试：`tools/visual-review/motion-census.test.mjs`（17 项全绿；零步反证条做过定向变异，见 §6）
+测试：`tools/visual-review/motion-census.test.mjs`（**19/19** 全绿；零步反证条做过定向变异，见 §6）
 
 证据：
 - **主口径（A 冻结刺激集 + R7i 同锚点真实窗）**：`notes/motion-census-frozen-anchors.{json,log}`
@@ -56,6 +56,8 @@
   24s @5Hz = 121 帧；wasm `f6a9f9ec7a5effaa…`，与本 worktree 现构建**逐位相同**；
   每个 seed 的事件流 SHA256 与 A 记录**全部一致**（工具内硬校验，不一致即抛错；
   读数见 `notes/motion-census-stimulus-engine.log`）。
+  主口径的 `--windows` 路径同样用这份 stimulus 校验；R7i 窗口表里 engine item 的
+  `eventHash` 是**旧树**（`c1-trajectory-morphology-2026-10-29`）口径，**不是当前身份**。
 - **Real**：R7i 的 24 个真实窗（同一批 anchor：4 个 Metrica + 20 个 SkillCorner 偶数场），
   窗口表来自 `git show c5a5584:.../acceptance-r7d48/windows.json`；
   数据文件在旧 worktree
@@ -122,6 +124,9 @@ frozen：旧 26.6× → 条件@0.5 **79.6×**（每球员）、**107.3×**（每
   ⇒ 真实侧的条件转向在 SkillCorner 上更低；E/R 比值主要由数据集组成决定，报告必须带数据集。
 
 ### 4.2 静止与球静止
+
+> ⚠️ **`ballStaticFrac` 行是 viewer 链读数（P1-1）**：引擎侧球位来自 `loadEngineFrames` →
+> `viewer/game.js` 的插值/演绎，不是引擎 raw 球位；viewer 贡献未分离。不要把它当纯引擎运动层靶。
 
 | 指标 | 档 | Engine frozen | Real frozen | E/R | Engine all | Real all | Engine active | Real active |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -190,7 +195,7 @@ frozen：旧 26.6× → 条件@0.5 **79.6×**（每球员）、**107.3×**（每
 | 来源 | frozen 时间 | frozen 静止率 | frozen 贡献 | 宽扫 active 贡献 |
 |---|---:|---:|---:|---:|
 | `carrier_hold` | 22.3% | 32.7% | **51.4%** | **59.0%** |
-| `carrier_dribble` | 34.7% | 0.0% | 0.0% | 0.1% |
+| `carrier_dribble` | 34.7% | 0.0% | 0.0% | **<0.01%** |
 | `highlight_flight` | 26.5% | 8.7% | **15.3%** | **23.9%** |
 | `loose` | 15.1% | 64.2% | **30.5%** | 14.3% |
 | `restart_dead` | 1.3% | 81.3% | 2.8% | 2.8% |
@@ -240,12 +245,12 @@ A 的 `movers` 列说明「即使去掉 viewer，条件 turn120 仍是 0.908」�
 
 ## 6. 测试与定向变异
 
-`node --test tools/visual-review/motion-census.test.mjs` → **18/18 pass**（含 ballFill 主口径反证条、
+`node --test tools/visual-review/motion-census.test.mjs` → **19/19 pass**（含 ballFill 主口径反证条、
 外推点默认跳过的反证条）。
 
 定向变异（已验证并还原）：把条件转向的
 `if (a.speed >= g && b.speed >= g)` 改成 `if (true)`（取消门限），
-**「零步反证条」与「门限边界」两条立即变红**；还原后 18/18 复绿。
+**「零步反证条」与「门限边界」两条立即变红**；还原后 19/19 复绿。
 ⇒ 反证条真的绑定了门限逻辑，不是空转断言。
 
 ## 7. 复现命令
@@ -259,9 +264,11 @@ N=openspec/changes/p155-measurement-instrument/notes
 
 # 主口径：A 的冻结刺激集（engine）+ R7i 同锚点真实窗
 # （窗口表已存档在 notes/r7i-windows.json；原始出处 c5a5584）
+# `--windows` 现在必须带 stimulus 做源身份校验；省略时默认读 notes/stimulus.json。
 # Real 侧跳过 `extrapolated` 点（design D3 主口径）。
 node tools/visual-review/motion-census.mjs viewer/engine.wasm \
-  --windows $N/r7i-windows.json --out $N/motion-census-frozen-anchors.json
+  --windows $N/r7i-windows.json --stimulus $N/stimulus.json \
+  --out $N/motion-census-frozen-anchors.json
 # 只跑 A 的 engine 侧（硬校验 event SHA + viewer 源码哈希；stimulus 已存档在 notes/stimulus-A.json）
 node tools/visual-review/motion-census.mjs viewer/engine.wasm \
   --stimulus $N/stimulus-A.json --out $N/motion-census-stimulus-engine.json
@@ -273,10 +280,16 @@ node tools/visual-review/motion-census.mjs viewer/engine.wasm \
   --seeds 42,1,7,99,123 --active-only --out $N/motion-census-active-windows.json
 ```
 
-`--stimulus` 路径会硬校验 `stimulus.json` 的 `viewer.sourceHashes`（engine/src/lib.rs +
-viewer/*.js）与 wasm/事件流 SHA；任一不匹配即抛错（spec「源不一致时拒绝拼表」）。
-`--windows` 路径没有 stimulus 身份，**只校验 wasm 读数记录**（payload 现含 `wasmSha256` 与
-`eventShaBySeed`），不校验 viewer 源码哈希。
+身份校验的**实际行为**（与代码一致）：
+- `--stimulus` 路径：`viewer.sourceHashes`（engine/src/lib.rs + viewer/*.js）不匹配 → **抛错**；
+  某 seed 的事件流 SHA 不匹配 → **抛错**；**wasm 不匹配只 WARN**（打印 `!= stimulus (WARN:
+  事件流才是行为哨兵)`，不中断）——因为 wasm 文件哈希随注释行号变化，不是行为哨兵。
+- `--windows` 路径：必须带 `--stimulus`（默认 `notes/stimulus.json`），并**硬校验**源码哈希、
+  wasm SHA、逐 seed 事件流 SHA，任一不符即抛错。payload 记录 `windowsPath` / `stimulusPath`
+  （相对路径）与 `wasmSha256` / `eventShaBySeed`。
+- R7i 的 `r7i-windows.json` 里 engine item 的 `eventHash` 是**旧树**
+  （`c1-trajectory-morphology-2026-10-29`）口径，**不能当当前身份**；工具会对每个 seed 打印
+  旧/新哈希差异警告，但身份以 `stimulus.perSeed` 为准。
 
 ## 8. 未完成 / 不确定
 
@@ -285,7 +298,8 @@ viewer/*.js）与 wasm/事件流 SHA；任一不匹配即抛错（spec「源不�
   （`c5a5584`），数据文件需从旧 worktree 或重新下载。
 - 宽扫的真实侧只有 Metrica 2 场；SkillCorner 20 场没有复制进本树。
 - **外推点跳过后**，真实 frozen 窗的有效步对从 2380/窗降到 1811.8/窗；这是 design D3 的口径，
-  不是「数据变少」的缺陷。`--includeExtrapolated` 只在需要对照旧口径时使用。
+  不是「数据变少」的缺陷。`includeExtrapolated: true` 只是**函数选项**（`censusOfWindow`），
+  **CLI 未暴露 flag**；要对照旧口径请在 Node 里直接调用函数。
 - 宽扫 all/active 的真实值受 Metrica 2 场组成影响（尤其速度 p50 1.59 m/s 的 all 读数），
   不能与 frozen 的 SkillCorner 主导值混表。
 - 加速度的「真实」值受 tracking 平滑/采样影响；本文只报同帧口径，不声明真实足球的物理上界。

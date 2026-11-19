@@ -24,6 +24,7 @@
       "viewer/config.js": "c2dfbcc842414b6dc36f2c3908b0c4c432ac061671cccdf01240bafe6433740a",
       "viewer/interpretation.js": "2afd5f895d4028abad2b9f23aaa486241fb8a88e1ef9bbcf29c72891244e64b0",
       "viewer/game.js": "cbb43ae1705fca8901992ccacbc453f208dfd43d6e326f67146e46bc3e645350",
+      "viewer/match-metrics.js": "5fc00e9e7a1e47a5faf1775254acc6b36d95eb7b310eec89c0cc904818c86272",
       "viewer/protocol.js": "42246dadf9e1ed623be002183cd458f7af0f113225c21f1b51356f3919bd9082",
       "viewer/soft-canvas.js": "c0d7eeaa7699173a5d7806aece355d4685b6b593738e767fa93fa4c95161654e"
     }

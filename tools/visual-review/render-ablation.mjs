@@ -502,6 +502,7 @@ export function sourceHashes(root = ROOT) {
     'viewer/config.js',
     'viewer/interpretation.js',
     'viewer/game.js',
+    'viewer/match-metrics.js', // loadEngineFrames 的 sampleEngineFrames 在这里
     'viewer/protocol.js',
     'viewer/soft-canvas.js',
   ];
