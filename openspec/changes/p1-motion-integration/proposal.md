@@ -42,7 +42,7 @@ Change 0（#190）已经把「引擎 / viewer / 指标定义」分开：
 ## Impact
 
 - `engine/src/lib.rs`、新 `engine/src/motion.rs`、`engine/src/wasm.rs`、`engine/tests/*`（golden/L1/L2/p53/p31/p6/p32/p15/p16/p17a/p17b/p18/p124）、`viewer/game.js` / `interpretation.js` / `config.js`、`openspec/specs/{match-engine,event-stream-protocol,pitch-viewer}/spec.md`。
-- 事件流体积：beat 名义 2Hz → 5Hz，决策/事件切段后实际 6 段/s ⇒ **约 3×**（不是 2.5×）；稀疏 `main`/`ball` 抵消一部分。JSON 体积、viewer 加载/seek/帧耗时按 design D7.5 的预算实测。
+- 事件流体积：beat 名义 2Hz → 5Hz，决策/事件切段后**正常 6 段/s（约 3×）、事件密集上界 10 段/s（约 5×）**——这是需实测的预算，不是段数保证。稳定静止段省略 `main`/`ball` 只抵消静止部分，**移动段不得省略**。JSON 体积、viewer 加载/seek/帧耗时按 design D7.5 实测。
 - 行为全量改变：golden 重基线、L1/ratchet 重标定、研究门重扫。
 - **设计批准前不写实现**（#170 的硬要求）。
 

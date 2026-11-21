@@ -4,7 +4,7 @@
 
 ### Requirement: beat 段与切段
 
-beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边界是 beat 名义网格 `{0.5 + 0.2k}`、决策时刻 `{0.5 + 0.5m}`、全部非 beat 事件发射时刻三者的并集。`beat.t` SHALL 是段起点，`beat.dt` SHALL 是段长（∈ {0.1,0.2} 秒），`from`/`to` SHALL 分别是 `beat.t` 与 `beat.t + beat.dt` 时刻的状态。同时间戳排序 SHALL 为非 beat 事件先、beat 最后；beat SHALL 描述这些事件之后的段。前导期 `[0,0.5)` 不积分、不产 beat，由 `lineup`/`kickoff` 描述。
+beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边界是 beat 名义网格 `{0.5 + 0.2k}`、决策时刻 `{0.5 + 0.5m}`、全部非 beat 事件发射时刻三者的并集。`beat.t` SHALL 是段起点，`beat.dt` SHALL 是段长（∈ {0.1,0.2} 秒；**终场末段例外**，见下），`from`/`to` SHALL 分别是 `beat.t` 与 `beat.t + beat.dt` 时刻的状态。同时间戳排序 SHALL 为非 beat 事件先、beat 最后；beat SHALL 在段起点、处理完该边界的事件/决策后发出，`to` 是预积分到段终点的状态。前导期 `[0,0.5)` 不积分、不产 beat，由 `lineup`/`kickoff` 描述。除**重开准备判定段**与死球窗口外，每个段 SHALL 产一条 beat；终场最后一段 SHALL 允许 `dt = dur − t_last`（`0 < dt ≤ 0.2`）。
 
 #### Scenario: 首拍与相位
 
@@ -22,12 +22,18 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 
 - **GIVEN** 同一 `t` 上有一条 pass/tackle/shot 事件与一条 beat
 - **WHEN** 消费方读取事件流
-- **THEN** 非 beat 事件 SHALL 排在 beat 之前；beat 的 `from` SHALL 是事件执行后的状态，不得描述事件前的段
+- **THEN** 非 beat 事件 SHALL 排在 beat 之前；beat 在段起点、处理完该边界的事件/决策后发出；beat 的 `from` SHALL 是事件执行后的状态，`to` SHALL 是预积分到段终点的状态
 
 #### Scenario: 段长字段
 
 - **WHEN** 引擎产出一条 beat
-- **THEN** 它 SHALL 携带 `dt` ∈ {0.1, 0.2}；`t + dt` SHALL 等于下一条段边界的 `t`（下一条 beat 或切段事件的 `t`）
+- **THEN** 它 SHALL 携带 `dt` ∈ {0.1, 0.2}（终场末段例外，可为 `dur − t_last`）；`t + dt` SHALL 等于下一条段边界的 `t`（下一条 beat、切段事件或 `dur`）
+
+#### Scenario: 重开准备判定段例外
+
+- **GIVEN** 一次角球/界外球判定在 `t` 发生，随后进入 RestartPrep
+- **WHEN** 引擎产出判定段与其后的准备段
+- **THEN** 判定段 SHALL NOT 产 beat；其后的每个准备段 SHALL 按段规则产 beat（首段携带静止 `ball` 锚点）
 
 #### Scenario: 跨表示连续
 
@@ -37,23 +43,29 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 
 ### Requirement: beat 的死球与终场边界
 
-死球窗口可以不产 beat，但从死球前最后一条 beat 到重开后第一条 beat 的 gap SHALL ≤ 2.0s；若死球窗口 > 2.0s，引擎 SHALL 至少每 2.0s 发一条静态 `ball` beat。终场排空期（`t ≥ dur`）SHALL NOT 产 beat；同一 `dur` 上的链式 finalize SHALL 只保留一个段。
+死球窗口可以不产 beat，约束对象是**相邻已发 beat**：任意一对相邻已发 beat 的 `t` 差 SHALL ≤ 2.0s。若死球窗口 > 2.0s，引擎 SHALL 至少每 2.0s 发一条静态 `ball` beat，使每一对相邻已发 beat 都满足上界；死球总时长本身可以 > 2.0s。终场排空期（`t ≥ dur`）SHALL NOT 产 beat；同一 `dur` 上的链式 finalize SHALL 只保留**一个终态事件**，不新增段；终场前最后一段 SHALL 以 `dur` 结束，允许 `dt = dur − t_last`（0 < dt ≤ 0.2）。
 
 #### Scenario: 死球 gap 上界
 
-- **GIVEN** 一次死球持续 3s，期间无 beat
+- **GIVEN** 一次死球从 10.0 持续到 13.0，期间不产常规 beat
 - **WHEN** 引擎产出死球窗口的 beat
-- **THEN** 死球前最后一条 beat 与重开后第一条 beat 的 gap 可 > 0.2s，但 SHALL ≤ 2.0s；3s 窗口内 SHALL 至少有一条静态 `ball` beat（每 2.0s 一条）
+- **THEN** 已发 beat SHALL 在 10.0、12.0（静态锚点）、13.0（重开）等位置，使**每一对相邻已发 beat** 的 gap ≤ 2.0s（10.0→12.0 = 2.0，12.0→13.0 = 1.0）；不要求 10.0 与 13.0 的差 ≤ 2.0s
 
 #### Scenario: 终场不产 beat
 
 - **GIVEN** 比赛在 `dur` 结束且仍有悬空高亮
 - **WHEN** 终场 finalize 执行
-- **THEN** SHALL NOT 产 `t ≥ dur` 的 beat；同一 `dur` 上的链式 finalize 只保留一个段
+- **THEN** SHALL NOT 产 `t ≥ dur` 的 beat；同一 `dur` 上的链式 finalize 只保留一个终态事件，不新增段；终场前最后一段以 `dur` 结束
 
-### Requirement: 稀疏 main/ball 的携带与状态失效
+#### Scenario: 终场末段短 dt
 
-`main` SHALL 在**每个 carrier 有非零位移的段**携带；零位移段可以省略，viewer SHALL 保持上一状态。无持球者时，`ball` SHALL 在**每个球有非零位移的段**携带；静止松散球段可以省略，viewer SHALL 保持上一状态。高亮进行中，参与者 SHALL 被排除出 `movers`，球由事件锚点驱动，`main` / `ball` SHALL NOT 携带。`pass` / `shot` / `tackle` / `out` / `whistle` / `foul` 事件 SHALL 在其 `t` 时刻使其前的 `main` 记忆失效；只带 `movers` 的 beat SHALL NOT 使状态失效。
+- **GIVEN** `dur = 1.05`，最后一个段起点为 0.9
+- **WHEN** 引擎产出终场前最后一段
+- **THEN** 该 beat 的 `dt` SHALL = 0.15（`dur − t_last`，0 < dt ≤ 0.2）；它不要求 ∈ {0.1,0.2}；`t ≥ dur` 不产 beat
+
+### Requirement: 稀疏 main/ball 的携带
+
+`main` SHALL 在**每个 carrier 有非零位移的段**携带；**且每个新状态的首段 SHALL 携带 `main`，即使零位移**。稳定静止段可以省略，viewer SHALL 保持上一状态。无持球者时，`ball` SHALL 在**每个球有非零位移的段**携带；**且新状态的首段 SHALL 携带 `ball`，即使零位移**（新 loose 球、固定点球、球停下后的首个静止段）。稳定静止段可以省略，viewer SHALL 保持上一状态。高亮进行中，参与者在**有非零位移的段** SHALL 出现在 `movers`（`action:"highlight"`），零位移段保持上一位置；球由事件锚点驱动，`main` / `ball` SHALL NOT 携带。
 
 #### Scenario: 连续带球每段携带 main
 
@@ -61,50 +73,60 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 - **WHEN** 引擎产出该 1s 的 beat
 - **THEN** 每个有非零位移的段 SHALL 携带 `main`（含 `x/y → x2/y2` 与 `speed`）；下一段的 `x/y` SHALL 等于上一段的 `x2/y2`
 
-#### Scenario: 零位移段省略 main
+#### Scenario: 稳定静止段省略 main
 
-- **GIVEN** carrier 在两个 0.2s 段内原地持球（位移为 0）
+- **GIVEN** carrier 在**同一状态**下连续 0.4s 原地持球（位移为 0）
 - **WHEN** 引擎产出这两段
-- **THEN** 两段可以省略 `main`；viewer SHALL 保持上一段的 carrier 位置与身份；下一段重新移动时 `from` SHALL 等于停点
+- **THEN** 首段 SHALL 携带 `main`（新状态/移动段；若状态未变但前一状态首段已发，则稳定段可省略）；稳定静止段可以省略；viewer SHALL 保持上一段的 carrier 位置与身份；下一段重新移动时 `from` SHALL 等于停点
 
 #### Scenario: 松散球滚动
 
 - **GIVEN** 无持球者，球以 6 m/s 滚动
 - **WHEN** 引擎产出滚动期间的 beat
-- **THEN** 每个有非零位移的段 SHALL 携带 `ball`（`loose:true`）；球停下后可省略，viewer 保持最后位置
+- **THEN** 每个有非零位移的段 SHALL 携带 `ball`（`loose:true`）；球停下后的**新状态首段**仍 SHALL 携带静止 `ball`，其后稳定静止段可省略，viewer 保持最后位置
+
+### Requirement: 新状态首段与状态失效
+
+新状态键（任一变化即触发首段）SHALL 包含：球权变化、carrier id 变化、球 `controlled ↔ loose`、carrier mode 变化（`dribble ↔ hold`）、重开、`save-caught`。`pass` / `shot` / `tackle` / `out` / `whistle` / `foul` 事件 SHALL 在其 `t` 时刻使其前的 `main` 记忆失效；只带 `movers` 的 beat SHALL NOT 使状态失效；失效事件后的第一段 SHALL 发新的 `main` 或 `ball`。随机 seek SHALL 能回扫到该状态的首锚点。
 
 #### Scenario: 状态失效
 
 - **GIVEN** 一条 `tackle` 事件在 `t=1.0` 改变了球权
 - **WHEN** 消费方在 1.0–1.4 之间寻找当前 carrier
-- **THEN** 它 SHALL NOT 回退到 1.0 之前的 `main`；失效事件之后的 movers-only beat 不提供 carrier；新的 carrier 只能来自下一条 `main`
+- **THEN** 它 SHALL NOT 回退到 1.0 之前的 `main`；失效事件之后的第一段 SHALL 发新的 `main` 或 `ball`；新的 carrier 只能来自该段或后续 `main`
+
+#### Scenario: 新状态首段即使零位移也发 main/ball
+
+- **GIVEN** 三种零位移状态变化之一：① save-caught 门将零速持球；② 松散球原地被拾取；③ 新 loose 球立即静止
+- **WHEN** 引擎产出状态变化后的第一段
+- **THEN** ① / ② SHALL 携带 `main {subject, x=x2, speed=0}`；③ SHALL 携带 `ball {x=x2, y=y2, speed=0, loose:true}`；不得因位移为零而省略
 
 #### Scenario: seek 重建
 
 - **GIVEN** 播放器 seek 到一条 movers-only beat 的中间时刻
 - **WHEN** 重建画面状态
-- **THEN** 它 SHALL 向前找最近的主状态来源：当前活跃高亮的事件锚点优先，其次最近 `main` / `ball`，再其次最近 beat 的 mover；高亮结束后 SHALL 从事件终点续接，不得跳回高亮前的 `main`
+- **THEN** 球 SHALL 向前找最近的主状态来源：当前活跃高亮的事件锚点优先，其次最近 `main` / `ball`，再其次最近 beat 的 mover；球员（含高亮参与者）用最近 mover / `main` 端点；高亮结束后球 SHALL 从事件终点续接，不得跳回高亮前的 `main`；稳定静止段的回扫 SHALL 命中该状态首段强制发出的 `main` / `ball`
 
 ## MODIFIED Requirements
 
 ### Requirement: beat 节拍事件字段
 
-beat 节拍事件 SHALL 描述一个**段**内所有在移动球员的并行动作，顶层不携带 subject/x/y（主体与位置嵌套在 main/movers/ball 内）。beat SHALL 携带：`dt`（段长，∈ {0.1,0.2}）；`movers`（并行跑位数组，增量——只含该段有非零位移的球员，`{id, from_x, from_y, to_x, to_y, speed, action}`）；持球者带球/控球时，若 carrier 在该段有非零位移则携带 `main`（`{type:'dribble', subject, x, y, x2, y2, speed, touch_freq}`，球轨迹由 main 驱动）；无持球者时，若球在该段有非零位移则携带 `ball`（`{x, y, x2, y2, speed, loose:true}`，球由 beat.ball 驱动）。零位移段可以省略 `main` / `ball`，viewer 保持上一状态。beat SHALL NOT 同时携带 main 与 ball（任意开放比赛时刻球有唯一驱动者）。高亮进行中，参与者不出现在 movers，也不由 `main` / `ball` 驱动（球由事件锚点驱动）。
+beat 节拍事件 SHALL 描述一个**段**内所有在移动球员的并行动作，顶层不携带 subject/x/y（主体与位置嵌套在 main/movers/ball 内）。beat SHALL 携带：`dt`（段长，∈ {0.1,0.2}；终场末段例外）；`movers`（并行跑位数组，增量——只含该段有非零位移的球员，`{id, from_x, from_y, to_x, to_y, speed, action}`）；持球者带球/控球时，若 carrier 在该段有非零位移则携带 `main`（`{type:'dribble', subject, x, y, x2, y2, speed, touch_freq}`，球轨迹由 main 驱动）；无持球者时，若球在该段有非零位移则携带 `ball`（`{x, y, x2, y2, speed, loose:true}`，球由 beat.ball 驱动）。**每个新状态的首段即使零位移也 SHALL 携带 `main` / `ball`**（D5.1 的状态键）；稳定静止段可以省略，viewer 保持上一状态。beat SHALL NOT 同时携带 main 与 ball（任意开放比赛时刻球有唯一驱动者）。高亮进行中，参与者在**有非零位移的段** SHALL 出现在 `movers`（`action:"highlight"`），零位移段保持上一位置；球由事件锚点驱动；`main` / `ball` SHALL NOT 携带。
 
 #### Scenario: 节拍含并行跑位
 - **GIVEN** 一个段时刻
 - **WHEN** 引擎产出一条 beat 事件
-- **THEN** 携带 `movers`（只含该段有非零位移的球员，静止球员不在其中）；持球者不出现在 movers（其移动只由 main 表达）
+- **THEN** 携带 `movers`（只含该段有非零位移的球员，静止球员不在其中）；开放比赛无高亮时，持球者不出现在 movers（其移动只由 main 表达）；高亮进行中，参与者在**有非零位移的段** SHALL 出现在 movers（`action:"highlight"`），零位移段保持上一位置
 
 #### Scenario: 持球者带球由 main 表达
 - **GIVEN** 持球者在带球/控球（无高亮事件）
 - **WHEN** 引擎产出一条 beat 事件
-- **THEN** 若该段 carrier 有非零位移，携带 `main`（球轨迹 x/y→x2/y2 + speed 驱动）；若该段零位移，可以省略，viewer 保持上一状态
+- **THEN** 若该段 carrier 有非零位移，携带 `main`（球轨迹 x/y→x2/y2 + speed 驱动）；**若该段是新状态首段，即使零位移也携带**；稳定静止段可以省略，viewer 保持上一状态
 
 #### Scenario: 松散球由 ball 表达
 - **GIVEN** 无持球者（抢断弹开等）
 - **WHEN** 引擎产出一条 beat 事件
-- **THEN** 若该段球有非零位移，携带 `ball`（`loose:true`，含滚动轨迹），球由 beat.ball 驱动；静止松散球段可以省略，viewer 保持最后位置
+- **THEN** 若该段球有非零位移，携带 `ball`（`loose:true`，含滚动轨迹），球由 beat.ball 驱动；**新状态首段即使零位移也携带**；稳定静止段可以省略，viewer 保持最后位置
 
 #### Scenario: main 与 ball 互斥
 - **WHEN** 引擎产出一条 beat 事件

@@ -4,13 +4,13 @@
 
 ### Requirement: 确定性单步运动积分
 
-引擎 SHALL 为每名未罚下球员维护连续运动状态（`pos_m`、`vel_mps`、`heading`、`mode`），并按固定 `SIM_DT=0.1s` 积分。一个仿真子步的执行顺序 SHALL 固定为：到达判定 → 期望速度 → 目标在身后的制动/转身判定 → 速度更新（半隐式：先速度后位置）→ 朝向更新 → 位置更新 → 分离求解。目标与 `mode` SHALL 只在 `DECISION_DT` 边界更新，子步内保持不变。`mode` 的速度上限 SHALL 只约束期望速度 `v_des`，SHALL NOT 直接 clamp 瞬时速度；减速 SHALL 受 `a_brake` 限制。目标在身后且速度 > `V_REVERSE` 时 SHALL 先制动到 `V_REVERSE` 以下再转身，SHALL NOT 瞬时反向。约束不可行时求解器 SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点、clamp 速度或在下一子步补回来。
+引擎 SHALL 为每名未罚下球员维护连续运动状态（`pos_m`、`vel_mps`、`heading`、`mode`），并按固定 `SIM_DT=0.1s` 积分。一个仿真子步的执行顺序 SHALL 固定为：期望速度 → 目标在身后的制动/不转向判定 → 朝向更新 → 速度更新（半隐式：先速度后位置）→ 位置更新 → 分离求解。目标与 `mode` SHALL 只在 `DECISION_DT` 边界更新，子步内保持不变。`mode` 的速度上限 SHALL 只约束期望速度 `v_des`，SHALL NOT 直接 clamp 瞬时速度；减速 SHALL 受 `a_brake` 限制。目标在身后且速度 > `V_REVERSE` 时 SHALL 只制动、SHALL NOT 转向，待 `v ≤ V_REVERSE` 后才转身；SHALL NOT 瞬时反向。约束不可行时求解器 SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点、clamp 速度或在下一子步补回来。
 
 #### Scenario: 起步（0 → 6 m/s）
 
 - **GIVEN** 一名球员静止，目标在其前方 30m，`mode` 允许 6 m/s
 - **WHEN** 连续仿真 2s（20 个 `SIM_DT`）
-- **THEN** 速度从 0 单调增加且不超过 `V_MAX`；每个子步的 `|Δv| ≤ A0·SIM_DT`；位置连续变化
+- **THEN** 速度从 0 单调增加且不超过 `V_MAX`；每个子步的 `|Δv_total| ≤ A_MAX·SIM_DT`；位置连续变化
 
 #### Scenario: 近目标制动
 
@@ -22,23 +22,39 @@
 
 - **GIVEN** 一名球员以 6 m/s 向 +x 移动，目标突然出现在 -x
 - **WHEN** 下一个仿真子步
-- **THEN** 若 `|θ_err| > π/2` 且 `v > V_REVERSE`，本子步只制动；SHALL NOT 瞬时反向；待 `v ≤ V_REVERSE` 后才按 `ω_max·SIM_DT` 转向
+- **THEN** 若 `|θ_err| > π/2` 且 `v > V_REVERSE`，本子步 SHALL 只制动（`v_des=0`、`turn_allowed=false`），SHALL NOT 转向或瞬时反向；待 `v ≤ V_REVERSE` 后才按 `ω_max·dt` 转向
 
 #### Scenario: 速度上限下调
 
 - **GIVEN** 一名球员以 6 m/s 移动，`mode` 的 `v_cap` 从 6.8 下调到 4.0
 - **WHEN** 后续子步执行
-- **THEN** `v_des` 被限制到 4.0，但瞬时速度 SHALL 按 `a_brake` 减速，SHALL NOT 在一个子步内被 clamp 到 4.0；`|Δv| ≤ a_brake·SIM_DT`
+- **THEN** `v_des` 被限制到 4.0，但瞬时速度 SHALL 按 `a_brake` 减速，SHALL NOT 在一个子步内被 clamp 到 4.0；`|Δv_total| ≤ A_MAX·SIM_DT`
 
 #### Scenario: 狭窄冲突不可行
 
 - **GIVEN** 两名同队球员的目标点在同一位置，且预测本段内会进入 2.2m 内
 - **WHEN** 分离求解执行
-- **THEN** 预测层 SHALL 在进入冲突前介入；若 3 次迭代内无法在 `|Δv| ≤ a_max·SIM_DT` 下满足 2.2m，SHALL 置 `constraint_infeasible`，SHALL NOT 输出伪合法轨迹
+- **THEN** 预测层 SHALL 在进入冲突前介入；若 3 次迭代内无法在 `|Δv_total| ≤ A_MAX·SIM_DT` 下满足 2.2m，SHALL 置 `constraint_infeasible`，SHALL NOT 输出伪合法轨迹
+
+### Requirement: 总向量加速度与米制边界
+
+运动预算 SHALL 先于位置更新检查：`Δv_motion`（加速 + 转向 + 预测避碰）超 `A_MAX·SIM_DT` 时按比例缩放到预算内，再积分位置。分离后 SHALL 再检查总预算 `Δv_total = Δv_motion + Δv_sep`（`Δv_sep = Δpos_sep/SIM_DT`）≤ `A_MAX·SIM_DT`；超预算时先缩减分离修正并重解，仍不满足 2.2m 或仍超预算则置 `constraint_infeasible`。SHALL NOT 由各阶段分别过门；`A_MAX` SHALL ≥ `max(A0_max, a_lat)`。`pos_m` SHALL 钳在 `[0,105] × [0,68]`（米制；归一化只在发射时做）；指向边界外的法向速度 > `A_MAX·dt` 时置 `constraint_infeasible`，否则清零并记 `boundary_reset`（计入总预算）。
+
+#### Scenario: 总向量加速度预算
+
+- **GIVEN** `v=6 m/s, A0=6.4, S0=9.5, a_lat=6.5, dt=0.1, θ_err=0.2 rad`
+- **WHEN** 一个正常运行子步同时加速与转向
+- **THEN** 纵向 `Δv=0.236 m/s`、横向 `v·Δθ=0.650 m/s`，`|Δv_total|=0.692 m/s`；SHALL ≤ `A_MAX·dt`（`A_MAX=8.0` → 0.8）；不得用 `A0·dt=0.64` 误判为超界（那会把正常运动判红）
+
+#### Scenario: 米制边界
+
+- **GIVEN** 球员在 `(30m, 34m)`，速度指向场内
+- **WHEN** 子步更新位置
+- **THEN** `pos_m` SHALL 仍以米制钳在 `[0,105] × [0,68]`，不得被钳到 `[0,1]`；归一化只在事件发射时做；若指向边界外的法向速度 > `A_MAX·dt`，置 `constraint_infeasible`，否则清零并记 `boundary_reset`（计入总预算）
 
 ### Requirement: 到达与制动语义
 
-引擎 SHALL NOT 使用「距目标小于固定 dead-zone 即整拍不移动」的冻结语义。到达目标 SHALL 用制动曲线/到达半径表达：进入 `ARRIVE_RADIUS_M` 后 `v_des=0`，速度按 `a_brake` 下降，残余速度 SHALL ≤ `RESIDUAL_SPEED_MAX`。
+引擎 SHALL NOT 使用「距目标小于固定 dead-zone 即整拍不移动」的冻结语义。到达目标 SHALL 用制动曲线/到达半径表达：普通球员进入 `ARRIVE_RADIUS_M` 后 `v_des=0`，速度按 `a_brake` 下降，残余速度 SHALL ≤ `RESIDUAL_SPEED_MAX`。**事件参与者 SHALL 使用独立的精确到达模式 `PRECISION_ARRIVE_RADIUS_M`（SHALL ≤ `REACH_TOL_M`）**，不得用 1m 普通到达半径把 0.5m 的接球判成不可达。
 
 #### Scenario: 到达半径不冻结
 
@@ -46,31 +62,43 @@
 - **WHEN** 后续仿真子步执行
 - **THEN** `v_des` SHALL = 0，速度按 `a_brake` 下降；SHALL NOT 因「距目标 < dead-zone」而整拍不产 mover；残余速度 ≤ `RESIDUAL_SPEED_MAX`
 
+#### Scenario: 精确到达模式
+
+- **GIVEN** 一名事件参与者在距落点 0.5m、速度 0 处，`ARRIVE_RADIUS_M=1.0`、`PRECISION_ARRIVE_RADIUS_M=0.25`
+- **WHEN** 可达性检查与积分执行
+- **THEN** 参与者 SHALL 用 `PRECISION_ARRIVE_RADIUS_M`（不是 1.0m）判定到达，能继续减速到 ≤ `REACH_TOL_M`；SHALL NOT 因 1.0m 普通到达半径让 `v_des=0` 而永远停在 0.5m
+
 ### Requirement: 高亮参与者与统一运动状态
 
-高亮事件（pass/shot/tackle/重开）的参与者 SHALL 与其他球员使用同一 `MotionState` 积分器；SHALL NOT 冻结位置、SHALL NOT 在 finalize 时瞬移。除合法断点（kickoff / 死球重开 / 进球回中圈 / 罚下 / 终场）外，finalize 的位置变化 SHALL ≤ `V_MAX·SIM_DT`。
+高亮事件（pass/shot/tackle/重开）的参与者 SHALL 与其他球员使用同一 `MotionState` 积分器与同一分离 solver；SHALL NOT 冻结位置、SHALL NOT 隐藏、SHALL NOT 在 finalize 时瞬移。参与者**在该段有非零位移时** SHALL 出现在 `movers`（`action:"highlight"`）；零位移段按稀疏规则保持上一位置。事件锚点 SHALL 等于参与者**连续积分（含分离）到 `t_end`** 的位置（容差 `REACH_TOL_M`）；`t_end` 不在段边界时，用该段起点的分离结果 + 积分到 `t_end`，finalize 边界状态再施加段末分离。SHALL NOT 再用「事件锚点直线」合成参与者轨迹（没有第二条轨迹）。finalize 取连续积分结果；除合法断点（kickoff / 死球重开 / 进球回中圈 / 罚下 / 终场）外，SHALL NOT 有任何位置投影/跳变。
 
 #### Scenario: 参与者不冻结
 
 - **GIVEN** 一名接球者在高亮期内
 - **WHEN** 逐仿真子步检查其位置/速度
-- **THEN** 位置 SHALL 按同一积分器更新，SHALL NOT 冻结在动作前位置；子步 `|Δv| ≤ a_max·SIM_DT`
+- **THEN** 位置 SHALL 按同一积分器更新（含分离），SHALL NOT 冻结在动作前位置；子步 `|Δv_total| ≤ A_MAX·SIM_DT`
 
-#### Scenario: 显示线与积分轨迹分离
+#### Scenario: 参与者进入 movers
 
-- **GIVEN** 一名高亮参与者被积分器移动，而 viewer 渲染的是事件锚点线
-- **WHEN** 分离 solver 约束队友
-- **THEN** 它 SHALL 用事件锚点线（固定 `participant_start` → 终点），SHALL NOT 用会逐段变化的 `st.pos` 当起点；finalize 时 `st.pos` SHALL 等于事件终点（容差内）
+- **GIVEN** 一条 pass/shot/tackle 高亮在 `[t,t_end)` 内
+- **WHEN** 引擎产出该区间的 beat
+- **THEN** 接球者/拦截者/门将/抢断双方在**有非零位移的段** SHALL 出现在 `movers`（`action:"highlight"`），零位移段保持上一位置；球由事件锚点驱动；`main`/`ball` 不携带；viewer 用 mover 端点渲染参与者
+
+#### Scenario: 事件锚点等于积分终点
+
+- **GIVEN** 一条 pass/tackle 的参与者连续积分到 `t_end`
+- **WHEN** 事件字段写入 `x2/y2` / `subject_end` / `carrier_end`
+- **THEN** 这些值 SHALL 等于参与者（含分离）连续积分到 `t_end` 的位置（容差 `REACH_TOL_M`）；SHALL NOT 用投影或另一条直线凑终点
 
 ### Requirement: 高亮参与者的可达性检查与修复
 
-事件发出前 SHALL 用同一积分器做可达性检查：`reachable(pos, vel, end, T)` 在 `ceil(T/SIM_DT)` 步后满足 `|pos_end−end| ≤ REACH_TOL_M` 且 `v_end ≤ REACH_SPEED_TOL` 才算可达。不可达时的修复顺序 SHALL 为：① 延长时限（不把 pass 速度推出 L2 带）；② 沿原方向把落点移入可达集（传球缩短 / 扑救点沿球路前移 / 接触点改到双方可达集交点）；③ 置 `highlight_infeasible` 并不发射结果。SHALL NOT 先固定事件结果（`x2/y2` / `subject_end` / `loose`）再让参与者瞬移凑终态。
+事件发出前 SHALL 用同一积分器做可达性检查：`reachable(pos, vel, end, T)` 用**真实可用时长 `T`**（`floor(T/SIM_DT)` 个整步 + 一个 `dt_rem = T − n·SIM_DT` 的部分步，`dt_rem > 0` 时），SHALL NOT 用 `ceil(T/SIM_DT)` 多给时间；末态满足 `|pos_end−end| ≤ REACH_TOL_M` 且 `v_end ≤ REACH_SPEED_TOL` 才算可达。参与者 SHALL 用 `PRECISION_ARRIVE_RADIUS_M` 的精确到达模式。不可达时的修复顺序 SHALL 为：① 延长时限（不把 pass 速度推出 L2 带）；② 沿原方向把落点移入可达集（传球缩短 / 扑救点沿球路前移 / 接触点改到双方可达集交点）；③ 置 `highlight_infeasible` 并不发射结果。SHALL NOT 先固定事件结果（`x2/y2` / `subject_end` / `loose`）再让参与者瞬移凑终态。
 
 #### Scenario: 接球可达性检查
 
-- **GIVEN** 一条 pass 事件，落点 `(x2,y2)` 与接球者当前位置、速度
+- **GIVEN** 一条 pass 事件，落点 `(x2,y2)`、接球者位置/速度与真实飞行时长 `T=0.475s`
 - **WHEN** 事件发出前
-- **THEN** 引擎 SHALL 用同一积分器跑 `ceil(T/SIM_DT)` 步；只有落点可达才写入事件；不可达时按修复顺序处理
+- **THEN** 引擎 SHALL 用同一积分器跑 4 个整步 + 1 个 0.075s 部分步（**不是 ceil 到 0.5s**）；只有按真实 T 可达才写入事件；不可达时按修复顺序处理
 
 #### Scenario: 不可达改落点
 
@@ -80,9 +108,9 @@
 
 #### Scenario: 门将扑救点
 
-- **GIVEN** 一条 shot 事件且概率掷定为 save
-- **WHEN** 门将在飞行时限内到不了扑救点
-- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点；若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；否决率按预注册统计量报告，超过 2% 时停止并另立概率标定 change
+- **GIVEN** 一条 shot 事件且原结果为 save（save-caught/rebound），球路固定
+- **WHEN** 门将在真实时限内到不了扑救点
+- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点；若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；**不得把原本 `off_target` 的 shot 改成 goal**；否决率报三个分母（全部 shot / 原 save / 尝试修复的 save）、逐 seed，超过**原 save 结果的 2%** 时停止并另立概率标定 change；挂 L1 射门结果分布的既有红非恶化门
 
 #### Scenario: 抢断接触点
 
@@ -98,31 +126,31 @@
 
 #### Scenario: finalize 无瞬移
 
-- **GIVEN** 一条高亮事件在 `t_end` finalize
+- **GIVEN** 一条高亮事件在 `t_end` finalize，finalize 边界为第一个 ≥ `t_end` 的 0.1s 网格步
 - **WHEN** 检查参与者位置
-- **THEN** `|pos_final − pos_at(t_end^-)|` SHALL ≤ `V_MAX·SIM_DT`；除合法断点表外，任何更大的跳变 SHALL 使守卫红
+- **THEN** `st.pos` SHALL 等于**连续积分（含分离）结果**；事件锚点在 `t_end` 与积分轨迹的差 SHALL ≤ 一个 sim step 的采样差且 ≤ `REACH_TOL_M`；SHALL NOT 用「≤ `V_MAX·SIM_DT` 的位置投影」当连续性；除合法断点表外，任何跳变 SHALL 使守卫红
 
 ### Requirement: 段边界执行顺序
 
-在一个段边界上，引擎 SHALL 先执行该时刻的决策/事件（含高亮 finalize），再产 beat；beat SHALL 描述事件之后的段。非 beat 事件与 beat 同时间戳时，事件 SHALL 排在 beat 之前。球的飞行终点 `t_end = t + dist/speed` 不要求落在段边界上：事件自身的锚点在 viewer 内优先于 beat 端点，宿主段的 `to` SHALL 是该段末状态（落地后位置）。高亮 SHALL 在第一个 ≥ `t_end` 的段边界 finalize。终场排空期（`t ≥ dur`）SHALL NOT 产 beat；同一 `dur` 上的链式 finalize SHALL 只保留一个段。
+在一个段边界上，引擎 SHALL 按「上段终态 → finalize/事件 → decision → snapshot → 下一段积分/缓存 → 发出下一段 beat」执行；beat SHALL 描述事件之后的段。非 beat 事件与 beat 同时间戳时，事件 SHALL 排在 beat 之前。球的飞行终点 `t_end = t + dist/speed` 不要求落在段边界上：事件自身的锚点仍用真实 `t_end`；高亮 SHALL 在**第一个 ≥ `t_end` 的 0.1s 网格 sim step** finalize（该步进入段边界集合 `E`）。终场排空期（`t ≥ dur`）SHALL NOT 产 beat；同一 `dur` 上的链式 finalize SHALL 只保留一个**终态事件**，不新增段；终场前最后一段以 `dur` 结束，允许 `dt = dur − t_last`（0 < dt ≤ 0.2）。
 
 #### Scenario: 决策与事件先于 beat
 
 - **GIVEN** 一个 `t=1.0` 的段边界上同时有决策、一条 tackle 事件与一条 beat
 - **WHEN** 引擎提交
-- **THEN** 先执行决策与 tackle，再产 beat；beat 的 `from` 是 tackle 后的状态
+- **THEN** 顺序为「上段终态 → tackle → decision → snapshot → 积分下一段 → 发出 beat」；beat 的 `from` 是 tackle/decision 后的状态
 
 #### Scenario: 非网格落地
 
 - **GIVEN** 一条传球飞行 `t_end=0.975`，段边界为 0.9 与 1.0
 - **WHEN** 引擎与 viewer 处理落地
-- **THEN** 引擎在 1.0 finalize；0.9 段的 `to` 是 1.0 时刻状态（已落地）；viewer 用事件锚点在段内渲染落地，不改变段端点的连续性
+- **THEN** 引擎在 1.0（第一个 ≥ 0.975 的 0.1s 网格步）finalize；0.9 段的 `to` 是 1.0 时刻状态（已落地）；viewer 用事件锚点在段内渲染球，不改变段端点的连续性
 
 #### Scenario: 终场排空
 
 - **GIVEN** 比赛在 `dur` 结束且仍有悬空高亮
 - **WHEN** 终场 finalize
-- **THEN** `t ≥ dur` 不产 beat；同一 `dur` 上的链式 finalize 只保留一个段；终场前最后一段以 `dur` 结束
+- **THEN** `t ≥ dur` 不产 beat；同一 `dur` 上的链式 finalize 只保留一个终态事件、不新增段；终场前最后一段以 `dur` 结束（`dt` 可为 `dur − t_last`，0 < dt ≤ 0.2）
 
 ## MODIFIED Requirements
 
@@ -140,7 +168,7 @@
 
 #### Scenario: beat 节拍固定
 - **WHEN** 引擎产出 beat 事件序列
-- **THEN** 相邻 beat 的 `t` 差 SHALL ∈ {0.1, 0.2} ± 0.001（0.1 = 决策/事件/高亮终点切段，0.2 = 名义 beat）；死球/重开准备窗口允许 gap ≤ 2.0s，且若窗口 > 2.0s 引擎 SHALL 至少每 2.0s 产一条静态 beat；终场排空期（`t ≥ dur`）不产 beat，不受本断言约束
+- **THEN** **相邻已发 beat** 的 `t` 差 SHALL ∈ {0.1, 0.2} ± 0.001（0.1 = 决策/事件/高亮终点切段，0.2 = 名义 beat）；终场最后一段例外，`dt = dur − t_last`（0 < dt ≤ 0.2）。死球/重开准备窗口允许 gap ≤ 2.0s，且若窗口 > 2.0s 引擎 SHALL 至少每 2.0s 产一条静态 beat（使**每一对相邻已发 beat** 都 ≤ 2.0s）；终场排空期（`t ≥ dur`）不产 beat，不受本断言约束
 
 #### Scenario: 速度不超物理量
 - **WHEN** 引擎产出带 speed 的事件
@@ -171,7 +199,7 @@
 
 ### Requirement: 同队球员间距（≥2m）
 
-引擎 SHALL 使同队两球员在引擎发射的任意位置采样点（lineup 初始站位、mover 终点 `to_x/to_y`、main 终点 `x2/y2`、以及模拟状态位置 `st.pos`）上的**米制**间距 ≥ 2m（阈值常量 `SAME_TEAM_MIN_DIST_M` = 2.2m，含 JSON 4 位小数序列化与 `beat.dt` 采样插值的安全余量）。间距 SHALL 用真实米制几何计算（x 方向 × 105、y 方向 × 68），SHALL NOT 用归一化欧氏距离（归一化圆在 105×68 球场上 x 方向 2.1m、y 方向仅 1.36m）。分离 SHALL 覆盖 carrier、门将、特殊站位（角球包抄 / close_down / chase / anticipate）与到达半径内停者；由事件直接指定的终点（传球接球点 / 门将扑救点 / 抢断结算点 / 开球落点 / 松散球拾取点）SHALL 在写入状态前经同一分离。分离 SHALL 为纯函数：零额外 RNG、固定遍历顺序、不改变事件类型/频率的判定逻辑。**分离产生的速度修正 SHALL 满足 `|Δv| ≤ a_max·SIM_DT`；若在 3 次迭代内不可行，SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点。** 段内插值中点 SHALL 由 viewer 侧 `player_overlap` detector 观测（不在引擎预计算每段中点推开）。
+引擎 SHALL 使同队两球员在引擎发射的任意位置采样点（lineup 初始站位、mover 终点 `to_x/to_y`、main 终点 `x2/y2`、以及模拟状态位置 `st.pos`）上的**米制**间距 ≥ 2m（阈值常量 `SAME_TEAM_MIN_DIST_M` = 2.2m，含 JSON 4 位小数序列化与 `beat.dt` 采样插值的安全余量）。间距 SHALL 用真实米制几何计算（x 方向 × 105、y 方向 × 68），SHALL NOT 用归一化欧氏距离（归一化圆在 105×68 球场上 x 方向 2.1m、y 方向仅 1.36m）。分离 SHALL 覆盖 carrier、门将、特殊站位（角球包抄 / close_down / chase / anticipate）与到达半径内停者；由事件直接指定的终点（传球接球点 / 门将扑救点 / 抢断结算点 / 开球落点 / 松散球拾取点）SHALL 在写入状态前经同一分离。分离 SHALL 为纯函数：零额外 RNG、固定遍历顺序、不改变事件类型/频率的判定逻辑。**分离产生的速度修正 SHALL 计入 D4.4 的总向量预算 `|Δv_total| ≤ A_MAX·SIM_DT`（不得与加速/转向各自单独过门）；若在 3 次迭代内不可行，SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点。高亮参与者同样参与分离、不被冻结；其事件终点写成分离后的连续积分结果。** 段内插值中点 SHALL 由 viewer 侧 `player_overlap` detector 观测（不在引擎预计算每段中点推开）。
 
 #### Scenario: 整场无同队重叠
 - **GIVEN** 引擎以多 seed 模拟整场比赛
@@ -260,7 +288,7 @@
 
 #### Scenario: 防橡皮筋
 - **WHEN** 每段边界更新目标
-- **THEN** 移动受速度/加速度/制动的上限约束（见「确定性单步运动积分」）；目标进入到达半径时 `v_des=0`、按 `a_brake` 减速，**不再有 `DEAD_ZONE_METERS` 的「到点整拍冻结」语义**；目标点间距约束（repulsion，作用域 = 同队内部，在队形/close_down 目标后施加最小间距修正；**最小间距 = `SAME_TEAM_MIN_DIST_M` = 2.2m，米制**——P34（#53）起判定与推开都走米制（`same_team_dist_m` + `separate_pair_m`），与 detector `player_overlap` 口径一致；旧归一化欧氏口径在 105×68 球场上 y 方向只保证 1.36m。间距 < 阈值的同队球员对沿连线推开至阈值，确定性迭代 ≤3 次；速度修正满足 `|Δv| ≤ a_max·SIM_DT`，不可行时置 `constraint_infeasible`；carrier 不参与 repulsion——其位置由 main 带球轨迹决定），避免两圆点重叠；运算顺序：先到达半径判定，后 approach-rate cap 限幅
+- **THEN** 移动受速度/加速度/制动的上限约束（见「确定性单步运动积分」）；目标进入到达半径时 `v_des=0`、按 `a_brake` 减速，**不再有 `DEAD_ZONE_METERS` 的「到点整拍冻结」语义**；目标点间距约束（repulsion，作用域 = 同队内部，在队形/close_down 目标后施加最小间距修正；**最小间距 = `SAME_TEAM_MIN_DIST_M` = 2.2m，米制**——P34（#53）起判定与推开都走米制（`same_team_dist_m` + `separate_pair_m`），与 detector `player_overlap` 口径一致；旧归一化欧氏口径在 105×68 球场上 y 方向只保证 1.36m。间距 < 阈值的同队球员对沿连线推开至阈值，确定性迭代 ≤3 次；速度修正计入总向量预算 `|Δv_total| ≤ A_MAX·SIM_DT`，不可行时置 `constraint_infeasible`；carrier 不参与 repulsion——其位置由 main 带球轨迹决定），避免两圆点重叠；运算顺序：先到达半径判定，后 approach-rate cap 限幅
 
 ### Requirement: 控球阶段与攻防转换
 
