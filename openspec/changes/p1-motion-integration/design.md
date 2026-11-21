@@ -1,6 +1,9 @@
 # Design: 引擎统一运动执行层（C1 运动学，GitHub #170）
 
-> **状态：D11 六项决策已由用户拍板（2026-11-21，全按推荐）；gpt-6.1-sol Round 1（H1–H6）、Round 2（R2-H1/H2/H5/H6/N1）、Round 3（R3-H1/H2/H5/H6/N1-M/L）、Round 4（R4-H1/M1–M3/L1）与 Round 5（R5-H1/M1/M2）的设计答案已落盘（D2.2/D2.3/D4.4/D5.1/D5.4/D6/D7.5/D8/D9；Fix log 在 `notes/review-gpt61-2026-11-21.md`）；design 正式批准仍待复审与用户批准。**
+> **状态：D11 六项决策已由用户拍板（2026-11-21，全按推荐）；gpt-6.1-sol Round 1–6 审阅 loop 已收敛（Round 6 = 0 High / 3 Medium / 1 Low，可批准）；design 正式批准待用户确认。**
+> Round 1 H1–H6、Round 2 R2-H1/H2/H5/H6/N1、Round 3 R3-H1/H2/H5/H6/N1-M/L、
+> Round 4 R4-H1/M1–M3/L1、Round 5 R5-H1/M1/M2 的设计答案已落盘
+> （D2.2/D2.3/D4.4/D5.1/D5.4/D6/D7.5/D8/D9；Fix log 在 `notes/review-gpt61-2026-11-21.md`）。
 > 批准方式（#170 已定）：用户在 #170 评论「design 批准」或在对应 PR approve。
 > 批准链接：_待填_。
 >
@@ -1082,6 +1085,14 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 ## D12 批准记录
 
 - **2026-11-21**：用户在会话中拍板 D11 六项全按推荐。
+- **2026-11-21**：gpt-6.1-sol 零上下文审阅 loop（Round 1–6）。
+  **Round 6 = 0 High / 3 Medium / 1 Low，可批准**；报告见
+  `notes/review-gpt61-2026-11-21.md` 的 `## Round 6`。
+  - 已知非阻塞残余：R6-M1 1.7 接续对账表把非 decision 点写成 decision/snapshot；
+    R6-M2 重试成功场景缺少能改变可行性的确定性 attempt 序列；
+    R6-M3 RNG 三路守卫未区分 live 冻结对象与影子游标；
+    R6-L1 D5.4/tasks 摘要仍用 `P_end` 描述有效覆盖/交还。
+    以上不改变 High=0 的调度合同，进 Phase 0/实现时收紧。
 - design 正式批准（#170 评论「design 批准」或 PR approve）：_待填_。
 - 批准范围：C1 运动执行 + Phase 0 守卫/角球前置；**含 D1.2 的两处可见行为差异**
   （save 几何否决、参与者进入 `movers`）；不含 C2–C5。

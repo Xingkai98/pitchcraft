@@ -7,13 +7,14 @@
 
 - [x] 1.1 `proposal.md` / `design.md` / `specs/{match-engine,event-stream-protocol,pitch-viewer}/spec.md` / `tasks.md`
 - [x] 1.2 `openspec validate p1-motion-integration --strict` → valid
-- [ ] 1.3 gpt-6.1-sol 零上下文审阅：High 收敛到 0（Round 1 H1–H6 见 `design.md` D2.3/D5.1/D6/D8/D5.4/D9；Round 2 的 R2-H1/H2/H5/H6/N1 见 D2.2/D2.3/D5.1/D5.4/D4.4/D9）
+- [x] 1.3 gpt-6.1-sol 零上下文审阅：**Round 6 = 0 High / 3 Medium / 1 Low，可批准**（Round 1–5 见 `design.md` D2.2/D2.3/D5.1/D5.4/D6/D8/D9 与 `notes/review-gpt61-2026-11-21.md`）
 - [ ] 1.4 用户在 #170 / PR 批准 design；批准链接写回 `design.md`
 - [x] 1.5 拍板 design D11 的 6 个决策（2026-11-21，全部按推荐；见 `design.md` D11）
 - [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 2 MODIFIED + 6 ADDED、`match-engine` 4 MODIFIED + 12 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
 - [x] 1.7 归档合并自检：scenario 集合包含检查（D8.1）；`validate --strict` 只作门槛，不作语义批准
 - [x] 1.8 M/L 修复：M1 成本预算（D7.5）、M2 运动学数值（D4.2）、M3 单步算法（D4.4）、M4 快照（D2.4）、M5 数据依赖（D7.4）、M6 fill 域（D5.3）、L1 措辞、L2 golden/研究门（D7.3）
 - [x] 1.9 Round 2 修复：权威调度与 Trace C（R2-H1）、零位移状态首锚点（R2-H2）、参与者进入 movers + 真实 T/精确到达/finalize 连续（R2-H5）、turnsPerPlayer/等效性盲测/7 真实簇（R2-H6）、总向量预算 A_MAX + 米制边界（R2-N1）、M1 旧流选择、M2 体积上界、M3 save 否决分母、L1/L2 转述
+- [ ] 1.10 Phase 0/实现时收紧 Round 6 的 3 Medium + 1 Low（R6-M1 1.7 对账表、R6-M2 重试成功夹具、R6-M3 RNG 守卫对象、R6-L1 P_eff 摘要）；不阻塞 design 批准
 
 ## 2. Phase 0：前置（design 批准后先做）
 
