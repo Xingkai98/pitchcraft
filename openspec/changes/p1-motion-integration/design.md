@@ -1,6 +1,6 @@
 # Design: 引擎统一运动执行层（C1 运动学，GitHub #170）
 
-> **状态：D11 六项决策已由用户拍板（2026-11-21，全按推荐）；gpt-6.1-sol Round 1（H1–H6）、Round 2（R2-H1/H2/H5/H6/N1）、Round 3（R3-H1/H2/H5/H6/N1-M/L）与 Round 4（R4-H1/M1–M3/L1）的设计答案已落盘（D2.2/D2.3/D4.4/D5.1/D5.4/D6/D7.5/D8/D9；Fix log 在 `notes/review-gpt61-2026-11-21.md`）；design 正式批准仍待复审与用户批准。**
+> **状态：D11 六项决策已由用户拍板（2026-11-21，全按推荐）；gpt-6.1-sol Round 1（H1–H6）、Round 2（R2-H1/H2/H5/H6/N1）、Round 3（R3-H1/H2/H5/H6/N1-M/L）、Round 4（R4-H1/M1–M3/L1）与 Round 5（R5-H1/M1/M2）的设计答案已落盘（D2.2/D2.3/D4.4/D5.1/D5.4/D6/D7.5/D8/D9；Fix log 在 `notes/review-gpt61-2026-11-21.md`）；design 正式批准仍待复审与用户批准。**
 > 批准方式（#170 已定）：用户在 #170 评论「design 批准」或在对应 PR approve。
 > 批准链接：_待填_。
 >
@@ -92,69 +92,101 @@ LCM(0.2, 0.5) = 1.0s：beat 名义网格与 decision 每 1s 重合一次；其�
 
 **`CommittedPlan`（提交时冻结，不可变）**
 
-- **时间范围**：`[t_c, P_end]`，`t_c` = 候选事件提交时刻；
-  `P_end = ceil(t_end / SIM_DT) × SIM_DT`，且 **SHALL 至少覆盖包含真实 `t_end` 的完整
-  输出段及其 finalize 状态提交**（例：`t_end=1.65 → P_end=1.7`）。**部分步只用于
-  落地/锚点对账，不改变实际积分分割**：实际积分永远是整 `SIM_DT` 步。
-- **内容**（逐边界 `s ∈ [t_c, P_end]`）：
-  - 完整状态 `pos_m / vel_mps / heading / mode`；
-  - 每个 decision 边界的 decision 结果（动作机会、目标、mode、事件列表）；
+- **时间范围**：`[t_c, P_eff]`，`t_c` = 候选事件提交时刻；
+  `P_end = ceil(t_end / SIM_DT) × SIM_DT`，**`P_eff = min(P_end, dur)`**。
+  计划 SHALL 至少覆盖包含真实 `t_end` 的完整输出段及其 finalize 状态提交；若 `dur < P_end`，
+  计划 SHALL 覆盖终场截段 `[last_boundary, dur]`（`dt = dur − last_boundary`，允许非
+  0.1/0.2 的终场短 dt），`t ≥ dur` 不产 beat，`cp_end` 在 `dur` 终态、无未来 decision。
+  **部分步只用于落地/锚点对账，不改变实际积分分割**：非终场段仍是整 `SIM_DT` 步；
+  终场末段是唯一允许的部分步/短 dt。
+- **内容**：
+  - 逐边界完整状态 `pos_m / vel_mps / heading / mode` **+ 完整调度状态**：球权、冷却、
+    动作机会、活跃高亮、重开、decision 计数（见 R5-M1）；
+  - **decision 所有权：`[t_c, P_end)` 内的 decision 归计划**；**恰在 `P_end` 的 decision
+    归 live/下一个计划**。`cp_end` 是 `P_end^-`（该 decision **之前**）的 RNG/状态；
   - 事件列表（含 finalize 事件）；
-  - RNG checkpoints：提交时 `cp_commit`、每个 decision `cp_s`、计划末端 `cp_end`；
+  - RNG checkpoints：`cp_commit`（candidate decision 已定意图之后，见 R5-M1）、每个
+    计划拥有的 decision `cp_s`、计划末端 `cp_end`；
   - 规划轨迹（球段端点/落点/飞行时长/参与者端点）。
 - **覆盖内只消费缓存**：在 `s ∈ [t_c, P_end)`，调度器 SHALL：
   - 取缓存状态/事件/decision 结果；**SHALL NOT** 调 `decision()`、**SHALL NOT** 重掷 RNG；
   - 逐边界核对实际状态 == 缓存状态；不一致置 `plan_divergence`；
   - beat 的 `from`/`to` 取缓存状态（不重新 `integrate`）。
-- **末端原子交还**：在 `P_end` 应用计划的 finalize/状态提交后，把状态 = 缓存末端状态、
-  RNG = `cp_end` 原子交还 live scheduler；**不得回滚已提交字段**。
-- **RNG 两个 checkpoint**：规划用 RNG **副本**；提交时记录 `cp_commit`（当前时刻）与
-  `cp_end`（影子末端）。覆盖内不消耗正式 RNG；交还 live 时用 **`cp_end`**（不是
-  `cp_commit`，否则会重放/跳过计划内随机数）。
+- **末端原子交还**：在 `P_eff` 应用计划的 finalize/状态提交后，把状态 = 缓存末端状态、
+  RNG = `cp_end` 原子交还 live scheduler；**不得回滚已提交字段**。`P_end` 的 decision
+  由 live（或 follow-on plan）**只执行一次**；`cp_end` 在它之前。
+- **RNG 两个 checkpoint**：规划用 RNG **副本**；`cp_commit` 在 candidate decision 已确定
+  意图之后；`cp_end` 在 `P_eff` 终态。覆盖内不消耗正式 RNG；交还 live 用 **`cp_end`**。
+  拒绝影子时 live 保持 `cp_commit`（不是 `cp_end`），见 R5-M1。
 - **后续高亮（follow-on）**：计划末端若产生新高亮，SHALL NOT 在同一计划内提交。
-  follow-on plan 从 **`P_end`** 开始（新事件 `t ≥ P_end`），与前一计划**无重叠**；
-  若新事件 `t < P_end`，必须**合并进当前计划**或拒绝候选。链式上限
+  follow-on plan 从 **`P_eff`** 开始（新事件 `t ≥ P_eff`），与前一计划**无重叠**；
+  若新事件 `t < P_eff`，必须**合并进当前计划**或拒绝候选。链式上限
   `MAX_PLAN_CHAIN = 3`，总时长上限 `PLAN_CHAIN_MAX_S = 30s`；超限置
   `highlight_infeasible`，SHALL NOT 重叠承诺。
-- **视野**：`PLAN_HORIZON` ≥ 单条高亮最长时长；`P_end − t_c ≤ PLAN_HORIZON + SIM_DT`。
+- **视野**：`PLAN_HORIZON` ≥ 单条高亮最长时长；`P_eff − t_c ≤ PLAN_HORIZON + SIM_DT`。
 
-**权威调度伪代码**
+**事务边界与守卫（R5-M1）**
+
+- **candidate decision 恰执行一次**：decision 只产生候选意图（含 result 掷定）；`cp_commit`
+  定义在该 decision **已确定意图之后**（outcome/participants/目标族已定）。
+- **拒绝/重试**：影子规划用 `cp_commit` 的 RNG 副本；拒绝时丢弃影子 state/events/RNG，
+  live 保持 **`cp_commit`**（不是 `cp_end`）；重试从 `cp_commit` 起，**意图/参数不变、
+  不重抽 candidate result**；规划阶段零新 RNG（若需扰动，只允许预注册的确定性扰动）。
+  重试上限 2 次；超限拒绝候选（事件不发射），live 的 RNG/状态仍为 `cp_commit`。
+- **`plan_divergence` 三路核对**：① 状态（完整调度状态 == 缓存）；② **独立事件账本**
+  （顺序/每条恰好发射一次，无遗漏/重复）；③ RNG 消费/checkpoint（覆盖内正式 RNG 不消耗；
+  实际 RNG == `cp_s`/`cp_end`）。任一不符使守卫红，不得静默修补。
+- **计划快照**：用完整调度状态（motion + 球权/冷却/动作机会/活跃高亮/重开/decision 计数），
+  不是只复制 `MotionState`。
+
+**权威调度伪代码（显式四阶段 A/B/C/D）**
 
 ```
 s = 0.5; state = initial; rng = live; plan = None
 while s < dur:
-    if plan and s < plan.P_end and plan.covers(s):
-        p = plan.at(s)
-        assert state == p.state                 # 逐边界核对
-        emit p.events_at(s)                     # finalize / 事件（缓存）
+    # ---- A. 边界事件/decision：每个边界只处理一次 ----
+    boundary_done = (plan and plan.start_marker == s)  # 本边界已在创建计划时处理过
+    if not boundary_done:
+        emit/apply boundary_events_at(s)               # finalize / 事件（确定性顺序）
         if decision_due(s):
-            # 只消费缓存 decision；不得 decision()/掷骰
-            assert p.decision_at(s) == cached
-            snapshot(s, p.state)
-        dt = p.dt(s); state_next = p.state_next
-        emit_beat(s, dt, p.state, state_next)   # from/to = 缓存状态
-        state = state_next; s += dt
-        if s == plan.P_end:
-            emit p.events_at(s)                 # P_end 的 finalize 事件
-            assert state == p.state_end
-            rng = plan.cp_end; plan = None      # 原子交还 live
-        continue
-    # ---- live path（未被计划覆盖）----
-    process_events_at(s)                        # 事件 t = s；确定性发射顺序
-    if decision_due(s): decision(s)
+            if plan and plan.owns_decision(s):
+                apply plan.decision_at(s)              # 只消费缓存；不调 decision()
+            else:
+                decision(s)                            # candidate decision 恰执行一次
+                if candidate committed:
+                    plan = new_plan; plan.start_marker = s
+    # ---- B. 选择/接管计划（同一迭代；首段立即消费）----
+    use_plan = plan is not None and plan.covers_segment(s)
+    if use_plan: plan.start_marker = s
+    # ---- C. snapshot：仅 decision_due ----
     if decision_due(s): snapshot(s, state)
-    dt = next_boundary_after(s) - s             # 0.1/0.2；末段 dur - s
-    state_next = integrate(state, dt)
-    emit_beat(s, dt, state, state_next)
+    # ---- D. 取缓存或 live 推进 → 发 beat ----
+    if use_plan:
+        p = plan.at(s)
+        assert state == p.state                         # 逐边界核对
+        dt = p.dt(s); state_next = p.state_next
+        emit_beat(s, dt, p.state, state_next)           # from/to = 缓存
+    else:
+        dt = next_boundary_after(s) - s                 # 0.1/0.2；末段 dur-s
+        state_next = integrate(state, dt)
+        emit_beat(s, dt, state, state_next)
     state = state_next; s += dt
+    if use_plan and s == plan.P_eff:
+        emit plan.events_at(s)                          # P_eff 的 finalize 事件
+        assert state == plan.state_end
+        rng = plan.cp_end; plan = None                  # 原子交还 live
 ```
 
-- **计划创建**：候选事件在 `t_c` 发出后，当前边界立即进入计划消费模式；
-  计划覆盖 `[t_c, P_end]`，`P_end` 是交还边界。
+- **A 只跑一次**：候选 decision 在 A 创建 plan#1 后，B **同一迭代**接管首段；
+  `start_marker` 防止下一轮回到同一 `s` 时重复发起点事件/decision。流程是
+  **「算一次（A）→ 发一次（A/D）→ 缓存接管一次（B）→ 不再重算（D）」**。
+- **P_end 所有权**：A 在 `s=P_end` 时 plan 已在上一轮 D 交还清空，因此 `P_end` 的
+  decision 由 live（或 follow-on plan）执行一次；`cp_end` 是它之前的 `P_end^-`。
+- **终场**：`P_eff=min(P_end,dur)`；若 `dur<P_end`，D 的最后一段是 `[last_boundary,dur]`
+  的短 dt，`t≥dur` 不发 beat，`cp_end` 在 dur 终态，无未来 decision；SHALL NOT 原样发到
+  `P_end>dur`，也不得为修末段重新积分已承诺计划。
 - **顺序是合同**：上段终态 → finalize/事件 → decision → snapshot → 下一段（缓存或积分）→
   beat。`beat.t` 是段起点，`to` 是段终点状态（缓存或预积分）。
-- **为什么预积分不会破坏**：段内任何非 beat 事件都会把该段在事件时刻切成两段
-  （`E` 进入边界集合），所以 `[s, s+dt)` 内没有事件。
 - **finalize 的 `t`**：第一个 ≥ `t_end` 的 0.1s 网格 sim step；事件内部锚点仍用真实
   `t_end`（D2.3 非网格落地）。
 - **快照语义**：记录 `s` 时刻的边界状态（事件/决策后），等于上段 `to` 与下段 `from`；
@@ -165,20 +197,21 @@ while s < dur:
 - 所有 `*_TICKS` 常量必须重新挂到 **decision 拍**计数器（#170 已列 17 个实际换域常量；
   当前 v11 已按 `TPF=2` 换过一轮，本 change 要再核一遍，不能假设）。
 
-**跨 decision + 非网格 `t_end` + follow-on 的短 trace（只有一个执行结果）**
+**交接边界对账表（事件 / decision / RNG / beat）**
 
-| t | 类型 | 内容 | 计划 |
-|---:|---|---|---|
-| 1.0 | candidate + commit | pass 候选提交；`t_end=1.65`；`P_end=1.7`；记录 `cp_commit` | plan#1 [1.0,1.7] |
-| 1.1 | 段边界 | plan#1 缓存状态/beat [1.0,1.1) | 消费缓存 |
-| 1.3 | 段边界 | plan#1 缓存状态/beat [1.1,1.3) | 消费缓存 |
-| 1.5 | decision | plan#1 缓存 decision 结果（**不重掷**）；beat [1.3,1.5) | 消费缓存；`cp_1.5` |
-| 1.7 | finalize + handback | 第一个 ≥1.65 的 0.1 网格步；应用 finalize 状态；RNG=`cp_end` 交还 live；beat [1.5,1.7) | plan#1 结束 |
-| 1.7 | follow-on candidate | 若此刻产生 shot 候选，开 plan#2（起点 ≥1.7，无重叠）；否则 live 继续 | plan#2 / live |
+| 场景 | A 边界处理 | B 接管 | C snapshot | D 段与 beat | RNG |
+|---|---|---|---|---|---|
+| 首段 `s=1.0, plan=None` | 执行 candidate decision，创建 plan#1（`t_end=1.65`） | 同一迭代接管 plan#1 首段 `[1.0,1.1)` | decision_due → snapshot(1.0) | 缓存 `from/to`，发 beat [1.0,1.1) | 正式 RNG 不消耗；`cp_commit` |
+| 跨 decision `s=1.5` | plan 拥有该 decision，应用缓存结果（不重掷） | 接管 `[1.3,1.5)` 后的下一段 | decision_due → snapshot(1.5) | 发 beat [1.3,1.5)；下一段 [1.5,1.7) 缓存 | `cp_1.5` |
+| `P_end=1.5`（t_end=1.45） | 1.5 的 decision **不在计划内**；1.5 前先交还 | plan 不拥有 1.5 | live decision 后 snapshot(1.5) | 计划发 [1.3,1.5) 后交还；1.5 decision 由 live 执行一次 | `cp_end` = 1.5^-（decision 前）；live decision 消耗它 |
+| `P_end=1.7` 接续 | 1.5 在计划内；1.7 的 decision 归 live/follow-on | plan#2 从 1.7 起（若候选） | 1.7 live decision 后 snapshot(1.7) | plan#1 发 [1.5,1.7) 后交还；plan#2 发 [1.7,...) | `cp_end` = 1.7^-；plan#2 用 `cp_end` |
+| `dur=1.55` | plan#1 覆盖到 `P_eff=1.55`；无 1.55 decision | 计划内最后段 `[1.5,1.55]`（dt=0.05） | 1.5 snapshot；1.55 非 decision 不 snapshot | 发 [1.5,1.55) 的短 dt 后结束；`t≥1.55` 不发 beat | `cp_end` 在 1.55 终态 |
 
-- 1.5 的 decision 只在 plan#1 中算一次；执行时读缓存，不重掷。
-- 1.7 的 finalize 状态与 `cp_end` 是唯一交还点；plan#2 从 1.7 起，不与 plan#1 重叠。
-- 部分步（`t_end=1.65`）只用于球落点/锚点对账，实际段仍是 [1.5,1.7] 的整 0.1 步。
+- 1.5 的 decision 在 `P_end=1.7` 场景只算一次（计划内）；在 `P_end=1.5` 场景由 live 只算
+  一次（`cp_end` 在之前）。两种情况的执行结果唯一。
+- 1.7 的 finalize/交还与 follow-on 不重叠；plan#2 的起点 ≥1.7。
+- 部分步（`t_end=1.65`）只用于球落点/锚点对账；非终场实际段仍是整 0.1 步，终场 1.55 段
+  是唯一短 dt。
 
 **实现者只需实现这一条路径**：live path 与 plan-consume path 共用同一个段边界循环、
 同一个 beat 发射点、同一份状态提交；不存在「只在计划内用另一套调度」的选项。若实现时
@@ -633,8 +666,10 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 - **规划输入**：当前 decision 状态下的 22 人（含同队分离）状态；用同一积分器 + 同一分离
   solver 做确定性前视，产出球路、飞行时长、全部参与者端点。**分离在计划内**，不得先写
   锚点再让分离改位置。
-- **覆盖范围**：`P_end = ceil(t_end/SIM_DT)·SIM_DT`，至少包含真实 `t_end` 所在完整输出段
-  与 finalize 状态提交；部分步只作落地/锚点对账，不改变实际积分分割。
+- **覆盖范围**：`P_end = ceil(t_end/SIM_DT)·SIM_DT`、`P_eff = min(P_end, dur)`，
+  至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交；若 `dur<P_end` 覆盖终场
+  短 dt（`dur−last_boundary`）与 dur 终态。**`P_end` 的 decision 不归计划**（归 live/
+  follow-on），`cp_end` 在该 decision 之前；部分步只作落地/锚点对账，不改变非终场积分分割。
 - **验证**：计划终点满足 `reachable`/`REACH_TOL_M`/同队间距/总向量预算；事件锚点 = 计划
   终点（容差内）。
 - **不可行**：在事件 `t_c` 之前调整时间/落点或置 `highlight_infeasible`；**SHALL NOT**
@@ -893,7 +928,8 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 | 同上 | ADDED | `到达与制动语义` | 2 | 删除 dead-zone 整拍冻结；普通/精确到达分离 |
 | 同上 | ADDED | `高亮参与者与统一运动状态` | 3 | 同一积分器、不冻结、进入 movers、事件锚点=积分终点 |
 | 同上 | ADDED | `事件提交协议` | 1 | 候选意图→含分离前视计划→原子提交→执行核对 |
-| 同上 | ADDED | `CommittedPlan 执行` | 3 | 覆盖内只消费缓存、末端交还、follow-on 无重叠 |
+| 同上 | ADDED | `CommittedPlan 执行` | 4 | 首段同迭代接管、覆盖内只消费缓存、拒绝重试、链上限 |
+| 同上 | ADDED | `P_end 与终场交接` | 4 | P_end decision 归 live/cp_end 在前；dur<P_end 终场截段；末端交还；follow-on 无重叠 |
 | 同上 | ADDED | `高亮参与者的可达性检查与修复` | 6 | 真实 T、改落点、门将、抢断、重开、finalize 连续 |
 | 同上 | ADDED | `段边界执行顺序` | 4 | 顺序合同、决策/事件先于 beat、非网格落地、终场排空 |
 | 同上 | ADDED | `计划覆盖边界的执行` | 1 | 计划覆盖内只消费缓存、不 decision/不掷骰 |
@@ -1001,10 +1037,15 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
     ② **独立预注册扰动/重复块**（如 seed 重排/窗口重切）测得的波动；
     ③ **领域容忍幅度**（预先声明的业务可接受恶化）。
     默认 `boundary = max(①, ③)`；②用于验证 ① 不低估。
-  - **单位与取整（R4-M3）**：比例类指标用**百分点 pp**，粒度 **0.001（0.1pp）**，不得
-    “向上取整到 1”（那会让小比例门失去判别力）；计数类用**每场次数**，粒度 **0.1/场**；
-    每个指标的边界必须写明单位与粒度。候选侧只做**单向非恶化**检验（候选不得比
-    `base + boundary` 更差），不做“候选 vs 未来自己”的配对。
+  - **单位存储合同（R5-M2）**：**JSON 存 0–1 比例，粒度 0.001；展示为 0.1pp**。
+    比较/阈值计算全部在 0–1 存储单位里做，**不得**把 0.001 当 pp 或把 pp 当比例直接相加
+    （那会差 100 倍）。例：`base=0.85`、`boundary=0.001`（=0.1pp）；若指标上升为恶化，
+    恶化侧阈值 = `0.851`；若下降为恶化，阈值 = `0.849`。
+  - **取整方式（R5-M2）**：边界值按**向恶化侧 ceiling 到 0.001 网格**（保守、更宽的
+    非恶化门），不做四舍五入到 1；计数类存**每场次数**，ceiling 到 **0.1/场**。
+    展示层只做 `×100` 转 pp，不改变存储值。
+  - 候选侧只做**单向非恶化**检验（上升为恶化的指标：候选 ≤ `base + boundary`；下降为
+    恶化的指标：候选 ≥ `base − boundary`），不做“候选 vs 未来自己”的配对。
   - **盲测到上限仍无结论**：7 簇 × 20 = 140 clip 上限到达后，若 CI 仍未**完全落入**
     `[0.35,0.65]`，一律报告**无结论**，不因证据等级叫 A/B 而改判。
 - 有效样本 = **独立真实源簇数 × engine seed/window 结构**，不是「clip 数」也不是

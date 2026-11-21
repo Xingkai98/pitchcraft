@@ -106,7 +106,7 @@
 
 ### Requirement: 事件提交协议
 
-候选事件 SHALL 只定意图，**不先写** `x2/y2` / `subject_end` / `carrier_end` / `loose`。发射前 SHALL 用同一积分器 + 同一分离 solver 做确定性前视规划（含未来 decision 与分离；`PLAN_HORIZON` ≥ 最长高亮时长），得到球路、时长与全部参与者端点；前视用 RNG 副本，提交时记录 `cp_commit`/`cp_end`，覆盖内不消耗正式 RNG，交还 live 用 `cp_end`。验证后**原子提交事件 + `CommittedPlan`**；提交后 SHALL NOT 修改已承诺锚点。若视野不足或计划不稳定，SHALL 在事件 `t` 之前调整时间/落点或置 `highlight_infeasible`；SHALL NOT 先发事件再补计划。
+候选事件 SHALL 只定意图，**不先写** `x2/y2` / `subject_end` / `carrier_end` / `loose`。发射前 SHALL 用同一积分器 + 同一分离 solver 做确定性前视规划（含未来 decision 与分离；`PLAN_HORIZON` ≥ 最长高亮时长），得到球路、时长与全部参与者端点。candidate decision SHALL 恰执行一次；`cp_commit` 定义在意图确定之后；前视用 RNG 副本，覆盖内不消耗正式 RNG。拒绝时 live 保持 `cp_commit`（不是 `cp_end`），丢弃影子 state/events/RNG；重试从 `cp_commit` 起、不重抽 candidate result。验证后**原子提交事件 + `CommittedPlan`**；提交后 SHALL NOT 修改已承诺锚点。若视野不足或计划不稳定，SHALL 在事件 `t` 之前调整时间/落点或置 `highlight_infeasible`；SHALL NOT 先发事件再补计划。
 
 #### Scenario: 发射前原子提交
 
@@ -116,13 +116,47 @@
 
 ### Requirement: CommittedPlan 执行
 
-`CommittedPlan` SHALL 覆盖 `[t_c, P_end]`，至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交；内容 SHALL 含逐边界完整状态、decision 结果、事件列表、RNG checkpoints（`cp_commit`/每个 decision/`cp_end`）与规划轨迹。覆盖内调度器 SHALL **只消费缓存**：SHALL NOT 调 `decision()`、SHALL NOT 重掷 RNG；逐边界核对实际状态。`P_end` 处原子交还 live scheduler（状态 + `cp_end`），不得回滚已提交字段。计划末端若产生新高亮，follow-on plan SHALL 从 `P_end` 开始且无重叠；链式上限 `MAX_PLAN_CHAIN=3` / `PLAN_CHAIN_MAX_S=30s`，超限 `highlight_infeasible`。
+`CommittedPlan` SHALL 覆盖 `[t_c, P_eff]`（`P_eff=min(P_end,dur)`），至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交；内容 SHALL 含逐边界完整状态（motion + 球权/冷却/动作机会/活跃高亮/重开/decision 计数）、decision 结果、事件列表、RNG checkpoints 与规划轨迹。调度 SHALL 分四阶段：A 边界事件/decision 只处理一次 → B 同一迭代接管计划首段 → C snapshot（仅 decision_due）→ D 取缓存或 live 推进并发 beat；`start_marker` 防止重复消费起点。覆盖内 SHALL 只消费缓存（不 `decision()`、不掷骰、不积分）；逐边界核对实际状态。`P_eff` 原子交还 live（状态 + `cp_end`），不回滚已提交字段。follow-on 从 `P_eff` 起、无重叠，链上限 `MAX_PLAN_CHAIN=3`/`PLAN_CHAIN_MAX_S=30s`。
+
+#### Scenario: 首段同迭代接管
+
+- **GIVEN** `s=1.0, plan=None`，candidate decision 创建 plan#1（`t_end=1.65`）
+- **WHEN** 同一迭代进入 B 阶段
+- **THEN** 它 SHALL 接管 plan#1 的首段 `[1.0,1.1)` 并用缓存 `from/to` 发 beat；SHALL NOT 继续走 live `integrate`；`start_marker` 防止再次处理 1.0 的起点事件/decision
 
 #### Scenario: 计划覆盖内不重掷
 
 - **GIVEN** 一个 `CommittedPlan` 覆盖 `[1.0,1.7]`，1.5 是 decision 边界
 - **WHEN** 调度器执行到 1.5
 - **THEN** 它 SHALL 读取计划缓存的 decision 结果（动作机会/目标/mode/事件）；SHALL NOT 调用 `decision()` 或重掷 RNG；beat 的 `from`/`to` 取缓存状态
+
+#### Scenario: 拒绝→重试→成功
+
+- **GIVEN** 候选 decision 已确定意图并记录 `cp_commit`；plan#1 因不可行被拒绝
+- **WHEN** 重试
+- **THEN** live SHALL 保持 `cp_commit`（不是 `cp_end`）；SHALL NOT 重抽 candidate result；重试从 `cp_commit` 起、意图/参数不变；影子 state/events/RNG 丢弃；成功后事件/decision 各只发射一次
+
+#### Scenario: 链上限拒绝
+
+- **GIVEN** 已有 plan#1/#2/#3，计划末端又产生新高亮候选
+- **WHEN** 需要第 4 个计划
+- **THEN** 超过 `MAX_PLAN_CHAIN=3`（或 `PLAN_CHAIN_MAX_S=30s`）时 SHALL 置 `highlight_infeasible`、拒绝该候选；SHALL NOT 与已有计划重叠承诺
+
+### Requirement: P_end 与终场交接
+
+**计划拥有 `[t_c, P_end)` 内的 decision；恰在 `P_end` 的 decision 归 live/下一个计划**。`cp_end` SHALL 是 `P_end^-`（该 decision **之前**）的 RNG/状态；`P_end` decision SHALL 只执行一次。若 `dur < P_end`，`P_eff=dur`，计划 SHALL 包含终场截段 `[last_boundary,dur]`（`dt=dur−last_boundary`，允许非 0.1/0.2）、`t≥dur` 不产 beat、`cp_end` 在 dur 终态且无未来 decision；SHALL NOT 发到 `P_end>dur`，也不得为修末段重新积分已承诺计划。
+
+#### Scenario: P_end decision 只执行一次
+
+- **GIVEN** `t_c=1.0, t_end=1.45, P_end=1.5`，1.5 是 decision 边界
+- **WHEN** 计划在 1.5 交还
+- **THEN** 计划 SHALL NOT 拥有/缓存 1.5 的 decision；`cp_end` 在 1.5^-；1.5 的 decision 由 live（或 follow-on plan）执行一次；不得再被计划缓存重放
+
+#### Scenario: 终场截段
+
+- **GIVEN** 计划 `[1.0,1.7]`，但 `dur=1.55`
+- **WHEN** 执行到 1.5 之后
+- **THEN** 计划 SHALL 以 `P_eff=1.55` 结束：最后段 `[1.5,1.55]` 的 `dt=0.05`；`t≥1.55` 不发 beat；`cp_end` 在 1.55 终态、无未来 decision；SHALL NOT 原样发到 1.7
 
 #### Scenario: 计划末端交还
 
@@ -206,13 +240,13 @@
 
 ### Requirement: 计划覆盖边界的执行
 
-若一个段边界被 `CommittedPlan` 覆盖，finalize/事件/decision/下一段状态 SHALL 取计划缓存；SHALL NOT 重新 `decision()`、掷骰或积分；逐边界核对实际状态 == 缓存状态，不一致置 `plan_divergence`（D2.2）。
+若一个段边界 `s ∈ [t_c, P_end)` 被 `CommittedPlan` 覆盖，finalize/事件/decision/下一段状态 SHALL 取计划缓存；SHALL NOT 重新 `decision()`、掷骰或积分。`plan_divergence` 守卫 SHALL 核对三路：① 完整调度状态 == 缓存；② 独立事件账本（顺序/每条恰好发射一次）；③ RNG 消费/checkpoint（覆盖内正式 RNG 不消耗，实际 == `cp_s`/`cp_end`）。**`s=P_end` 的 decision 不在覆盖内**，归 live/下一个计划，只执行一次。
 
 #### Scenario: 计划覆盖边界
 
-- **GIVEN** 一个段边界被 `CommittedPlan` 覆盖
+- **GIVEN** 一个段边界被 `CommittedPlan` 覆盖（`s < P_end`）
 - **WHEN** 调度器执行到该边界
-- **THEN** decision/事件/下一段状态 SHALL 取计划缓存；SHALL NOT 调用 `decision()` 或重掷 RNG；实际状态与缓存不一致时置 `plan_divergence`
+- **THEN** decision/事件/下一段状态 SHALL 取计划缓存；SHALL NOT 调用 `decision()` 或重掷 RNG；实际状态与缓存不一致时置 `plan_divergence`；`s=P_end` 的 decision 由 live 执行一次
 
 ## MODIFIED Requirements
 
