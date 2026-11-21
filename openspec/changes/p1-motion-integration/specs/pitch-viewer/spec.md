@@ -52,6 +52,39 @@
 
 ## MODIFIED Requirements
 
+### Requirement: 事件演绎遵循剧本
+
+画面层 SHALL 按演绎剧本（连续带球、传跑配合、抢断五段式）渲染动作，实现人球解耦。**新流（C1/v12，beat 带 `dt`）SHALL 用参与者的 `movers` 端点驱动人物、事件锚点只驱动球**，SHALL NOT 再用 tackle 事件字段合成人物逼近/接触/回终点；**旧流（v11，beat 无 `dt`）SHALL 保留原五段式合成**，作为兼容路径并打 warning。
+
+#### Scenario: 抢断演绎（五段式，带球中被抢）
+- **GIVEN** 一条 tackle 事件，带 `subject`（防守者）、`to`（被铲者）、`x/y`（防守者起点）、`carrier_from_x/y`（被铲者带球起点）、`x2/y2`（接触点）、可选 `loose_x/y`（弹开点）、`result`
+- **WHEN** 画面层演绎该事件
+- **THEN** **新流**：双方人物位置 SHALL 来自 `movers` 端点（含分离），球 SHALL 来自事件 `loose_x/y`/高亮锚点；SHALL NOT 用 `carrier_from`/`x/y`/`x2/y2` 合成人物逼近/接触/回终点。**旧流**：被铲者从 `carrier_from` 带球到接触点，防守者从 `x/y` 逼近到接触点，碰撞后球向 `loose_x/y`（缺失则画面自算）弹出，按 `result` 决定捡球者；画面层 SHALL 对 `carrier_from` 缺失做 fallback（原地持球）
+
+#### Scenario: 抢断成功演绎（防守者拿球）
+- **GIVEN** 一条 tackle 事件，`result=success`
+- **WHEN** 画面层演绎该事件
+- **THEN** **新流**：球到 `loose_x/y` 后停到高亮结束，再由 `beat.ball` 接力；双方人物终态 = `movers` 端点，且与 `subject_end`/`carrier_end` 在容差内一致。**旧流**：球弹到弹开点后停至高亮结束，随后由 `beat.ball` 接力；防守者追到弹开点拾取；两球员终态 = `subject_end`/`carrier_end`（缺省回退接触点）
+
+#### Scenario: 抢断失败演绎（原持球人拿回）
+- **GIVEN** 一条 tackle 事件，`result=fail`
+- **WHEN** 画面层演绎该事件
+- **THEN** **新流**：球停在接触点至高亮结束，随后由下一段 `main` 恢复；双方人物位置 = `movers` 端点。**旧流**：前两段同成功，双方在接触点对上；球不弹开，被铲者回到 `carrier_end`（缺省回退接触点）继续持球，下一拍由 `main` 恢复；抢断者在 `subject_end` 停住
+
+#### Scenario: 弹开方向与逼近方向垂直
+- **GIVEN** 一条 tackle 事件且引擎未给 `loose_x/y`（旧流/兼容路径）
+- **WHEN** 画面层自算弹开点
+- **THEN** 弹开向量与逼近向量点积为零（垂直）；两候选弹向按 `(tackler×7 + victim×3) % 2` 确定性选边（不消耗 RNG）；**新流必须使用引擎 `loose_x/y`，不走本自算**
+
+#### Scenario: 弹开点在场内
+- **GIVEN** 一条 tackle 事件且画面层自算弹开点（旧流/兼容路径）
+- **WHEN** 画面层计算弹开点
+- **THEN** 弹开点坐标落在 [0,1]×[0,1] 内（越界候选被钳制）
+
+#### Scenario: 演绎确定性
+- **WHEN** 同一事件重复演绎
+- **THEN** 锚点序列完全一致
+
 ### Requirement: 静止球员 micro-motion
 
 **当 micro-motion 开启时**，画面层 SHALL 给静止球员（不在 beat movers、**不是 main 持球者**）做小幅重心调整（micro-motion），避免圆点完全冻结；该调整仅影响渲染层，不改变逻辑位置。高亮参与者现在也在 `movers`，因此由「不在 movers」统一排除，不再需要单独的高亮参与者排除。**C1 第一阶段（引擎已输出连续运动）SHALL 默认关闭 micro-motion（`PLAYER_TEXTURE.ampM=0`）**；关闭时逻辑位置与跨段连续性不受影响；是否重新开启由视觉验收单独决定。

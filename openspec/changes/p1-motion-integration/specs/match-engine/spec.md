@@ -4,7 +4,7 @@
 
 ### Requirement: 确定性单步运动积分
 
-引擎 SHALL 为每名未罚下球员维护连续运动状态（`pos_m`、`vel_mps`、`heading`、`mode`），并按固定 `SIM_DT=0.1s` 积分。一个仿真子步的执行顺序 SHALL 固定为：期望速度 → 目标在身后的制动/不转向判定 → 朝向更新 → 速度更新（半隐式：先速度后位置）→ 位置更新 → 分离求解。目标与 `mode` SHALL 只在 `DECISION_DT` 边界更新，子步内保持不变。`mode` 的速度上限 SHALL 只约束期望速度 `v_des`，SHALL NOT 直接 clamp 瞬时速度；减速 SHALL 受 `a_brake` 限制。目标在身后且速度 > `V_REVERSE` 时 SHALL 只制动、SHALL NOT 转向，待 `v ≤ V_REVERSE` 后才转身；SHALL NOT 瞬时反向。约束不可行时求解器 SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点、clamp 速度或在下一子步补回来。
+引擎 SHALL 为每名未罚下球员维护连续运动状态（`pos_m`、`vel_mps`、`heading`、`mode`），并按固定 `SIM_DT=0.1s` 积分。一个仿真子步的执行顺序 SHALL 固定为：期望速度 → 目标在身后的制动/不转向判定 → 朝向更新 → 速度指令 → **运动预算** → 位置更新 → 分离求解 → **总预算**。目标与 `mode` SHALL 只在 `DECISION_DT` 边界更新，子步内保持不变。`mode` 的速度上限 SHALL 只约束期望速度 `v_des`，SHALL NOT 直接 clamp 瞬时速度；减速 SHALL 受 `a_brake` 限制。目标在身后且 speed > `V_REVERSE` 时 SHALL 只制动、SHALL NOT 转向，待 speed ≤ `V_REVERSE` 后才转身；SHALL NOT 瞬时反向。约束不可行时求解器 SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点、clamp 速度或在下一子步补回来。
 
 #### Scenario: 起步（0 → 6 m/s）
 
@@ -36,15 +36,29 @@
 - **WHEN** 分离求解执行
 - **THEN** 预测层 SHALL 在进入冲突前介入；若 3 次迭代内无法在 `|Δv_total| ≤ A_MAX·SIM_DT` 下满足 2.2m，SHALL 置 `constraint_infeasible`，SHALL NOT 输出伪合法轨迹
 
-### Requirement: 总向量加速度与米制边界
+### Requirement: 向量速度与位置提交
 
-运动预算 SHALL 先于位置更新检查：`Δv_motion`（加速 + 转向 + 预测避碰）超 `A_MAX·SIM_DT` 时按比例缩放到预算内，再积分位置。分离后 SHALL 再检查总预算 `Δv_total = Δv_motion + Δv_sep`（`Δv_sep = Δpos_sep/SIM_DT`）≤ `A_MAX·SIM_DT`；超预算时先缩减分离修正并重解，仍不满足 2.2m 或仍超预算则置 `constraint_infeasible`。SHALL NOT 由各阶段分别过门；`A_MAX` SHALL ≥ `max(A0_max, a_lat)`。`pos_m` SHALL 钳在 `[0,105] × [0,68]`（米制；归一化只在发射时做）；指向边界外的法向速度 > `A_MAX·dt` 时置 `constraint_infeasible`，否则清零并记 `boundary_reset`（计入总预算）。
+`vel_mps` SHALL 是**二维速度向量**（权威量）；`speed=|vel|`、`heading=atan2(vel.y,vel.x)`（speed > `V_EPS` 时，否则保留上一 heading）。运动预算后 SHALL 用最终 `vel_after` 直接更新位置 `pos += vel_after·SIM_DT`，SHALL NOT 再用「标量 speed × (cos heading, sin heading)」的混合写法；SHALL 从最终 `vel_after` 恢复 `speed`/`heading`。分离/边界再改速度后 SHALL 从最终 `vel_final` 恢复 `speed`/`heading`，并重做总预算检查。
+
+#### Scenario: 向量速度提交
+
+- **GIVEN** 一个子步的 `vel_before` 与朝向更新后的 `heading`
+- **WHEN** 运动预算得到 `vel_after`
+- **THEN** 位置 SHALL 为 `pos + vel_after·SIM_DT`（向量直接乘 dt）；`speed`/`heading` SHALL 从 `vel_after` 恢复，不得保留第 3 步的旧 heading 去积分缩放后的向量
+
+### Requirement: 总向量加速度预算
+
+运动预算 SHALL 先于位置更新检查：`Δv_motion = vel_cmd − vel_before`（加速 + 转向 + 预测避碰）超 `A_MAX·SIM_DT` 时按比例缩放到预算内，得到 `vel_after`；位置 SHALL 用 `pos += vel_after·SIM_DT`，并由 `vel_after` 恢复 `speed`/`heading`。分离后 SHALL 再检查总预算 `|vel_final − vel_before| ≤ A_MAX·SIM_DT`（`vel_final = vel_after + Δpos_sep/SIM_DT`）；超预算时先缩减分离修正并重解，仍不满足 2.2m 或仍超预算则置 `constraint_infeasible`。SHALL NOT 由各阶段分别过门；`A_MAX` SHALL ≥ `max(A0_max, a_lat)`。
 
 #### Scenario: 总向量加速度预算
 
 - **GIVEN** `v=6 m/s, A0=6.4, S0=9.5, a_lat=6.5, dt=0.1, θ_err=0.2 rad`
 - **WHEN** 一个正常运行子步同时加速与转向
-- **THEN** 纵向 `Δv=0.236 m/s`、横向 `v·Δθ=0.650 m/s`，`|Δv_total|=0.692 m/s`；SHALL ≤ `A_MAX·dt`（`A_MAX=8.0` → 0.8）；不得用 `A0·dt=0.64` 误判为超界（那会把正常运动判红）
+- **THEN** 纵向 `Δspeed=0.236 m/s`、横向 `v·Δθ=0.650 m/s`；**精确二维旋转**的 `|Δv_total| ≈ 0.703044 m/s`；SHALL ≤ `A_MAX·dt`（`A_MAX=8.0` → 0.8）；不得用 `A0·dt=0.64` 误判为超界（那会把正常运动判红）。线性化 `sqrt(0.236²+0.650²)=0.692` 只是近似，SHALL NOT 用作精确验收值
+
+### Requirement: 米制边界与边界重置
+
+`pos_m` SHALL 钳在 `[0,105] × [0,68]`（米制；归一化只在发射时做）。指向边界外的法向速度 > `A_MAX·dt` 时置 `constraint_infeasible`；否则清零并**重做一次总预算检查**（`|vel_final − vel_before| ≤ A_MAX·SIM_DT`），记 `boundary_reset`；仍超预算则 `constraint_infeasible`。
 
 #### Scenario: 米制边界
 
@@ -90,9 +104,19 @@
 - **WHEN** 事件字段写入 `x2/y2` / `subject_end` / `carrier_end`
 - **THEN** 这些值 SHALL 等于参与者（含分离）连续积分到 `t_end` 的位置（容差 `REACH_TOL_M`）；SHALL NOT 用投影或另一条直线凑终点
 
+### Requirement: 事件提交协议
+
+候选事件 SHALL 只定意图，**不先写** `x2/y2` / `subject_end` / `carrier_end` / `loose`。发射前 SHALL 用同一积分器 + 同一分离 solver 做确定性前视规划到 `t_end`（含未来 decision；`PLAN_HORIZON` ≥ 最长高亮时长），得到球路、时长与全部参与者端点；前视 SHALL 用克隆 RNG：提交时采用影子的 RNG 状态与未来 decision 结果（不重掷），拒绝时丢弃影子且不消耗正式 RNG。验证后**原子提交事件 + 轨迹计划**，提交后不得改已承诺锚点。执行时逐段核对；不一致置 `plan_divergence`，不得在 finalize 投影或覆盖已发事件。若 `t_end − t > PLAN_HORIZON` 或计划不能稳定，SHALL 在事件 `t` 之前调整时间/落点或置 `highlight_infeasible`，SHALL NOT 先发事件再补计划。
+
+#### Scenario: 发射前原子提交
+
+- **GIVEN** 一条 pass 候选事件，`t_end − t = 0.475s`，期间无 decision
+- **WHEN** 引擎决定是否发射
+- **THEN** 先规划到 `t_end`（含 22 人与分离），得到参与者终点；验证后原子提交事件 + 计划；事件 `t` 之后 SHALL NOT 修改 `x2/y2`/`subject_end`/`carrier_end`；执行偏差置 `plan_divergence`
+
 ### Requirement: 高亮参与者的可达性检查与修复
 
-事件发出前 SHALL 用同一积分器做可达性检查：`reachable(pos, vel, end, T)` 用**真实可用时长 `T`**（`floor(T/SIM_DT)` 个整步 + 一个 `dt_rem = T − n·SIM_DT` 的部分步，`dt_rem > 0` 时），SHALL NOT 用 `ceil(T/SIM_DT)` 多给时间；末态满足 `|pos_end−end| ≤ REACH_TOL_M` 且 `v_end ≤ REACH_SPEED_TOL` 才算可达。参与者 SHALL 用 `PRECISION_ARRIVE_RADIUS_M` 的精确到达模式。不可达时的修复顺序 SHALL 为：① 延长时限（不把 pass 速度推出 L2 带）；② 沿原方向把落点移入可达集（传球缩短 / 扑救点沿球路前移 / 接触点改到双方可达集交点）；③ 置 `highlight_infeasible` 并不发射结果。SHALL NOT 先固定事件结果（`x2/y2` / `subject_end` / `loose`）再让参与者瞬移凑终态。
+可达性用**真实可用时长 `T`**（`floor(T/SIM_DT)` 个整步 + 一个 `dt_rem` 部分步，SHALL NOT 用 `ceil` 多给时间）；末态满足 `|pos_end−end| ≤ REACH_TOL_M` 且 `v_end ≤ REACH_SPEED_TOL` 才算可达。参与者 SHALL 用 `PRECISION_ARRIVE_RADIUS_M`。不可达时的修复顺序 SHALL 为：① 延长时限（不把 pass 速度推出 L2 带）；② 沿原方向把落点移入可达集；③ 置 `highlight_infeasible` 并不发射结果。SHALL NOT 先固定事件结果再让参与者瞬移凑终态。
 
 #### Scenario: 接球可达性检查
 
@@ -168,7 +192,7 @@
 
 #### Scenario: beat 节拍固定
 - **WHEN** 引擎产出 beat 事件序列
-- **THEN** **相邻已发 beat** 的 `t` 差 SHALL ∈ {0.1, 0.2} ± 0.001（0.1 = 决策/事件/高亮终点切段，0.2 = 名义 beat）；终场最后一段例外，`dt = dur − t_last`（0 < dt ≤ 0.2）。死球/重开准备窗口允许 gap ≤ 2.0s，且若窗口 > 2.0s 引擎 SHALL 至少每 2.0s 产一条静态 beat（使**每一对相邻已发 beat** 都 ≤ 2.0s）；终场排空期（`t ≥ dur`）不产 beat，不受本断言约束
+- **THEN** 按路径/边界类型判定（不是单一常量集合）：开放比赛/重开准备的**相邻已发 beat** `t` 差 SHALL ∈ {0.1, 0.2} ± 0.001（0.1 = 决策/事件/高亮终点切段，0.2 = 名义；**0.4 不合法**）；死球窗口允许 gap ≤ 2.0s，且若窗口 > 2.0s 引擎 SHALL 至少每 2.0s 产一条静态 beat（使**每一对相邻已发 beat** 都 ≤ 2.0s）；终场最后一段例外，`dt = dur − t_last`（0 < dt ≤ 0.2）且 `t+dt=dur`；终场排空期（`t ≥ dur`）不产 beat，不受本断言约束
 
 #### Scenario: 速度不超物理量
 - **WHEN** 引擎产出带 speed 的事件
