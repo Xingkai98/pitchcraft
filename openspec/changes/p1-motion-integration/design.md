@@ -1,6 +1,6 @@
 # Design: 引擎统一运动执行层（C1 运动学，GitHub #170）
 
-> **状态：待用户批准（design-only，不写实现）。**
+> **状态：D11 六项决策已由用户拍板（2026-11-21，全按推荐）；design 批准仍待 gpt-6.1-sol 审阅收敛 High。**
 > 批准方式（#170 已定）：用户在 #170 评论「design 批准」或在对应 PR approve。
 > 批准链接：_待填_。
 >
@@ -113,7 +113,8 @@ y_norm = pos_m.y / 68.0
 
 ### D4.4 同队分离与碰撞
 
-- 同队 2.2m 约束保留（P34/#53 的契约），但从「直接推端点」改为「约束求解 + 速度修正」：推完后用位移差/`SIM_DT` 更新速度，并把加速度/转向上限纳入求解；若无法同时满足，优先保持间距，标记本子步的 velocity correction。
+- 同队 2.2m 约束保留（P34/#53 的契约），但从「直接推端点」改为「约束求解 + 速度修正」：推完后用位移差/`SIM_DT` 更新速度，并把加速度/转向上限纳入求解。
+  **硬规则（已拍板）**：间距是**硬不变量**；速度修正 SHALL 满足 `|Δv| ≤ a_max·SIM_DT` 与转向上限。若在本子步约束内**不可行**，求解器 SHALL 显式标记 `constraint_infeasible` 并让对应守卫红，**SHALL NOT** 静默推端点或跳过速度修正来「凑过」间距。换句话说：不绕过加速度约束，也不放弃间距契约；两者冲突时暴露为失败，而不是悄悄选一个。
 - carrier 仍参与端点分离，但射门推进/起脚窗口的 swept_light 豁免保留（P34 的教训）。
 - 高亮参与者的滑行段继续作为约束；其显示轨迹必须与运动层同一时间语义（`BEAT_DT`）。
 
@@ -122,9 +123,10 @@ y_norm = pos_m.y / 68.0
 ### D5.1 beat 5Hz
 
 - `beat` 每 `BEAT_DT=0.2s` 一条；`movers` 含本拍在动的球员（`from/to/speed/action`）。
-- `main` / `ball` 的携带规则必须写死，避免 2.5 倍重复：
-  - **推荐**：`main`/`ball` 只在「状态变化」或 decision 拍携带；其余 beat 只带 `movers`，viewer 保持上一状态。
-  - 若 reviewer 认为这破坏现有「beat 必有 main 或 ball」的 spec，需在 spec delta 里显式 MODIFIED，不能只改测试。
+- `main` / `ball` 的携带规则（**已拍板，不再留推荐项**）：
+  - `main`/`ball` **只在「状态变化」或 decision 拍（`DECISION_DT`）携带**；其余 beat 只带 `movers`，viewer 保持上一状态。
+  - 若现有「beat 必有 main 或 ball」的 spec 条款与此冲突，必须在 `event-stream-protocol` 的 spec delta 里显式 MODIFIED（复制全部 scenario），不能只改测试。
+  - 该规则是 5Hz 体积预算的前提；若 reviewer 证明 viewer 无法在只带 movers 的 beat 上保持状态，再退回「每个 decision 拍带一次 main/ball」的变体，但必须写明理由。
 - `MODEL_VERSION 11→12`；新 `engine/tests/golden-v12/`；旧 golden 保留。
 
 ### D5.2 是否加 `vx/vy/heading`
@@ -224,15 +226,21 @@ y_norm = pos_m.y / 68.0
 | viewer 双运动 | 引擎连续 + T1/Catmull 叠加 | 第一阶段关闭 T1/Catmull；视觉验收后再决定 |
 | 研究门红 | p15/p16/p124/p17b 固定 seed 失效 | 换样本不换判据；先做不变量化夹具 |
 
-## D11 需要用户拍板的决策
+## D11 决策记录（用户已拍板，2026-11-21）
 
-1. **决策 cadence**：保持 2Hz（推荐）还是回 #170 的 1Hz？
-2. **beat cadence**：5Hz（推荐）还是 4Hz/10Hz？
-3. **协议字段**：第一阶段只发端点（推荐）还是加 `vx/vy/heading`？
-4. **角球带**：重锚到真实 ~10.27（推荐）还是降级为报告项？
-5. **守卫不变量化**：作为本 change 的 Phase 0（推荐）还是单独 pre-change？
-6. **C1 范围**：只做运动执行（推荐）还是顺带 C2 站位表？
+用户决定：**六项全部按推荐**。以下不再是开放项；后续审阅/实现不得把它们重新当成待定。
+
+| # | 决策 | 已定值 |
+|---|---|---|
+| 1 | 决策 cadence | **保持 2Hz**（`DECISION_DT=0.5`），不回 #170 的 1Hz |
+| 2 | beat cadence | **5Hz**（`BEAT_DT=0.2`） |
+| 3 | 协议字段 | **第一阶段只发端点**（`from/to/speed/action`），不加 `vx/vy/heading` |
+| 4 | 角球带 | **重锚到真实锚 ~10.27**，保留单场 max 护栏；不降级为报告项、不删门 |
+| 5 | 守卫不变量化 | **作为本 change 的 Phase 0**（p53/p31/p6/p32 替换夹具，保留契约） |
+| 6 | C1 范围 | **只做运动执行**；C2/C3/C4/C5 不在本 change |
 
 ## D12 批准记录
 
-（待用户批准后填写：日期、链接、批准的范围/例外。）
+- **2026-11-21**：用户在会话中拍板 D11 六项全按推荐。
+- design 正式批准（#170 评论「design 批准」或 PR approve）：_待填_。
+- 批准范围：C1 运动执行 + Phase 0 守卫/角球前置；不含 C2–C5。

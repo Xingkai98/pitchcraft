@@ -6,10 +6,10 @@
 ## 1. 提案与设计（当前阶段）
 
 - [x] 1.1 `proposal.md` / `design.md` / `specs/match-engine/spec.md` / `specs/event-stream-protocol/spec.md` / `tasks.md`
-- [ ] 1.2 `openspec validate p1-motion-integration --strict` → valid
+- [x] 1.2 `openspec validate p1-motion-integration --strict` → valid
 - [ ] 1.3 gpt-6.1-sol 零上下文审阅：P0/P1（high）收敛到 0
 - [ ] 1.4 用户在 #170 / PR 批准 design；批准链接写回 `design.md`
-- [ ] 1.5 拍板 design D11 的 6 个决策（cadence / beat / 协议字段 / 角球带 / 守卫前置 / C1 范围）
+- [x] 1.5 拍板 design D11 的 6 个决策（2026-11-21，全部按推荐；见 `design.md` D11）
 
 ## 2. Phase 0：前置（design 批准后先做）
 
