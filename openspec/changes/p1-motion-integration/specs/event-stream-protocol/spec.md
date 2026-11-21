@@ -41,6 +41,16 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 - **WHEN** 检查切换边界的位置
 - **THEN** `main.x2/y2`、`movers.to_x/to_y`、事件终点与引擎状态位置 SHALL 一致；`from(N+1) == to(N)` 对同一实体在跨表示时仍成立
 
+### Requirement: 非网格状态转移
+
+非终场状态转移 SHALL 只在 `SIM_DT=0.1s` 网格边界确认：连续停点/减速在段内轨迹表现（宿主段 `to` 为该网格边界状态），SHALL NOT 新增任意短 dt（非末段 `dt` 只能是 0.1 或 0.2；终场末段短 dt 是唯一例外）。
+
+#### Scenario: 非网格停点不切短段
+
+- **GIVEN** 球在 `[0.5,0.7)` 段内的 `0.63` 连续减速停下
+- **WHEN** 引擎产出该段与其后的 beat
+- **THEN** 状态转移 SHALL 在下一个 0.1s 网格边界（0.7）确认；SHALL NOT 在 0.63 切出一个非终场短段（`dt=0.13`）；宿主段 `to` 为 0.7 时刻状态，停点的连续轨迹在段内表现
+
 ### Requirement: beat 的死球与终场边界
 
 死球窗口可以不产 beat，约束对象是**相邻已发 beat**：任意一对相邻已发 beat 的 `t` 差 SHALL ≤ 2.0s。若死球窗口 > 2.0s，引擎 SHALL 至少每 2.0s 发一条静态 `ball` beat，使每一对相邻已发 beat 都满足上界；死球总时长本身可以 > 2.0s。终场排空期（`t ≥ dur`）SHALL NOT 产 beat；同一 `dur` 上的链式 finalize SHALL 只保留**一个终态事件**，不新增段；终场前最后一段 SHALL 以 `dur` 结束，允许 `dt = dur − t_last`（0 < dt ≤ 0.2）。

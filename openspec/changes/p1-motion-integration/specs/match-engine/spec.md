@@ -106,13 +106,35 @@
 
 ### Requirement: 事件提交协议
 
-候选事件 SHALL 只定意图，**不先写** `x2/y2` / `subject_end` / `carrier_end` / `loose`。发射前 SHALL 用同一积分器 + 同一分离 solver 做确定性前视规划到 `t_end`（含未来 decision；`PLAN_HORIZON` ≥ 最长高亮时长），得到球路、时长与全部参与者端点；前视 SHALL 用克隆 RNG：提交时采用影子的 RNG 状态与未来 decision 结果（不重掷），拒绝时丢弃影子且不消耗正式 RNG。验证后**原子提交事件 + 轨迹计划**，提交后不得改已承诺锚点。执行时逐段核对；不一致置 `plan_divergence`，不得在 finalize 投影或覆盖已发事件。若 `t_end − t > PLAN_HORIZON` 或计划不能稳定，SHALL 在事件 `t` 之前调整时间/落点或置 `highlight_infeasible`，SHALL NOT 先发事件再补计划。
+候选事件 SHALL 只定意图，**不先写** `x2/y2` / `subject_end` / `carrier_end` / `loose`。发射前 SHALL 用同一积分器 + 同一分离 solver 做确定性前视规划（含未来 decision 与分离；`PLAN_HORIZON` ≥ 最长高亮时长），得到球路、时长与全部参与者端点；前视用 RNG 副本，提交时记录 `cp_commit`/`cp_end`，覆盖内不消耗正式 RNG，交还 live 用 `cp_end`。验证后**原子提交事件 + `CommittedPlan`**；提交后 SHALL NOT 修改已承诺锚点。若视野不足或计划不稳定，SHALL 在事件 `t` 之前调整时间/落点或置 `highlight_infeasible`；SHALL NOT 先发事件再补计划。
 
 #### Scenario: 发射前原子提交
 
 - **GIVEN** 一条 pass 候选事件，`t_end − t = 0.475s`，期间无 decision
 - **WHEN** 引擎决定是否发射
-- **THEN** 先规划到 `t_end`（含 22 人与分离），得到参与者终点；验证后原子提交事件 + 计划；事件 `t` 之后 SHALL NOT 修改 `x2/y2`/`subject_end`/`carrier_end`；执行偏差置 `plan_divergence`
+- **THEN** 先规划到包含 `t_end` 的完整输出段末端（`P_end=ceil(t_end/SIM_DT)·SIM_DT`，含 22 人与分离），得到参与者终点；验证后原子提交事件 + 计划；事件 `t` 之后 SHALL NOT 修改 `x2/y2`/`subject_end`/`carrier_end`
+
+### Requirement: CommittedPlan 执行
+
+`CommittedPlan` SHALL 覆盖 `[t_c, P_end]`，至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交；内容 SHALL 含逐边界完整状态、decision 结果、事件列表、RNG checkpoints（`cp_commit`/每个 decision/`cp_end`）与规划轨迹。覆盖内调度器 SHALL **只消费缓存**：SHALL NOT 调 `decision()`、SHALL NOT 重掷 RNG；逐边界核对实际状态。`P_end` 处原子交还 live scheduler（状态 + `cp_end`），不得回滚已提交字段。计划末端若产生新高亮，follow-on plan SHALL 从 `P_end` 开始且无重叠；链式上限 `MAX_PLAN_CHAIN=3` / `PLAN_CHAIN_MAX_S=30s`，超限 `highlight_infeasible`。
+
+#### Scenario: 计划覆盖内不重掷
+
+- **GIVEN** 一个 `CommittedPlan` 覆盖 `[1.0,1.7]`，1.5 是 decision 边界
+- **WHEN** 调度器执行到 1.5
+- **THEN** 它 SHALL 读取计划缓存的 decision 结果（动作机会/目标/mode/事件）；SHALL NOT 调用 `decision()` 或重掷 RNG；beat 的 `from`/`to` 取缓存状态
+
+#### Scenario: 计划末端交还
+
+- **GIVEN** 一个计划在 `P_end=1.7` 结束，`cp_end` 是影子末端 RNG checkpoint
+- **WHEN** 执行到 1.7
+- **THEN** 应用计划 finalize/状态后 SHALL 原子交还 live：状态 = 缓存末端状态、RNG = `cp_end`；SHALL NOT 回滚已发事件/锚点；此后 1.7 的新事件/decision 由 live scheduler 处理
+
+#### Scenario: follow-on 无重叠
+
+- **GIVEN** 计划末端 `P_end` 产生新高亮候选
+- **WHEN** 引擎决定接续
+- **THEN** follow-on plan SHALL 从 `P_end` 开始（新事件 `t ≥ P_end`），与前一计划无重叠；若 `t < P_end`，必须合并进当前计划或拒绝；链数超过 `MAX_PLAN_CHAIN=3` 或总时长 > `PLAN_CHAIN_MAX_S=30s` 时置 `highlight_infeasible`
 
 ### Requirement: 高亮参与者的可达性检查与修复
 
@@ -158,6 +180,12 @@
 
 在一个段边界上，引擎 SHALL 按「上段终态 → finalize/事件 → decision → snapshot → 下一段积分/缓存 → 发出下一段 beat」执行；beat SHALL 描述事件之后的段。非 beat 事件与 beat 同时间戳时，事件 SHALL 排在 beat 之前。球的飞行终点 `t_end = t + dist/speed` 不要求落在段边界上：事件自身的锚点仍用真实 `t_end`；高亮 SHALL 在**第一个 ≥ `t_end` 的 0.1s 网格 sim step** finalize（该步进入段边界集合 `E`）。终场排空期（`t ≥ dur`）SHALL NOT 产 beat；同一 `dur` 上的链式 finalize SHALL 只保留一个**终态事件**，不新增段；终场前最后一段以 `dur` 结束，允许 `dt = dur − t_last`（0 < dt ≤ 0.2）。
 
+#### Scenario: 顺序合同
+
+- **GIVEN** 一个 live 段边界上同时有 finalize、decision 与 beat
+- **WHEN** 引擎提交
+- **THEN** 顺序 SHALL 为「上段终态 → finalize/事件 → decision → snapshot → 下一段积分/缓存 → beat」；beat 的 `from` 是 decision 后的状态
+
 #### Scenario: 决策与事件先于 beat
 
 - **GIVEN** 一个 `t=1.0` 的段边界上同时有决策、一条 tackle 事件与一条 beat
@@ -175,6 +203,16 @@
 - **GIVEN** 比赛在 `dur` 结束且仍有悬空高亮
 - **WHEN** 终场 finalize
 - **THEN** `t ≥ dur` 不产 beat；同一 `dur` 上的链式 finalize 只保留一个终态事件、不新增段；终场前最后一段以 `dur` 结束（`dt` 可为 `dur − t_last`，0 < dt ≤ 0.2）
+
+### Requirement: 计划覆盖边界的执行
+
+若一个段边界被 `CommittedPlan` 覆盖，finalize/事件/decision/下一段状态 SHALL 取计划缓存；SHALL NOT 重新 `decision()`、掷骰或积分；逐边界核对实际状态 == 缓存状态，不一致置 `plan_divergence`（D2.2）。
+
+#### Scenario: 计划覆盖边界
+
+- **GIVEN** 一个段边界被 `CommittedPlan` 覆盖
+- **WHEN** 调度器执行到该边界
+- **THEN** decision/事件/下一段状态 SHALL 取计划缓存；SHALL NOT 调用 `decision()` 或重掷 RNG；实际状态与缓存不一致时置 `plan_divergence`
 
 ## MODIFIED Requirements
 

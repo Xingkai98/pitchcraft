@@ -10,7 +10,7 @@
 - [ ] 1.3 gpt-6.1-sol 零上下文审阅：High 收敛到 0（Round 1 H1–H6 见 `design.md` D2.3/D5.1/D6/D8/D5.4/D9；Round 2 的 R2-H1/H2/H5/H6/N1 见 D2.2/D2.3/D5.1/D5.4/D4.4/D9）
 - [ ] 1.4 用户在 #170 / PR 批准 design；批准链接写回 `design.md`
 - [x] 1.5 拍板 design D11 的 6 个决策（2026-11-21，全部按推荐；见 `design.md` D11）
-- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 2 MODIFIED + 5 ADDED、`match-engine` 4 MODIFIED + 9 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
+- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 2 MODIFIED + 6 ADDED、`match-engine` 4 MODIFIED + 11 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
 - [x] 1.7 归档合并自检：scenario 集合包含检查（D8.1）；`validate --strict` 只作门槛，不作语义批准
 - [x] 1.8 M/L 修复：M1 成本预算（D7.5）、M2 运动学数值（D4.2）、M3 单步算法（D4.4）、M4 快照（D2.4）、M5 数据依赖（D7.4）、M6 fill 域（D5.3）、L1 措辞、L2 golden/研究门（D7.3）
 - [x] 1.9 Round 2 修复：权威调度与 Trace C（R2-H1）、零位移状态首锚点（R2-H2）、参与者进入 movers + 真实 T/精确到达/finalize 连续（R2-H5）、turnsPerPlayer/等效性盲测/7 真实簇（R2-H6）、总向量预算 A_MAX + 米制边界（R2-N1）、M1 旧流选择、M2 体积上界、M3 save 否决分母、L1/L2 转述
@@ -25,7 +25,8 @@
 - [ ] 2.6 重扫 `realism.rs:453` 的 `ok_step` 假绿分支，改成从 `BEAT_DT` / `DECISION_DT` 字面量推导
 - [ ] 2.7 **基线数据前置**（M5）：确认 Metrica 2 场 + SkillCorner 20 场的授权位置/文件身份/离线可用；缺数据则停在 Phase 0（D7.4）
 - [ ] 2.8 **测试成本实测**（M1）：用 v11 同配置测 debug/release、p124、L1、spacing-sweep、5min/90min viewer（加载/seek/帧耗时、JSON 字节、峰值内存），替换 D7.5 的「估算」列
-- [ ] 2.9 **盲测/旧红预注册**（R3-M3）：冻结 source×seed 配对矩阵、裁判/重复窗处理、多向聚类 bootstrap、证据等级 A/B/C、扩样上限 140 clip、7 真实簇下限；在候选调参前冻结每个已有红的逐指标非恶化边界（基线配对 95% CI 半宽向上取整）
+- [ ] 2.9 **盲测/旧红预注册**（R3-M3）：冻结 source×seed 配对矩阵、裁判/重复窗处理、多向聚类 bootstrap、证据等级 A/B/C、扩样上限 140 clip、7 真实簇下限；在候选调参前冻结每个已有红的逐指标非恶化边界（来源=base 逐 seed 分布不确定度/预注册扰动块/领域容忍，见 D9.3；单位与取整粒度写死）
+- [ ] 2.10 **前视规划 smoke**（R4-M1）：1 seed 专测规划次数/平均与最大视野/候选拒绝与重试/缓存内存/执行复用率/计划段测试时长；超预算只优化或停止设计，不得回退「先写锚点再推位置」
 
 ## 3. 运动执行层
 
@@ -43,6 +44,8 @@
 - [ ] 3.12 save 几何否决只在固定球路内：不改 off-target；三分母（全部 shot / 原 save / 尝试修复的 save）+ 逐 seed + ≤2% 原 save + L1 非恶化门（D5.4/D9.1）
 - [ ] 3.13 事件提交协议（R3-H5）：候选只定意图 → 含分离的 22 人前视规划到 t_end（`PLAN_HORIZON`）→ 验证 → 原子提交事件+计划 → 执行核对；偏差置 `plan_divergence`，提交后不改已承诺锚点
 - [ ] 3.14 四态驱动状态机（R3-H2）：`controlled`/`loose`/`highlight`/`restart`；高亮开始事件=首锚点、禁 main/ball；高亮结束后首个 controlled/loose 段强制 main/ball（D5.1）
+- [ ] 3.15 唯一权威执行规则（R4-H1）：`CommittedPlan` 覆盖 `[t_c, P_end=ceil(t_end/SIM_DT)*SIM_DT]`，逐边界状态/decision/事件/RNG checkpoints；覆盖内只消费缓存、不调 `decision()`/不掷骰；逐边界核对；`P_end` 用 `cp_end` 原子交还 live；偏差 `plan_divergence`
+- [ ] 3.16 follow-on 计划链（R4-H1）：新高亮从 `P_end` 起无重叠；`t<P_end` 必须合并或拒绝；`MAX_PLAN_CHAIN=3` / `PLAN_CHAIN_MAX_S=30s` 超限 `highlight_infeasible`
 
 ## 4. 协议与 spec delta（实现）
 
