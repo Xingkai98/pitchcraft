@@ -1,9 +1,10 @@
 # Design: 引擎统一运动执行层（C1 运动学，GitHub #170）
 
-> **状态：D11 六项决策已由用户拍板（2026-11-21，全按推荐）；gpt-6.1-sol Round 1–6 审阅 loop 已收敛（Round 6 = 0 High / 3 Medium / 1 Low，可批准）；design 正式批准待用户确认。**
-> Round 1 H1–H6、Round 2 R2-H1/H2/H5/H6/N1、Round 3 R3-H1/H2/H5/H6/N1-M/L、
-> Round 4 R4-H1/M1–M3/L1、Round 5 R5-H1/M1/M2 的设计答案已落盘
-> （D2.2/D2.3/D4.4/D5.1/D5.4/D6/D7.5/D8/D9；Fix log 在 `notes/review-gpt61-2026-11-21.md`）。
+> **状态：D11 六项决策（2026-11-21）与 D13 的 12 项 grill 决策（2026-11-23）均已由用户按推荐拍板；gpt-6.1-sol 审阅 loop（Round 1–10 + batch grill 后 Round 7–10）已收敛：Round 10 = 0 High，可批准；design 正式批准待用户确认。**
+> Round 1 H1–H6、Round 2 R2-H1/H2/H5/H6/N1、Round 3 R3-H1/H2/H5/H6、Round 4 R4-H1、
+> Round 5 R5-H1、Round 6（0 High）、post-grill Round 7（0 High）、Round 8 R8-H1、
+> Round 9 R9-H1、Round 10（0 High）的设计答案已落盘
+> （D2.2/D2.3/D4.4/D5.1/D5.4/D6/D7.5/D8/D9/D13；Fix log 在 `notes/review-gpt61-2026-11-21.md`）。
 > 批准方式（#170 已定）：用户在 #170 评论「design 批准」或在对应 PR approve。
 > 批准链接：_待填_。
 >
@@ -1242,8 +1243,14 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
   R7-M1 S0 数值例、R7-M2 1.7 非 decision、R7-M3 重试夹具、R7-M4 悬空高亮终场
   finalize 场景已在本轮同步；R7-L1（D12 链接）已补。Round 7 报告见
   `notes/review-gpt61-2026-11-21.md` 的 `## Round 7 (post-grill)`。
-- design 正式批准（#170 评论「design 批准」或 PR approve）：_待填_（12 项决策已拍板，
-  但 formal design approval 仍待用户明确）。
+- **2026-11-23（post-decision Round 8–10）**：12 项 D13 决策落盘后，Round 8 发现
+  `save_t` 非网格与 finalize 网格冲突（R8-H1）→ 修；Round 9 发现 saved shot 的
+  `CommittedPlan` 终点由 `t_end` 推导、与 `save_t` 状态提交不一致（R9-H1）→ 修；
+  **Round 10 = 0 High**，R9-M1（`save_t=1.43→P_save=1.5` 同刻 decision 场景）与
+  R9-L1（viewer 段内采样断言）为非阻塞测试覆盖增强。报告见
+  `notes/review-gpt61-2026-11-21.md` 的 `## Round 8/9/10`。
+- **结论：design 已具备 formal approval 条件**；design 正式批准（#170 评论「design 批准」
+  或 PR approve）：_待填_。
 - 批准范围：C1 运动执行 + Phase 0 守卫/角球前置；**含 D1.2 的三类可见行为差异**
   （save 几何否决、参与者进入 `movers`、可达性修复+候选拒绝）；不含 C2–C5。
 
