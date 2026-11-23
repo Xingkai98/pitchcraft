@@ -62,9 +62,9 @@
 
 #### Scenario: 总向量加速度预算
 
-- **GIVEN** `v=6 m/s, A0=6.4, S0=9.5, a_lat=6.5, dt=0.1, θ_err=0.2 rad`
+- **GIVEN** `v=6 m/s, A0=6.4, S0=9.8, a_lat=6.5, dt=0.1, θ_err=0.2 rad`
 - **WHEN** 一个正常运行子步同时加速与转向
-- **THEN** 纵向 `Δspeed=0.236 m/s`、横向 `v·Δθ=0.650 m/s`；**精确二维旋转**的 `|Δv_total| ≈ 0.703044 m/s`；SHALL ≤ `A_MAX·dt`（`A_MAX=8.0` → 0.8）；不得用 `A0·dt=0.64` 误判为超界（那会把正常运动判红）。线性化 `sqrt(0.236²+0.650²)=0.692` 只是近似，SHALL NOT 用作精确验收值
+- **THEN** 纵向 `Δspeed=0.24816 m/s`、横向 `v·Δθ=0.650 m/s`；**精确二维旋转**的 `|Δv_total| ≈ 0.7079 m/s`；SHALL ≤ `A_MAX·dt`（`A_MAX=8.0` → 0.8）；不得用 `A0·dt=0.64` 误判为超界（那会把正常运动判红）。线性化 `sqrt(0.248²+0.650²)=0.696` 只是近似，SHALL NOT 用作精确验收值
 
 ### Requirement: A_MAX 预算优先
 
@@ -72,9 +72,9 @@
 
 #### Scenario: A_MAX 预算优先
 
-- **GIVEN** `v=2 m/s, A0=6.4, S0=9.5, a_lat=6.5`
+- **GIVEN** `v=2 m/s, A0=6.4, S0=9.8, a_lat=6.5`
 - **WHEN** 同时加速与转向
-- **THEN** 纵向 `6.4×(1−2/9.5)=5.053`、合成 `sqrt(5.053²+6.5²)=8.233 > A_MAX=8.0`；该子步 SHALL 被裁剪到 `A_MAX·SIM_DT` 内；裁剪有界、裁剪率只报告
+- **THEN** 纵向 `6.4×(1−2/9.8)=5.0939`、合成 `sqrt(5.0939²+6.5²)=8.258 > A_MAX=8.0`；该子步 SHALL 被裁剪到 `A_MAX·SIM_DT` 内；裁剪有界、裁剪率只报告
 
 ### Requirement: 米制边界与边界重置
 
@@ -162,9 +162,9 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 #### Scenario: 拒绝→重试→成功
 
-- **GIVEN** 候选 decision 已确定意图并记录 `cp_commit`；plan#1 因不可行被拒绝
+- **GIVEN** 候选 decision 已确定意图并记录 `cp_commit`；`attempt=0` 原计划不可行被拒绝；预注册 `attempt=1` 修复档（只改落点/时限、不改 outcome）可达
 - **WHEN** 重试
-- **THEN** live SHALL 保持 `cp_commit`（不是 `cp_end`）；SHALL NOT 重抽 candidate result；重试从 `cp_commit` 起、意图/参数不变；影子 state/events/RNG 丢弃；成功后事件/decision 各只发射一次
+- **THEN** live SHALL 保持 `cp_commit`（不是 `cp_end`）；SHALL NOT 重抽 candidate result；`attempt=1` 从 `cp_commit` 起、意图/参数不变；影子 state/events/RNG 丢弃；成功后事件/decision 各只发射一次；`attempt=2` 仍不可行则拒绝
 
 #### Scenario: 链上限拒绝
 
@@ -198,11 +198,17 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 - **WHEN** 执行到 1.5 之后
 - **THEN** 计划 SHALL 以 `P_eff=1.55` 结束：最后段 `[1.5,1.55]` 的 `dt=0.05`；`t≥1.55` 不发 beat；`cp_end` 在 1.55 终态、无未来 decision；SHALL NOT 原样发到 1.7
 
+#### Scenario: 悬空高亮终场 finalize 链
+
+- **GIVEN** 一条 shot 高亮的 `t_end=1.8 > dur=1.55`，`P_eff=dur=1.55`
+- **WHEN** 计划提交 `P_eff` 终态
+- **THEN** 计划 SHALL 缓存并提交该高亮的终场 finalize 结果（比分/球权/新高亮链）；终态账本每条恰发一次；`t≥1.55` SHALL NOT 再有 beat、decision 或 live finalize；SHALL NOT 保留 main 的独立排空循环
+
 #### Scenario: 计划末端交还
 
 - **GIVEN** 一个计划在 `P_end=1.7` 结束，`cp_end` 是影子末端 RNG checkpoint
 - **WHEN** 执行到 1.7
-- **THEN** 应用计划 finalize/状态后 SHALL 原子交还 live：状态 = 缓存末端状态、RNG = `cp_end`；SHALL NOT 回滚已发事件/锚点；此后 1.7 的新事件/decision 由 live scheduler 处理
+- **THEN** 应用计划 finalize/状态后 SHALL 原子交还 live：状态 = 缓存末端状态、RNG = `cp_end`；SHALL NOT 回滚已发事件/锚点；此后 1.7 的新事件由 live 处理；**1.7 不是 decision 点**，`decision` 只在 `decision_due` 执行（此处无）
 
 #### Scenario: follow-on 无重叠
 
@@ -212,7 +218,13 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 ### Requirement: 高亮参与者的可达性检查与修复
 
-可达性用**真实可用时长 `T`**（`floor(T/SIM_DT)` 个整步 + 一个 `dt_rem` 部分步，SHALL NOT 用 `ceil` 多给时间）；末态满足 `|pos_end−end| ≤ REACH_TOL_M` 且 `v_end ≤ REACH_SPEED_TOL` 才算可达。参与者 SHALL 用 `PRECISION_ARRIVE_RADIUS_M`。不可达时的修复顺序 SHALL 为：① 延长时限（不把 pass 速度推出 L2 带）；② 沿原方向把落点移入可达集；③ 置 `highlight_infeasible` 并不发射结果。SHALL NOT 先固定事件结果再让参与者瞬移凑终态。
+可达性用**真实可用时长 `T`**（`floor(T/SIM_DT)` 个整步 + 一个 `dt_rem` 部分步，SHALL NOT 用 `ceil` 多给时间）。判据 SHALL 分 **settle / impact**：settle（重开者、需停的连接球）要求 `|pos_end−end| ≤ REACH_TOL_M` 且 `v_end ≤ REACH_SPEED_TOL`；impact（tackle 双方、门将扑救、拦截者、允许跑动接的接球者）只要求 `|pos_end−end| ≤ REACH_TOL_M` 且 `v_end ∈ [0, mode_cap]`，不要求停。参与者 SHALL 用 `PRECISION_ARRIVE_RADIUS_M`。不可达时的修复顺序 SHALL 为：① 延长时限（不把 pass 速度推出 L2 带）；② 沿原方向把落点移入可达集；③ 置 `highlight_infeasible` 并不发射结果。SHALL NOT 先固定事件结果再让参与者瞬移凑终态。
+
+#### Scenario: settle / impact 两分
+
+- **GIVEN** 一次 tackle（impact）与一次重开走位（settle）
+- **WHEN** 做可达性检查
+- **THEN** tackle 双方只要求位置可达且 `v_end ∈ [0, mode_cap]`（不要求停）；重开者要求 `v_end ≤ REACH_SPEED_TOL`；不得用统一 `v_end≤0.5` 把 tackle/扑救判成不可达
 
 #### Scenario: 接球可达性检查
 
@@ -230,7 +242,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 - **GIVEN** 一条 shot 事件且原结果为 save（save-caught/rebound），球路固定
 - **WHEN** 门将在真实时限内到不了扑救点
-- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点；若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；**不得把原本 `off_target` 的 shot 改成 goal**；否决率报三个分母（全部 shot / 原 save / 尝试修复的 save）、逐 seed，超过**原 save 结果的 2%** 时停止并另立概率标定 change；挂 L1 射门结果分布的既有红非恶化门
+- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点，并写入 `save_x/save_y`；`save_t` 是该点的时刻，finalize 在 `save_t`；`x2/y2` 仍是门线。若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；**不得把原本 `off_target` 的 shot 改成 goal**；否决率报三个分母（全部 shot / 原 save / 尝试修复的 save）、逐 seed，超过**原 save 结果的 2%** 时停止并另立概率标定 change；挂 L1 射门结果分布的既有红非恶化门
 
 #### Scenario: 抢断接触点
 
@@ -300,7 +312,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 #### Scenario: 射门落点在球门矩形内
 - **WHEN** 引擎产出一条 shot 事件
-- **THEN** goal/saved 的 y2 SHALL ∈ [0.455, 0.545]，x2 SHALL = 攻方门线（home 射 0.98 / away 射 0.02）；off_target 的 y2 SHALL ∈ [0.40, 0.445] ∪ [0.555, 0.60]（贴柱偏出）
+- **THEN** goal/saved 的 y2 SHALL ∈ [0.455, 0.545]，x2 SHALL = 攻方门线（home 射 0.98 / away 射 0.02）；off_target 的 y2 SHALL ∈ [0.40, 0.445] ∪ [0.555, 0.60]（贴柱偏出）。**`saved` 的 `save_x/save_y` 是扑救点，可不在门线/球门矩形内；本 scenario 只约束 `x2/y2`，不得用 `save_*` 改写门线语义。**
 
 #### Scenario: beat 节拍固定
 - **WHEN** 引擎产出 beat 事件序列
@@ -335,7 +347,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 ### Requirement: 同队球员间距（≥2m）
 
-引擎 SHALL 使同队两球员在引擎发射的任意位置采样点（lineup 初始站位、mover 终点 `to_x/to_y`、main 终点 `x2/y2`、以及模拟状态位置 `st.pos`）上的**米制**间距 ≥ 2m（阈值常量 `SAME_TEAM_MIN_DIST_M` = 2.2m，含 JSON 4 位小数序列化与 `beat.dt` 采样插值的安全余量）。间距 SHALL 用真实米制几何计算（x 方向 × 105、y 方向 × 68），SHALL NOT 用归一化欧氏距离（归一化圆在 105×68 球场上 x 方向 2.1m、y 方向仅 1.36m）。分离 SHALL 覆盖 carrier、门将、特殊站位（角球包抄 / close_down / chase / anticipate）与到达半径内停者；由事件直接指定的终点（传球接球点 / 门将扑救点 / 抢断结算点 / 开球落点 / 松散球拾取点）SHALL 在写入状态前经同一分离。分离 SHALL 为纯函数：零额外 RNG、固定遍历顺序、不改变事件类型/频率的判定逻辑。**分离产生的速度修正 SHALL 计入 D4.4 的总向量预算 `|Δv_total| ≤ A_MAX·SIM_DT`（不得与加速/转向各自单独过门）；若在 3 次迭代内不可行，SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点。高亮参与者同样参与分离、不被冻结；其事件终点写成分离后的连续积分结果。** 段内插值中点 SHALL 由 viewer 侧 `player_overlap` detector 观测（不在引擎预计算每段中点推开）。
+引擎 SHALL 使同队两球员在引擎发射的任意位置采样点（lineup 初始站位、mover 终点 `to_x/to_y`、main 终点 `x2/y2`、以及模拟状态位置 `st.pos`）上的**米制**间距 ≥ 2m（阈值常量 `SAME_TEAM_MIN_DIST_M` = 2.2m，含 JSON 4 位小数序列化与 `beat.dt` 采样插值的安全余量）。间距 SHALL 用真实米制几何计算（x 方向 × 105、y 方向 × 68），SHALL NOT 用归一化欧氏距离（归一化圆在 105×68 球场上 x 方向 2.1m、y 方向仅 1.36m）。分离 SHALL 覆盖 carrier、门将、特殊站位（角球包抄 / close_down / chase / anticipate）与到达半径内停者；由事件直接指定的终点（传球接球点 / 门将扑救点 / 抢断结算点 / 开球落点 / 松散球拾取点）SHALL 在写入状态前经同一分离。分离 SHALL 为纯函数：零额外 RNG、固定遍历顺序、不改变事件类型/频率的判定逻辑。**分离产生的速度修正 SHALL 计入 D4.4 的总向量预算 `|Δv_total| ≤ A_MAX·SIM_DT`（不得与加速/转向各自单独过门）；若在 3 次迭代内不可行，SHALL 置 `constraint_infeasible` 并使守卫红，SHALL NOT 静默推端点。高亮参与者同样参与分离、不被冻结；其事件终点写成分离后的连续积分结果。** 分离预测视野 SHALL ≥ `max(0.75s, 到最近接近时间)`；投影层触发次数预注册目标 20 seed 内 0 次，触发即停止定位。**应急分支 B（仅预注册后启用）**：分离专用预算（每 0.1s 投影 ≤2.2m）+ `separation_push` 事件量；不得静默放宽 A0/a_lat 或 A_MAX。 段内插值中点 SHALL 由 viewer 侧 `player_overlap` detector 观测（不在引擎预计算每段中点推开）。
 
 #### Scenario: 整场无同队重叠
 - **GIVEN** 引擎以多 seed 模拟整场比赛
@@ -356,6 +368,12 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 #### Scenario: 拍内扫掠（viewer 插值口径）
 - **GIVEN** 两名同队球员某一段的线性轨迹（`from`→`to`，viewer 在锚点间线性插值）在中途 <2m
 - **THEN** 引擎 SHALL 对整条轨迹施加约束（侧向推移终点），使中点间距亦 ≥ 2m − 舍入余量；推移量 SHALL 有界（≤ 该球员本段步长 `speed×beat.dt`），超限时留给下一段而非横甩
+
+#### Scenario: 分离预测视野
+
+- **GIVEN** 两名同队球员以相对速度对穿，接近时间 >0.1s
+- **WHEN** 分离预测执行
+- **THEN** 预测视野 SHALL ≥ `max(0.75s, 到最近接近时间)`；投影层触发 SHALL 被预注册为 20 seed 内 0 次；触发即停止定位（或按预注册切 B），不得静默放宽预算
 
 #### Scenario: 分离位移有界
 - **GIVEN** 引擎产出的任一 beat

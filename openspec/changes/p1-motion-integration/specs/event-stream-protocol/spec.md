@@ -139,7 +139,31 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 - **WHEN** 重建画面状态
 - **THEN** 球 SHALL 向前找最近的主状态来源：当前活跃高亮的事件锚点优先，其次最近 `main` / `ball`，再其次最近 beat 的 mover；球员（含高亮参与者）用最近 mover / `main` 端点；高亮结束后球 SHALL 从事件终点续接，不得跳回高亮前的 `main`；稳定静止段的回扫 SHALL 命中该状态首段强制发出的 `main` / `ball`
 
+### Requirement: 射门扑救字段（save_x/save_y/save_t）
+
+`result=saved` 的 shot 事件 SHALL 携带 `save_x/save_y`（扑救点归一化坐标）与 `save_t`（扑救时刻，秒；可早于射门 `t_end`）。扑救点 SHALL 是门将可达集与球路径的最早交点，**可以不在门线上**；`x2/y2` SHALL 仍保持门线语义（L2 不变）。finalize SHALL 在 `save_t`，不是射门 `t_end`。该字段是协议 bump（随 `MODEL_VERSION 11→12`）。
+
+#### Scenario: saved shot 携带扑救点/时刻
+
+- **GIVEN** 一条 `result=saved` 的 shot 事件
+- **WHEN** 引擎发射该事件
+- **THEN** 事件含 `save_x/save_y/save_t`；`x2` 仍是攻方门线；`save_t` 可早于 `t_end`；finalize 在 `save_t`
+
+#### Scenario: 非 saved shot 不带扑救字段
+
+- **GIVEN** 一条 `goal` 或 `off_target` 的 shot 事件
+- **WHEN** 引擎发射该事件
+- **THEN** SHALL NOT 携带 `save_x/save_y/save_t`（或为 null）；不得用扑救字段改 L2 的 `x2/y2` 语义
+
 ## MODIFIED Requirements
+
+### Requirement: 事件字段定义
+
+每条事件 SHALL 包含：t（比赛时间秒）、type（事件类型）、subject（主球员 id）、x/y（发生位置归一化坐标）。可选的派生字段（from/to、x2/y2、result、speed、touch_freq、lead、score、detail、note、interceptor、receiver_x/receiver_y、loose_x/loose_y、carrier_from_x/carrier_from_y、keeper_x/keeper_y、**save_x/save_y/save_t**、h、card）按事件类型使用（card 仅 foul 用：`yellow`/`red`）。出界 pass（`result="out"`）SHALL 额外携带 `out_side`（`goal_line`/`sideline`）与 `out_pos`（真实越界坐标，可越界）；`x2/y2` 保留场内投影点（∈[0,1]）。
+
+#### Scenario: 出界 pass 携带显式出界字段
+- **GIVEN** 一条出界 pass 事件
+- **THEN** 事件含 `result="out"`、`out_side`（goal_line/sideline）、`out_pos`（真实越界坐标）；`x2/y2` 为场内投影点（∈[0,1]）
 
 ### Requirement: beat 节拍事件字段
 

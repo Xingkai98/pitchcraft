@@ -3,7 +3,7 @@
 > 输入：`notes/grill-G1.md`（时间/协议/状态机，6 问）、`notes/grill-G2.md`（物理/性能，10 问）、
 > `notes/grill-G3.md`（行为/验收/范围，10 问），以及 Round 6 审阅。
 > 本文是**合并去重后的收敛记录**：不需要用户拍板的项已直接修进 design/spec/tasks；
-> 需要用户拍板的项只列选项与推荐默认，**未替用户选择**，对应 `design.md` 的 `## D13`。
+> 需要用户拍板的 12 项已于 **2026-11-23 全部选择「按推荐」**，记录见 §2 与 `design.md` `## D13`。
 > 本轮只改文档/规范/tasks；未改 `engine/`、`viewer/`，未 push。
 
 ## 0. 已钉死事实（不再讨论）
@@ -37,8 +37,9 @@
 
 ## 1. 合并去重后的决策表
 
-> 「用户决策」列：**是** = 进 `## 待用户拍板` / design D13；**否** = 已按推荐修进文档。
-> 证据里的文件行号是本轮修订前/修订中定位，修订后以对应章节为准。
+> 「用户决策」列：**是** = 曾进用户决策；**否** = 已按推荐修进文档。
+> **2026-11-23 用户已对 12 个「是」项全部选择「按推荐」**，具体选择见 §2；本节保留
+> 拍板前的推荐与证据作溯源。证据里的行号以对应章节为准。
 
 | ID | 问题 | 选项 A/B/C | 推荐 | 证据 | 用户决策 |
 |---|---|---|---|---|---|
@@ -69,10 +70,25 @@
 | G3-Q9 | L1「新增破带=失败」会被护栏带误杀 | A 带分类审计 + 护栏按方向判；B 现规则；C 护栏全降报告 | **A** | 角球 [1,7]/界外球 [15,60] 是护栏带非真实值 | **是**（D13 #7） |
 | G3-Q10 | 回退/停止条件可判定吗、谁判 | A 视觉门后显式 Go/No-Go、No-Go=分支留档；B 全量后判；C 逐指标自动停 | **A** | 回退成本随阶段指数上升 | **是**（D13 #8） |
 
-## 2. 待用户拍板
+## 2. 用户拍板（2026-11-23）
 
-> 以下 12 项**未替用户选择**。逐项细节与影响见 `design.md` 的 `## D13`；这里给推荐默认。
-> 拍板前 design/spec 的现行文本保持不变。
+> 用户对 12 项**全部选择「按推荐」**。逐项细节与影响见 `design.md` 的 `## D13`；
+> 下表记录选择，后面的问题/选项/影响保留作溯源自。
+
+| # | ID | 选择（按推荐） | 选定值 |
+|---:|---|---|---|
+| 1 | G3-Q1 | A | 批准范围扩三类（save 否决 / 参与者进 movers / 可达性修复+候选拒绝），修复/拒绝率 ≤5% |
+| 2 | G3-Q2 | A+B | turn120 ≤10× 真实、staticFrac ≤3× 真实；盲测无结论=不验收 |
+| 3 | G3-Q3 | A | δ=0.15、CI [0.35,0.65]、72→140 clip、固定裁判媒介、seed 仅 321–440、7 簇多向聚类 |
+| 4 | G3-Q4 | A | C1a 后 1 seed×5min 回放+轨迹/contact-sheet，用户先看 |
+| 5 | G3-Q5 | A | 拆 C1a（运动核心）/C1b（CommittedPlan），C1a 先过视觉门 |
+| 6 | G3-Q7 | A | 删除旧流 v11 兼容；缺 dt 报错；无 legacy/五段式/旧序回溯 |
+| 7 | G3-Q9 | A | L1 带分类；护栏按方向判；过时重标/退役但不删塌缩守卫 |
+| 8 | G3-Q10 | A | 视觉门后 Go/No-Go；No-Go=停止、分支留档 |
+| 9 | G2-Q2 | A | settle / impact 两分到达语义 |
+| 10 | G2-Q3 | A（B 应急） | 预测视野 ≥0.75s、投影 20 seed 0 次；B 应急 ≤2.2m/0.1s + separation_push |
+| 11 | G2-Q4 | A | shot saved 加 save_x/save_y/save_t；finalize 在 save_t；x2/y2 仍门线 |
+| 12 | G2-Q5 | A | Phase 0 release+wasm 实测；L1 ≤2× v11、wasm 90min ≤10s；只允许保真度不变优化 |
 
 1. **G3-Q1 批准范围是否扩为三类**（save 否决 / 参与者进 movers / 可达性修复+候选拒绝）。
    推荐：**A 扩为三类**，修复率/拒绝率预算 ≤5%。
@@ -104,7 +120,7 @@
 | G1-Q3 | `observe_state.frozen` 保留为「活跃高亮参与者标签」；p16 改断言（非空/仅高亮拍/少数拍），删「位置冻结」语义 | `design.md` D2.4；`tasks.md` 6.16 |
 | G1-Q4 | Phase 0 从 p155 移植 `motion-census.mjs`，引擎侧过滤 `action:"highlight"`；v11 读数 ≠ Change 0 则停止说明 | `design.md` D7.1；`tasks.md` 2.11 |
 | G1-Q5 | `last_emitted` 纳入计划完整状态清单，逐边界随缓存提交 | `design.md` D2.2 内容/事务；`match-engine` spec `CommittedPlan 执行` |
-| G1-Q6 | 旧流保留 tackle-beat-first legacy 回溯；新流事件先；spec scenario 前提只对新流 | `design.md` D6.2；`pitch-viewer` spec `高亮参与者回溯识别` |
+| G1-Q6 | 旧流已被 G3-Q7 删除：缺 `dt` 报错；不再保留 tackle-beat-first legacy 回溯；新流事件先 | `design.md` D6.2；`pitch-viewer` spec `高亮参与者回溯识别` |
 | G2-Q1 | `A_MAX=8.0` 权威总预算、预算优先；低速大转向会裁剪且有界；裁剪率只报告；`sqrt(7.8²+6.5²)=10.15` 写进理由 | `design.md` D4.2/D4.4；`match-engine` spec `总向量加速度预算` |
 | G2-Q6 | 高亮期零事件决策/零事件 RNG 写成不变量；计划只留 `cp_commit`/`cp_end`；状态核对标注为接线守卫 | `design.md` D2.2 事务；`match-engine` spec `CommittedPlan 执行`/`计划覆盖边界的执行`；`tasks.md` 6.15 |
 | G2-Q7 | v1 常量钉死 `S0=9.8`、`a_brake=6.4`、`V_EPS=1e-3`、`MAX_TURN_RATE=4.0`；`S0≥V_MAX` 不变量；数值例改「MAX_TURN_RATE≥1.0833」 | `design.md` D4.2/D4.4；`match-engine` spec `运动常量 v1`；`tasks.md` 3.2 |
@@ -123,11 +139,13 @@
   0.829/0.0104 对不上，必须停止说明口径差异；这不是设计可单方面解决的未知。
 - **save 否决率/7 真实簇 CI 宽度**：只有 Phase 0/验收实测才知道；到 140 clip 上限仍无结论
   就如实报告，不伪造独立性。
-- **D13 的 12 项用户决策**：未拍板前，批准范围、验收门槛、盲测协议、交付顺序、旧流兼容、
-  L1 判据、Go/No-Go、settle/impact、分离预算、扑救协议、性能门都保持现文本。
+- **D13 的 12 项用户决策已拍板（2026-11-23，全部按推荐）**：批准范围、验收门槛、盲测协议、
+  交付顺序（C1a/C1b）、旧流删除、L1 带分类、Go/No-Go、settle/impact、分离预算 A/B、
+  扑救 `save_*` 字段、性能门已落进 design/spec/tasks；**formal design approval 仍待用户
+  明确「design 批准」/PR approve**。
 
 ## 5. 结论
 
-- 26 个 grill 问题：**14 个不需要用户拍板已收敛**，**12 个需要用户拍板**（D13）。
-- 已收敛项只改文档/规范/tasks；未写实现、未改 engine/viewer、未 push。
+- 26 个 grill 问题：**14 个不需要用户拍板已收敛**，**12 个已由用户拍板（全部按推荐）**。
+- 已收敛项与拍板项只改文档/规范/tasks；未写实现、未改 engine/viewer、未 push。
 - `openspec validate p1-motion-integration --strict` 通过后再提交；提交哈希见 commit 记录。

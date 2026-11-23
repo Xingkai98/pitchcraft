@@ -40,44 +40,44 @@
 - **WHEN** 播放或 seek 到该段中间
 - **THEN** 画面层 SHALL 保持最近的主状态（球与 carrier 不跳变）；若该段处于高亮中，球用事件锚点、参与者用 mover 端点；稳定静止段的回扫 SHALL 命中新状态首段强制发出的锚点
 
-### Requirement: 旧流段长选择
+### Requirement: 段长来源与缺 dt 报错
 
-旧流（beat 无 `dt`）SHALL 按**流级选择**使用 `interpretation.legacyBeatSeconds=0.5`（不是 0.2）；新流（beat 有 `dt`）SHALL 逐条使用 `dt`；同一条流里 `dt` 时有时无 → SHALL 报错。第一阶段 SHALL NOT 在 0.2/0.5 之间逐段混用。
+每条 beat SHALL 携带 `dt`；画面层 SHALL 用 `beat.t + beat.dt` 建段。缺失 `dt` 的 beat SHALL 使 `buildTimeline` **报错**；SHALL NOT 提供 `legacyBeatSeconds` / 旧五段式 / 旧序 tackle 回溯回退（G3-Q7 拍板删除 v11 兼容）。
 
-#### Scenario: 旧流段长选择
+#### Scenario: 缺 dt 报错
 
-- **GIVEN** 一条 v11 旧流：所有 beat 都没有 `dt`
+- **GIVEN** 一条 beat 没有 `dt`（旧 v11 流）
 - **WHEN** 画面层建时间线
-- **THEN** 整条流 SHALL 使用 `legacyBeatSeconds=0.5`，不得按 `beatSeconds=0.2` 铺满；若同一条流里 `dt` 时有时无，SHALL 报错
+- **THEN** `buildTimeline` SHALL 报错；SHALL NOT 用 0.5 或 0.2 猜测段长；若后续发现仓外消费者，再回退 B（保留旧流）
 
 ## MODIFIED Requirements
 
 ### Requirement: 事件演绎遵循剧本
 
-画面层 SHALL 按演绎剧本（连续带球、传跑配合、抢断五段式）渲染动作，实现人球解耦。**新流（C1/v12，beat 带 `dt`）SHALL 用参与者的 `movers` 端点驱动人物、事件锚点只驱动球**，SHALL NOT 再用 tackle 事件字段合成人物逼近/接触/回终点；**旧流（v11，beat 无 `dt`）SHALL 保留原五段式合成**，作为兼容路径并打 warning。
+画面层 SHALL 按演绎剧本（连续带球、传跑配合、抢断五段式）渲染动作，实现人球解耦。**C1/v12 流 SHALL 用参与者的 `movers` 端点驱动人物、事件锚点只驱动球**，SHALL NOT 再用 tackle 事件字段合成人物逼近/接触/回终点；缺 `dt` 的旧流 SHALL 报错（G3-Q7），不保留五段式兼容路径。
 
 #### Scenario: 抢断演绎（五段式，带球中被抢）
 - **GIVEN** 一条 tackle 事件，带 `subject`（防守者）、`to`（被铲者）、`x/y`（防守者起点）、`carrier_from_x/y`（被铲者带球起点）、`x2/y2`（接触点）、可选 `loose_x/y`（弹开点）、`result`
 - **WHEN** 画面层演绎该事件
-- **THEN** **新流**：双方人物位置 SHALL 来自 `movers` 端点（含分离），球 SHALL 来自事件 `loose_x/y`/高亮锚点；SHALL NOT 用 `carrier_from`/`x/y`/`x2/y2` 合成人物逼近/接触/回终点。**旧流**：被铲者从 `carrier_from` 带球到接触点，防守者从 `x/y` 逼近到接触点，碰撞后球向 `loose_x/y`（缺失则画面自算）弹出，按 `result` 决定捡球者；画面层 SHALL 对 `carrier_from` 缺失做 fallback（原地持球）
+- **THEN** 双方人物位置 SHALL 来自 `movers` 端点（含分离），球 SHALL 来自事件 `loose_x/y`/高亮锚点；SHALL NOT 用 `carrier_from`/`x/y`/`x2/y2` 合成人物逼近/接触/回终点；`loose_x/y` 缺失时画面自算弹开点（防御 fallback）
 
 #### Scenario: 抢断成功演绎（防守者拿球）
 - **GIVEN** 一条 tackle 事件，`result=success`
 - **WHEN** 画面层演绎该事件
-- **THEN** **新流**：球到 `loose_x/y` 后停到高亮结束，再由 `beat.ball` 接力；双方人物终态 = `movers` 端点，且与 `subject_end`/`carrier_end` 在容差内一致。**旧流**：球弹到弹开点后停至高亮结束，随后由 `beat.ball` 接力；防守者追到弹开点拾取；两球员终态 = `subject_end`/`carrier_end`（缺省回退接触点）
+- **THEN** 球到 `loose_x/y` 后停到高亮结束，再由 `beat.ball` 接力；双方人物终态 = `movers` 端点，且与 `subject_end`/`carrier_end` 在容差内一致
 
 #### Scenario: 抢断失败演绎（原持球人拿回）
 - **GIVEN** 一条 tackle 事件，`result=fail`
 - **WHEN** 画面层演绎该事件
-- **THEN** **新流**：球停在接触点至高亮结束，随后由下一段 `main` 恢复；双方人物位置 = `movers` 端点。**旧流**：前两段同成功，双方在接触点对上；球不弹开，被铲者回到 `carrier_end`（缺省回退接触点）继续持球，下一拍由 `main` 恢复；抢断者在 `subject_end` 停住
+- **THEN** 球停在接触点至高亮结束，随后由下一段 `main` 恢复；双方人物位置 = `movers` 端点（终态与 `subject_end`/`carrier_end` 容差内一致）
 
 #### Scenario: 弹开方向与逼近方向垂直
-- **GIVEN** 一条 tackle 事件且引擎未给 `loose_x/y`（旧流/兼容路径）
+- **GIVEN** 一条 tackle 事件且引擎未给 `loose_x/y`（防御 fallback）
 - **WHEN** 画面层自算弹开点
 - **THEN** 弹开向量与逼近向量点积为零（垂直）；两候选弹向按 `(tackler×7 + victim×3) % 2` 确定性选边（不消耗 RNG）；**新流必须使用引擎 `loose_x/y`，不走本自算**
 
 #### Scenario: 弹开点在场内
-- **GIVEN** 一条 tackle 事件且画面层自算弹开点（旧流/兼容路径）
+- **GIVEN** 一条 tackle 事件且画面层自算弹开点（引擎未给 `loose_x/y` 的防御 fallback）
 - **WHEN** 画面层计算弹开点
 - **THEN** 弹开点坐标落在 [0,1]×[0,1] 内（越界候选被钳制）
 
@@ -103,17 +103,17 @@
 - **THEN** 不做微动（避免与移动叠加、人球分离）；**抑制切换用启停渐变（进入抑制淡出、退出淡入 ~0.3s），避免移动/静止切换瞬间的渲染跳变**
 
 #### Scenario: 高亮参与者回溯识别
-- **GIVEN** **新流**的高亮事件与其 beat 统一为「事件先、beat 后」（pass/shot/tackle 都在同 tick 之后）；**旧流保留 tackle beat 在前的 legacy 排序**；foul **不产 beat**（无锚点，`_eventEnds` 回落 `e.t`）
+- **GIVEN** 高亮事件与其 beat 统一为「事件先、beat 后」（pass/shot/tackle 都在同 tick 之后）；foul **不产 beat**（无锚点，`_eventEnds` 回落 `e.t`）
 - **WHEN** 画面层判定某球员是否为高亮参与者
-- **THEN** SHALL 按**事件窗口**回溯查找覆盖当前播放时刻的高亮事件（事件 `t` → 其锚点最长 `t`；**foul 的语义窗口取纪律牌显示时长**），而非直接取当前事件索引——否则事件窗口识别会失效（issue #81 实测：不回溯时约 98% 高亮帧未抑制，且 foul 因窗口零长度失效）；**回溯 SHALL 按流级模式分叉**（新流事件先；旧流 tackle-beat-first legacy 分支）；参与者位置仍由 `movers` 驱动，不因排除而隐藏
+- **THEN** SHALL 按**事件窗口**回溯查找覆盖当前播放时刻的高亮事件（事件 `t` → 其锚点最长 `t`；**foul 的语义窗口取纪律牌显示时长**），而非直接取当前事件索引——否则事件窗口识别会失效（issue #81 实测：不回溯时约 98% 高亮帧未抑制，且 foul 因窗口零长度失效）；参与者位置仍由 `movers` 驱动，不因排除而隐藏
 
 ### Requirement: 演绎节奏配置化（S4 边界明确）
 
-演绎节奏参数（phase 时长、人球分离量、抢断弹开参数）SHALL 放在配置文件，便于调参。**参数分工**：per-event 速度/提前量/触球频率 SHALL 来自事件载荷（事件值优先）；config SHALL 只放动画时序（phase 时长、人球分离量、弹开距离/速度/捡球停顿），不覆盖事件的速度/提前量/触球频率。节奏配置 SHALL 至少包含：`interpretation.beatSeconds`（新流名义 beat 段长，0.2）、`interpretation.legacyBeatSeconds`（旧 v11 流段长，0.5）、`interpretation.tackleSeconds`（tackle 高亮时长，0.5）、`interpretation.highlightSeconds`（pass/shot 无距离/速度时的兜底）；SHALL NOT 再用单个 `interpretation.tickSeconds` 同时承担 beat 段长与 tackle 高亮时长。
+演绎节奏参数（phase 时长、人球分离量、抢断弹开参数）SHALL 放在配置文件，便于调参。**参数分工**：per-event 速度/提前量/触球频率 SHALL 来自事件载荷（事件值优先）；config SHALL 只放动画时序（phase 时长、人球分离量、弹开距离/速度/捡球停顿），不覆盖事件的速度/提前量/触球频率。节奏配置 SHALL 至少包含：`interpretation.beatSeconds`（名义 beat 段长，0.2）、`interpretation.tackleSeconds`（tackle 高亮时长，0.5）、`interpretation.highlightSeconds`（pass/shot 无距离/速度时的兜底）；SHALL NOT 再用单个 `interpretation.tickSeconds` 同时承担 beat 段长与 tackle 高亮时长；**不保留 `legacyBeatSeconds`**（G3-Q7）。
 
 #### Scenario: 调整演绎节奏
-- **WHEN** 开发者修改演绎节奏配置文件中**实际被读取**的参数（`dribble.separation`、`shot.keeperReactDelay`、`tackle.*`、`foul.cardShowDuration`、`beatSeconds`、`legacyBeatSeconds`、`tackleSeconds`）
-- **THEN** 画面层的动作节奏随之变化，无需改代码。**注意**：`interpretation.pass.*` 与 `dribble` 的 `touchDuration/chaseDuration/windupDuration`、`shot.flightDuration`、`turnDuration` 当前**未被实现读取**（改之无效果）；`beatSeconds` 只影响新流名义段长，`legacyBeatSeconds` 只影响无 `dt` 的旧流，`tackleSeconds` 只影响 tackle 高亮与接触上限，三者不得互相覆盖
+- **WHEN** 开发者修改演绎节奏配置文件中**实际被读取**的参数（`dribble.separation`、`shot.keeperReactDelay`、`tackle.*`、`foul.cardShowDuration`、`beatSeconds`、`tackleSeconds`）
+- **THEN** 画面层的动作节奏随之变化，无需改代码。**注意**：`interpretation.pass.*` 与 `dribble` 的 `touchDuration/chaseDuration/windupDuration`、`shot.flightDuration`、`turnDuration` 当前**未被实现读取**（改之无效果）；`beatSeconds` 只影响名义段长，`tackleSeconds` 只影响 tackle 高亮与接触上限，二者不得互相覆盖
 
 #### Scenario: 调整抢断演绎节奏
 - **WHEN** 开发者修改 `config.interpretation.tackle`（弹开距离/弹开球速/捡球停顿）

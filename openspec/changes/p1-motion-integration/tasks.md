@@ -10,10 +10,10 @@
 - [x] 1.3 gpt-6.1-sol 零上下文审阅：**Round 6 = 0 High / 3 Medium / 1 Low，可批准**（Round 1–5 见 `design.md` D2.2/D2.3/D5.1/D5.4/D6/D8/D9 与 `notes/review-gpt61-2026-11-21.md`）
 - [ ] 1.4 用户在 #170 / PR 批准 design；批准链接写回 `design.md`
 - [x] 1.5 拍板 design D11 的 6 个决策（2026-11-21，全部按推荐；见 `design.md` D11）
-- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 2 MODIFIED + 6 ADDED、`match-engine` 4 MODIFIED + 16 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
+- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 3 MODIFIED + 7 ADDED、`match-engine` 4 MODIFIED + 16 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
 - [x] 1.7 归档合并自检：scenario 集合包含检查（D8.1）；`validate --strict` 只作门槛，不作语义批准
 - [x] 1.8 M/L 修复：M1 成本预算（D7.5）、M2 运动学数值（D4.2）、M3 单步算法（D4.4）、M4 快照（D2.4）、M5 数据依赖（D7.4）、M6 fill 域（D5.3）、L1 措辞、L2 golden/研究门（D7.3）
-- [x] 1.9 Round 2 修复：权威调度与 Trace C（R2-H1）、零位移状态首锚点（R2-H2）、参与者进入 movers + 真实 T/精确到达/finalize 连续（R2-H5）、turnsPerPlayer/等效性盲测/7 真实簇（R2-H6）、总向量预算 A_MAX + 米制边界（R2-N1）、M1 旧流选择、M2 体积上界、M3 save 否决分母、L1/L2 转述
+- [x] 1.9 Round 2 修复：权威调度与 Trace C（R2-H1）、零位移状态首锚点（R2-H2）、参与者进入 movers + 真实 T/精确到达/finalize 连续（R2-H5）、turnsPerPlayer/等效性盲测/7 真实簇（R2-H6）、总向量预算 A_MAX + 米制边界（R2-N1）、M2 体积上界、M3 save 否决分母、L1/L2 转述（**M1 旧流选择后来被 G3-Q7 改为删除旧流**）
 - [ ] 1.10 Phase 0/实现时收紧 Round 6 的 3 Medium + 1 Low（R6-M1 1.7 对账表、R6-M2 重试成功夹具、R6-M3 RNG 守卫对象、R6-L1 P_eff 摘要）；不阻塞 design 批准
 
 ## 2. Phase 0：前置（design 批准后先做）
@@ -33,8 +33,15 @@
 - [ ] 2.9 **盲测/旧红预注册**（R3-M3/R5-M2）：冻结 source×seed 配对矩阵、裁判/重复窗处理、多向聚类 bootstrap、证据等级 A/B/C、扩样上限 140 clip、7 真实簇下限；在候选调参前冻结每个已有红的逐指标非恶化边界（来源=base 逐 seed 分布不确定度/预注册扰动块/领域容忍，见 D9.3）；**存储合同=JSON 0–1 比例/粒度 0.001、展示 0.1pp、向恶化侧 ceiling 到 0.001**；计数类每场次数/0.1
 - [ ] 2.10 **前视规划 smoke**（R4-M1）：1 seed 专测规划次数/平均与最大视野/候选拒绝与重试/缓存内存/执行复用率/计划段测试时长；超预算只优化或停止设计，不得回退「先写锚点再推位置」
 - [ ] 2.11 **移植 motion-census**（G1-Q4）：从 `p155-measurement-instrument/2026-11-19` 移植 `tools/visual-review/motion-census.mjs`；引擎侧过滤 `action:"highlight"`；在 v11 上复算并与 Change 0 对齐（不一致则停止说明，不静默换锚）；补口径守护测试
+- [ ] 2.12 **L1 带分类审计**（G3-Q9）：把每条带分为真实拟合/护栏/过时，落盘 `notes/l1-bands.md`；护栏按方向判、过时重标/退役但不删塌缩守卫；候选调参前冻结
+- [ ] 2.13 **性能门**（G2-Q5）：Phase 0 1 seed release+wasm 实测「活体 5×+规划」；硬门 L1 ≤2× v11、wasm 90min simulate ≤10s；超预算只允许保真度不变的优化，不达标停在 Phase 0
 
-## 3. 运动执行层
+## 3. 运动执行层（C1a → 视觉门/Go-No-Go → C1b）
+
+> **C1a（先做）**：运动核心 + live scheduler + 参与者确定性前视终点，**不建全状态
+> `CommittedPlan` 缓存**。C1a 通过视觉门后才做 C1b（D1.3）。
+
+### C1a（先做）
 
 - [ ] 3.1 新建 `engine/src/motion.rs`：`MotionState { pos_m, vel_mps, heading, mode }`
 - [ ] 3.2 实现 `dv/dt = A0(1−v/S0)`、`|ω| ≤ a_lat/max(v,1)`、制动曲线/到达半径；按 D4.2 v1 常量钉死 `S0=9.8`、`a_brake=6.4`、`V_EPS=1e-3`、`MAX_TURN_RATE=4.0`，补 `S0≥V_MAX` 不变量与低速大转向裁剪有界单测；`A_MAX` 预算优先、裁剪率仅报告
@@ -48,9 +55,19 @@
 - [ ] 3.10 新状态首段强制发 `main`/`ball`（状态键：球权/carrier id/controlled↔loose/mode/重开/save-caught），零位移也发（D5.1）
 - [ ] 3.11 `reachable()` 用真实 T（整步 + 部分步，不用 ceil）；参与者用 `PRECISION_ARRIVE_RADIUS_M`；finalize 取连续积分结果（D5.4）
 - [ ] 3.12 save 几何否决只在固定球路内：不改 off-target；三分母（全部 shot / 原 save / 尝试修复的 save）+ 逐 seed + ≤2% 原 save + L1 非恶化门（D5.4/D9.1）
-- [ ] 3.13 事件提交协议（R3-H5）：候选只定意图 → 含分离的 22 人前视规划到 t_end（`PLAN_HORIZON`）→ 验证 → 原子提交事件+计划 → 执行核对；偏差置 `plan_divergence`，提交后不改已承诺锚点
 - [ ] 3.14 四态驱动状态机（R3-H2）：`controlled`/`loose`/`highlight`/`restart`；高亮开始事件=首锚点、禁 main/ball；高亮结束后首个 controlled/loose 段强制 main/ball（D5.1）
-- [ ] 3.15 唯一权威执行规则（R4-H1）：`CommittedPlan` 覆盖 `[t_c, P_end=ceil(t_end/SIM_DT)*SIM_DT]`，逐边界状态/decision/事件/RNG checkpoints；覆盖内只消费缓存、不调 `decision()`/不掷骰；逐边界核对；`P_end` 用 `cp_end` 原子交还 live；偏差 `plan_divergence`
+- [ ] 3.18 扑救/到达语义（G2-Q2/Q4）：keeper finalize 在 `save_t`、扑救点写 `save_x/save_y`；settle/impact 判据；save 否决只对原 save、三分母/≤2% 原 save
+- [ ] 3.21 分离预算（G2-Q3）：先 A——预测视野 ≥0.75s（或到最近接近时间），投影触发预注册 20 seed 0 次、触发即停；B 作预注册应急（每 0.1s ≤2.2m + `separation_push`），不得静默放宽 A0/a_lat
+
+### 视觉门 + Go/No-Go（C1a 后）
+
+- [ ] 3.19 **视觉门**（G3-Q4）：1 seed × 5min 回放 + trajectory/contact-sheet（开放/转换/长传/禁区/松散球/死球）→ 用户先看
+- [ ] 3.20 **Go/No-Go**（G3-Q10）：用户看 5min 回放 + 24 窗指标 + L1 非恶化；No-Go = 停止、分支留档；触发条件在此点汇总由用户判
+
+### C1b（视觉门通过后）
+
+- [ ] 3.13 事件提交协议（R3-H5）：候选只定意图 → 含分离的 22 人前视规划到 t_end（`PLAN_HORIZON`）→ 验证 → 原子提交事件+计划 → 执行核对；偏差置 `plan_divergence`，提交后不改已承诺锚点
+- [ ] 3.15 唯一权威执行规则（R4-H1）：`CommittedPlan` 覆盖 `[t_c, P_eff=min(P_end,dur)]`，逐边界状态/decision/事件/RNG checkpoints；覆盖内只消费缓存、不调 `decision()`/不掷骰；逐边界核对；`P_eff` 用 `cp_end` 原子交还 live；偏差 `plan_divergence`
 - [ ] 3.16 follow-on 计划链（R4-H1）：新高亮从 `P_eff` 起无重叠；`t<P_eff` 必须合并或拒绝；`MAX_PLAN_CHAIN=3` / `PLAN_CHAIN_MAX_S=30s` 超限 `highlight_infeasible`
 - [ ] 3.17 交接边界（R5-H1）：A 边界事件/decision 一次 → B 同迭代接管首段（`start_marker`）→ C snapshot → D 缓存/live 推进；`P_end` decision 归 live、`cp_end` 在其前；`P_eff=min(P_end,dur)` 终场短 dt/无未来 decision；`plan_divergence` 三路核对（状态/事件账本/RNG）
 
@@ -58,26 +75,27 @@
 
 - [x] 4.1 `event-stream-protocol`：beat 段合同、`dt`、稀疏 main/ball、新状态首段、重开准备期（设计阶段已写 delta）
 - [x] 4.2 `match-engine`：L2 段边界/速度带、mover 位移、dead-zone、tackle/save 高亮、单步算法、总预算、可达性（设计阶段已写 delta）
-- [x] 4.3 `pitch-viewer`：`beatSeconds`/`legacyBeatSeconds`/`tackleSeconds`/`highlightSeconds`、参与者用 mover、只插值同一轨迹、T1/Catmull 默认关（设计阶段已写 delta）
+- [x] 4.3 `pitch-viewer`：`beatSeconds`/`tackleSeconds`/`highlightSeconds`、参与者用 mover、只插值同一轨迹、T1/Catmull 默认关、缺 `dt` 报错（设计阶段已写 delta）
 - [x] 4.4 MODIFIED requirements 复制主 spec 的全部 scenario（D8 清单已核对）
 - [ ] 4.5 `MODEL_VERSION 11→12`；新建 `engine/tests/golden-v12/`；`golden_dir()` 加 `12 => "tests/golden-v12"`；`ACCEPT_GOLDEN=1` 重基线（已提交的树、干净工作树）
 - [ ] 4.6 协议字段：第一阶段只发端点；`beat.dt` 为段长时序字段；若加 `vx/vy/heading`，bump 协议版本并补测试
 - [ ] 4.7 填拍域 `FILL_FLIGHT_S=0.95×BEAT_DT`；速度带守卫（dist/FILL 不在 [10,25) 则不填）；finalize = 第一个 ≥ t_end 的 0.1s 网格步
 - [ ] 4.8 终场末段 `dt = dur − t_last`（0<dt≤0.2）；死球 gap 约束相邻已发 beat；链式 finalize 去重终态事件
-- [ ] 4.9 旧流：`buildTimeline` 按第一条 beat 是否有 `dt` 做流级选择（旧流 0.5 / 新流逐条 dt / 混用报错）
+- [ ] 4.9 旧流：**删除 v11 兼容路径**（G3-Q7 拍板）——缺 `dt` 直接报错；删除 `legacyBeatSeconds`、旧五段式兼容、旧序 tackle 回溯分支；若有仓外消费者再回退 B
+- [ ] 4.10 扑救协议（G2-Q4）：`result=saved` 的 shot 增加 `save_x/save_y/save_t`；finalize 在 `save_t`；`x2/y2` 仍门线；L2 saved x2 语义不变；协议 bump（MODEL_VERSION 11→12）
 
 ## 5. Viewer
 
-- [ ] 5.1 `viewer/config.js`：`tickSeconds` → `beatSeconds=0.2` / `legacyBeatSeconds=0.5` / `tackleSeconds=0.5` / `highlightSeconds=0.5`（删除旧键）
+- [ ] 5.1 `viewer/config.js`：`tickSeconds` → `beatSeconds=0.2` / `tackleSeconds=0.5` / `highlightSeconds=0.5`（删除旧键；**不保留 `legacyBeatSeconds`**，G3-Q7）
 - [ ] 5.2 `interpretation.js:186/192/219/304/350` 逐点按 D6.1 归属切换；`game.js` 显式 `interpolation.smooth=false` / `textureAmpM=0`（不靠 0.5s 门槛）
 - [ ] 5.3 稀疏 main/ball：`buildTimeline` 不补锚点、插值保持；`currentCarrier()` 向后扫描 + 失效事件停止（D6.2）
-- [ ] 5.4 seek 重建：球用高亮锚点/`main`/`ball`，参与者用 mover；事件终点续接；**旧流无 `dt` 用 `legacyBeatSeconds=0.5`（不是 beatSeconds）**
+- [ ] 5.4 seek 重建：球用高亮锚点/`main`/`ball`，参与者用 mover；事件终点续接；**缺 `dt` 直接报错，删除 `legacyBeatSeconds` 与旧流回退**（G3-Q7）
 - [ ] 5.5 缓存版本号 bump（`index.html` + app.js import specifier）
 - [ ] 5.6 tackle 0.5s 跨 3 段的 viewer 断言（D6.1 时间线）
 - [ ] 5.7 **参与者用 mover 端点**渲染（不合成事件直线）；事件锚点只作 `t_end` 对账；删除 `highlight_frozen_segs` 的显示线用途
 - [ ] 5.8 内部间距 vs 显示间距两路断言：`st.pos` == mover 端点；viewer 插值后 `player_overlap` findings = 0
 - [ ] 5.9 新状态首锚点的 seek 属性测试（save-caught 零速持球 / 原地拾取 / 新 loose 球静止）
-- [ ] 5.10 `事件演绎遵循剧本` 迁移（R3-H5）：新流人物用 `movers`、事件锚点只驱动球；旧流（无 `dt`）保留五段式合成并打 warning；6 个原 scenario 全覆盖
+- [ ] 5.10 `事件演绎遵循剧本` 迁移（R3-H5/G3-Q7）：人物用 `movers`、事件锚点只驱动球；**删除旧流五段式兼容**（缺 `dt` 报错）；6 个原 scenario 全覆盖
 - [ ] 5.11 同步测试迁移（G2-Q8）：`interpretation.test.js` 改为 `beatSeconds↔BEAT_DT` / `tackleSeconds↔DECISION_DT`；新流停发事件派生球员锚点
 - [ ] 5.12 `derive-audit-features` 改读 `beat.dt`（不再用 `tickSeconds` 铺 beat 时长）；补一条守卫测试
 
@@ -99,8 +117,9 @@
 - [ ] 6.14 微位移/体积（G2-Q10）：`ε_move=1e-3 m/段`；`movers/beat` 报告量；核对 JSON 正常 ≤3×、密集 ≤5×
 - [ ] 6.15 高亮期零事件决策（G2-Q6）：单测证明高亮内不评估机会/不掷事件 RNG；`plan_divergence` 状态核对标注为接线守卫
 - [ ] 6.16 观察层 frozen 标签（G1-Q3）：`observe_state.frozen` 保留为活跃高亮参与者标签；p16 改断言（非空/仅高亮拍/少数拍），删「位置冻结」语义
-- [ ] 6.17 旧流排序兼容（G1-Q6）：旧流 tackle-beat-first 回溯分支保留；新流事件先；两模式各有测试
+- [ ] 6.17 旧流删除验收（G3-Q7）：缺 `dt` 报错；`legacyBeatSeconds`/旧五段式/旧序 tackle 回溯分支均为 0 引用；若发现仓外消费者再回退 B
 - [ ] 6.18 加速度尾部（G3-Q8）：从**已发射 beat 端点**算主口径 + 内部子步对照口径；内部 p99 仅作构造不变量，不冒充现实指标
+- [ ] 6.19 修复/拒绝率（G3-Q1）：逐事件类型/逐 seed 统计修复率与 `highlight_infeasible` 率，各 ≤5%；超预算停止定位
 
 ## 7. 收尾
 
