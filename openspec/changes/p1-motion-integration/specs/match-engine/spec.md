@@ -146,7 +146,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 ### Requirement: CommittedPlan 执行
 
-`CommittedPlan` SHALL 覆盖 `[t_c, P_eff]`（`P_eff=min(P_end,dur)`），至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交。调度 SHALL 分四阶段：A 边界事件/decision 只处理一次 → B 同一迭代接管计划首段 → C snapshot（仅 decision_due）→ D 取缓存或 live 推进并发 beat；`start_marker` 防止重复消费起点。覆盖内 SHALL 只消费缓存（不 `decision()`、不掷骰、不积分）；逐边界核对实际状态。`P_eff` 原子交还 live（状态 + `cp_end`），不回滚已提交字段。follow-on 从 `P_eff` 起、无重叠，链上限 `MAX_PLAN_CHAIN=3`/`PLAN_CHAIN_MAX_S=30s`。
+`CommittedPlan` SHALL 覆盖 `[t_c, P_eff]`（`P_eff=min(P_end,dur)`），至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交。**对 saved shot，调度 `t_end := save_t`；`x2/y2` 只是 L2 门线投影，不参与 `P_end`/`cp_end`**（R9-H1）。调度 SHALL 分四阶段：A 边界事件/decision 只处理一次 → B 同一迭代接管计划首段 → C snapshot（仅 decision_due）→ D 取缓存或 live 推进并发 beat；`start_marker` 防止重复消费起点。覆盖内 SHALL 只消费缓存（不 `decision()`、不掷骰、不积分）；逐边界核对实际状态。`P_eff` 原子交还 live（状态 + `cp_end`），不回滚已提交字段。follow-on 从 `P_eff` 起、无重叠，链上限 `MAX_PLAN_CHAIN=3`/`PLAN_CHAIN_MAX_S=30s`。
 
 #### Scenario: 首段同迭代接管
 
@@ -198,6 +198,12 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 - **WHEN** 执行到 1.5 之后
 - **THEN** 计划 SHALL 以 `P_eff=1.55` 结束：最后段 `[1.5,1.55]` 的 `dt=0.05`；`t≥1.55` 不发 beat；`cp_end` 在 1.55 终态、无未来 decision；SHALL NOT 原样发到 1.7
 
+#### Scenario: saved shot 计划终点
+
+- **GIVEN** 一条 saved shot：射门 `t=1.0`、`save_t=1.03`、`save_x/save_y=S`；若按门线投影继续飞，到门线约在 1.08
+- **WHEN** 建立 `CommittedPlan`
+- **THEN** 调度 `t_end := save_t=1.03`；`P_end=ceil(1.03/0.1)·0.1=1.1`；计划覆盖 `[1.0,1.1]`，`cp_end` 在 1.1^-；SHALL NOT 用 `x2/y2` 产生 1.08 或第二个计划终点；1.1 提交 save-caught/transition
+
 #### Scenario: 悬空高亮终场 finalize 链
 
 - **GIVEN** 一条 shot 高亮的 `t_end=1.8 > dur=1.55`，`P_eff=dur=1.55`
@@ -242,7 +248,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 - **GIVEN** 一条 shot 事件且原结果为 save（save-caught/rebound），球路固定
 - **WHEN** 门将在真实时限内到不了扑救点
-- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点，并写入 `save_x/save_y`；`save_t` 是该点的**精确时刻**（可非 0.1 网格）；`save_t→P_end=ceil(save_t/SIM_DT)·SIM_DT` 门将零速保持在扑救点、球停在扑救点，不发新事件/decision；**状态在 `P_end` 提交**；`x2/y2` 仍是门线。若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；**不得把原本 `off_target` 的 shot 改成 goal**；否决率报三个分母（全部 shot / 原 save / 尝试修复的 save）、逐 seed，超过**原 save 结果的 2%** 时停止并另立概率标定 change；挂 L1 射门结果分布的既有红非恶化门
+- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点，并写入 `save_x/save_y`；`save_t` 是该点的**精确时刻**（可非 0.1 网格），且 saved shot 的**调度 `t_end := save_t`**；`save_t→P_end=ceil(t_end/SIM_DT)·SIM_DT` 门将零速保持在扑救点、球停在扑救点，不发新事件/decision；**状态在 `P_end` 提交**；`x2/y2` 只是门线投影（L2），不是实际球路终点、不参与 `P_end`。若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；**不得把原本 `off_target` 的 shot 改成 goal**；否决率报三个分母（全部 shot / 原 save / 尝试修复的 save）、逐 seed，超过**原 save 结果的 2%** 时停止并另立概率标定 change；挂 L1 射门结果分布的既有红非恶化门
 
 #### Scenario: 抢断接触点
 
@@ -454,7 +460,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 #### Scenario: 射门被扑救触发反击
 - **GIVEN** 一次射门被门将扑住（save-caught，球权易主）
-- **THEN** save 高亮的 `save_t` 是精确扑救锚点；**状态在 `P_end=ceil(save_t/SIM_DT)·SIM_DT` 提交 save-caught 并武装 transition**（`save_t→P_end` 零速保持、不发新事件/decision）；transition 从 `P_end` 后的**首个 decision 边界**起算：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后回到正常开放比赛的机会评估（自然 deadline，钳制 [3,12] 个 decision 拍，门将另有 `GK_DEADLINE_BONUS_TICKS` 放宽）；门将持球走出球档，直接掷 pass 高亮出球**）；新防守方整体回撤 + **就近 2 名外场防守者 close_down（执行者 = 距目标最近的 2 名外场球员，排除门将 / carrier / 罚下者，确定性平局按 id 小者；save-caught 源的目标 = `attacking_forward`——新进攻方中最靠其进攻方向球门的球员，即门前/禁区前沿的对方球员；收缩不进入拾取半径）**，transition 窗口从武装 decision 拍起算
+- **THEN** saved shot 的调度 `t_end := save_t`（精确扑救锚点；`x2/y2` 只是门线投影）；**状态在 `P_end=ceil(t_end/SIM_DT)·SIM_DT` 提交 save-caught 并武装 transition**（`save_t→P_end` 零速保持、不发新事件/decision）；transition 从 `P_end` 后的**首个 decision 边界**起算：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后回到正常开放比赛的机会评估（自然 deadline，钳制 [3,12] 个 decision 拍，门将另有 `GK_DEADLINE_BONUS_TICKS` 放宽）；门将持球走出球档，直接掷 pass 高亮出球**）；新防守方整体回撤 + **就近 2 名外场防守者 close_down（执行者 = 距目标最近的 2 名外场球员，排除门将 / carrier / 罚下者，确定性平局按 id 小者；save-caught 源的目标 = `attacking_forward`——新进攻方中最靠其进攻方向球门的球员，即门前/禁区前沿的对方球员；收缩不进入拾取半径）**，transition 窗口从武装 decision 拍起算
 
 #### Scenario: 射门扑出反弹不触发 transition
 - **GIVEN** 一次射门被门将扑出（save-rebound）

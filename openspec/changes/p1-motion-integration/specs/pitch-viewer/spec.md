@@ -32,13 +32,13 @@
 
 ### Requirement: 扑救演绎
 
-对 `result=saved` 的 shot，画面层 SHALL 用 `save_t/save_x/save_y` 渲染扑救：球与门将在 `save_t` 到达 `save_x/save_y`；`save_t→P_end=ceil(save_t/SIM_DT)·SIM_DT` 保持在该点（门将零速持球、球停在扑救点）；`P_end` 提交状态后才恢复 `beat.ball`/`main`。画面层 SHALL NOT 把 `x2/y2`（门线）当作 saved 的球终点，SHALL NOT 在 `save_t` 后把球/门将闪回门线。`save_t` 不是 beat 段边界，段长仍按 `beat.dt`。
+对 `result=saved` 的 shot，画面层 SHALL 用 `save_t/save_x/save_y` 渲染扑救：球与门将在 `save_t` 到达 `save_x/save_y`；**调度 `t_end := save_t`**；`save_t→P_end=ceil(t_end/SIM_DT)·SIM_DT` 保持在该点（门将零速持球、球停在扑救点）；`P_end` 提交状态后才恢复 `beat.ball`/`main`。画面层 SHALL NOT 把 `x2/y2`（门线投影）当作 saved 的球终点/飞行时长，SHALL NOT 在 `save_t` 后把球/门将闪回门线；若门线投影会到 1.08，画面层 SHALL NOT 因此新增 1.08 的段边界或锚点。`speed` 仍是原射门速度；`save_t` 不是 beat 段边界，段长仍按 `beat.dt`。
 
 #### Scenario: 非网格扑救 1.03→1.1
 
-- **GIVEN** 一条 saved shot，`save_t=1.03`、`save_x/save_y=S`，`P_end=1.1`
+- **GIVEN** 一条 saved shot：射门 `t=1.0`、`save_t=1.03`、`save_x/save_y=S`，`P_end=1.1`；门线投影约在 1.08
 - **WHEN** 画面层播放 1.0–1.1
-- **THEN** 1.0 段照常；1.03 球/门将到 S；1.03–1.1 保持在 S（门将零速、球停在 S），不闪回门线；1.1 后才由 `beat.ball`/`main` 接力；`save_t` 不切 beat 段
+- **THEN** 1.0 段照常；1.03 球/门将到 S；1.03–1.1 保持在 S（门将零速、球停在 S），不闪回门线；SHALL NOT 用 `x2/y2` 造出 1.08 的额外边界/锚点；1.1 后才由 `beat.ball`/`main` 接力；`save_t` 不切 beat 段
 
 ### Requirement: 稀疏状态与 seek 重建
 
