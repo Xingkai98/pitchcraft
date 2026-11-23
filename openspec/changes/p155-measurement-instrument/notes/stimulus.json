@@ -1,0 +1,385 @@
+{
+  "version": "p155-stimulus-v1",
+  "frozenAt": "2026-11-19",
+  "purpose": "Change 0（GitHub #190）A 工作流：冻结刺激集；B 的 L1 审计/条件指标复用同一批输入。",
+  "engine": {
+    "wasmPath": "viewer/engine.wasm",
+    "wasmSha256": "f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f",
+    "buildCommand": "(cd engine && cargo build --target wasm32-unknown-unknown --release) && cp engine/target/wasm32-unknown-unknown/release/fm_engine.wasm viewer/engine.wasm",
+    "modelVersion": 11,
+    "tickSeconds": 0.5,
+    "durationSec": 5400,
+    "config": {
+      "demo_mode": false,
+      "off_ball_movement_demo": true,
+      "match_duration_seconds": 5400
+    }
+  },
+  "viewer": {
+    "configVersionComment": "viewer/config.js 的 ?v= 版本在 index.html / import specifier 上；本表记录文件哈希",
+    "tickSeconds": 0.5,
+    "sourceHashes": {
+      "engine/src/lib.rs": "26417dcc64dd04c28802a26c233055e47b76779ace62aa2752b3693fe8a454af",
+      "engine/Cargo.toml": "52f0d68f7289c1f25a6004af1629d2061e20bd84febe43f3c8dd41b3adf1c6da",
+      "viewer/config.js": "c2dfbcc842414b6dc36f2c3908b0c4c432ac061671cccdf01240bafe6433740a",
+      "viewer/interpretation.js": "2afd5f895d4028abad2b9f23aaa486241fb8a88e1ef9bbcf29c72891244e64b0",
+      "viewer/game.js": "cbb43ae1705fca8901992ccacbc453f208dfd43d6e326f67146e46bc3e645350",
+      "viewer/match-metrics.js": "5fc00e9e7a1e47a5faf1775254acc6b36d95eb7b310eec89c0cc904818c86272",
+      "viewer/protocol.js": "42246dadf9e1ed623be002183cd458f7af0f113225c21f1b51356f3919bd9082",
+      "viewer/soft-canvas.js": "c0d7eeaa7699173a5d7806aece355d4685b6b593738e767fa93fa4c95161654e"
+    }
+  },
+  "window": {
+    "sec": 24,
+    "hz": 5,
+    "samples": 121,
+    "stepSec": 0.2
+  },
+  "windows": [
+    {
+      "id": "eng-1201-36",
+      "seed": 1201,
+      "t0": 1960,
+      "t1": 1984,
+      "anchorFrac": 0.36,
+      "streamSha256": "d9c091376543f4628e7c06254520c1e3d42739137798bf8011519973206ce107",
+      "eventCount": 52,
+      "sliceSha256": "b604ddc3f7850e8d9f4628eaf4080bcb56bd3b91e8a740fbc42910aaa1072bd2",
+      "phase": 0
+    },
+    {
+      "id": "eng-1201-60",
+      "seed": 1201,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "d9c091376543f4628e7c06254520c1e3d42739137798bf8011519973206ce107",
+      "eventCount": 53,
+      "sliceSha256": "2c37b521e79ab2b370166e5672216d66fc61a10e75bbca704d8a0889109f8206",
+      "phase": 0
+    },
+    {
+      "id": "eng-1204-36",
+      "seed": 1204,
+      "t0": 1944,
+      "t1": 1968,
+      "anchorFrac": 0.36,
+      "streamSha256": "ab36db89aba4f9fe10d4031c92d9eb0e514535ec96c71443d4e8f2940bf4f3c2",
+      "eventCount": 52,
+      "sliceSha256": "977cf0914d734f0ca952479721d2be85e846d93d536bc3cc9420040bce1a7974",
+      "phase": 0
+    },
+    {
+      "id": "eng-1204-60",
+      "seed": 1204,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "ab36db89aba4f9fe10d4031c92d9eb0e514535ec96c71443d4e8f2940bf4f3c2",
+      "eventCount": 53,
+      "sliceSha256": "3ed3e55c5bd96c26ddecdbb43dbe5cfa44eaf3d3a510a4fc53150434cb897201",
+      "phase": 0
+    },
+    {
+      "id": "eng-1207-36",
+      "seed": 1207,
+      "t0": 1944,
+      "t1": 1968,
+      "anchorFrac": 0.36,
+      "streamSha256": "94bdbe3223c17405802a28105e782be46a03bfc68c3aa9bb5de2a2916ed8cc7e",
+      "eventCount": 52,
+      "sliceSha256": "574e67ace32166ad6136808b5ed5c4b53bade71b44aaf263c32e066839c45c69",
+      "phase": 0
+    },
+    {
+      "id": "eng-1207-60",
+      "seed": 1207,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "94bdbe3223c17405802a28105e782be46a03bfc68c3aa9bb5de2a2916ed8cc7e",
+      "eventCount": 54,
+      "sliceSha256": "89da3380f45a15801b7a2728f6f800773e1a8bc299cb67860654902cec439073",
+      "phase": 0
+    },
+    {
+      "id": "eng-1210-36",
+      "seed": 1210,
+      "t0": 1944,
+      "t1": 1968,
+      "anchorFrac": 0.36,
+      "streamSha256": "4cc908cac3c907d6a06c7139dd423a65fcb0896cbe61a80a4c6478c1c7268601",
+      "eventCount": 54,
+      "sliceSha256": "b42d5000f805a7438fa8d10735d1c156596e0bf65e6c076ad774c0da2ed379a2",
+      "phase": 0
+    },
+    {
+      "id": "eng-1210-60",
+      "seed": 1210,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "4cc908cac3c907d6a06c7139dd423a65fcb0896cbe61a80a4c6478c1c7268601",
+      "eventCount": 54,
+      "sliceSha256": "8c6c04840ff1ff06f66d7c97cd63c97ffae4926a6a62ebba3c5d932ba44daa54",
+      "phase": 0
+    },
+    {
+      "id": "eng-1213-36",
+      "seed": 1213,
+      "t0": 1944,
+      "t1": 1968,
+      "anchorFrac": 0.36,
+      "streamSha256": "059225edd15e8715de31f65ef866b85f9ff0ef4457e5f34a213b99f1d54f2b1d",
+      "eventCount": 54,
+      "sliceSha256": "825ab2de4d84fb0cc0c74e1d3f3e8b4b53b75aed2283d6c89757e979148a1321",
+      "phase": 0
+    },
+    {
+      "id": "eng-1213-60",
+      "seed": 1213,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "059225edd15e8715de31f65ef866b85f9ff0ef4457e5f34a213b99f1d54f2b1d",
+      "eventCount": 54,
+      "sliceSha256": "4b8b8f083a5a2696121d05123d0ec96b54041bc3e78ae0122dbcc8a0b17c07f2",
+      "phase": 0
+    },
+    {
+      "id": "eng-1216-36",
+      "seed": 1216,
+      "t0": 1944,
+      "t1": 1968,
+      "anchorFrac": 0.36,
+      "streamSha256": "b7ed9252c465afed6b3b16f62df1bc9b56662dbed74a4efd63dcb4531fca5027",
+      "eventCount": 52,
+      "sliceSha256": "837ef92357fe1f2fb328182e01cb404ae1ffed851c707e1c5e3457ed6256beab",
+      "phase": 0
+    },
+    {
+      "id": "eng-1216-60",
+      "seed": 1216,
+      "t0": 3256,
+      "t1": 3280,
+      "anchorFrac": 0.6,
+      "streamSha256": "b7ed9252c465afed6b3b16f62df1bc9b56662dbed74a4efd63dcb4531fca5027",
+      "eventCount": 53,
+      "sliceSha256": "18761408d5928ea5b6dbb4e1d7fdf5dd4eff36d9949c85004a3cf9f6a00cad28",
+      "phase": 0
+    },
+    {
+      "id": "eng-1219-36",
+      "seed": 1219,
+      "t0": 2010,
+      "t1": 2034,
+      "anchorFrac": 0.36,
+      "streamSha256": "a369dca28161b96f91b55468b6e24d9661e14ed1e5325f928f9747f919196773",
+      "eventCount": 53,
+      "sliceSha256": "b35932c6f37087741895d229611b63e53744d355a25ee5a82a21e5b58d423426",
+      "phase": 0
+    },
+    {
+      "id": "eng-1219-60",
+      "seed": 1219,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "a369dca28161b96f91b55468b6e24d9661e14ed1e5325f928f9747f919196773",
+      "eventCount": 53,
+      "sliceSha256": "67eff6b26bdfef51ad93d2a84bca861fcfb41a2a9dd38bd89f168dfa34edb702",
+      "phase": 0
+    },
+    {
+      "id": "eng-1222-36",
+      "seed": 1222,
+      "t0": 1944,
+      "t1": 1968,
+      "anchorFrac": 0.36,
+      "streamSha256": "03e2074795bf26f3306b3c105f2a5d47bc143bfbb65a4faa72a601c8ec07f4c3",
+      "eventCount": 53,
+      "sliceSha256": "88c550d567c47a6ae7360e88dd009f62d5eeadd785136984eae64623fffa751f",
+      "phase": 0
+    },
+    {
+      "id": "eng-1222-60",
+      "seed": 1222,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "03e2074795bf26f3306b3c105f2a5d47bc143bfbb65a4faa72a601c8ec07f4c3",
+      "eventCount": 53,
+      "sliceSha256": "3688e64e0b7fd11c164694211c905b04afff15846936915229d840464bf246fd",
+      "phase": 0
+    },
+    {
+      "id": "eng-1225-36",
+      "seed": 1225,
+      "t0": 2084,
+      "t1": 2108,
+      "anchorFrac": 0.36,
+      "streamSha256": "7480fd802260a82a16d9464fe328272fb79eb0e34c07df92899306bf89b61280",
+      "eventCount": 54,
+      "sliceSha256": "dd4633d9e40be9407db4a7e6fea6c268c6497c95c3de16983d3b16288cbfd0a5",
+      "phase": 0
+    },
+    {
+      "id": "eng-1225-60",
+      "seed": 1225,
+      "t0": 3242,
+      "t1": 3266,
+      "anchorFrac": 0.6,
+      "streamSha256": "7480fd802260a82a16d9464fe328272fb79eb0e34c07df92899306bf89b61280",
+      "eventCount": 53,
+      "sliceSha256": "587fe4b4d702448d627414f544b75844d3d4f569ec8c574d9616968452f1c68d",
+      "phase": 0
+    },
+    {
+      "id": "eng-1228-36",
+      "seed": 1228,
+      "t0": 1946,
+      "t1": 1970,
+      "anchorFrac": 0.36,
+      "streamSha256": "ecd4cae36efe10ee32a13c548f65f0b731f5d33a73a155194b55a89b80cbca2e",
+      "eventCount": 53,
+      "sliceSha256": "8801fa2ce9291cb038dd934ec9e57a08438b5166fff7fb61b44fa3e651ca2eee",
+      "phase": 0
+    },
+    {
+      "id": "eng-1228-60",
+      "seed": 1228,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "ecd4cae36efe10ee32a13c548f65f0b731f5d33a73a155194b55a89b80cbca2e",
+      "eventCount": 52,
+      "sliceSha256": "15be03334e4ab2eefc49fbd03b8bef8980237c8d1462fa13230fdfbc56461ceb",
+      "phase": 0
+    },
+    {
+      "id": "eng-1231-36",
+      "seed": 1231,
+      "t0": 1976,
+      "t1": 2000,
+      "anchorFrac": 0.36,
+      "streamSha256": "191278bbb0160d3c37ec69c2cc8230f6c3c5407244b0c53dc03ed72f72d4c1df",
+      "eventCount": 52,
+      "sliceSha256": "30d9bbae29270bab549b01759343800aac4a7a5be4e77758ba937211b45dcc7d",
+      "phase": 0
+    },
+    {
+      "id": "eng-1231-60",
+      "seed": 1231,
+      "t0": 3304,
+      "t1": 3328,
+      "anchorFrac": 0.6,
+      "streamSha256": "191278bbb0160d3c37ec69c2cc8230f6c3c5407244b0c53dc03ed72f72d4c1df",
+      "eventCount": 52,
+      "sliceSha256": "2c8e20ebab032863fac0e0affc3944728ef5720452d4e9666bfed8d21f63b96c",
+      "phase": 0
+    },
+    {
+      "id": "eng-1237-36",
+      "seed": 1237,
+      "t0": 2072,
+      "t1": 2096,
+      "anchorFrac": 0.36,
+      "streamSha256": "2a3ba71e85b061d753ad3868483261bbbb81dd674cb61edd54f73df742f7df45",
+      "eventCount": 52,
+      "sliceSha256": "8a0625a8064d47387b207bb17d5210ed79210e1ecb758f4f53488f7697e67426",
+      "phase": 0
+    },
+    {
+      "id": "eng-1237-60",
+      "seed": 1237,
+      "t0": 3240,
+      "t1": 3264,
+      "anchorFrac": 0.6,
+      "streamSha256": "2a3ba71e85b061d753ad3868483261bbbb81dd674cb61edd54f73df742f7df45",
+      "eventCount": 53,
+      "sliceSha256": "69cc317b31956d2741664c0957861575e42238527c60ecf84c6d4b482deac761",
+      "phase": 0
+    }
+  ],
+  "perSeed": {
+    "1201": {
+      "eventStreamSha256": "d9c091376543f4628e7c06254520c1e3d42739137798bf8011519973206ce107",
+      "eventCount": 11712,
+      "durationSec": 5400
+    },
+    "1204": {
+      "eventStreamSha256": "ab36db89aba4f9fe10d4031c92d9eb0e514535ec96c71443d4e8f2940bf4f3c2",
+      "eventCount": 11724,
+      "durationSec": 5400
+    },
+    "1207": {
+      "eventStreamSha256": "94bdbe3223c17405802a28105e782be46a03bfc68c3aa9bb5de2a2916ed8cc7e",
+      "eventCount": 11716,
+      "durationSec": 5400
+    },
+    "1210": {
+      "eventStreamSha256": "4cc908cac3c907d6a06c7139dd423a65fcb0896cbe61a80a4c6478c1c7268601",
+      "eventCount": 11716,
+      "durationSec": 5400
+    },
+    "1213": {
+      "eventStreamSha256": "059225edd15e8715de31f65ef866b85f9ff0ef4457e5f34a213b99f1d54f2b1d",
+      "eventCount": 11724,
+      "durationSec": 5400
+    },
+    "1216": {
+      "eventStreamSha256": "b7ed9252c465afed6b3b16f62df1bc9b56662dbed74a4efd63dcb4531fca5027",
+      "eventCount": 11717,
+      "durationSec": 5400
+    },
+    "1219": {
+      "eventStreamSha256": "a369dca28161b96f91b55468b6e24d9661e14ed1e5325f928f9747f919196773",
+      "eventCount": 11724,
+      "durationSec": 5400
+    },
+    "1222": {
+      "eventStreamSha256": "03e2074795bf26f3306b3c105f2a5d47bc143bfbb65a4faa72a601c8ec07f4c3",
+      "eventCount": 11740,
+      "durationSec": 5400
+    },
+    "1225": {
+      "eventStreamSha256": "7480fd802260a82a16d9464fe328272fb79eb0e34c07df92899306bf89b61280",
+      "eventCount": 11711,
+      "durationSec": 5400
+    },
+    "1228": {
+      "eventStreamSha256": "ecd4cae36efe10ee32a13c548f65f0b731f5d33a73a155194b55a89b80cbca2e",
+      "eventCount": 11719,
+      "durationSec": 5400
+    },
+    "1231": {
+      "eventStreamSha256": "191278bbb0160d3c37ec69c2cc8230f6c3c5407244b0c53dc03ed72f72d4c1df",
+      "eventCount": 11726,
+      "durationSec": 5400
+    },
+    "1237": {
+      "eventStreamSha256": "2a3ba71e85b061d753ad3868483261bbbb81dd674cb61edd54f73df742f7df45",
+      "eventCount": 11704,
+      "durationSec": 5400
+    }
+  },
+  "real": {
+    "metrica-1": {
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/viewer/data/real-game-1.json",
+      "bytes": 17980866,
+      "sha256": "46c041fd81faa310726617be81be865aebc0364acdc33079b4f699088df76047",
+      "license": "Metrica sample-data: README 要求注明来源/负责任使用；未声明正式许可"
+    },
+    "metrica-2": {
+      "path": "/home/shared/deep-research-playground/projects/football-manager-clone/viewer/data/real-game-2.json",
+      "bytes": 17187632,
+      "sha256": "6911a12ba363ebd745ef4ddefb7e5659900ee2035ba6f5362000b3d4f8395c45",
+      "license": "Metrica sample-data: README 要求注明来源/负责任使用；未声明正式许可"
+    },
+    "skillcorner-10-even": {
+      "status": "n/a",
+      "reason": "SkillCorner 20 场未下载（~1.8GB，本 change 不下载）；design D1 的 10 场偶数位留待有数据时补登记"
+    }
+  },
+  "note": "事件流由本工具同一次运行内「模拟两次并比对哈希」自证确定性；wasm 哈希随注释行号变化，不是行为哨兵。"
+}
