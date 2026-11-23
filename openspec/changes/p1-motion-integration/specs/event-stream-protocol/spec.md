@@ -75,7 +75,7 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 
 ### Requirement: 稀疏 main/ball 的携带
 
-事件流 SHALL 只有四种驱动状态：`controlled`（carrier 用 `main`）、`loose`（球用 `ball`）、`highlight`（球用事件锚点、参与者用 `movers`）、`restart`（球停固定点）。`controlled` 下 `main` SHALL 在**每个 carrier 有非零位移的段**携带，且**进入 controlled 的首段即使零位移也携带**；稳定静止段可省。`loose` 下 `ball` SHALL 在**每个球有非零位移的段**携带，且**进入 loose 的首段即使零位移也携带**（新 loose 球、球停下后的首个静止段）；稳定静止段可省。
+事件流 SHALL 只有四种驱动状态：`controlled`（carrier 用 `main`）、`loose`（球用 `ball`）、`highlight`（球用事件锚点、参与者用 `movers`）、`restart`（球停固定点）。`controlled` 下 `main` SHALL 在**每个 carrier 位移 > `ε_move` 的段**携带，且**进入 controlled 的首段即使零位移也携带**；稳定静止段可省。`loose` 下 `ball` SHALL 在**每个球位移 > `ε_move` 的段**携带，且**进入 loose 的首段即使零位移也携带**（新 loose 球、球停下后的首个静止段）；稳定静止段可省。`ε_move = 1e-3 m/段`；`movers` 同样只含位移 > `ε_move` 的球员。
 
 #### Scenario: 连续带球每段携带 main
 
@@ -94,6 +94,12 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 - **GIVEN** 无持球者，球以 6 m/s 滚动
 - **WHEN** 引擎产出滚动期间的 beat
 - **THEN** 每个有非零位移的段 SHALL 携带 `ball`（`loose:true`）；球停下后的**新状态首段**仍 SHALL 携带静止 `ball`，其后稳定静止段可省略，viewer 保持最后位置
+
+#### Scenario: 微位移不产 mover
+
+- **GIVEN** 一段内球员位移 < `ε_move`（如残余 0.02m）
+- **WHEN** 引擎产出该段 beat
+- **THEN** 该球员 SHALL NOT 进入 `movers`；`main`/`ball` 同样按 `ε_move` 判据；不得因浮点残差让 22 人每段都进 movers
 
 ### Requirement: 高亮与重开驱动状态
 
@@ -160,8 +166,8 @@ beat 节拍事件 SHALL 描述一个**段**内所有在移动球员的并行动�
 
 ### Requirement: 重开准备期球锚点
 
-角球/界外球发球准备期（RestartPrep，**指判定段之后、发球之前的每个准备段**——判定段本身不产 beat，见 match-engine 的 beat 段边界不变量）SHALL 产 beat 事件表达球停在固定点等待发球：**准备期的第一条 beat** SHALL 携带静止锚点 `beat.ball`（x==x2 且 y==y2，loose=true），坐标=角旗区/出界点；其后零位移的段可以省略 `ball`，viewer 保持该锚点。`movers` 含发球者/掷球者走向固定点的走位（**受速度/加速度/制动约束，不再有 dead-zone「位移 < 2m 不移动」语义**；发球者已在固定点、其余球员的目标都在到达半径内时该段 movers 可以为空）。发球高亮起点=同一固定点，viewer 连续播放无球瞬移。
+角球/界外球发球准备期（RestartPrep，**指判定段之后、发球之前的每个准备段**——判定段本身不产 beat，见 match-engine 的 beat 段边界不变量）SHALL 产 beat 事件表达球停在固定点等待发球：**准备期的第一条 beat** SHALL 携带静止锚点 `beat.ball`（x==x2 且 y==y2，loose=true），坐标=角旗区/出界点；其后零位移的段可以省略 `ball`，viewer 保持该锚点。`movers` 含发球者/掷球者走向固定点的走位（**受速度/加速度/制动约束，不再有 dead-zone「位移 < 2m 不移动」语义**；发球者已在固定点、其余球员的目标都在到达半径内时该段 movers 可以为空）。发球高亮起点 = 发球者积分位置（目标=固定点，在 `REACH_TOL_M` 内；不要求精确等于固定点），viewer 连续播放无球瞬移。
 
 #### Scenario: 准备期球停固定点
 - **GIVEN** 一次角球/界外球发球准备期（判定段之后的准备段）
-- **THEN** 准备期第一条 beat 的 `ball` 静止在角旗区/出界点（x==x2、y==y2），发球者/掷球者 mover 走向固定点；其后零位移段可省略；发球 pass 起点=同一固定点
+- **THEN** 准备期第一条 beat 的 `ball` 静止在角旗区/出界点（x==x2、y==y2），发球者/掷球者 mover 走向固定点；其后零位移段可省略；发球 pass 起点 = 发球者积分位置（与固定点差 ≤ `REACH_TOL_M`）

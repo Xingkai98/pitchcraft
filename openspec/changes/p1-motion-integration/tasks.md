@@ -10,13 +10,17 @@
 - [x] 1.3 gpt-6.1-sol 零上下文审阅：**Round 6 = 0 High / 3 Medium / 1 Low，可批准**（Round 1–5 见 `design.md` D2.2/D2.3/D5.1/D5.4/D6/D8/D9 与 `notes/review-gpt61-2026-11-21.md`）
 - [ ] 1.4 用户在 #170 / PR 批准 design；批准链接写回 `design.md`
 - [x] 1.5 拍板 design D11 的 6 个决策（2026-11-21，全部按推荐；见 `design.md` D11）
-- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 2 MODIFIED + 6 ADDED、`match-engine` 4 MODIFIED + 12 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
+- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 2 MODIFIED + 6 ADDED、`match-engine` 4 MODIFIED + 16 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
 - [x] 1.7 归档合并自检：scenario 集合包含检查（D8.1）；`validate --strict` 只作门槛，不作语义批准
 - [x] 1.8 M/L 修复：M1 成本预算（D7.5）、M2 运动学数值（D4.2）、M3 单步算法（D4.4）、M4 快照（D2.4）、M5 数据依赖（D7.4）、M6 fill 域（D5.3）、L1 措辞、L2 golden/研究门（D7.3）
 - [x] 1.9 Round 2 修复：权威调度与 Trace C（R2-H1）、零位移状态首锚点（R2-H2）、参与者进入 movers + 真实 T/精确到达/finalize 连续（R2-H5）、turnsPerPlayer/等效性盲测/7 真实簇（R2-H6）、总向量预算 A_MAX + 米制边界（R2-N1）、M1 旧流选择、M2 体积上界、M3 save 否决分母、L1/L2 转述
 - [ ] 1.10 Phase 0/实现时收紧 Round 6 的 3 Medium + 1 Low（R6-M1 1.7 对账表、R6-M2 重试成功夹具、R6-M3 RNG 守卫对象、R6-L1 P_eff 摘要）；不阻塞 design 批准
 
 ## 2. Phase 0：前置（design 批准后先做）
+
+> **落地粒度（G3-Q6）**：Phase 0 的每块（角球重锚 / 夹具 / 基线与预注册 / `ok_step`）
+> SHALL 拆成**独立 PR**，每个 PR **行为零变化**并对照 main v11 验证；改门的 PR 单独列证据。
+> 便于区分「门变严/重锚」与「运动导致破带」。
 
 - [ ] 2.1 角球带处置：按 D11 #4 **重锚到真实 ~10.27**，保留单场 max 护栏（不得删红门、不得降级为报告项）；证据落盘 `notes/`
 - [ ] 2.2 p53/p31/p6/p32 改为「显式构造场景 + 条件断言 + 多 seed 置信范围」夹具；保留契约
@@ -28,11 +32,12 @@
 - [ ] 2.8 **测试成本实测**（M1）：用 v11 同配置测 debug/release、p124、L1、spacing-sweep、5min/90min viewer（加载/seek/帧耗时、JSON 字节、峰值内存），替换 D7.5 的「估算」列
 - [ ] 2.9 **盲测/旧红预注册**（R3-M3/R5-M2）：冻结 source×seed 配对矩阵、裁判/重复窗处理、多向聚类 bootstrap、证据等级 A/B/C、扩样上限 140 clip、7 真实簇下限；在候选调参前冻结每个已有红的逐指标非恶化边界（来源=base 逐 seed 分布不确定度/预注册扰动块/领域容忍，见 D9.3）；**存储合同=JSON 0–1 比例/粒度 0.001、展示 0.1pp、向恶化侧 ceiling 到 0.001**；计数类每场次数/0.1
 - [ ] 2.10 **前视规划 smoke**（R4-M1）：1 seed 专测规划次数/平均与最大视野/候选拒绝与重试/缓存内存/执行复用率/计划段测试时长；超预算只优化或停止设计，不得回退「先写锚点再推位置」
+- [ ] 2.11 **移植 motion-census**（G1-Q4）：从 `p155-measurement-instrument/2026-11-19` 移植 `tools/visual-review/motion-census.mjs`；引擎侧过滤 `action:"highlight"`；在 v11 上复算并与 Change 0 对齐（不一致则停止说明，不静默换锚）；补口径守护测试
 
 ## 3. 运动执行层
 
 - [ ] 3.1 新建 `engine/src/motion.rs`：`MotionState { pos_m, vel_mps, heading, mode }`
-- [ ] 3.2 实现 `dv/dt = A0(1−v/S0)`、`|ω| ≤ a_lat/max(v,1)`、制动曲线/到达半径；参数按 D4.2 标注「文献值/工程初值/待标定」
+- [ ] 3.2 实现 `dv/dt = A0(1−v/S0)`、`|ω| ≤ a_lat/max(v,1)`、制动曲线/到达半径；按 D4.2 v1 常量钉死 `S0=9.8`、`a_brake=6.4`、`V_EPS=1e-3`、`MAX_TURN_RATE=4.0`，补 `S0≥V_MAX` 不变量与低速大转向裁剪有界单测；`A_MAX` 预算优先、裁剪率仅报告
 - [ ] 3.3 删除「dead-zone 整拍冻结」；保留到达半径；速度/位置内部米制
 - [ ] 3.4 确定性单步算法按 D4.4：期望速度 → 反向/制动（不转向）→ 朝向 → 速度指令 → **运动预算** → 位置（`pos += vel·dt`）→ 三层分离 → **总向量预算**；从最终 `vel` 恢复 speed/heading；子步零 RNG
 - [ ] 3.5 三层分离（目标/预测/投影）；所有修正计入 `|Δv_total| ≤ A_MAX·SIM_DT`；边界清零后重做总预算；不可行置 `constraint_infeasible`（不静默推端点）
@@ -64,7 +69,7 @@
 ## 5. Viewer
 
 - [ ] 5.1 `viewer/config.js`：`tickSeconds` → `beatSeconds=0.2` / `legacyBeatSeconds=0.5` / `tackleSeconds=0.5` / `highlightSeconds=0.5`（删除旧键）
-- [ ] 5.2 `interpretation.js:186/192/219/304/350` 逐点按 D6.1 归属切换；`game.js` 的 Catmull/T1 默认关
+- [ ] 5.2 `interpretation.js:186/192/219/304/350` 逐点按 D6.1 归属切换；`game.js` 显式 `interpolation.smooth=false` / `textureAmpM=0`（不靠 0.5s 门槛）
 - [ ] 5.3 稀疏 main/ball：`buildTimeline` 不补锚点、插值保持；`currentCarrier()` 向后扫描 + 失效事件停止（D6.2）
 - [ ] 5.4 seek 重建：球用高亮锚点/`main`/`ball`，参与者用 mover；事件终点续接；**旧流无 `dt` 用 `legacyBeatSeconds=0.5`（不是 beatSeconds）**
 - [ ] 5.5 缓存版本号 bump（`index.html` + app.js import specifier）
@@ -73,6 +78,8 @@
 - [ ] 5.8 内部间距 vs 显示间距两路断言：`st.pos` == mover 端点；viewer 插值后 `player_overlap` findings = 0
 - [ ] 5.9 新状态首锚点的 seek 属性测试（save-caught 零速持球 / 原地拾取 / 新 loose 球静止）
 - [ ] 5.10 `事件演绎遵循剧本` 迁移（R3-H5）：新流人物用 `movers`、事件锚点只驱动球；旧流（无 `dt`）保留五段式合成并打 warning；6 个原 scenario 全覆盖
+- [ ] 5.11 同步测试迁移（G2-Q8）：`interpretation.test.js` 改为 `beatSeconds↔BEAT_DT` / `tackleSeconds↔DECISION_DT`；新流停发事件派生球员锚点
+- [ ] 5.12 `derive-audit-features` 改读 `beat.dt`（不再用 `tickSeconds` 铺 beat 时长）；补一条守卫测试
 
 ## 6. 验证
 
@@ -89,6 +96,11 @@
 - [ ] 6.11 独立审阅闭环：High 收敛到 0
 - [ ] 6.12 save 否决统计：三分母（全部 shot / 原 save / 尝试修复的 save）+ 逐 seed + ≤2% 原 save + L1 射门结果非恶化
 - [ ] 6.13 总向量预算：子步 `|Δv_total| ≤ A_MAX·SIM_DT` 的数值例与属性测试；米制边界 `[0,105]×[0,68]`
+- [ ] 6.14 微位移/体积（G2-Q10）：`ε_move=1e-3 m/段`；`movers/beat` 报告量；核对 JSON 正常 ≤3×、密集 ≤5×
+- [ ] 6.15 高亮期零事件决策（G2-Q6）：单测证明高亮内不评估机会/不掷事件 RNG；`plan_divergence` 状态核对标注为接线守卫
+- [ ] 6.16 观察层 frozen 标签（G1-Q3）：`observe_state.frozen` 保留为活跃高亮参与者标签；p16 改断言（非空/仅高亮拍/少数拍），删「位置冻结」语义
+- [ ] 6.17 旧流排序兼容（G1-Q6）：旧流 tackle-beat-first 回溯分支保留；新流事件先；两模式各有测试
+- [ ] 6.18 加速度尾部（G3-Q8）：从**已发射 beat 端点**算主口径 + 内部子步对照口径；内部 p99 仅作构造不变量，不冒充现实指标
 
 ## 7. 收尾
 

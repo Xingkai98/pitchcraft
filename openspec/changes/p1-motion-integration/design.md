@@ -100,16 +100,21 @@ LCM(0.2, 0.5) = 1.0s：beat 名义网格与 decision 每 1s 重合一次；其�
   计划 SHALL 至少覆盖包含真实 `t_end` 的完整输出段及其 finalize 状态提交；若 `dur < P_end`，
   计划 SHALL 覆盖终场截段 `[last_boundary, dur]`（`dt = dur − last_boundary`，允许非
   0.1/0.2 的终场短 dt），`t ≥ dur` 不产 beat，`cp_end` 在 `dur` 终态、无未来 decision。
+  **悬空高亮 `t_end > dur` 的终场 finalize 链 SHALL 并入计划的 `P_eff=dur` 终态**：
+  被截断高亮的 finalize 结果（比分/球权/新高亮链）由计划在 `dur` 处缓存并提交；
+  **循环退出后零 live finalize**——禁止保留 main 的独立排空循环（G1-Q1 选 B）。
   **部分步只用于落地/锚点对账，不改变实际积分分割**：非终场段仍是整 `SIM_DT` 步；
   终场末段是唯一允许的部分步/短 dt。
 - **内容**：
   - 逐边界完整状态 `pos_m / vel_mps / heading / mode` **+ 完整调度状态**：球权、冷却、
-    动作机会、活跃高亮、重开、decision 计数（见 R5-M1）；
+    动作机会、活跃高亮、重开、decision 计数、**`last_emitted`（发射缓存）**（见 R5-M1/G1-Q5）；
   - **decision 所有权：`[t_c, P_end)` 内的 decision 归计划**；**恰在 `P_end` 的 decision
     归 live/下一个计划**。`cp_end` 是 `P_end^-`（该 decision **之前**）的 RNG/状态；
-  - 事件列表（含 finalize 事件）；
-  - RNG checkpoints：`cp_commit`（candidate decision 已定意图之后，见 R5-M1）、每个
-    计划拥有的 decision `cp_s`、计划末端 `cp_end`；
+  - 事件列表（含 `[t_c, P_eff]` 内的 finalize 事件，**以及 `dur` 截断的终场 finalize 链**：
+    比分/球权/新高亮链——G1-Q1）；
+  - RNG checkpoints：**只有 `cp_commit`**（candidate decision 已定意图之后）与 **`cp_end`**
+    （`P_eff` 终态）；高亮期间**无事件决策、只有零 RNG 目标/模式刷新**（G2-Q6），
+    因此不设 per-decision `cp_s`；
   - 规划轨迹（球段端点/落点/飞行时长/参与者端点）。
 - **覆盖内只消费缓存**：在 `s ∈ [t_c, P_end)`，调度器 SHALL：
   - 取缓存状态/事件/decision 结果；**SHALL NOT** 调 `decision()`、**SHALL NOT** 重掷 RNG；
@@ -136,28 +141,35 @@ LCM(0.2, 0.5) = 1.0s：beat 名义网格与 decision 每 1s 重合一次；其�
   live 保持 **`cp_commit`**（不是 `cp_end`）；重试从 `cp_commit` 起，**意图/参数不变、
   不重抽 candidate result**；规划阶段零新 RNG（若需扰动，只允许预注册的确定性扰动）。
   重试上限 2 次；超限拒绝候选（事件不发射），live 的 RNG/状态仍为 `cp_commit`。
-- **`plan_divergence` 三路核对**：① 状态（完整调度状态 == 缓存）；② **独立事件账本**
+- **`plan_divergence` 三路核对**：① 状态（完整调度状态 == 缓存；**这是接线守卫，
+  不是物理等价证据**——被核对的状态本就赋值自缓存，只能抓调度接线错误）；② **独立事件账本**
   （顺序/每条恰好发射一次，无遗漏/重复）；③ RNG 消费/checkpoint（覆盖内正式 RNG 不消耗；
-  实际 RNG == `cp_s`/`cp_end`）。任一不符使守卫红，不得静默修补。
-- **计划快照**：用完整调度状态（motion + 球权/冷却/动作机会/活跃高亮/重开/decision 计数），
-  不是只复制 `MotionState`。
+  实际 RNG == `cp_commit`/`cp_end`，**只有这两个 checkpoint**）。任一不符使守卫红，不得静默修补。
+- **高亮期零事件决策（G2-Q6）**：高亮期间 SHALL NOT 评估行动机会/掷事件 RNG；只有零 RNG 的
+  目标/模式刷新。计划因此不为高亮内 decision 设 per-decision checkpoint（`cp_s` 已删）。
+  该不变量 SHALL 有单测；若证伪，停止并重开 design。
+- **计划快照**：用完整调度状态（motion + 球权/冷却/动作机会/活跃高亮/重开/decision 计数 +
+  `last_emitted`），不是只复制 `MotionState`。
 
 **权威调度伪代码（显式四阶段 A/B/C/D）**
 
 ```
-s = 0.5; state = initial; rng = live; plan = None
+s = 0.5; state = initial; rng = live; plan = None; events_done_at = None
 while s < dur:
-    # ---- A. 边界事件/decision：每个边界只处理一次 ----
-    boundary_done = (plan and plan.start_marker == s)  # 本边界已在创建计划时处理过
-    if not boundary_done:
-        emit/apply boundary_events_at(s)               # finalize / 事件（确定性顺序）
-        if decision_due(s):
-            if plan and plan.owns_decision(s):
-                apply plan.decision_at(s)              # 只消费缓存；不调 decision()
-            else:
-                decision(s)                            # candidate decision 恰执行一次
-                if candidate committed:
-                    plan = new_plan; plan.start_marker = s
+    # ---- A. 边界事件/decision：每个边界只处理一次；事件账本消费一次 ----
+    if events_done_at == s:
+        pass                                           # 交还块已消费该边界事件
+    elif plan is not None and plan.covers_event_at(s): # t_c < s < P_eff
+        emit/apply plan.consume_event_ledger_once(s)   # 计划覆盖内从账本取
+    else:
+        emit/apply live_boundary_events_at(s)          # 未覆盖边界由 live 发
+    if decision_due(s):
+        if plan is not None and plan.owns_decision(s):
+            apply plan.decision_at(s)                  # 只消费缓存；不调 decision()
+        else:
+            decision(s)                                # candidate decision 恰执行一次
+            if candidate committed:
+                plan = new_plan; plan.start_marker = s
     # ---- B. 选择/接管计划（同一迭代；首段立即消费）----
     use_plan = plan is not None and plan.covers_segment(s)
     if use_plan: plan.start_marker = s
@@ -166,7 +178,7 @@ while s < dur:
     # ---- D. 取缓存或 live 推进 → 发 beat ----
     if use_plan:
         p = plan.at(s)
-        assert state == p.state                         # 逐边界核对
+        assert state == p.state                         # 逐边界核对（接线守卫）
         dt = p.dt(s); state_next = p.state_next
         emit_beat(s, dt, p.state, state_next)           # from/to = 缓存
     else:
@@ -175,19 +187,25 @@ while s < dur:
         emit_beat(s, dt, state, state_next)
     state = state_next; s += dt
     if use_plan and s == plan.P_eff:
-        emit plan.events_at(s)                          # P_eff 的 finalize 事件
+        emit/apply plan.consume_event_ledger_once(s)    # P_eff finalize；只消费一次
+        events_done_at = s                               # 下一轮 A 不再重复发事件
         assert state == plan.state_end
-        rng = plan.cp_end; plan = None                  # 原子交还 live
+        rng = plan.cp_end; plan = None                  # 原子交还 live（decision 留给下一轮 A）
 ```
 
-- **A 只跑一次**：候选 decision 在 A 创建 plan#1 后，B **同一迭代**接管首段；
-  `start_marker` 防止下一轮回到同一 `s` 时重复发起点事件/decision。流程是
+- **A 只跑一次 / 双发射器合并（G1-Q2）**：`boundary_events_at` SHALL 计划感知——
+  `s∈(t_c,P_eff)` 从 `plan.consume_event_ledger_once(s)` 取；`s=P_eff` 由交还块消费
+  **同一账本一次**并置 `events_done_at`；下一轮 A 跳过事件、但仍执行 `P_eff` 的 live
+  decision。账本每条事件只能被消费一次（重复/遗漏 → `plan_divergence`）。
+- **首段同迭代**：候选 decision 在 A 创建 plan#1 后，B **同一迭代**接管首段；流程是
   **「算一次（A）→ 发一次（A/D）→ 缓存接管一次（B）→ 不再重算（D）」**。
 - **P_end 所有权**：A 在 `s=P_end` 时 plan 已在上一轮 D 交还清空，因此 `P_end` 的
   decision 由 live（或 follow-on plan）执行一次；`cp_end` 是它之前的 `P_end^-`。
 - **终场**：`P_eff=min(P_end,dur)`；若 `dur<P_end`，D 的最后一段是 `[last_boundary,dur]`
-  的短 dt，`t≥dur` 不发 beat，`cp_end` 在 dur 终态，无未来 decision；SHALL NOT 原样发到
-  `P_end>dur`，也不得为修末段重新积分已承诺计划。
+  的短 dt，`t≥dur` 不发 beat，`cp_end` 在 dur 终态，无未来 decision；**被 `dur` 截断的
+  悬空高亮终场 finalize 链在计划的 `P_eff` 终态缓存并提交**（比分/球权/新高亮链），
+  退出循环后零 live finalize；SHALL NOT 原样发到 `P_end>dur`，不得为修末段重新积分，
+  也不得保留 main 的独立排空循环。
 - **顺序是合同**：上段终态 → finalize/事件 → decision → snapshot → 下一段（缓存或积分）→
   beat。`beat.t` 是段起点，`to` 是段终点状态（缓存或预积分）。
 - **finalize 的 `t`**：第一个 ≥ `t_end` 的 0.1s 网格 sim step；事件内部锚点仍用真实
@@ -321,6 +339,11 @@ while s < dur:
   必须在 p16/p124 的测试与文档同批更新。
 - p124 的 `intent_snapshots[i]` 与 `state_snapshots[i]` 同一 `t`、同一提交点相邻 push
   （`s` 时刻、decision 之后）；两通道顺序不变。
+- **观察层 `frozen` 字段（G1-Q3）**：`observe_state` 的 `frozen` 参数**保留**，语义改为
+  「活跃高亮参与者 id **标签**」——不再有「冻结」含义，运动层参与者正常积分/进 movers。
+  p16 的 `state_snapshot_frozen_marks_active_highlight_only` 断言改为：仍**必有非空拍**、
+  只在活跃高亮拍非空、非空拍是少数拍（防空转）；**删掉「位置被冻结」的语义断言**。
+  这是观察层与运动层的解耦，不是删除研究门。
 - 若实现时把 `TICK_SECONDS` 更名为 `DECISION_DT`，p16/p124 与文档的引用必须同批更新；
   不允许只改常量、留下旧名断言。
 
@@ -357,18 +380,28 @@ y_norm = pos_m.y / 68.0
 | 参数 | 值 | 类别 | 出处 / 备注 |
 |---|---:|---|---|
 | `A0` | **6.4–7.8 m/s²** | 文献值 | #170「审查闭环」#10（原文 6.39–7.81；旧票面 6.3–7.6 已撤回） |
-| `S0` | **9.2–9.8 m/s** | 文献值 | #170 票面 PMC10880943 行 |
+| `S0` | **9.8 m/s**（v1 钉死；文献区间 9.2–9.8） | 文献值 + 工程定值 | #170 票面 PMC10880943 行；**不变量 `S0 ≥ V_MAX`**（9.8 ≥ 9.5），单测守护 |
 | `a_lat` | **6.5 m/s² 起步** | **工程初值，待标定** | #170「审查闭环」#8：`a_lat 6–8` 在 PMC6132493 查不到；本值不是实测 |
 | `V_MAX` | **9.5 m/s** | 文献值 | EPL 光学追踪 9.53 ± 0.39（#170 票面） |
 | 冲刺距离 | **>7 m/s 距离分布**（160 ± 89 m/场） | 文献值 | #170「审查闭环」#9；「平均 5.9m 冲刺」**不作锚**（不在 PMC11474994） |
-| `a_brake` | **= A0 起步** | 工程初值，待标定 | 与加速同量级；用同口径真实分布校准 |
+| `a_brake` | **6.4 m/s²**（v1 钉死） | 工程初值，待标定 | 与 A0 下界同值，避免区间在 `sqrt(2·a_brake·d)` 与 `−a_brake·dt` 里当两个标量用 |
+| `V_EPS` | **1e-3 m/s** | 工程定值 | `speed ≤ V_EPS` 时保留上一 heading；也是 `ε_move` 的参考 |
+| `MAX_TURN_RATE` | **4.0 rad/s** | 工程初值 | 只在 `speed < a_lat/4 = 1.625 m/s` 时比 `a_lat/max(v,1)` 更紧；不改变数值例 |
 | `ARRIVE_RADIUS_M` | **1.0 m** | 工程初值，待标定 | **普通**到达半径；不用 2m 冻结 |
 | `PRECISION_ARRIVE_RADIUS_M` | **0.25 m** | 工程初值 | **事件参与者**的精确到达模式；SHALL ≤ `REACH_TOL_M` |
 | `REACH_TOL_M` | **0.25 m** | 工程初值 | 可达性判据的位置容差（与普通到达半径**分离**） |
 | `REACH_SPEED_TOL` | **0.5 m/s** | 工程初值 | 可达性判据的末速容差 |
 | `RESIDUAL_SPEED_MAX` | **0.2 m/s** | 工程初值 | 到达后的数值残余；**不允许 0–1 m/s 的漂移**（H6 防微抖） |
 | `V_REVERSE` | **0.5 m/s** | 工程初值 | 目标在身后时先减速到该值再转身 |
-| `A_MAX` | **8.0 m/s²** | 工程初值，待标定 | **总向量加速度预算**；SHALL ≥ `max(A0_max, a_lat)`；见 D4.4 |
+| `A_MAX` | **8.0 m/s²** | 工程初值，待标定 | **权威总向量加速度预算（budget first）**；见 D4.4 |
+
+**`A_MAX` 与 A0/a_lat 的关系（G2-Q1）**：`A_MAX=8.0` 是**权威总向量预算**，不是
+「只要 ≥ max(A0_max,a_lat) 就不会裁剪」。纵向与横向可同时发生，向量上界是
+`sqrt(A0(v)² + a_lat²)`；取 `A0=7.8, a_lat=6.5` 时合成上界 `sqrt(7.8²+6.5²)=10.15 > 8.0`。
+⇒ 正确措辞是**预算优先**：A0 曲线与 a_lat 是**期望指令**，最终都受 `|Δv_total| ≤ A_MAX·dt`
+裁剪；低速大转向（如 v=2 时 `sqrt(5.053²+6.5²)=8.233`）**会被裁剪且裁剪有界**。
+裁剪是正常路径、不是异常；**裁剪率只作报告，不作门**。单测 SHALL 钉住「低速大转向被裁剪
+且有界」。
 
 **为什么普通到达半径与事件参与者半径必须分开（R2-H5）**：若参与者用 `ARRIVE_RADIUS_M=1.0`，
 一个距落点 0.5m、速度 0 的接球者会被判「已在到达半径内 → `v_des=0`」，永远到不了 0.25m 的
@@ -413,12 +446,13 @@ y_norm = pos_m.y / 68.0
    `speed_next = max(speed + a_cmd, 0)`；
    `vel_cmd = speed_next · (cos heading, sin heading)`。
    模式 cap 下调只改 `v_des`，减速由 `a_brake` 限制（不直接 clamp `speed`）。
-5. **运动预算（先于位置）**：`Δv_motion = vel_cmd − vel_before`
+5. **运动预算（先于位置；budget first）**：`Δv_motion = vel_cmd − vel_before`
    （加速 + 转向 + 预测避碰的指令修正全部计入）。若 `|Δv_motion| > A_MAX·dt`，
-   按比例缩放：`vel_after = vel_before + Δv_motion·(A_MAX·dt/|Δv_motion|)`；
+   **按比例裁剪**：`vel_after = vel_before + Δv_motion·(A_MAX·dt/|Δv_motion|)`；
    否则 `vel_after = vel_cmd`。由 `vel_after` 恢复 `speed = |vel_after|`、
    `heading = atan2(vel_after.y, vel_after.x)`（speed > V_EPS 时）。
    **不允许**用 `A0·dt` 或 `a_lat·dt` 分别判界（正常加速+转向会超过 `A0·dt`）。
+   **裁剪是正常路径**：低速大转向会被裁剪且裁剪有界（单测钉住）；裁剪率只报告、不作门。
 6. **位置更新（半隐式 Euler）**：`pos += vel_after · dt`（**向量直接乘 dt**，不再乘 cos/sin）。
 7. **分离与总向量预算（R2-N1 的关键门）**：全部球员积分后，按 D4.5 执行分离；
    分离引起的 `Δv_sep = Δpos_sep/dt` 加到 `vel_after` 得 `vel_final`；检查
@@ -432,13 +466,14 @@ y_norm = pos_m.y / 68.0
    并记录 `boundary_reset`；仍超预算则 `constraint_infeasible`。
 9. **提交**：段边界上才写 `last_emitted` / 发 beat；子步不发射。
 
-**数值例（精确向量值，R3-L1）**：`speed=6 m/s, A0=6.4, S0=9.5, a_lat=6.5, dt=0.1,
-θ_err=0.2 rad, MAX_TURN_RATE 不更紧`。纵向 `Δspeed = 6.4·(1−6/9.5)·0.1 = 0.236 m/s`；
+**数值例（精确向量值，R3-L1/G2-Q7）**：`speed=6 m/s, A0=6.4, S0=9.5, a_lat=6.5, dt=0.1,
+θ_err=0.2 rad`，且 `MAX_TURN_RATE ≥ 1.0833`（=6.5/6；v1 取 4.0 rad/s，故不更紧）。
+纵向 `Δspeed = 6.4·(1−6/9.5)·0.1 = 0.236 m/s`；
 `ω = min(MAX_TURN_RATE, 6.5/6) = 1.0833 rad/s`，`Δθ=0.10833 rad`。二维旋转后的
 **精确**总向量 `|Δv| ≈ 0.703044 m/s ≤ A_MAX·dt = 0.8`（A_MAX=8.0）。
 `sqrt(0.236² + 0.650²) = 0.692` 是**线性化近似**，只用于说明量级，SHALL NOT 用作精确验收值。
-若把 `A_MAX` 设成 `A0=6.4`，同一个正常运行就会红——所以 `A_MAX` 必须独立定义且
-`≥ max(A0_max, a_lat)`。
+`A_MAX=8.0` 是总预算：该例不裁剪；但低速大转向（合成上界 `sqrt(7.8²+6.5²)=10.15`）会被
+裁剪，这是**预算优先**的预期结果，不是设计错误；不需要把 A_MAX 抬到 10.15。
 
 **积分次序是合同的一部分**：决策 → 子步（期望速度 → 反向/制动 → 朝向 → 速度 →
 **运动预算** → 位置 → 分离 → **总预算**）→ 段边界提交。同 seed 同 config 必须逐位复现；
@@ -474,14 +509,18 @@ y_norm = pos_m.y / 68.0
 
 ### D5.1 beat 5Hz 与稀疏 main/ball（H2/R2-H2）
 
-- `beat` 每段一条；段定义见 D2.3。`movers` 含该段有非零位移的球员
+- `beat` 每段一条；段定义见 D2.3。`movers` 含该段**位移 > `ε_move`** 的球员
   （`{id, from_x, from_y, to_x, to_y, speed, action}`）。
+- **微位移阈值（G2-Q10）**：`ε_move = 1e-3 m/段`（工程定值）。`main`/`ball`/`movers` 的
+  「有非零位移」判据统一为 `|Δpos| > ε_move`；收敛规则：`speed ≤ V_EPS` 或 `v_des=0` 且
+  `a_brake` 一步后，速度归零/位移降到 `ε_move` 以下，避免 22 人每段因残余漂移都进 movers。
+  `movers/beat` 作为报告量（不设门），用于检查 3×/5× 体积预算。
 - **驱动状态机（R3-H2）**：事件流只有四种驱动状态，SHALL NOT 混用：
 
   | 状态 | 人/球驱动 | `main` / `ball` | 首段规则 |
   |---|---|---|---|
-  | `controlled` | carrier 用 `main` | 每个 carrier 有非零位移的段发 `main` | **进入 controlled 的首段即使零位移也发 `main`** |
-  | `loose` | 球用 `ball` | 每个球有非零位移的段发 `ball` | **进入 loose 的首段即使零位移也发 `ball`** |
+  | `controlled` | carrier 用 `main` | 每个 carrier 位移 > `ε_move` 的段发 `main` | **进入 controlled 的首段即使零位移也发 `main`** |
+  | `loose` | 球用 `ball` | 每个球位移 > `ε_move` 的段发 `ball` | **进入 loose 的首段即使零位移也发 `ball`** |
   | `highlight` | 球用事件锚点；参与者用 `movers` | **禁止 `main` / `ball`** | **事件本身 = 新状态首锚点**；不强制 `main`/`ball` |
   | `restart` | 球停固定点；发球者走位用 `movers` | 首个准备段发静止 `ball`；其后稳定可省 | 首个准备段即使零位移也发 `ball` |
 
@@ -653,11 +692,15 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 
 | 角色 | 目标产生 | 积分 | 事件锚点 | 完成交接 |
 |---|---|---|---|---|
-| pass 接球者 | decision 时由接球者位置 + lead 生成落点 | 同一积分器，`target=落点`，时限 `[t_start,t_end]`；分离也作用于他 | `receiver_x/y` = `t_start` 位置；`x2/y2` = **球落点 = 接球者在 `t_end` 的连续积分位置**（容差内） | 该边界 mover 端点 = `x2/y2`（容差内）；下一段作为普通 mover 继续；不瞬移 |
+| pass 接球者 | decision 时由接球者位置 + lead 生成落点 | 同一积分器，`target=落点`，时限 `[t_start,t_end]`；分离也作用于他 | `receiver_x/y` = `t_start` 位置；`x2/y2` = **最终计划点**（= 接球者在 `t_end` 的连续积分位置，容差内）；改落点后 `speed` 重算使 `dist/speed = t_end − t` | 该边界 mover 端点 = `x2/y2`（容差内）；下一段作为普通 mover 继续；不瞬移 |
 | pass 拦截者 | 拦截点 `at` | 同上，`target=at` | `interceptor` + `at` = 连续积分到 `t_end` 的位置 | 若成为新 carrier，下一段首段 `main.from=at`（H2 新状态首段） |
 | shot 门将 | 扑救点 = 球路径上与门将可达集的最早交点 | 同上，`target=扑救点` | `keeper_x/y` 仍是**射门瞬间**位置；扑救点 = 连续积分到 `t_end` 的位置 | 扑住（caught）位置连续、速度置 0（合法速度重置）；扑出（rebound）速度取积分值 |
 | tackle 双方 | 接触点 `(x2/y2)` = 双方可达集的确定性交点 | 双方同一积分器 + 分离，时限 `[T,T+DECISION_DT]` | `subject_end/carrier_end` = **分离后**连续积分到 `t_end` 的位置 | 该边界 mover 端点 = 事件终点（容差内）；速度取积分值（或按结果停住） |
-| 重开者（角球/界外球/任意球） | 固定点 = 角旗/出界点/犯规点 | 准备期正常走位（8 m/s 快走 `v_cap`） | 发球 pass 起点 = 固定点 | 到达前不发球；准备期延长而不是瞬移（上限 `RESTART_PREP_MAX_S`，工程初值 6.0s） |
+| 重开者（角球/界外球/任意球） | 固定点 = 角旗/出界点/犯规点 | 准备期正常走位（8 m/s 快走 `v_cap`） | 发球 pass 起点 = **发球者积分位置**（目标=固定点，在 `REACH_TOL_M` 内） | 到达前不发球；准备期延长而不是瞬移（上限 `RESTART_PREP_MAX_S`，工程初值 6.0s） |
+
+**落点/时长一致（G2-Q9）**：pass 的 `x2/y2` SHALL 用**最终计划点**（改落点之后），并重算
+`speed = dist/(t_end − t)`，使 viewer 的 `dist/speed` 推导与引擎 finalize 边界一致；重开 pass
+的 `x/y` 用**发球者积分位置**（目标=固定点，在 `REACH_TOL_M` 内），不要求与固定点精确相等。
 
 **事件必须以 `CommittedPlan` 提交（R4-H1）**：高亮事件的端点不是「先写目标、执行时再被
 分离推」，而是由 **D2.2 的唯一权威执行规则**中的 `CommittedPlan` 在发射前冻结。计划的生命
@@ -748,6 +791,11 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 | `tackleSeconds` | **0.5** | tackle 高亮时长（= `DECISION_DT`），**不跟 beat** |
 | `highlightSeconds` | **0.5** | 仅在 pass/shot 既无距离也无速度时的兜底；正常走事件时长 |
 
+**显式关闭开关（G2-Q8）**：第一阶段 SHALL 显式设 `interpolation.smooth=false` 与
+`textureAmpM=0`（不是靠 0.5s 门槛碰巧关掉）；新流 SHALL 停止发「事件派生的球员锚点」，
+参与者只由 `movers` 驱动。同步测试 SHALL 改为 `beatSeconds ↔ BEAT_DT`、
+`tackleSeconds ↔ DECISION_DT`；`derive-audit-features` 改读 `beat.dt`，不再用 `tickSeconds`。
+
 **旧流选择机制（R2-M1）**：不靠全局配置同时兼容两种节拍。`buildTimeline` 读事件流的
 **第一条 beat**：有 `dt` → 新流（逐条用 `dt`）；无 `dt` → 旧流（整条流用
 `legacyBeatSeconds=0.5`，并打一条 warning）；同一条流里 `dt` 时有时无 → **报错**。
@@ -793,6 +841,10 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
   （D5.1），不得回退到旧状态；三类 trace（D/E/F）各有一条属性断言。
 - 旧流（beat 无 `dt`）按 D6.1 的**流级选择**用 `legacyBeatSeconds=0.5`（不是 0.2 回退）；
   新流逐条用 `dt`；混用直接报错。旧流兼容只在第一阶段保留，加 warning。
+- **旧流排序差（G1-Q6）**：旧 v11 流里 tackle 的 beat 在同 tick **之前**；新流是「事件先、
+  beat 后」。`_highlightEnd` / `_activeHighlightIndex` 的高亮窗口回溯 SHALL 按**流级模式
+  分叉**：新流假定事件先；旧流保留 tackle-beat-first 的 legacy 分支。spec 的
+  `高亮参与者回溯识别` scenario 前提只对新流生效。
 
 ### D6.3 插值规则
 
@@ -812,10 +864,16 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 - 改动前：`node tools/ratchet.mjs save openspec/changes/p1-motion-integration/notes/ratchet-before.json`。
 - 改动后：`node tools/ratchet.mjs diff ...`，有退化 exit 1。
 - 预注册指标：条件 `turn120`（`turnsPerPlayer`，**24s/121 帧**，不除窗长）、`staticFrac`、
-  速度 p50/p90/p99、加速度尾部（p99 `|Δv_total|/SIM_DT`，排除合法重置；报告/软目标）、
-  路径长度、路径效率/回环率、低速转向、残余漂移、ballStatic（标 viewer 链 caveat）。
+  速度 p50/p90/p99、加速度尾部（**从已发射 beat 端点算**，双口径；内部子步仅对照，
+  排除合法重置；报告/软目标）、路径长度、路径效率/回环率、低速转向、残余漂移、
+  ballStatic（标 viewer 链 caveat）。
 - 训练/留出 seed 与真实窗分开（D9.1）；条件 `turn120` 用 `tools/visual-review/motion-census.mjs`
   的 frozen 口径。
+- **工具前置（G1-Q4）**：`motion-census.mjs` **不在 main**，Phase 0 SHALL 从
+  `p155-measurement-instrument/2026-11-19` 移植；为保持与 v11/Change 0 可比，引擎侧
+  SHALL 显式**过滤 `action:"highlight"`**（真实 tracking 无 action，不受影响）。移植后先在
+  v11 上复算：若 v11 读数 ≠ Change 0 记录（0.829/0.0104 等），**停止并在会上说明口径差异**，
+  不得静默换锚或改 24 窗。tasks 补「移植 + 口径守护」。
 
 ### D7.2 L1 / 守卫
 
@@ -919,19 +977,23 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 | `specs/event-stream-protocol/spec.md` | ADDED | `beat 段与切段` | 6 | 段起点/段长/首拍/切段/同刻排序/跨表示连续/重开判定段例外 |
 | 同上 | ADDED | `非网格状态转移` | 1 | 状态转移只在 0.1s 网格确认；不新增非终场短 dt |
 | 同上 | ADDED | `beat 的死球与终场边界` | 3 | 相邻已发 beat gap ≤2.0s、终场不产 beat、末段短 dt |
-| 同上 | ADDED | `稀疏 main/ball 的携带` | 3 | 非零位移每段携带、稳定静止省略、新状态首段必发 |
+| 同上 | ADDED | `稀疏 main/ball 的携带` | 4 | 非零位移每段携带、稳定静止省略、新状态首段必发、微位移不产 mover |
 | 同上 | ADDED | `高亮与重开驱动状态` | 1 | 高亮期禁 main/ball、事件=首锚点、结束后首段必发 |
 | 同上 | ADDED | `新状态首段与状态失效` | 4 | 状态键、失效事件配对、高亮首锚点、seek |
 | 同上 | MODIFIED | `beat 节拍事件字段` | 4（全保留） | 1s tick → 段（0.1/0.2）；`dt`；main/ball 携带规则；参与者进 movers |
 | 同上 | MODIFIED | `重开准备期球锚点` | 1（保留） | dead-zone 措辞删除；准备期首段静态锚点 |
 | `specs/match-engine/spec.md` | ADDED | `确定性单步运动积分` | 5 | 起步/制动/反向/降速/狭窄冲突 |
+| 同上 | ADDED | `运动常量 v1` | 1 | S0=9.8 / a_brake=6.4 / V_EPS / MAX_TURN_RATE；S0≥V_MAX |
 | 同上 | ADDED | `向量速度与位置提交` | 1 | vel 向量权威；pos += vel·dt；恢复 speed/heading |
 | 同上 | ADDED | `总向量加速度预算` | 1 | A_MAX 总预算（含分离） |
+| 同上 | ADDED | `A_MAX 预算优先` | 1 | 8.0 权威预算；低速大转向裁剪有界；裁剪率报告 |
 | 同上 | ADDED | `米制边界与边界重置` | 1 | pos_m [0,105]×[0,68]；边界清零重查预算 |
 | 同上 | ADDED | `到达与制动语义` | 2 | 删除 dead-zone 整拍冻结；普通/精确到达分离 |
 | 同上 | ADDED | `高亮参与者与统一运动状态` | 3 | 同一积分器、不冻结、进入 movers、事件锚点=积分终点 |
+| 同上 | ADDED | `落点与时长一致` | 1 | x2/y2 最终计划点；speed 重算；重开 x/y 在 REACH_TOL_M 内 |
 | 同上 | ADDED | `事件提交协议` | 1 | 候选意图→含分离前视计划→原子提交→执行核对 |
 | 同上 | ADDED | `CommittedPlan 执行` | 4 | 首段同迭代接管、覆盖内只消费缓存、拒绝重试、链上限 |
+| 同上 | ADDED | `CommittedPlan 计划内容` | 1 | 完整调度状态/`last_emitted`；仅 cp_commit/cp_end；高亮零事件 RNG |
 | 同上 | ADDED | `P_end 与终场交接` | 4 | P_end decision 归 live/cp_end 在前；dur<P_end 终场截段；末端交还；follow-on 无重叠 |
 | 同上 | ADDED | `高亮参与者的可达性检查与修复` | 6 | 真实 T、改落点、门将、抢断、重开、finalize 连续 |
 | 同上 | ADDED | `段边界执行顺序` | 4 | 顺序合同、决策/事件先于 beat、非网格落地、终场排空 |
@@ -976,7 +1038,7 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 | `turnsPerEffectivePair`（**报告项**） | `turns / effectivePairs`（Change 0 的 0.0000934 口径），同一 24s/121 帧窗；**独立报告，不与 0.0104 混用** | 同上 | 同上 | 只报告，不作门；不得用占比改善冒充 `turnsPerPlayer` 改善；若要每秒率或 12s 窗，须单列新指标并同窗重算 base/real | 同上 | 报告 |
 | `staticFrac` | 步速 <0.5 m/s 的球员步占比；frozen 口径 | 同上 | 同上 | 最小：相对降低 ≥30%；目标 ≤2× 真实 0.040 | 同上 | 若靠 0.5–1 m/s 漂移降低 → 由 D9.2 审计否决 |
 | 速度谱 | p50/p90/p99（m/s），逐场算再平均（不跨场拼接） | 同上 | 同上 | 不退化：各分位 ≤ v11 +10% 或落在真实带内 | 同上 | 退化 → 回退 |
-| 加速度尾部（**报告 + 软目标**） | p99 `|Δv_total|/SIM_DT`（m/s²），**排除合法速度重置**（kickoff / 死球重开 / save-caught / 进球回中圈 / `boundary_reset`）；**经验目标，不是物理硬门** | 同上 | 同上 | 软目标 ≤ `A_MAX + 10%`（8.8 m/s²）；与 D4.4 的**每子步物理硬门** `|Δv_total| ≤ A_MAX·SIM_DT`（A_MAX=8.0）区分；不得靠瞬时折角刷高 | 同上 | 超软目标 → 报告并定位，不直接判失败；违反每子步 A_MAX 才是硬失败 |
+| 加速度尾部（**报告 + 软目标**） | 从**已发射 beat 端点**算：`(to−from)/dt` 的段速度差 + 相邻段速度差（主口径）；内部子步 p99 作对照口径，**不单独作验收**（内部 p99 恒 ≤ A_MAX，会空转）。排除合法速度重置（kickoff / 死球重开 / save-caught / 进球回中圈 / `boundary_reset`） | 同上 | 同上 | 双口径报告；软目标（beat 口径）≤ `A_MAX + 10%`（8.8 m/s²）；与 D4.4 的**每子步物理硬门** `|Δv_total| ≤ A_MAX·SIM_DT` 区分；**内部子步不能冒充现实指标** | 同上 | 超软目标 → 报告并定位，不直接判失败；违反每子步 A_MAX 才是硬失败 |
 | 路径效率 / 回环 | 5s 窗内净位移 / 路径长度；回环率 = 效率 <0.5 的窗占比 | 同上 | 同上 | 不恶化：效率不低于 v11 −5%，回环率不高于 v11 +5pp | 同上 | 恶化 → 失败（防「大回环」） |
 | 低速转向 | 同一 **turnsPerPlayer** 口径（24s/121 帧，不除窗长），只计步速 ∈ [0.5,1.5] m/s 的步 | 同上 | 同上 | 不高于 v11；且 `jitterRatio`（速度 ∈[0.5,1.0] 且 1s 净位移 <0.5m 的占比）不高于真实 + 5pp | 同上 | 超界 → 失败（防微抖刷 staticFrac） |
 | 残余漂移 | 到达后 1s 内净位移；`RESIDUAL_SPEED_MAX=0.2` | 同上 | 同上 | 到达目标 1m 内后净位移 ≤0.2m/s | 同上 | 超界 → 失败 |
@@ -1096,3 +1158,88 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 - design 正式批准（#170 评论「design 批准」或 PR approve）：_待填_。
 - 批准范围：C1 运动执行 + Phase 0 守卫/角球前置；**含 D1.2 的两处可见行为差异**
   （save 几何否决、参与者进入 `movers`）；不含 C2–C5。
+  **D13 的 12 项待用户拍板；在拍板前批准范围不扩为三类、不收紧门槛、不拆 C1a/C1b。**
+
+## D13 待用户拍板的 grill 决策（2026-11-23）
+
+> 以下 12 项来自 `notes/grill-G1/G2/G3.md`（合并见 `reviews/grill-design.md`）。
+> **未替用户选择**；推荐只是默认建议。拍板前 design/spec 的现行文本保持不变。
+
+1. **G3-Q1 批准范围是否扩为三类？**
+   - 问题：D1.2/D12 只列「save 几何否决 + 参与者进 movers」，但可达性修复（改落点/接触点/
+     延长时限）与候选拒绝同样改事件几何/计数，是否也须列入批准范围？
+   - 选项：A 扩为三类并给频次预算（修复率/拒绝率）；B 维持两类，当实现细节；C 禁止修复，
+     不可达一律拒绝。
+   - 推荐：A（修复是「不先定结果再瞬移」的唯一替代；C 会丢更多事件）。
+   - 影响：批准范围/事件计数验收；B 会让实际行为超出用户签字范围。
+2. **G3-Q2 验收门槛是否收紧？**
+   - 问题：现门槛 turn120 降 ≥50%（仍约真实 40×）、staticFrac 降 ≥30%（约 4×）；
+     ≤10×/≤3× 只是目标。若盲测无结论，唯一通过判据退化为弱相对改善。
+   - 选项：A 收紧到 turn120 ≤10× 真实（≈0.104）、staticFrac ≤3× 真实（≈0.12）+ 盲测无结论
+     = 不验收；B 维持现门槛但无结论=不验收；C 维持现状。
+   - 推荐：A+B（收紧一档 + 无结论不得用指标替代）。
+   - 影响：通过难度/迭代周期；可能要求更强的运动层改动。
+3. **G3-Q3 盲测协议是否按 A 冻结？**
+   - 问题：δ=0.15、7 真实簇、72→140 clip；无结论处置、裁判媒介、盲测 engine seed 未写死。
+   - 选项：A 保留 δ=0.15，预注册扩样/无结论=不验收/裁判媒介（固定 vision agent、批次、
+     提示、随机顺序、负控）+ engine seed 仅 321–440；B δ 放宽到 0.20；C 先哑测再冻结 δ。
+   - 推荐：A。
+   - 影响：验收可执行性与等价性强度；B 更易出结论但等价性更弱。
+4. **G3-Q4 是否加「先看画面」的 vertical slice 门？**
+   - 问题：首个 smoke 只测成本，不出 5min 回放/轨迹图；若运动核心方向错，最贵的协议/viewer
+     已付完。
+   - 选项：A 运动核心后加 1 seed×5min 回放 + 轨迹/contact-sheet → 用户先看 → 再铺全量；
+     B 全量做完再看；C 只看数字。
+   - 推荐：A。
+   - 影响：交付顺序/里程碑；A 能提前否掉方向性错误。
+5. **G3-Q5 是否拆 C1a（运动核心）/C1b（CommittedPlan）？**
+   - 问题：CommittedPlan 是最重工程面，但可见改善只依赖运动积分；同批交付会推迟用户看到改善。
+   - 选项：A 拆 C1a（运动核心+live+确定性前视终点，无全状态 plan 缓存）与 C1b（原子提交/
+     严格 finalize），C1a 先过 Q4 视觉门；B 一个 change 做完；C 简化 CommittedPlan（会重开 R4-H1）。
+   - 推荐：A。
+   - 影响：范围/交付顺序/审阅面；C 不建议。
+6. **G3-Q7 旧流 v11 兼容是否保留？**
+   - 问题：旧流双路径（legacy 0.5、旧五段式）增加测试面；仓内未发现消费者。
+   - 选项：A 删除旧流路径，缺 `dt` 直接报错（除非仓外消费者）；B 保留第一阶段兼容；
+     C 只读旧流、不保留旧五段式。
+   - 推荐：A。
+   - 影响：viewer 兼容面/测试量；若有仓外存档消费者则必须 B。
+7. **G3-Q9 L1 护栏带是否按方向判？**
+   - 问题：多条 L1 是护栏带（不塌缩/不爆炸），不是真实拟合带；C1 改几何可能把它们推出界，
+     被「新增破带=失败」误杀。
+   - 选项：A Phase 0 带分类审计（真实拟合/护栏/过时），护栏带按「向真实锚移动=通过、
+     远离=失败」；B 仅按现规则；C 所有护栏带降报告项（丢塌缩守卫）。
+   - 推荐：A。
+   - 影响：L1 判据语义/误杀风险；C 不建议。
+8. **G3-Q10 是否设显式 Go/No-Go？**
+   - 问题：零散回退触发（留出不改善、微抖、拒绝率、save 否决、infeasible）没有统一决策点/
+     决策人/回退含义。
+   - 选项：A 视觉门后设显式 Go/No-Go（用户看 5min 回放 + 24 窗指标 + L1 非恶化），
+     No-Go=停止、分支留档；B 全量验收后判；C 逐指标自动停。
+   - 推荐：A。
+   - 影响：停止点/回退成本；A 最便宜。
+9. **G2-Q2 到达语义是否拆 settle / impact？**
+   - 问题：统一 `v_end ≤0.5` 对 tackle/扑救是物理错误，会大量判不可达并撞 2% 否决上界。
+   - 选项：A 拆 settle（重开者/需停的接球）与 impact（tackle/扑救/拦截/允许跑动接球：
+     位置可达 + 末速在 [0,mode_cap]）；B 保留单判据 + 2% 上界；C 按角色给不同 tol。
+   - 推荐：A（C 是 A 的特例）。
+   - 影响：可达性定义/射门扑救与抢断统计；属 design 语义变更。
+10. **G2-Q3 分离预算先 A 还是直接 B？**
+    - 问题：投影层 0.08m/步 vs main 实测 ~3.4m/拍（≈8.5×）；预测层只前瞻 0.1s，来不及。
+    - 选项：A 保留同一 A_MAX，预测视野 `max(0.75s, 到最近接近时间)`，投影触发即停（预注册
+      20 seed 0 次）；B 分离专用有界预算（如 ≤2.2m/0.1s）并记 `separation_push`；C 删投影层。
+    - 推荐：先 A，B 作预注册应急分支。
+    - 影响：分离与加速是否共用一个预算（spec 条款）；A 失败才切 B，不得静默放宽。
+11. **G2-Q4 扑救协议怎么改？**
+    - 问题：扑救点常在门线之前，早于射门 `t_end`；L2 又钉 saved `x2`=门线，事件无扑救时刻。
+    - 选项：A 加 `save_x/save_y/save_t`（或 duration），finalize 在 save_t，`x2/y2` 保留门线
+      给 L2；B 把 saved `x2/y2` 重定义为扑救点并改 L2；C 保持门将终点=门线（违反统一运动）。
+    - 推荐：A。
+    - 影响：协议 bump（D11 #3 边界）/L2 守卫；B 改 L2，C 不建议。
+12. **G2-Q5 性能门怎么定？**
+    - 问题：规划/分离成本只有估算；超预算允许什么降级未定。
+    - 选项：A Phase 0 release+wasm 实测，预注册硬门（L1 ≤2× v11、wasm 90min simulate ≤X s），
+      不达标就停；B 接受 3–5×，长套件移 nightly；C 只允许保真度不变的优化（目标缓存/邻居表/
+      预分配/只对可能冲突 pair 预测），明确拒绝「少算 22 人/先锚点后推」。
+    - 推荐：A + C 作为唯一允许的降级梯子。
+    - 影响：批准范围/CI 预算；A 最保守。

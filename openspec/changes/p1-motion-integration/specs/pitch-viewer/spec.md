@@ -4,7 +4,7 @@
 
 ### Requirement: 播放段与插值合同
 
-画面层 SHALL 按 `beat.t` 与 `beat.dt` 播放段：段终点 = `beat.t + beat.dt`；SHALL 只插值**同一实体的同一轨迹**（相邻锚点同实体、同事件或跨段连续），SHALL NOT 跨事件类型合成。高亮进行中：**参与者由 `movers` 端点驱动**（`action:"highlight"`），球由事件锚点（`t_start → t_end`）驱动；事件锚点只用于 `t_end` 对账，SHALL NOT 用来合成参与者直线。第一阶段的球员转角平滑（Catmull–Rom）与 T1 路径纹理 SHALL 默认关闭；引擎的运动已经连续，画面层 SHALL NOT 叠加第二套运动。
+画面层 SHALL 按 `beat.t` 与 `beat.dt` 播放段：段终点 = `beat.t + beat.dt`；SHALL 只插值**同一实体的同一轨迹**（相邻锚点同实体、同事件或跨段连续），SHALL NOT 跨事件类型合成。高亮进行中：**参与者由 `movers` 端点驱动**（`action:"highlight"`），球由事件锚点（`t_start → t_end`）驱动；事件锚点只用于 `t_end` 对账，SHALL NOT 用来合成参与者直线。第一阶段 SHALL 显式设 `interpolation.smooth=false` 与 `textureAmpM=0`（不得靠 0.5s 门槛碰巧关闭）；引擎的运动已经连续，画面层 SHALL NOT 叠加第二套运动。新流 SHALL 停止发「事件派生的球员锚点」——参与者只由 `movers` 驱动。
 
 #### Scenario: 段长生效
 
@@ -22,7 +22,7 @@
 
 - **GIVEN** 默认配置
 - **WHEN** 画面层渲染球员轨迹
-- **THEN** Catmull–Rom 与 T1 纹理 SHALL 关闭；球员位置只由事件/beat 锚点线性插值得到（视觉验收后再单独决定是否开启）
+- **THEN** `interpolation.smooth=false` 与 `textureAmpM=0` SHALL 显式生效；球员位置只由 mover / beat 锚点线性插值得到；新流 SHALL NOT 再有事件派生的球员锚点（视觉验收后再单独决定是否开启）
 
 #### Scenario: tackle 0.5s 跨 3 段
 
@@ -103,9 +103,9 @@
 - **THEN** 不做微动（避免与移动叠加、人球分离）；**抑制切换用启停渐变（进入抑制淡出、退出淡入 ~0.3s），避免移动/静止切换瞬间的渲染跳变**
 
 #### Scenario: 高亮参与者回溯识别
-- **GIVEN** 引擎的高亮事件与其 beat **统一为「事件先、beat 后」**（pass/shot/tackle 都在同 tick 之后；**不再有 tackle beat 在前的特例**），foul **不产 beat**（无锚点，`_eventEnds` 回落 `e.t`）
+- **GIVEN** **新流**的高亮事件与其 beat 统一为「事件先、beat 后」（pass/shot/tackle 都在同 tick 之后）；**旧流保留 tackle beat 在前的 legacy 排序**；foul **不产 beat**（无锚点，`_eventEnds` 回落 `e.t`）
 - **WHEN** 画面层判定某球员是否为高亮参与者
-- **THEN** SHALL 按**事件窗口**回溯查找覆盖当前播放时刻的高亮事件（事件 `t` → 其锚点最长 `t`；**foul 的语义窗口取纪律牌显示时长**），而非直接取当前事件索引——否则事件窗口识别会失效（issue #81 实测：不回溯时约 98% 高亮帧未抑制，且 foul 因窗口零长度失效）；参与者位置仍由 `movers` 驱动，不因排除而隐藏
+- **THEN** SHALL 按**事件窗口**回溯查找覆盖当前播放时刻的高亮事件（事件 `t` → 其锚点最长 `t`；**foul 的语义窗口取纪律牌显示时长**），而非直接取当前事件索引——否则事件窗口识别会失效（issue #81 实测：不回溯时约 98% 高亮帧未抑制，且 foul 因窗口零长度失效）；**回溯 SHALL 按流级模式分叉**（新流事件先；旧流 tackle-beat-first legacy 分支）；参与者位置仍由 `movers` 驱动，不因排除而隐藏
 
 ### Requirement: 演绎节奏配置化（S4 边界明确）
 

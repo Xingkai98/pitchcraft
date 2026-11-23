@@ -36,6 +36,16 @@
 - **WHEN** 分离求解执行
 - **THEN** 预测层 SHALL 在进入冲突前介入；若 3 次迭代内无法在 `|Δv_total| ≤ A_MAX·SIM_DT` 下满足 2.2m，SHALL 置 `constraint_infeasible`，SHALL NOT 输出伪合法轨迹
 
+### Requirement: 运动常量 v1
+
+引擎 SHALL 使用 v1 标量常量：`S0=9.8 m/s`、`a_brake=6.4 m/s²`、`V_EPS=1e-3 m/s`、`MAX_TURN_RATE=4.0 rad/s`；`S0` SHALL ≥ `V_MAX`（9.8 ≥ 9.5），避免 `A0(1−v/S0)` 在期望速度上限内变负。
+
+#### Scenario: 常量不变量
+
+- **GIVEN** v1 常量与 `V_MAX=9.5`
+- **WHEN** 加载运动参数
+- **THEN** `S0 ≥ V_MAX` SHALL 成立；`a_brake` 在 `sqrt(2·a_brake·d)` 与 `−a_brake·dt` 两处是同一标量；`MAX_TURN_RATE=4.0` 只在 `speed < a_lat/4=1.625 m/s` 时比 `a_lat/max(v,1)` 更紧
+
 ### Requirement: 向量速度与位置提交
 
 `vel_mps` SHALL 是**二维速度向量**（权威量）；`speed=|vel|`、`heading=atan2(vel.y,vel.x)`（speed > `V_EPS` 时，否则保留上一 heading）。运动预算后 SHALL 用最终 `vel_after` 直接更新位置 `pos += vel_after·SIM_DT`，SHALL NOT 再用「标量 speed × (cos heading, sin heading)」的混合写法；SHALL 从最终 `vel_after` 恢复 `speed`/`heading`。分离/边界再改速度后 SHALL 从最终 `vel_final` 恢复 `speed`/`heading`，并重做总预算检查。
@@ -48,13 +58,23 @@
 
 ### Requirement: 总向量加速度预算
 
-运动预算 SHALL 先于位置更新检查：`Δv_motion = vel_cmd − vel_before`（加速 + 转向 + 预测避碰）超 `A_MAX·SIM_DT` 时按比例缩放到预算内，得到 `vel_after`；位置 SHALL 用 `pos += vel_after·SIM_DT`，并由 `vel_after` 恢复 `speed`/`heading`。分离后 SHALL 再检查总预算 `|vel_final − vel_before| ≤ A_MAX·SIM_DT`（`vel_final = vel_after + Δpos_sep/SIM_DT`）；超预算时先缩减分离修正并重解，仍不满足 2.2m 或仍超预算则置 `constraint_infeasible`。SHALL NOT 由各阶段分别过门；`A_MAX` SHALL ≥ `max(A0_max, a_lat)`。
+运动预算 SHALL 先于位置更新检查（**budget first**）：`Δv_motion = vel_cmd − vel_before`（加速 + 转向 + 预测避碰）超 `A_MAX·SIM_DT` 时按比例裁剪到预算内，得到 `vel_after`；位置 SHALL 用 `pos += vel_after·SIM_DT`，并由 `vel_after` 恢复 `speed`/`heading`。分离后 SHALL 再检查总预算 `|vel_final − vel_before| ≤ A_MAX·SIM_DT`（`vel_final = vel_after + Δpos_sep/SIM_DT`）；超预算时先缩减分离修正并重解，仍不满足 2.2m 或仍超预算则置 `constraint_infeasible`。SHALL NOT 由各阶段分别过门。
 
 #### Scenario: 总向量加速度预算
 
 - **GIVEN** `v=6 m/s, A0=6.4, S0=9.5, a_lat=6.5, dt=0.1, θ_err=0.2 rad`
 - **WHEN** 一个正常运行子步同时加速与转向
 - **THEN** 纵向 `Δspeed=0.236 m/s`、横向 `v·Δθ=0.650 m/s`；**精确二维旋转**的 `|Δv_total| ≈ 0.703044 m/s`；SHALL ≤ `A_MAX·dt`（`A_MAX=8.0` → 0.8）；不得用 `A0·dt=0.64` 误判为超界（那会把正常运动判红）。线性化 `sqrt(0.236²+0.650²)=0.692` 只是近似，SHALL NOT 用作精确验收值
+
+### Requirement: A_MAX 预算优先
+
+`A_MAX` SHALL 是**权威总向量预算**，不是「只要 ≥ `max(A0_max,a_lat)` 就不裁剪」：同时加速+转向的合成上界可达 `sqrt(7.8²+6.5²)=10.15`，低速大转向会被裁剪且裁剪有界（单测钉住）；裁剪率只报告、不作门。
+
+#### Scenario: A_MAX 预算优先
+
+- **GIVEN** `v=2 m/s, A0=6.4, S0=9.5, a_lat=6.5`
+- **WHEN** 同时加速与转向
+- **THEN** 纵向 `6.4×(1−2/9.5)=5.053`、合成 `sqrt(5.053²+6.5²)=8.233 > A_MAX=8.0`；该子步 SHALL 被裁剪到 `A_MAX·SIM_DT` 内；裁剪有界、裁剪率只报告
 
 ### Requirement: 米制边界与边界重置
 
@@ -104,6 +124,16 @@
 - **WHEN** 事件字段写入 `x2/y2` / `subject_end` / `carrier_end`
 - **THEN** 这些值 SHALL 等于参与者（含分离）连续积分到 `t_end` 的位置（容差 `REACH_TOL_M`）；SHALL NOT 用投影或另一条直线凑终点
 
+### Requirement: 落点与时长一致
+
+pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = dist/(t_end − t)`，使 viewer 的 `dist/speed` 推导与引擎 finalize 边界一致。重开 pass 的 `x/y` SHALL 用发球者积分位置（目标=固定点，在 `REACH_TOL_M` 内），不要求与固定点精确相等。
+
+#### Scenario: 落点/速度一致
+
+- **GIVEN** 一条 pass 的落点被可达性修复改动
+- **WHEN** 引擎写事件
+- **THEN** `x2/y2` SHALL 是最终计划点；`speed` SHALL 重算使 `dist/speed = t_end − t`；重开 pass 的 `x/y` 与固定点差 ≤ `REACH_TOL_M`
+
 ### Requirement: 事件提交协议
 
 候选事件 SHALL 只定意图，**不先写** `x2/y2` / `subject_end` / `carrier_end` / `loose`。发射前 SHALL 用同一积分器 + 同一分离 solver 做确定性前视规划（含未来 decision 与分离；`PLAN_HORIZON` ≥ 最长高亮时长），得到球路、时长与全部参与者端点。candidate decision SHALL 恰执行一次；`cp_commit` 定义在意图确定之后；前视用 RNG 副本，覆盖内不消耗正式 RNG。拒绝时 live 保持 `cp_commit`（不是 `cp_end`），丢弃影子 state/events/RNG；重试从 `cp_commit` 起、不重抽 candidate result。验证后**原子提交事件 + `CommittedPlan`**；提交后 SHALL NOT 修改已承诺锚点。若视野不足或计划不稳定，SHALL 在事件 `t` 之前调整时间/落点或置 `highlight_infeasible`；SHALL NOT 先发事件再补计划。
@@ -116,7 +146,7 @@
 
 ### Requirement: CommittedPlan 执行
 
-`CommittedPlan` SHALL 覆盖 `[t_c, P_eff]`（`P_eff=min(P_end,dur)`），至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交；内容 SHALL 含逐边界完整状态（motion + 球权/冷却/动作机会/活跃高亮/重开/decision 计数）、decision 结果、事件列表、RNG checkpoints 与规划轨迹。调度 SHALL 分四阶段：A 边界事件/decision 只处理一次 → B 同一迭代接管计划首段 → C snapshot（仅 decision_due）→ D 取缓存或 live 推进并发 beat；`start_marker` 防止重复消费起点。覆盖内 SHALL 只消费缓存（不 `decision()`、不掷骰、不积分）；逐边界核对实际状态。`P_eff` 原子交还 live（状态 + `cp_end`），不回滚已提交字段。follow-on 从 `P_eff` 起、无重叠，链上限 `MAX_PLAN_CHAIN=3`/`PLAN_CHAIN_MAX_S=30s`。
+`CommittedPlan` SHALL 覆盖 `[t_c, P_eff]`（`P_eff=min(P_end,dur)`），至少包含真实 `t_end` 所在完整输出段与 finalize 状态提交。调度 SHALL 分四阶段：A 边界事件/decision 只处理一次 → B 同一迭代接管计划首段 → C snapshot（仅 decision_due）→ D 取缓存或 live 推进并发 beat；`start_marker` 防止重复消费起点。覆盖内 SHALL 只消费缓存（不 `decision()`、不掷骰、不积分）；逐边界核对实际状态。`P_eff` 原子交还 live（状态 + `cp_end`），不回滚已提交字段。follow-on 从 `P_eff` 起、无重叠，链上限 `MAX_PLAN_CHAIN=3`/`PLAN_CHAIN_MAX_S=30s`。
 
 #### Scenario: 首段同迭代接管
 
@@ -141,6 +171,16 @@
 - **GIVEN** 已有 plan#1/#2/#3，计划末端又产生新高亮候选
 - **WHEN** 需要第 4 个计划
 - **THEN** 超过 `MAX_PLAN_CHAIN=3`（或 `PLAN_CHAIN_MAX_S=30s`）时 SHALL 置 `highlight_infeasible`、拒绝该候选；SHALL NOT 与已有计划重叠承诺
+
+### Requirement: CommittedPlan 计划内容
+
+计划内容 SHALL 含逐边界完整状态（motion + 球权/冷却/动作机会/活跃高亮/重开/decision 计数 + `last_emitted`）、decision 结果、事件列表、**只有 `cp_commit`/`cp_end` 两个 RNG checkpoint** 与规划轨迹。高亮期 SHALL NOT 有事件决策/事件 RNG，只有零 RNG 目标/模式刷新（G2-Q6）。
+
+#### Scenario: 计划内容完整
+
+- **GIVEN** 一个覆盖 `[1.0,1.7]` 的 `CommittedPlan`
+- **WHEN** 检查计划内容
+- **THEN** 每个边界 SHALL 有完整调度状态（含 `last_emitted`）；RNG checkpoint SHALL 只有 `cp_commit`/`cp_end`（无 per-decision `cp_s`）；高亮期 SHALL NOT 有事件 RNG 消耗
 
 ### Requirement: P_end 与终场交接
 
@@ -240,7 +280,7 @@
 
 ### Requirement: 计划覆盖边界的执行
 
-若一个段边界 `s ∈ [t_c, P_end)` 被 `CommittedPlan` 覆盖，finalize/事件/decision/下一段状态 SHALL 取计划缓存；SHALL NOT 重新 `decision()`、掷骰或积分。`plan_divergence` 守卫 SHALL 核对三路：① 完整调度状态 == 缓存；② 独立事件账本（顺序/每条恰好发射一次）；③ RNG 消费/checkpoint（覆盖内正式 RNG 不消耗，实际 == `cp_s`/`cp_end`）。**`s=P_end` 的 decision 不在覆盖内**，归 live/下一个计划，只执行一次。
+若一个段边界 `s ∈ [t_c, P_end)` 被 `CommittedPlan` 覆盖，finalize/事件/decision/下一段状态 SHALL 取计划缓存；SHALL NOT 重新 `decision()`、掷骰或积分。`plan_divergence` 守卫 SHALL 核对三路：① 完整调度状态 == 缓存（**接线守卫，不是物理等价证据**）；② 独立事件账本（顺序/每条恰好发射一次）；③ RNG 消费/checkpoint（覆盖内正式 RNG 不消耗，实际 == `cp_commit`/`cp_end`）。**`s=P_end` 的 decision 不在覆盖内**，归 live/下一个计划，只执行一次。
 
 #### Scenario: 计划覆盖边界
 
