@@ -6,7 +6,7 @@
 //!    传球成功率带 [82%,90%]——P13 fix 失败传球机制）。
 //!   **P31（D6）**：删槽位后角球与 shot/tackle 比按涌现实测重标定（原值含槽位配额虚高）。
 //!   ——`#[ignore]`，verify.sh 第 7 步以 `--release -- --ignored` 显式跑（debug 下 200 场聚合 ~40s）
-//! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{1,2}s、
+//! - L2 过程真实性：跨事件不变量（比分==goal 计数、射门落点球门矩形、beat 间隙 ∈{0.5,1}s、
 //!   速度上界、门将贴门线、事件 t 范围、罚下球员零参与）——默认 `cargo test` 就跑
 //!   （SEEDS_L2=300 场，P23 起加宽：15 场窗口覆盖不到红牌派生路径，会使门假绿；debug 实测 ~150s）
 //! - golden master：10 个 canary seed 的统计摘要 + 事件流哈希，防静默漂移——默认跑（10 场）
@@ -27,6 +27,34 @@ const DUR: f64 = 5400.0;
 /// 真实足球的「禁区内」是**这个矩形**，不是「到门线轴向距离 ≤ 16.5m、不看 y」的板条。
 const PENALTY_AREA_DEPTH_M: f64 = 16.5;
 const PENALTY_AREA_HALF_W_M: f64 = 20.16;
+
+/// **协议 beat 名义间隔（秒）**——本条 L2 门断言的唯一锚。
+///
+/// 为什么不直接写 `TICK_SECONDS`（P1 2.6 / #170 D7.2）：`TICK_SECONDS` 在 C1 里会被
+/// 拆成 `SIM_DT=0.1` / `DECISION_DT=0.5` / `BEAT_DT=0.2` 三重语义。若本门继续挂
+/// `TICK_SECONDS` 并带 `±0.001` 容差，把引擎常量改成 `0.1` 后 `{0.1, 0.2}` 会让
+/// **10Hz/5Hz 流也判合法**（旧写法 `(dt−TICK)||(dt−2×TICK)` 的假绿分支）。
+/// 这里把「v11 的 2Hz beat 间隔」**独立钉死**，合法集合只由它派生：
+/// `{BEAT_INTERVAL_S, 2×BEAT_INTERVAL_S}`（2× 只用于重开准备拍的已知跳段，见调用点）。
+/// 容差只吸收浮点/序列化误差，**不得**宽到能吸收相邻网格倍数——`0.5` 与 `1.0` 之间
+/// 的任何 0.4/0.75 之类都必须判红。
+const BEAT_INTERVAL_S: f64 = 0.5;
+/// 精确相等容差。`Event::to_json` 用 `{:.3}` 序列化 `t`；本门成立的**真正前提**是
+/// beat 时间是 `BEAT_INTERVAL_S=0.5` 的整数倍（0.5/1.0 在 f64 与三位小数下都精确），
+/// 所以序列化往返不引入误差。`1e-9` 只吸收浮点运算噪声，**不承担十进制舍入余量**：
+/// 若哪天 beat 落在非 0.5 网格，`{:.3}` 的舍入可达 5e-4（是容差的 5×10⁵ 倍），
+/// 本门会按设计判红——那是对的，不要靠放大容差把它吞掉。
+const BEAT_GAP_EPS: f64 = 1e-9;
+
+/// 合法 beat 间隙判定：**唯一**由 `BEAT_INTERVAL_S` 派生（1× 与 2×）。
+/// 抽成函数是为了能对「允许集合」做非空转单测（`l2_beat_gap_allowed_set_is_exact`）：
+/// 若把它改成恒真/放宽到吸收 0.4，该单测会红——避免门在数据恰好没有违例时空转。
+fn beat_gap_ok(dt: f64) -> bool {
+    [BEAT_INTERVAL_S, 2.0 * BEAT_INTERVAL_S]
+        .iter()
+        .any(|g| (dt - g).abs() <= BEAT_GAP_EPS)
+}
+
 /// L1 统计聚合场数。200 场：普通射门 n≈1200、头球 n≈240。
 /// 头球样本量决定此值——100 场时 n≈124 的 chi-sq 距 13.82 阈值仅 0.88（固定 seed 1..=100 是 2.9σ 偏样本），
 /// 200 场实测 chi-sq=6.32（余量 >7），不再贴边。
@@ -447,12 +475,12 @@ fn aggregate(seed: u64) -> MatchStats {
                 st.n_beats += 1;
                 if let Some(prev) = prev_beat_t {
                     let dt = t - prev;
-                    // 间隙契约：1.0s 每 tick 一拍；2.0s 出现在重开准备 tick——角球/界外球
-                    // 判定（finalize 只设 restart_prep 不产 beat）与进球后 kickoff 发球
-                    // tick（advance_dead_ball 只发 kickoff 事件不产 beat）。>2s 即违例。
-                    let ok_step = (dt - TICK_SECONDS).abs() <= 0.001
-                        || (dt - 2.0 * TICK_SECONDS).abs() <= 0.001;
-                    if !ok_step {
+                    // 间隙契约：名义每拍 = `BEAT_INTERVAL_S`（v11 = 0.5s）；`2×` 出现在
+                    // 重开准备拍——角球/界外球判定（finalize 只设 restart_prep 不产 beat）
+                    // 与进球后 kickoff 发球拍（advance_dead_ball 只发 kickoff 事件不产 beat）。
+                    // 合法集合**只由这一个常量派生**（P1 2.6）：任何其它倍数/中间值（0.4、
+                    // 0.75、1.5…）都必须判违例——容差只吸收浮点往返，不吸收「多个拍」。
+                    if !beat_gap_ok(dt) {
                         st.beat_gap_violations += 1;
                     }
                     if dt > st.max_beat_gap {
@@ -1346,6 +1374,25 @@ fn l2_pass_fill_constant_matches_engine_tick() {
     );
 }
 
+/// **P1 2.6 非空转守卫**：合法 beat 间隙集合必须精确等于 `{BEAT_INTERVAL_S, 2×}`。
+///
+/// 旧写法把合法集合挂 `TICK_SECONDS` 并带 `±0.001` 容差。C1 拆分常量后若把它改成
+/// `SIM_DT=0.1`，`{0.1, 0.2}` 会让 10Hz/5Hz 流在**毫无违例**的数据上假绿。本测试对
+/// 「允许集合」本身做断言：把 `beat_gap_ok` 改成恒真、或放宽到吸收 0.4/0.75，都会红。
+#[test]
+fn l2_beat_gap_allowed_set_is_exact() {
+    assert!(beat_gap_ok(BEAT_INTERVAL_S), "名义 1× 必须合法");
+    assert!(beat_gap_ok(2.0 * BEAT_INTERVAL_S), "重开准备 2× 必须合法");
+    // 假绿候选：0.1/0.2 是 C1 的 SIM_DT/BEAT_DT；若合法集合误挂它们，这条会红。
+    for dt in [0.1, 0.2, 0.4, 0.75, 1.5, 0.0, -0.5, f64::NAN] {
+        assert!(!beat_gap_ok(dt), "dt={dt} 不在 {{BEAT_INTERVAL_S, 2×}}，不得判合法");
+    }
+    // 容差只吸收浮点往返（1e-9 量级），不吸收 1e-6 以上的偏移。
+    assert!(beat_gap_ok(BEAT_INTERVAL_S + 5e-10));
+    assert!(!beat_gap_ok(BEAT_INTERVAL_S + 1e-6));
+    assert!(!beat_gap_ok(2.0 * BEAT_INTERVAL_S - 1e-6));
+}
+
 #[test]
 fn l2_cross_event_invariants() {
     for seed in 1..=SEEDS_L2 {
@@ -1363,14 +1410,20 @@ fn l2_cross_event_invariants() {
         );
         assert_eq!(
             st.beat_gap_violations, 0,
-            "seed {} beat 间隙违例（应 ∈ {{1,2}}s）",
-            seed
-        );
-        assert!(
-            st.max_beat_gap <= 2.0,
-            "seed {} 最大 beat 间隙 {:.2} > 2s",
+            "seed {} beat 间隙违例（应精确等于 BEAT_INTERVAL_S={}s 的 1×/2×，即 {{ {}, {} }}）",
             seed,
-            st.max_beat_gap
+            BEAT_INTERVAL_S,
+            BEAT_INTERVAL_S,
+            2.0 * BEAT_INTERVAL_S
+        );
+        // 冗余上界：合法集合的最大值就是 `2×BEAT_INTERVAL_S`（=1.0s）。从同一常量派生，
+        // 避免出现「合法集合 {0.5,1.0}、最大间隙却允许 2.0」的第二个真值来源。
+        assert!(
+            st.max_beat_gap <= 2.0 * BEAT_INTERVAL_S,
+            "seed {} 最大 beat 间隙 {:.2} > {}s",
+            seed,
+            st.max_beat_gap,
+            2.0 * BEAT_INTERVAL_S
         );
         assert!(
             st.speed_violations.is_empty(),

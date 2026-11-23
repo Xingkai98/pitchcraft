@@ -1,0 +1,129 @@
+{
+  "source": "openspec/changes/p155-measurement-instrument/notes/motion-census-frozen-anchors.json (main de239d1), engineWindows",
+  "note": "Change 0 frozen 24 窗的引擎锚点（12 seed × 2 anchor）。真实侧 24 窗不在本文件：Phase 0 只复算引擎读数。",
+  "windowSec": 24,
+  "sampleStepSec": 0.2,
+  "durationSec": 5400,
+  "items": [
+    {
+      "id": "rb-16e5c6c4e7",
+      "seed": 1201,
+      "t0": 1960
+    },
+    {
+      "id": "rb-180ce7f572",
+      "seed": 1225,
+      "t0": 3242
+    },
+    {
+      "id": "rb-1be0bfc743",
+      "seed": 1231,
+      "t0": 3304
+    },
+    {
+      "id": "rb-278c258f86",
+      "seed": 1207,
+      "t0": 3240
+    },
+    {
+      "id": "rb-2e8bec867b",
+      "seed": 1210,
+      "t0": 3240
+    },
+    {
+      "id": "rb-3265b2d028",
+      "seed": 1216,
+      "t0": 1944
+    },
+    {
+      "id": "rb-486a8d80ee",
+      "seed": 1237,
+      "t0": 3240
+    },
+    {
+      "id": "rb-63d063436a",
+      "seed": 1222,
+      "t0": 1944
+    },
+    {
+      "id": "rb-772a242a3f",
+      "seed": 1222,
+      "t0": 3240
+    },
+    {
+      "id": "rb-80f26aa5b5",
+      "seed": 1204,
+      "t0": 3240
+    },
+    {
+      "id": "rb-86678e43f0",
+      "seed": 1228,
+      "t0": 1946
+    },
+    {
+      "id": "rb-8995d055ac",
+      "seed": 1219,
+      "t0": 2010
+    },
+    {
+      "id": "rb-98c16914b1",
+      "seed": 1213,
+      "t0": 1944
+    },
+    {
+      "id": "rb-9bd04d5362",
+      "seed": 1207,
+      "t0": 1944
+    },
+    {
+      "id": "rb-d060017d14",
+      "seed": 1228,
+      "t0": 3240
+    },
+    {
+      "id": "rb-d5b7114cc5",
+      "seed": 1219,
+      "t0": 3240
+    },
+    {
+      "id": "rb-d86c96c413",
+      "seed": 1201,
+      "t0": 3240
+    },
+    {
+      "id": "rb-da503ea8a6",
+      "seed": 1231,
+      "t0": 1976
+    },
+    {
+      "id": "rb-de0956e241",
+      "seed": 1237,
+      "t0": 2072
+    },
+    {
+      "id": "rb-e35ce092aa",
+      "seed": 1210,
+      "t0": 1944
+    },
+    {
+      "id": "rb-e48bd6a2ad",
+      "seed": 1204,
+      "t0": 1944
+    },
+    {
+      "id": "rb-f6f11da37b",
+      "seed": 1225,
+      "t0": 2084
+    },
+    {
+      "id": "rb-fcfd5b15f1",
+      "seed": 1213,
+      "t0": 3240
+    },
+    {
+      "id": "rb-ff7780c4e7",
+      "seed": 1216,
+      "t0": 3256
+    }
+  ]
+}

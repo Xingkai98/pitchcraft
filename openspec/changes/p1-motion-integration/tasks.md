@@ -25,17 +25,20 @@
 
 - [ ] 2.1 角球带处置：按 D11 #4 **重锚到真实 ~10.27**，保留单场 max 护栏（不得删红门、不得降级为报告项）；证据落盘 `notes/`
 - [ ] 2.2 p53/p31/p6/p32 改为「显式构造场景 + 条件断言 + 多 seed 置信范围」夹具；保留契约
-- [ ] 2.3 **权威 L1 基线**（H6）：在 main 同配置跑 200 场，落盘 `notes/l1-baseline-main.json`（`source_commit` + `engineFingerprint` + seed 列表 + 每条带读数 + 红清单）；历史「4 红」只作对照，不作权威
+- [x] 2.3 **权威 L1 基线**（H6）：在 main 同配置跑 200 场，落盘 `notes/l1-baseline-main.json`（`source_commit` + `engineFingerprint` + seed 列表 + 每条带读数 + 红清单）；历史「4 红」只作对照，不作权威
 - [ ] 2.4 预注册指标：条件 `turn120` **按 `conditional['0.5'].turnsPerPlayer`（Change 0 原口径：24s/121 帧，`turns/nPlayers`，不除窗长）**；另报 `turnsPerEffectivePair`（0.0000934 口径，不混用）；`staticFrac`、速度分位、加速度尾部、路径效率/回环率、低速转向、残余漂移、ballStatic（viewer 链 caveat）
 - [ ] 2.5 保存改动前 ratchet：`node tools/ratchet.mjs save .../notes/ratchet-before.json`
-- [ ] 2.6 重扫 `realism.rs:453` 的 `ok_step` 假绿分支，改成从 `BEAT_DT` / `DECISION_DT` 字面量推导
+- [x] 2.6 重扫 `realism.rs:453` 的 `ok_step` 假绿分支，改成从 `BEAT_DT` / `DECISION_DT` 字面量推导
+  - 落地（2026-11-23）：v11 还没有 `BEAT_DT` 常量，用 test-local `BEAT_INTERVAL_S=0.5`（单一锚）+ 精确 1×/2× 集合；C1 拆分常量时把该值同步到 `BEAT_DT`。定向变异（恒真）已证红
 - [ ] 2.7 **基线数据前置**（M5）：确认 Metrica 2 场 + SkillCorner 20 场的授权位置/文件身份/离线可用；缺数据则停在 Phase 0（D7.4）
 - [ ] 2.8 **测试成本实测**（M1）：用 v11 同配置测 debug/release、p124、L1、spacing-sweep、5min/90min viewer（加载/seek/帧耗时、JSON 字节、峰值内存），替换 D7.5 的「估算」列
+  - 第一刀（2026-11-23）：v11 分母已落盘 `notes/phase0-perf-smoke.md`（L1/release/realism、5min/90min viewer、JSON、RSS）；p124、spacing-sweep、C1「5×+规划」待后续
 - [ ] 2.9 **盲测/旧红预注册**（R3-M3/R5-M2）：冻结 source×seed 配对矩阵、裁判/重复窗处理、多向聚类 bootstrap、证据等级 A/B/C、扩样上限 140 clip、7 真实簇下限；在候选调参前冻结每个已有红的逐指标非恶化边界（来源=base 逐 seed 分布不确定度/预注册扰动块/领域容忍，见 D9.3）；**存储合同=JSON 0–1 比例/粒度 0.001、展示 0.1pp、向恶化侧 ceiling 到 0.001**；计数类每场次数/0.1
 - [ ] 2.10 **前视规划 smoke**（R4-M1）：1 seed 专测规划次数/平均与最大视野/候选拒绝与重试/缓存内存/执行复用率/计划段测试时长；超预算只优化或停止设计，不得回退「先写锚点再推位置」
-- [ ] 2.11 **移植 motion-census**（G1-Q4）：从 `p155-measurement-instrument/2026-11-19` 移植 `tools/visual-review/motion-census.mjs`；引擎侧过滤 `action:"highlight"`；在 v11 上复算并与 Change 0 对齐（不一致则停止说明，不静默换锚）；补口径守护测试
-- [ ] 2.12 **L1 带分类审计**（G3-Q9）：把每条带分为真实拟合/护栏/过时，落盘 `notes/l1-bands.md`；护栏按方向判、过时重标/退役但不删塌缩守卫；候选调参前冻结
+- [x] 2.11 **移植 motion-census**（G1-Q4）：从 `p155-measurement-instrument/2026-11-19` 移植 `tools/visual-review/motion-census.mjs`；引擎侧过滤 `action:"highlight"`；在 v11 上复算并与 Change 0 对齐（不一致则停止说明，不静默换锚）；补口径守护测试
+- [x] 2.12 **L1 带分类审计**（G3-Q9）：把每条带分为真实拟合/护栏/过时，落盘 `notes/l1-bands.md`；护栏按方向判、过时重标/退役但不删塌缩守卫；候选调参前冻结
 - [ ] 2.13 **性能门**（G2-Q5）：Phase 0 1 seed release+wasm 实测「活体 5×+规划」；硬门 L1 ≤2× v11、wasm 90min simulate ≤10s；超预算只允许保真度不变的优化，不达标停在 Phase 0
+  - 第一刀（2026-11-23）：v11 分母（L1 11m11s、wasm 90min simulate 0.909s、viewer 加载/seek/RSS）已落盘 `notes/phase0-perf-smoke.md`；C1 的「5×+规划」须待 C1a，Phase 0 不提前判
 
 ## 3. 运动执行层（C1a → 视觉门/Go-No-Go → C1b）
 

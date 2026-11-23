@@ -1,0 +1,60 @@
+{
+  "generatedAt": "2026-11-23T12:46:44.753Z",
+  "node": "v22.22.2",
+  "wasmPath": "viewer/engine.wasm",
+  "wasmInstantiateMs": {
+    "n": 5,
+    "median": 1.1366999999999976,
+    "min": 0.9245339999999942,
+    "max": 2.2490379999999988,
+    "runs": [
+      0.9245339999999942,
+      1.0074960000000033,
+      1.1366999999999976,
+      1.3319210000000012,
+      2.2490379999999988
+    ]
+  },
+  "wasmSha256": "f6a9f9ec7a5effaa3b3df6d68e380263f308e7c86e54ad09ea5febb9760ec92f",
+  "note": "v11（main）同配置分母；不是 C1 的「5×+规划」读数。RSS 为 Node 进程自报；峰值另读 /proc/self/status 的 VmHWM。",
+  "samples": {
+    "5min": {
+      "durationSec": 300,
+      "simulateMs": 72.44371799999999,
+      "jsonBytes": 904162,
+      "parseMs": 10.218310000000002,
+      "eventCount": 652,
+      "createGameMs": 71.60797099999999,
+      "matchEnd": 300,
+      "seekAndReadFrame": {
+        "n": 300,
+        "meanMs": 0.08457408000000054,
+        "p50Ms": 0.07153400000001398,
+        "p95Ms": 0.14740399999999454,
+        "maxMs": 0.6098949999999945
+      },
+      "rssMiB": 96.62109375,
+      "heapUsedMiB": 19.857650756835938
+    },
+    "90min": {
+      "durationSec": 5400,
+      "simulateMs": 909.084788,
+      "jsonBytes": 16473143,
+      "parseMs": 270.03979500000014,
+      "eventCount": 11737,
+      "createGameMs": 848.8999759999999,
+      "matchEnd": 5400,
+      "seekAndReadFrame": {
+        "n": 1000,
+        "meanMs": 0.04461211799999546,
+        "p50Ms": 0.026673999999729858,
+        "p95Ms": 0.08857899999975416,
+        "maxMs": 0.9783370000000104
+      },
+      "rssMiB": 353.984375,
+      "heapUsedMiB": 155.6810531616211
+    }
+  },
+  "rssAfterAllMiB": 353.984375,
+  "peakRssMiB": 363.5078125
+}
