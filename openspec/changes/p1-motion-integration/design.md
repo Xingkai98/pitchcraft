@@ -1,6 +1,6 @@
 # Design: 引擎统一运动执行层（C1 运动学，GitHub #170）
 
-> **状态：D11 六项决策（2026-11-21）与 D13 的 12 项 grill 决策（2026-11-23）均已由用户按推荐拍板；gpt-6.1-sol 审阅 loop（Round 1–10 + batch grill 后 Round 7–10）已收敛：Round 10 = 0 High，可批准；design 正式批准待用户确认。**
+> **状态：D11 六项决策（2026-11-21）与 D13 的 12 项 grill 决策（2026-11-23）均已由用户按推荐拍板；gpt-6.1-sol 审阅 loop（Round 1–10 + batch grill 后 Round 7–10）已收敛：Round 10 = 0 High；**design 已由用户于 2026-11-23 正式批准，进入 Phase 0。**
 > Round 1 H1–H6、Round 2 R2-H1/H2/H5/H6/N1、Round 3 R3-H1/H2/H5/H6、Round 4 R4-H1、
 > Round 5 R5-H1、Round 6（0 High）、post-grill Round 7（0 High）、Round 8 R8-H1、
 > Round 9 R9-H1、Round 10（0 High）的设计答案已落盘
@@ -1249,8 +1249,11 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
   **Round 10 = 0 High**，R9-M1（`save_t=1.43→P_save=1.5` 同刻 decision 场景）与
   R9-L1（viewer 段内采样断言）为非阻塞测试覆盖增强。报告见
   `notes/review-gpt61-2026-11-21.md` 的 `## Round 8/9/10`。
-- **结论：design 已具备 formal approval 条件**；design 正式批准（#170 评论「design 批准」
-  或 PR approve）：_待填_。
+- **结论：design 已具备 formal approval 条件。**
+- **2026-11-23：用户正式批准 design**（会话指令「批准，change0也合入」；对应 #170 记录
+  https://github.com/Xingkai98/pitchcraft/issues/170#issuecomment-7097790156）。
+  批准范围：C1 运动执行 + Phase 0；含 D1.2 三类可见行为差异；不含 C2–C5。
+  **design 阶段结束，进入 Phase 0。**
 - 批准范围：C1 运动执行 + Phase 0 守卫/角球前置；**含 D1.2 的三类可见行为差异**
   （save 几何否决、参与者进入 `movers`、可达性修复+候选拒绝）；不含 C2–C5。
 

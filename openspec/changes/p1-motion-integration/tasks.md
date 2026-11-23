@@ -8,7 +8,8 @@
 - [x] 1.1 `proposal.md` / `design.md` / `specs/{match-engine,event-stream-protocol,pitch-viewer}/spec.md` / `tasks.md`
 - [x] 1.2 `openspec validate p1-motion-integration --strict` → valid
 - [x] 1.3 gpt-6.1-sol 零上下文审阅：**Round 10 = 0 High，可批准**（Round 1–9 + post-grill 见 `notes/review-gpt61-2026-11-21.md`；早期 Round 1–6 见 `design.md` D2.2/D2.3/D5.1/D5.4/D6/D8/D9）
-- [ ] 1.4 用户在 #170 / PR 批准 design；批准链接写回 `design.md`
+- [x] 1.4 用户 **2026-11-23 正式批准 design**（会话；记录写回 `design.md` D12；#170 记录
+  https://github.com/Xingkai98/pitchcraft/issues/170#issuecomment-7097790156）
 - [x] 1.5 拍板 design D11 的 6 个决策（2026-11-21，全部按推荐；见 `design.md` D11）
 - [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 3 MODIFIED + 8 ADDED、`match-engine` 4 MODIFIED + 16 ADDED、`pitch-viewer` 3 MODIFIED + 4 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
 - [x] 1.7 归档合并自检：scenario 集合包含检查（D8.1）；`validate --strict` 只作门槛，不作语义批准
