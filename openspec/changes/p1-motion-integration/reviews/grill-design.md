@@ -87,7 +87,7 @@
 | 8 | G3-Q10 | A | 视觉门后 Go/No-Go；No-Go=停止、分支留档 |
 | 9 | G2-Q2 | A | settle / impact 两分到达语义 |
 | 10 | G2-Q3 | A（B 应急） | 预测视野 ≥0.75s、投影 20 seed 0 次；B 应急 ≤2.2m/0.1s + separation_push |
-| 11 | G2-Q4 | A | shot saved 加 save_x/save_y/save_t；finalize 在 save_t；x2/y2 仍门线 |
+| 11 | G2-Q4 | A（R8-H1 细化） | shot saved 加 save_x/save_y/save_t；save_t 精确锚点；状态在 P_end=ceil(save_t/SIM_DT)·SIM_DT 提交；x2/y2 仍门线 |
 | 12 | G2-Q5 | A | Phase 0 release+wasm 实测；L1 ≤2× v11、wasm 90min ≤10s；只允许保真度不变优化 |
 
 1. **G3-Q1 批准范围是否扩为三类**（save 否决 / 参与者进 movers / 可达性修复+候选拒绝）。

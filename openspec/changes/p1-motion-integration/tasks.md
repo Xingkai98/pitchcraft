@@ -10,7 +10,7 @@
 - [x] 1.3 gpt-6.1-sol 零上下文审阅：**Round 6 = 0 High / 3 Medium / 1 Low，可批准**（Round 1–5 见 `design.md` D2.2/D2.3/D5.1/D5.4/D6/D8/D9 与 `notes/review-gpt61-2026-11-21.md`）
 - [ ] 1.4 用户在 #170 / PR 批准 design；批准链接写回 `design.md`
 - [x] 1.5 拍板 design D11 的 6 个决策（2026-11-21，全部按推荐；见 `design.md` D11）
-- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 3 MODIFIED + 7 ADDED、`match-engine` 4 MODIFIED + 16 ADDED、`pitch-viewer` 3 MODIFIED + 3 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
+- [x] 1.6 正式 spec delta 在**设计批准前**补全（H4）：`event-stream-protocol` 3 MODIFIED + 7 ADDED、`match-engine` 4 MODIFIED + 16 ADDED、`pitch-viewer` 3 MODIFIED + 4 ADDED；全部 MODIFIED 复制主 spec 全部 scenario
 - [x] 1.7 归档合并自检：scenario 集合包含检查（D8.1）；`validate --strict` 只作门槛，不作语义批准
 - [x] 1.8 M/L 修复：M1 成本预算（D7.5）、M2 运动学数值（D4.2）、M3 单步算法（D4.4）、M4 快照（D2.4）、M5 数据依赖（D7.4）、M6 fill 域（D5.3）、L1 措辞、L2 golden/研究门（D7.3）
 - [x] 1.9 Round 2 修复：权威调度与 Trace C（R2-H1）、零位移状态首锚点（R2-H2）、参与者进入 movers + 真实 T/精确到达/finalize 连续（R2-H5）、turnsPerPlayer/等效性盲测/7 真实簇（R2-H6）、总向量预算 A_MAX + 米制边界（R2-N1）、M2 体积上界、M3 save 否决分母、L1/L2 转述（**M1 旧流选择后来被 G3-Q7 改为删除旧流**）
@@ -58,6 +58,7 @@
 - [ ] 3.14 四态驱动状态机（R3-H2）：`controlled`/`loose`/`highlight`/`restart`；高亮开始事件=首锚点、禁 main/ball；高亮结束后首个 controlled/loose 段强制 main/ball（D5.1）
 - [ ] 3.18 扑救/到达语义（G2-Q2/Q4）：keeper finalize 在 `save_t`、扑救点写 `save_x/save_y`；settle/impact 判据；save 否决只对原 save、三分母/≤2% 原 save
 - [ ] 3.21 分离预算（G2-Q3）：先 A——预测视野 ≥0.75s（或到最近接近时间），投影触发预注册 20 seed 0 次、触发即停；B 作预注册应急（每 0.1s ≤2.2m + `separation_push`），不得静默放宽 A0/a_lat
+- [ ] 3.22 save_t/P_end（R8-H1）：save_t 精确锚点；P_end=ceil(save_t/SIM_DT)·SIM_DT；save_t→P_end 门将零速保持在 save_x/save_y、球停扑救点、不发事件/decision；P_end 提交 save-caught/transition；save_t 不切 beat 段
 
 ### 视觉门 + Go/No-Go（C1a 后）
 
@@ -98,6 +99,7 @@
 - [ ] 5.10 `事件演绎遵循剧本` 迁移（R3-H5/G3-Q7）：人物用 `movers`、事件锚点只驱动球；**删除旧流五段式兼容**（缺 `dt` 报错）；6 个原 scenario 全覆盖
 - [ ] 5.11 同步测试迁移（G2-Q8）：`interpretation.test.js` 改为 `beatSeconds↔BEAT_DT` / `tackleSeconds↔DECISION_DT`；新流停发事件派生球员锚点
 - [ ] 5.12 `derive-audit-features` 改读 `beat.dt`（不再用 `tickSeconds` 铺 beat 时长）；补一条守卫测试
+- [ ] 5.13 扑救演绎（R8-H1）：saved shot 用 save_t/save_x/save_y；save_t→P_end 保持；不把 x2/y2 门线当球终点、不闪回门线
 
 ## 6. 验证
 
@@ -120,6 +122,7 @@
 - [ ] 6.17 旧流删除验收（G3-Q7）：缺 `dt` 报错；`legacyBeatSeconds`/旧五段式/旧序 tackle 回溯分支均为 0 引用；若发现仓外消费者再回退 B
 - [ ] 6.18 加速度尾部（G3-Q8）：从**已发射 beat 端点**算主口径 + 内部子步对照口径；内部 p99 仅作构造不变量，不冒充现实指标
 - [ ] 6.19 修复/拒绝率（G3-Q1）：逐事件类型/逐 seed 统计修复率与 `highlight_infeasible` 率，各 ≤5%；超预算停止定位
+- [ ] 6.20 非网格 save_t（R8-H1）：save_t=1.03、P_end=1.1；1.03 扑救锚点、1.03–1.1 零速保持、1.1 状态提交；无 dur 后事件/beat；viewer 球/门将不闪回门线
 
 ## 7. 收尾
 

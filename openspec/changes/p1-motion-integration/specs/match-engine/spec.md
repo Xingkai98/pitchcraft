@@ -242,7 +242,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 - **GIVEN** 一条 shot 事件且原结果为 save（save-caught/rebound），球路固定
 - **WHEN** 门将在真实时限内到不了扑救点
-- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点，并写入 `save_x/save_y`；`save_t` 是该点的时刻，finalize 在 `save_t`；`x2/y2` 仍是门线。若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；**不得把原本 `off_target` 的 shot 改成 goal**；否决率报三个分母（全部 shot / 原 save / 尝试修复的 save）、逐 seed，超过**原 save 结果的 2%** 时停止并另立概率标定 change；挂 L1 射门结果分布的既有红非恶化门
+- **THEN** 扑救点 SHALL 前移到球路径上最早可达的交点，并写入 `save_x/save_y`；`save_t` 是该点的**精确时刻**（可非 0.1 网格）；`save_t→P_end=ceil(save_t/SIM_DT)·SIM_DT` 门将零速保持在扑救点、球停在扑救点，不发新事件/decision；**状态在 `P_end` 提交**；`x2/y2` 仍是门线。若整条球路都不可达，结果 SHALL 改为 goal（几何否决）；**不得把原本 `off_target` 的 shot 改成 goal**；否决率报三个分母（全部 shot / 原 save / 尝试修复的 save）、逐 seed，超过**原 save 结果的 2%** 时停止并另立概率标定 change；挂 L1 射门结果分布的既有红非恶化门
 
 #### Scenario: 抢断接触点
 
@@ -258,9 +258,9 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 #### Scenario: finalize 无瞬移
 
-- **GIVEN** 一条高亮事件在 `t_end` finalize，finalize 边界为第一个 ≥ `t_end` 的 0.1s 网格步
+- **GIVEN** 一条高亮事件在 `t_end` finalize，finalize 边界为第一个 ≥ `t_end` 的 0.1s 网格步；**save 的 finalize 是 `P_end=ceil(save_t/SIM_DT)·SIM_DT`**
 - **WHEN** 检查参与者位置
-- **THEN** `st.pos` SHALL 等于**连续积分（含分离）结果**；事件锚点在 `t_end` 与积分轨迹的差 SHALL ≤ 一个 sim step 的采样差且 ≤ `REACH_TOL_M`；SHALL NOT 用「≤ `V_MAX·SIM_DT` 的位置投影」当连续性；除合法断点表外，任何跳变 SHALL 使守卫红
+- **THEN** `st.pos` SHALL 等于**连续积分（含分离）结果**；`save_t→P_end` 门将零速保持；事件锚点在 `t_end`（save 为 `save_t`）与积分轨迹的差 SHALL ≤ 一个 sim step 的采样差且 ≤ `REACH_TOL_M`；SHALL NOT 用「≤ `V_MAX·SIM_DT` 的位置投影」当连续性；除合法断点表外，任何跳变 SHALL 使守卫红
 
 ### Requirement: 段边界执行顺序
 
@@ -454,7 +454,7 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 
 #### Scenario: 射门被扑救触发反击
 - **GIVEN** 一次射门被门将扑住（save-caught，球权易主）
-- **THEN** save 高亮终点后的**首个 decision 边界**武装 transition（门将扑住时刻可非整数，取整到下一个 `DECISION_DT` 边界）：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后回到正常开放比赛的机会评估（自然 deadline，钳制 [3,12] 个 decision 拍，门将另有 `GK_DEADLINE_BONUS_TICKS` 放宽）；门将持球走出球档，直接掷 pass 高亮出球**）；新防守方整体回撤 + **就近 2 名外场防守者 close_down（执行者 = 距目标最近的 2 名外场球员，排除门将 / carrier / 罚下者，确定性平局按 id 小者；save-caught 源的目标 = `attacking_forward`——新进攻方中最靠其进攻方向球门的球员，即门前/禁区前沿的对方球员；收缩不进入拾取半径）**，transition 窗口从武装 decision 拍起算
+- **THEN** save 高亮的 `save_t` 是精确扑救锚点；**状态在 `P_end=ceil(save_t/SIM_DT)·SIM_DT` 提交 save-caught 并武装 transition**（`save_t→P_end` 零速保持、不发新事件/decision）；transition 从 `P_end` 后的**首个 decision 边界**起算：门将持球 → main 恢复（P4 D12）；**门将 carrier 不参与"前插"**（前插只作用于外场球员，门将持球在门线零位移/短带，**transition 窗口结束后回到正常开放比赛的机会评估（自然 deadline，钳制 [3,12] 个 decision 拍，门将另有 `GK_DEADLINE_BONUS_TICKS` 放宽）；门将持球走出球档，直接掷 pass 高亮出球**）；新防守方整体回撤 + **就近 2 名外场防守者 close_down（执行者 = 距目标最近的 2 名外场球员，排除门将 / carrier / 罚下者，确定性平局按 id 小者；save-caught 源的目标 = `attacking_forward`——新进攻方中最靠其进攻方向球门的球员，即门前/禁区前沿的对方球员；收缩不进入拾取半径）**，transition 窗口从武装 decision 拍起算
 
 #### Scenario: 射门扑出反弹不触发 transition
 - **GIVEN** 一次射门被门将扑出（save-rebound）

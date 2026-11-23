@@ -709,8 +709,14 @@ y_norm = pos_m.y / 68.0
 ### D5.3 高亮时长与 fill 飞行（H3/M6）
 
 - tackle：保留 `DECISION_DT=0.5s`（当前语义），不跟 `BEAT_DT`。
-- save：**finalize 在事件新字段 `save_t`**（扑救点 `save_x/save_y`），不是射门 `t_end`；
-  `x2/y2` 仍是门线（L2 语义不变）；首个 decision 边界武装 transition。协议 bump。
+- save（R8-H1 拍板 B）：**物理锚点 `save_t / save_x / save_y`**——`save_t` 是门将与球路
+  最早可达交点的**精确时刻**（可非 0.1 网格），`save_x/save_y` 是门将在 `save_t` 的位置。
+  **状态转移在 `P_end = ceil(save_t / SIM_DT) × SIM_DT`（0.1s 网格）提交**：
+  `save_t → P_end` 门将在 `save_x/save_y` **零速持球/保持**，球停在扑救点，**不发新事件、
+  不做新 decision**；`P_end` 提交 save-caught 状态（球权/transition 武装/新高亮链），
+  transition 从 `P_end` 后的**首个 decision 边界**起算。`x2/y2` 仍是门线（L2 语义不变）；
+  **`save_t` 不是 beat 段边界**，不改变 0.1/0.2 段规则；viewer 用 `save_t` 锚点显示扑救，
+  之后保持到 `P_end`。协议 bump。
 - pass/shot：飞行时长仍由距离/速度决定；`tick_filling_flight` 的填拍域**定死为 `BEAT_DT`**：
   `FILL_FLIGHT_S = 0.95 × BEAT_DT = 0.19s`。
   - **速度带守卫**：只有当 `dist / FILL_FLIGHT_S ∈ [PASS_SPEED_MIN, PASS_SPEED_MAX)` = [10,25)
@@ -735,7 +741,7 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 |---|---|---|---|---|
 | pass 接球者 | decision 时由接球者位置 + lead 生成落点 | 同一积分器，`target=落点`，时限 `[t_start,t_end]`；分离也作用于他 | `receiver_x/y` = `t_start` 位置；`x2/y2` = **最终计划点**（= 接球者在 `t_end` 的连续积分位置，容差内）；改落点后 `speed` 重算使 `dist/speed = t_end − t` | 该边界 mover 端点 = `x2/y2`（容差内）；下一段作为普通 mover 继续；不瞬移 |
 | pass 拦截者 | 拦截点 `at` | 同上，`target=at` | `interceptor` + `at` = 连续积分到 `t_end` 的位置 | 若成为新 carrier，下一段首段 `main.from=at`（H2 新状态首段） |
-| shot 门将 | 扑救点 = 球路径上与门将可达集的最早交点，写入 `save_x/save_y` | 同上，`target=扑救点`；finalize 在 `save_t`（不是射门 `t_end`） | `keeper_x/y` 仍是**射门瞬间**位置；`save_x/save_y` = 连续积分到 `save_t` 的位置；`x2/y2` 仍是球门线（L2 语义不变） | 扑住（caught）位置连续、速度置 0（合法速度重置）；扑出（rebound）速度取积分值 |
+| shot 门将 | 扑救点 = 球路径上与门将可达集的最早交点，写入 `save_x/save_y` | 同上，`target=扑救点`；积分到 `save_t`（可非网格）；`save_t→P_end` 零速保持 | `keeper_x/y` 仍是**射门瞬间**位置；`save_x/save_y` = 连续积分到 `save_t` 的位置；`x2/y2` 仍是球门线（L2 语义不变） | 扑住（caught）位置连续、速度置 0；**状态在 `P_end` 提交**（见 D5.3）；扑出（rebound）速度取积分值 |
 | tackle 双方 | 接触点 `(x2/y2)` = 双方可达集的确定性交点 | 双方同一积分器 + 分离，时限 `[T,T+DECISION_DT]` | `subject_end/carrier_end` = **分离后**连续积分到 `t_end` 的位置 | 该边界 mover 端点 = 事件终点（容差内）；速度取积分值（或按结果停住） |
 | 重开者（角球/界外球/任意球） | 固定点 = 角旗/出界点/犯规点 | 准备期正常走位（8 m/s 快走 `v_cap`） | 发球 pass 起点 = **发球者积分位置**（目标=固定点，在 `REACH_TOL_M` 内） | 到达前不发球；准备期延长而不是瞬移（上限 `RESTART_PREP_MAX_S`，工程初值 6.0s） |
 
@@ -1036,7 +1042,7 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 | 同上 | ADDED | `稀疏 main/ball 的携带` | 4 | 非零位移每段携带、稳定静止省略、新状态首段必发、微位移不产 mover |
 | 同上 | ADDED | `高亮与重开驱动状态` | 1 | 高亮期禁 main/ball、事件=首锚点、结束后首段必发 |
 | 同上 | ADDED | `新状态首段与状态失效` | 4 | 状态键、失效事件配对、高亮首锚点、seek |
-| 同上 | ADDED | `射门扑救字段（save_x/save_y/save_t）` | 2 | saved shot 携带扑救点/时刻；x2/y2 仍门线；协议 bump |
+| 同上 | ADDED | `射门扑救字段（save_x/save_y/save_t）` | 3 | saved shot 携带扑救点/精确时刻；P_end 网格提交；1.03→1.1 场景；x2/y2 仍门线 |
 | 同上 | MODIFIED | `事件字段定义` | 1（保留） | 可选字段表加 `save_x/save_y/save_t` |
 | 同上 | MODIFIED | `beat 节拍事件字段` | 4（全保留） | 1s tick → 段（0.1/0.2）；`dt`；main/ball 携带规则；参与者进 movers |
 | 同上 | MODIFIED | `重开准备期球锚点` | 1（保留） | dead-zone 措辞删除；准备期首段静态锚点 |
@@ -1061,6 +1067,7 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 | 同上 | MODIFIED | `球相关队形目标` | 5（全保留） | 防橡皮筋去 dead-zone；门将条款去 `DEAD_ZONE_METERS` |
 | 同上 | MODIFIED | `控球阶段与攻防转换` | 6（全保留） | tackle 高亮 [T,T+0.5)；save 首个 decision 边界 |
 | `specs/pitch-viewer/spec.md` | ADDED | `播放段与插值合同` | 4 | beat.dt、参与者用 mover/球用事件锚点、T1/Catmull 默认关、tackle 跨 3 段 |
+| 同上 | ADDED | `扑救演绎` | 1 | save_t 锚点、save_t→P_end 保持、不闪回门线 |
 | 同上 | ADDED | `稀疏状态与 seek 重建` | 1 | 稳定静止保持、新状态首锚点、seek |
 | 同上 | ADDED | `段长来源与缺 dt 报错` | 1 | 每条 beat 必须有 `dt`；缺失报错；无 legacy 回退 |
 | 同上 | MODIFIED | `事件演绎遵循剧本` | 6（全保留） | 新流人物用 movers、事件锚点只驱动球；删除旧流五段式（缺 dt 报错） |
@@ -1250,7 +1257,7 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
 | 8 | G3-Q10 | 停止/回退 | 视觉门后显式 **Go/No-Go**（用户看 5min 回放+24 窗指标+L1 非恶化）；**No-Go=停止、分支留档**；触发条件在此点汇总由用户判 |
 | 9 | G2-Q2 | 到达语义 | 拆 **settle**（重开者/需停连接球：`v_end≤tol`）/ **impact**（tackle/扑救/拦截/跑动接球：位置可达 + `v_end∈[0,mode_cap]`） |
 | 10 | G2-Q3 | 分离预算 | **先 A**：预测视野 ≥0.75s（或到最近接近时间），投影触发预注册 20 seed 内 **0 次**，触发即停；**B 应急**：分离专用预算每 0.1s ≤2.2m + `separation_push`，不得静默放宽 A0/a_lat |
-| 11 | G2-Q4 | 扑救协议 | shot saved 加 **`save_x/save_y/save_t`**；finalize 在 `save_t`；扑救点用新字段；`x2/y2` 仍门线（L2 不变）；协议 bump |
+| 11 | G2-Q4 | 扑救协议 | shot saved 加 **`save_x/save_y/save_t`**；`save_t` 是精确物理锚点；**状态在 `P_end=ceil(save_t/SIM_DT)·SIM_DT` 提交**（R8-H1）；`x2/y2` 仍门线（L2 不变）；协议 bump |
 | 12 | G2-Q5 | 性能门 | Phase 0 1 seed release+wasm 实测「活体 5×+规划」；硬门 **L1 ≤2× v11、wasm 90min simulate ≤10s**；超预算只允许保真度不变的优化，不达标停在 Phase 0 |
 
 > 以下编号条目保留原问题/选项/影响，作**溯源自**；选定值以上表为准。
@@ -1322,9 +1329,8 @@ viewer 用 `movers` 端点渲染参与者，**不再合成起终点直线**。�
     - 影响：分离与加速是否共用一个预算（spec 条款）；A 失败才切 B，不得静默放宽。
 11. **G2-Q4 扑救协议怎么改？**
     - 问题：扑救点常在门线之前，早于射门 `t_end`；L2 又钉 saved `x2`=门线，事件无扑救时刻。
-    - 选项：A 加 `save_x/save_y/save_t`（或 duration），finalize 在 save_t，`x2/y2` 保留门线
-      给 L2；B 把 saved `x2/y2` 重定义为扑救点并改 L2；C 保持门将终点=门线（违反统一运动）。
-    - 推荐：A。
+    - 选项：A 加 `save_x/save_y/save_t`（或 duration），save_t 为精确锚点、状态在 P_end 网格提交，`x2/y2` 保留门线给 L2；B 把 saved `x2/y2` 重定义为扑救点并改 L2；C 保持门将终点=门线（违反统一运动）。
+    - 推荐：A（R8-H1 细化为「save_t 精确 + P_end 状态提交」）。
     - 影响：协议 bump（D11 #3 边界）/L2 守卫；B 改 L2，C 不建议。
 12. **G2-Q5 性能门怎么定？**
     - 问题：规划/分离成本只有估算；超预算允许什么降级未定。

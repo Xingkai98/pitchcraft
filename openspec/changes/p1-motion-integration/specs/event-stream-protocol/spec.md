@@ -141,13 +141,19 @@ beat SHALL 描述一个**段**（segment），不是固定 1s 的 tick。段边�
 
 ### Requirement: 射门扑救字段（save_x/save_y/save_t）
 
-`result=saved` 的 shot 事件 SHALL 携带 `save_x/save_y`（扑救点归一化坐标）与 `save_t`（扑救时刻，秒；可早于射门 `t_end`）。扑救点 SHALL 是门将可达集与球路径的最早交点，**可以不在门线上**；`x2/y2` SHALL 仍保持门线语义（L2 不变）。finalize SHALL 在 `save_t`，不是射门 `t_end`。该字段是协议 bump（随 `MODEL_VERSION 11→12`）。
+`result=saved` 的 shot 事件 SHALL 携带 `save_x/save_y`（扑救点归一化坐标）与 `save_t`（**精确扑救时刻**，秒；可非 0.1 网格、可早于射门 `t_end`）。扑救点 SHALL 是门将可达集与球路径的最早交点，**可以不在门线上**；`x2/y2` SHALL 仍保持门线语义（L2 不变）。**状态转移 SHALL 在 `P_end = ceil(save_t / SIM_DT) × SIM_DT`（0.1s 网格）提交**：`save_t→P_end` 门将零速持球在 `save_x/save_y`、球停在扑救点、**不发新事件/不做新 decision**；`save_t` **不是 beat 段边界**，不改变 0.1/0.2 段规则。该字段是协议 bump（随 `MODEL_VERSION 11→12`）。
 
 #### Scenario: saved shot 携带扑救点/时刻
 
 - **GIVEN** 一条 `result=saved` 的 shot 事件
 - **WHEN** 引擎发射该事件
-- **THEN** 事件含 `save_x/save_y/save_t`；`x2` 仍是攻方门线；`save_t` 可早于 `t_end`；finalize 在 `save_t`
+- **THEN** 事件含 `save_x/save_y/save_t`；`x2` 仍是攻方门线；`save_t` 可早于 `t_end` 且可非 0.1 网格；状态转移在 `P_end=ceil(save_t/SIM_DT)·SIM_DT` 提交
+
+#### Scenario: 非网格 save_t（1.03 → P_end=1.1）
+
+- **GIVEN** 一条 saved shot，`save_t=1.03`、`save_x/save_y=S`
+- **WHEN** 引擎产出 1.0–1.1 的段与状态
+- **THEN** 1.0 段边界状态照常；1.03 是扑救锚点（球在 S、门将在 S）；1.03–1.1 门将零速保持在 S、球停在 S，**不发新事件/不做新 decision**；1.1 提交 save-caught 状态（球权/transition 武装）；`save_t` 不切 beat 段，viewer 不得把球/门将闪回门线
 
 #### Scenario: 非 saved shot 不带扑救字段
 
