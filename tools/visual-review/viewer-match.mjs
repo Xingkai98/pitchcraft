@@ -41,15 +41,36 @@ export async function viewerMatchFrames(wasmPath) {
   return mm.sampleEngineFrames(createGame(simulateStream(wasm, VIEWER.seed, VIEWER.durationSec)));
 }
 
+// 最长无动作段：事件流里相邻事件（含比赛开始/结束）之间最长的「没有任何事件」区间。
+// 口径写死：在排序后的事件时刻之间找最大间隙，并把 0→首个事件、末个事件→durationSec
+// 也作为候选（所以「开场很久没事件」「终场前很久没事件」都会被算进去）。
+export function longestEventGapSec(events, durationSec) {
+  const ts = events.map((e) => Number(e.t)).filter(Number.isFinite).sort((a, b) => a - b);
+  if (!ts.length) return { seconds: durationSec, from: 0, to: durationSec };
+  let best = 0; let at = [0, durationSec];
+  const consider = (a, b) => { const d = b - a; if (d > best) { best = d; at = [a, b]; } };
+  consider(0, Math.min(ts[0], durationSec));
+  for (let i = 1; i < ts.length; i += 1) consider(ts[i - 1], ts[i]);
+  consider(Math.min(ts[ts.length - 1], durationSec), durationSec);
+  return { seconds: best, from: at[0], to: at[1] };
+}
+
 // viewer 那场的原始事件计数（不采帧，直接读事件流）——「每 5 分钟发生了什么」。
+// 同时给 design D7 的最长无动作段与墙钟；墙钟与机器相关，报告里必须带「本机读数」。
 export async function viewerMatchEvents(wasmPath) {
   const { loadEngineWasm, simulateStream } = await import(join(ROOT, 'tools/benchmark-engine.mjs'));
   const { wasm } = await loadEngineWasm(wasmPath);
+  const t0 = performance.now();
   const s = JSON.parse(simulateStream(wasm, VIEWER.seed, VIEWER.durationSec));
+  const wallClockSec = (performance.now() - t0) / 1000;
   const ev = Object.values(s).filter(e => e && e.type);
   const c = { pass: 0, tackle: 0, foul: 0, shot: 0 };
   for (const e of ev) if (e.type in c) c[e.type] += 1;
-  return { ...c, total: ev.length, minutes: VIEWER.matchMinutes };
+  return {
+    ...c, total: ev.length, minutes: VIEWER.matchMinutes,
+    longestGap: longestEventGapSec(ev, VIEWER.durationSec),
+    wallClockSec,
+  };
 }
 
 const IS_ENTRY = process.argv[1] && fileURLToPath(import.meta.url) === resolve(process.argv[1]);
@@ -58,5 +79,7 @@ if (IS_ENTRY) {
   if (!wasmPath) { console.error('用法: node viewer-match.mjs <engine.wasm>'); process.exit(2); }
   const c = await viewerMatchEvents(wasmPath);
   console.log(`【用户实际看到的：seed=${VIEWER.seed}, ${VIEWER.matchMinutes} 分钟】${wasmPath}`);
-  console.log(`  每 ${VIEWER.matchMinutes} 分钟原始事件：传球 ${c.pass} | 抢断 ${c.tackle} | 犯规 ${c.foul} | 射门 ${c.shot}`);
+  console.log(`  每 ${VIEWER.matchMinutes} 分钟原始事件：传球 ${c.pass} | 抢断 ${c.tackle} | 犯规 ${c.foul} | 射门 ${c.shot}（共 ${c.total}）`);
+  console.log(`  最长无动作段：${c.longestGap.seconds.toFixed(2)}s（${c.longestGap.from.toFixed(2)} → ${c.longestGap.to.toFixed(2)}）`);
+  console.log(`  墙钟（本机、单线程引擎模拟 ${VIEWER.matchMinutes}min，不含 viewer 渲染）：${c.wallClockSec.toFixed(2)}s`);
 }

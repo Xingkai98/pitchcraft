@@ -9,7 +9,7 @@ import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
-const { VIEWER, viewerConfig } = await import('./viewer-match.mjs');
+const { VIEWER, viewerConfig, longestEventGapSec } = await import('./viewer-match.mjs');
 
 test('★ viewer-match：VIEWER 钉在**已验证的常量**（seed=42 / 5 分钟）——viewer 改了配置，此测试红、强迫你重跑对照', () => {
   // ⚠️ 关键：VIEWER 是**从真文件解析**出来的（读了文件）。若本测试也只用解析值比对，两侧同读一个
@@ -26,4 +26,13 @@ test('★ viewer-match：VIEWER 钉在**已验证的常量**（seed=42 / 5 分�
 
 test('viewerConfig 与导出的 VIEWER 一致（同一真值）', () => {
   assert.deepStrictEqual(viewerConfig(ROOT), VIEWER);
+});
+
+test('最长无动作段：包含开始/结束空档，取最大事件间隙（design D7）', () => {
+  const gap = longestEventGapSec([{ t: 10 }, { t: 12 }, { t: 40 }], 300);
+  assert.strictEqual(gap.seconds, 260); // 40 → 300
+  const mid = longestEventGapSec([{ t: 100 }, { t: 101 }, { t: 160 }], 300);
+  assert.strictEqual(mid.seconds, 140); // 160 → 300
+  assert.deepStrictEqual([mid.from, mid.to], [160, 300]);
+  assert.deepStrictEqual(longestEventGapSec([], 300), { seconds: 300, from: 0, to: 300 });
 });
