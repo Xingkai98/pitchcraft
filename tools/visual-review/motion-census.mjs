@@ -57,7 +57,18 @@
 //        只跑 A 的冻结刺激集（逐 seed 校验事件流 SHA；不一致抛错）
 //   node tools/visual-review/motion-census.mjs <engine.wasm> --windows <windows.json> [--out ...]
 //        同一批 anchor 的 engine vs real（R7i windows.json；real 只算帧口径）
+//   node tools/visual-review/motion-census.mjs <engine.wasm> --anchors <anchors.json> [--out ...]
+//        只算引擎侧给定 (seed,t0) 锚点窗（Phase 0 用来复算 Change 0 frozen 24 窗；不依赖 p155 数据）
 //   宽扫模式自动读 viewer/data/real-game-*.json（缺文件时真实列 n/a，退出码 0）。
+//
+// ── Phase 0 移植说明（p1-motion-integration 2.11 / G1-Q4）────────────────────
+// 本文件从 `p155-measurement-instrument/2026-11-19` 移植并增补。P1 追加两件事：
+//   1. **引擎侧显式过滤 `action:"highlight"`**（`stripHighlightPlayers`）：C1 起高亮参与者进入
+//      movers，而 Change 0 的 frozen 24 窗/0.829/0.239/0.216 是 v11（参与者不在 movers）口径。
+//      v11 的 mover action 只有 "run"/"chase"（没有 "highlight"）⇒ 过滤是恒等变换，
+//      读数必须与 Change 0 逐位一致。
+//   2. `--anchors` 纯引擎锚点模式，供 Phase 0 复算 frozen 24 窗（`--stimulus`/`--windows`
+//      依赖 p155 的 render-ablation.mjs 与 stimulus.json，本分支未移植）。
 import { existsSync, readdirSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { dirname, join, relative, resolve } from 'node:path';
@@ -77,6 +88,8 @@ export const MAX_STEP_SEC = 1.0;
 export const EDGE_BAND_M = 8;
 export const HOLD_MAX_M = 1.0;
 export const BALL_SOURCES = ['carrier_hold', 'carrier_dribble', 'highlight_flight', 'loose', 'restart_dead'];
+/// C1 起高亮参与者在 movers 里的标记（design D5.4）。v11 的 mover action 只有 "run"/"chase"。
+export const HIGHLIGHT_ACTION = 'highlight';
 
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 const mean = (a) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
@@ -103,6 +116,48 @@ export function wrapAngle(a) {
   while (a > Math.PI) a -= 2 * Math.PI;
   while (a <= -Math.PI) a += 2 * Math.PI;
   return a;
+}
+
+// ── 引擎侧高亮过滤（P1 Phase 0 / G1-Q4）──────────────────────────────────
+// 高亮参与者活跃区间：只认 `beat.movers[].action === "highlight"` 的段。
+// 段长取 `beat.dt`（C1 设计流应带；本树 v11 不产 beat.dt，也不会走到这里）；缺失时退回一拍 0.5s，
+// 只是防御分支——过滤语义不依赖这个兜底值被生产路径命中。
+export function highlightIntervals(events, { fallbackDtSec = 0.5 } = {}) {
+  const out = [];
+  for (const e of events || []) {
+    if (!e || e.type !== 'beat' || !Array.isArray(e.movers)) continue;
+    if (!isNum(e.t)) continue;
+    const dt = isNum(e.dt) && e.dt > 0 ? e.dt : fallbackDtSec;
+    const ids = e.movers
+      .filter((m) => m && m.action === HIGHLIGHT_ACTION && isNum(m.id))
+      .map((m) => m.id);
+    if (ids.length) out.push({ t0: e.t, t1: e.t + dt, ids });
+  }
+  return out;
+}
+
+// 把高亮参与者在 [t0,t1) 内的球员帧剔除（返回新 frames，不修改入参）。
+// 这是**引擎侧口径**：真实 tracking 没有 action 字段，调用方不应把它用于真实帧。
+// v11 的 mover action 只有 "run"/"chase" ⇒ intervals 为空 ⇒ 原样返回（removed=0），与 Change 0 可比。
+export function stripHighlightPlayers(frames, events, opts = {}) {
+  const intervals = highlightIntervals(events, opts);
+  if (!intervals.length || !Array.isArray(frames)) return { frames, removed: 0 };
+  let removed = 0;
+  const out = frames.map((f) => {
+    if (!f || !isNum(f.t) || !Array.isArray(f.players)) return f;
+    const hit = new Set();
+    for (const iv of intervals) {
+      if (f.t >= iv.t0 - 1e-9 && f.t < iv.t1 - 1e-9) for (const id of iv.ids) hit.add(id);
+    }
+    if (!hit.size) return f;
+    const players = f.players.filter((p) => {
+      const drop = p && hit.has(p.id);
+      if (drop) removed += 1;
+      return !drop;
+    });
+    return { ...f, players };
+  });
+  return { frames: out, removed };
 }
 
 // 单窗运动普查。返回窗口级标量（逐球员先算再对球员取均值；比率用窗内求和）。
@@ -579,6 +634,7 @@ async function runStimulus(wasmPath, stimulusPath, outPath) {
     windowsBySeed.get(seedKey).push(w);
   }
   const rows = []; const decRows = []; const frameCounts = []; const eventShaBySeed = {};
+  let highlightFramesRemoved = 0;
   for (const [seedStr, meta] of Object.entries(stim.perSeed || {})) {
     const seed = Number(seedStr);
     const wins = windowsBySeed.get(seed) || [];
@@ -590,8 +646,11 @@ async function runStimulus(wasmPath, stimulusPath, outPath) {
     }
     eventShaBySeed[seed] = got;
     const events = JSON.parse(src.eventJson);
+    // 引擎侧口径：剔除高亮参与者（C1 起 movers 带 action:"highlight"）。
+    const { frames: filtered, removed } = stripHighlightPlayers(src.frames, events);
+    highlightFramesRemoved += removed;
     for (const w of wins) {
-      const frames = src.frames.filter((f) => f.t >= w.t0 - 1e-9 && f.t <= w.t1 + 1e-9);
+      const frames = filtered.filter((f) => f.t >= w.t0 - 1e-9 && f.t <= w.t1 + 1e-9);
       frameCounts.push({ id: w.id, frames: frames.length });
       rows.push({ id: w.id, seed: w.seed, t0: w.t0, ...censusOfWindow(frames) });
       decRows.push({ id: w.id, seed: w.seed, t0: w.t0, ...decomposeBallStatic(frames, events, { staticMs: CONDITION_GATE }) });
@@ -629,7 +688,8 @@ async function runStimulus(wasmPath, stimulusPath, outPath) {
   const payload = {
     generatedAt: new Date().toISOString(),
     stimulusPath, wasmPath, wasmSha256: wasmSha, wasmShaMatches: wasmMatches,
-    caliber: { windowSec: stim.window?.sec, sampleHz: stim.window?.hz, activeOnly: false, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
+    highlightFramesRemoved,
+    caliber: { windowSec: stim.window?.sec, sampleHz: stim.window?.hz, activeOnly: false, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC, highlightFilter: 'engine-only' },
     eventShaBySeed,
     frameCounts,
     windows: rows.map((r) => ({ ...r, decomposition: decRows.find((d2) => d2.id === r.id) })),
@@ -661,6 +721,7 @@ async function runWindows(wasmPath, windowsPath, outPath, stimulusPath = null) {
   const cut = (src, t0) => canonicalWindow(src.frames, t0, { windowSec: winSec, canonicalStepSec: step })
     .map((s) => s.frame).filter(Boolean);
   const rowsE = []; const rowsR = []; const decE = []; const eventShaBySeed = {};
+  let highlightFramesRemoved = 0;
   const sha256 = (x) => createHash('sha256').update(x).digest('hex');
   const wasmSha256 = sha256(readFileSync(wasmPath));
   // 逐 seed / 逐真实文件加载 → 算完即释放（12 场 × 27k 帧同时驻留会 OOM）。
@@ -681,8 +742,10 @@ async function runWindows(wasmPath, windowsPath, outPath, stimulusPath = null) {
         + `当前流是 ${eventShaBySeed[seed].slice(0, 12)}…；本次以 stimulus 的身份为准。`);
     }
     const events = JSON.parse(src.eventJson);
+    const { frames: filtered, removed } = stripHighlightPlayers(src.frames, events);
+    highlightFramesRemoved += removed;
     for (const it of items) {
-      const frames = cut(src, it.t0);
+      const frames = cut({ frames: filtered }, it.t0);
       rowsE.push({ id: it.id, seed, t0: it.t0, ...censusOfWindow(frames) });
       decE.push({ id: it.id, seed, t0: it.t0, ...decomposeBallStatic(frames, events, { staticMs: CONDITION_GATE }) });
     }
@@ -742,8 +805,8 @@ async function runWindows(wasmPath, windowsPath, outPath, stimulusPath = null) {
     // 相对路径：换 checkout 不改变 JSON；绝对路径只出现在旧版产物的 note 里。
     windowsPath: relative(ROOT, windowsPath), wasmPath: relative(ROOT, wasmPath),
     stimulusPath: relative(ROOT, stimPath),
-    wasmSha256, eventShaBySeed,
-    caliber: { windowSec: winSec, sampleStepSec: step, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
+    wasmSha256, eventShaBySeed, highlightFramesRemoved,
+    caliber: { windowSec: winSec, sampleStepSec: step, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC, highlightFilter: 'engine-only' },
     engineWindows: rowsE, realWindows: rowsR,
     engineDecomposition: decE,
     summary: { engine: cE, real: cR, engineDecomposition: dE },
@@ -755,9 +818,87 @@ async function runWindows(wasmPath, windowsPath, outPath, stimulusPath = null) {
   console.log(`\nJSON → ${outPath}`);
 }
 
+// Phase 0 锚点模式：给定 `{windowSec, sampleStepSec?, durationSec?, items:[{id,seed,t0}]}`，
+// 只跑引擎侧（不做真实对照、不做事件来源分解），逐窗 census。用来复算 Change 0 的 frozen 24 窗。
+// 与 `--stimulus` 的区别：不校验 p155 的 stimulus.json / render-ablation 身份（本分支没有那两个文件）。
+async function runAnchors(wasmPath, anchorsPath, outPath) {
+  const { loadEngineFrames } = await import(join(ROOT, 'tools/visual-review/replay-blind-core.mjs'));
+  const A = JSON.parse(readFileSync(anchorsPath, 'utf8'));
+  const winSec = A.windowSec ?? 24;
+  const step = A.sampleStepSec ?? 0.2;
+  const durationSec = A.durationSec ?? 5400;
+  const items = Array.isArray(A.items) ? A.items : [];
+  if (!items.length) throw new Error(`anchors 文件没有 items：${anchorsPath}`);
+  const bySeed = new Map();
+  for (const it of items) {
+    if (!Number.isFinite(Number(it.seed)) || !Number.isFinite(Number(it.t0))) {
+      throw new Error(`anchor 缺 seed/t0：${JSON.stringify(it)}`);
+    }
+    const seed = Number(it.seed);
+    if (!bySeed.has(seed)) bySeed.set(seed, []);
+    bySeed.get(seed).push({ ...it, seed, t0: Number(it.t0) });
+  }
+  const rows = [];
+  const eventShaBySeed = {};
+  let framesRemoved = 0;
+  for (const [seed, list] of bySeed) {
+    const src = await loadEngineFrames(wasmPath, seed, durationSec, { sampleStepSec: step });
+    eventShaBySeed[seed] = createHash('sha256').update(src.eventJson).digest('hex');
+    const events = JSON.parse(src.eventJson);
+    const { frames, removed } = stripHighlightPlayers(src.frames, events);
+    framesRemoved += removed;
+    for (const it of list) {
+      const fs = frames.filter((f) => f.t >= it.t0 - 1e-9 && f.t <= it.t0 + winSec + 1e-9);
+      rows.push({ id: it.id, seed, t0: it.t0, ...censusOfWindow(fs) });
+    }
+  }
+  // 与 p155 的 runStimulus/runWindows 同序（plain localeCompare），保证与 Change 0 产物可按位置 diff。
+  rows.sort((a, b) => String(a.id).localeCompare(String(b.id)));
+  const c = summarizeCensus(rows);
+  const fmt = (v, n = 3) => (v == null || !Number.isFinite(v) ? 'n/a' : v.toFixed(n));
+  const pct = (v) => (v == null ? 'n/a' : `${(v * 100).toFixed(1)}%`);
+  const expectedFrames = Math.round(winSec / step) + 1;
+  const badFrames = rows.filter((r) => r.nFrames !== expectedFrames);
+  console.log('═══ 运动普查（引擎锚点窗）═══');
+  console.log(`anchors=${anchorsPath}  wasm=${wasmPath}`);
+  console.log(`seeds=${[...bySeed.keys()].join(',')}  窗=${rows.length}（${winSec}s @ ${(1 / step).toFixed(1)}Hz，应 ${expectedFrames} 帧）`);
+  console.log(`高亮过滤：剔除球员帧 ${framesRemoved}（v11 的 action 只有 run/chase ⇒ 应为 0）`);
+  if (badFrames.length) console.warn(`⚠ ${badFrames.length}/${rows.length} 个窗帧数 != ${expectedFrames}`);
+  console.log(`[转向] 旧 turn120 ${fmt(c.turn120Old?.mean)}/球员/窗  条件 @0.5 ${fmt(c.conditional?.['0.5']?.turnsPerPlayer?.mean)}` +
+    `  每有效步对 ${fmt(c.conditional?.['0.5']?.turnsPerEffectivePair?.mean, 4)}`);
+  console.log(`[静止] staticFrac <0.5 ${pct(c.staticFrac?.['0.5']?.mean)}  ballStaticFrac <0.5 ${pct(c.ballStaticFrac?.['0.5']?.mean)}`);
+  console.log(`[速度] p50 ${fmt(c.speed?.p50?.mean, 2)}  p90 ${fmt(c.speed?.p90?.mean, 2)}  p99 ${fmt(c.speed?.p99?.mean, 2)} m/s` +
+    `  加速度 p95 ${fmt(c.accel?.p95?.mean, 2)}  p99 ${fmt(c.accel?.p99?.mean, 2)} m/s²`);
+  const payload = {
+    generatedAt: new Date().toISOString(),
+    anchorsPath: relative(ROOT, anchorsPath),
+    wasmPath: relative(ROOT, wasmPath),
+    wasmSha256: createHash('sha256').update(readFileSync(wasmPath)).digest('hex'),
+    eventShaBySeed,
+    caliber: {
+      windowSec: winSec, sampleStepSec: step, framesPerWindow: expectedFrames,
+      includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES,
+      ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC,
+      highlightFilter: 'engine-only',
+    },
+    highlightFramesRemoved: framesRemoved,
+    windows: rows,
+    summary: c,
+  };
+  mkdirSync(dirname(outPath), { recursive: true });
+  writeFileSync(outPath, JSON.stringify(payload, null, 2));
+  console.log(`\nJSON → ${outPath}`);
+}
+
 async function main() {
   const wasmPath = process.argv[2];
-  if (!wasmPath || wasmPath.startsWith('--')) { console.error('用法: node motion-census.mjs <engine.wasm> [--seeds 42,1,7] [--window-sec 24] [--active-only] [--stimulus <stimulus.json>] [--windows <windows.json> [--stimulus <stimulus.json>]] [--out file.json]'); process.exit(2); }
+  if (!wasmPath || wasmPath.startsWith('--')) { console.error('用法: node motion-census.mjs <engine.wasm> [--seeds 42,1,7] [--window-sec 24] [--active-only] [--stimulus <stimulus.json>] [--windows <windows.json> [--stimulus <stimulus.json>]] [--anchors <anchors.json>] [--out file.json]'); process.exit(2); }
+  const anchorsPath = argOf('--anchors', null);
+  if (anchorsPath) {
+    const outPath = argOf('--out', join(ROOT, '.scratch/motion-census-anchors.json'));
+    await runAnchors(wasmPath, resolve(anchorsPath), outPath);
+    return;
+  }
   const windowsPath = argOf('--windows', null);
   if (windowsPath) {
     const outPath = argOf('--out', join(ROOT, '.scratch/motion-census-windows.json'));
@@ -786,14 +927,18 @@ async function main() {
   for (const seed of seeds) {
     const src = await loadEngineFrames(wasmPath, seed, 5400, { sampleStepSec: 0.2 });
     const events = JSON.parse(src.eventJson);
-    const allRows = censusWindows(src.frames, { windowSec });
+    // 引擎侧口径：剔除高亮参与者（v11 的 action 只有 run/chase ⇒ 恒等；见文件头 Phase 0 说明）。
+    const { frames, removed } = stripHighlightPlayers(src.frames, events);
+    const allRows = censusWindows(frames, { windowSec });
+    // 选窗仍用原始帧（活跃窗判定的是比赛状态，不是被剔除后的样本集）。
     const rows = allRows.filter((r) => keepWin(src.frames, r.t0));
-    const allDecRows = decomposeWindows(src.frames, events, { windowSec });
+    const allDecRows = decomposeWindows(frames, events, { windowSec });
     const decRows = allDecRows.filter((r) => keepWin(src.frames, r.t0));
     engineMatches.push({
       seed,
       eventSha256: sha256(src.eventJson),
-      frames: src.frames.length,
+      frames: frames.length,
+      highlightFramesRemoved: removed,
       windows: rows.length,
       windowsScanned: allRows.length,
       census: summarizeCensus(rows),
@@ -863,7 +1008,7 @@ async function main() {
 
   const payload = {
     generatedAt: new Date().toISOString(),
-    caliber: { windowSec, sampleHz: 5, framesPerWindow: Math.round(windowSec * 5) + 1, activeOnly, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC },
+    caliber: { windowSec, sampleHz: 5, framesPerWindow: Math.round(windowSec * 5) + 1, activeOnly, includeExtrapolated: false, speedGates: SPEED_GATES, staticGates: STATIC_GATES, ballStaticGates: BALL_STATIC_GATES, holdMaxM: HOLD_MAX_M, maxStepSec: MAX_STEP_SEC, highlightFilter: 'engine-only' },
     wasmPath,
     wasmSha256: sha256(readFileSync(wasmPath)),
     seeds,

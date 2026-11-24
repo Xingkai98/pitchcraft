@@ -10,6 +10,7 @@ import {
   phaseTimeline, phaseAt, classifyBallIntervals, aggregateDecomposition, decomposeBallStatic,
   decomposeWindows, BALL_SOURCES, SPEED_GATES, STATIC_GATES, BALL_STATIC_GATES,
   assertStimulusWasmIdentity, assertStimulusEventIdentity, assertStimulusWindowsMatch,
+  HIGHLIGHT_ACTION, highlightIntervals, stripHighlightPlayers,
 } from './motion-census.mjs';
 
 const PITCH = [100, 50]; // 合成球场：x 100m / y 50m，便于手算
@@ -323,4 +324,49 @@ test('门限/档位常量冻结（改口径必须显式改这里）', () => {
   assert.deepStrictEqual(SPEED_GATES, [0.3, 0.5, 1.0]);
   assert.deepStrictEqual(STATIC_GATES, [0.2, 0.5, 1.0]);
   assert.deepStrictEqual(BALL_STATIC_GATES, [0.2, 0.5, 2.0]);
+});
+
+// ── P1 Phase 0：引擎侧高亮过滤（G1-Q4 口径守护）────────────────────────────
+// 这三条是反证条：去掉过滤（或改成过滤所有 movers）时它们会红。
+
+test('highlightIntervals：只认 beat.movers[].action==="highlight"，段长取 beat.dt', () => {
+  const events = [
+    { t: 1.0, type: 'pass', movers: [{ id: 3, action: HIGHLIGHT_ACTION }] }, // 非 beat：忽略
+    // ⚠️ 生产 v11 的普通 mover 带 action:"run"/"chase"（engine/src/lib.rs），不是无 action。
+    // 用无 action 的夹具会让「按 action 真值过滤」的错误实现假绿。
+    { t: 1.0, type: 'beat', dt: 0.2, movers: [{ id: 3, action: HIGHLIGHT_ACTION }, { id: 4, action: 'run' }] },
+    { t: 1.2, type: 'beat', dt: 0.2, movers: [{ id: 3, action: HIGHLIGHT_ACTION }, { id: 4, action: HIGHLIGHT_ACTION }] },
+    { t: 2.0, type: 'beat', dt: 0.2, movers: [{ id: 5, action: 'chase' }] }, // 非高亮
+  ];
+  const iv = highlightIntervals(events);
+  assert.deepStrictEqual(iv, [
+    { t0: 1.0, t1: 1.2, ids: [3] },
+    { t0: 1.2, t1: 1.4, ids: [3, 4] },
+  ]);
+  // dt 缺失时退回一拍（C1 设计流带 dt；这是防御分支，不是契约承诺）。
+  assert.deepStrictEqual(highlightIntervals([{ t: 0.5, type: 'beat', movers: [{ id: 1, action: HIGHLIGHT_ACTION }] }]),
+    [{ t0: 0.5, t1: 1.0, ids: [1] }]);
+});
+
+test('★ stripHighlightPlayers：按区间剔除高亮球员；v11（action=run/chase）时逐位恒等（不可混口径）', () => {
+  const frames = [
+    { t: 0, players: [{ id: 1, x: 0.1, y: 0.5 }, { id: 2, x: 0.2, y: 0.5 }] },
+    { t: 0.2, players: [{ id: 1, x: 0.1, y: 0.5 }, { id: 2, x: 0.2, y: 0.5 }] },
+    { t: 0.4, players: [{ id: 1, x: 0.1, y: 0.5 }, { id: 2, x: 0.2, y: 0.5 }] },
+  ];
+  // v11 流：movers 的 action 是 "run"/"chase"（生产真实值）⇒ 不过滤，frames 原样返回。
+  const v11 = [{ t: 0.2, type: 'beat', movers: [{ id: 1, action: 'run' }] }];
+  const a = stripHighlightPlayers(frames, v11);
+  assert.strictEqual(a.removed, 0);
+  assert.deepStrictEqual(a.frames, frames);
+  // C1 流：[0.2,0.4) 内 id=1 是高亮参与者 ⇒ 只在该区间剔除 id=1，id=2 全保留。
+  const c1 = [{ t: 0.2, type: 'beat', dt: 0.2, movers: [{ id: 1, action: HIGHLIGHT_ACTION }] }];
+  const b = stripHighlightPlayers(frames, c1);
+  assert.strictEqual(b.removed, 1);
+  assert.deepStrictEqual(b.frames.map((f) => f.players.map((p) => p.id)), [[1, 2], [2], [1, 2]]);
+  // 入参不被修改（纯函数）。
+  assert.deepStrictEqual(frames.map((f) => f.players.map((p) => p.id)), [[1, 2], [1, 2], [1, 2]]);
+  // 非高亮 movers（run/chase）不得被剔除——按 action 真值过滤的错误实现会在这里红。
+  const plain = [{ t: 0.2, type: 'beat', dt: 0.2, movers: [{ id: 1, action: 'run' }, { id: 2, action: 'chase' }] }];
+  assert.strictEqual(stripHighlightPlayers(frames, plain).removed, 0);
 });
