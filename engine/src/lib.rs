@@ -9200,9 +9200,14 @@ mod tests {
             }
         }
         assert!(checked > 10_000, "应检查足够多同队发射 pair（{}）", checked);
-        // 实测最坏值应贴着阈值（分离确实在起作用，而不是从未触发）。
-        assert!(worst < SAME_TEAM_MIN_DIST_M + 0.05,
-            "最坏同队发射间距 {:.4}m（{}）离阈值过远——分离可能未生效或过度", worst, worst_at);
+        // P0B-M2：**最坏值贴近阈值只作报告，不作通过条件**——它依赖「本场恰好出现近阈值
+        // 重叠」这一事件抽样，运动层一改就可能假红。「solver 确实会处理违规输入」由确定性
+        // 构造用例（p53_constructed_endpoint_contract / p53_constructed_sweep_contract）证明；
+        // 本整场扫描只守安全下界（不违反间距、高于 detector 门、样本量）。
+        println!(
+            "[p53 spacing] 多 seed 发射点最坏 {:.4}m（{}）——仅报告，不作通过条件",
+            worst, worst_at
+        );
     }
 
     /// 从事件流取「每 tick 每人的 (起点, 终点)」轨迹（mover from→to、main x/y→x2/y2）。
@@ -9271,8 +9276,11 @@ mod tests {
             }
         }
         assert!(checked > 10_000, "应检查足够多同队轨迹 pair（{}）", checked);
-        assert!(worst < DETECTOR_MIN_M + 0.15,
-            "最坏同队轨迹间距 {:.4}m（{}）离阈值过远——扫掠可能未生效", worst, worst_at);
+        // P0B-M2：同上——最坏值只报告，不作门；扫掠有效性由 p53_constructed_sweep_contract 证明。
+        println!(
+            "[p53 sweep] 多 seed 拍内轨迹最坏 {:.4}m（{}）——仅报告，不作通过条件",
+            worst, worst_at
+        );
     }
 
     #[test]
@@ -12044,6 +12052,68 @@ mod tests {
                 "样本不足必须显式返回 insufficient_sample（不得静默通过）"
             );
         }
+    }
+
+    /// P32 决策分支 ↔ 记账一致性（P0B-M3 补强）：直接调用生产决策路径
+    /// `emit_pass_highlight_inner`（`allow_out=false` 绕过出界通道），用**同一次传球**的
+    /// 记账结果核对事件分支：`intercept_roll_actual == 1` ⇔ `pass.result == "intercepted"`。
+    ///
+    /// 为什么必须有这一条：`note_interception_roll` 的恒等/自洽只能证明**记账器**对，
+    /// 不能发现「记账对了、但实际拦截分支断开（恒假/恒真）」——那是两处独立接线。
+    /// 这里让每个 seed 都产一次真实传球，64 seed 同时覆盖命中与未命中。
+    #[test]
+    fn p32_interception_branch_matches_bookkeeping() {
+        let mut hits = 0u32;
+        let mut misses = 0u32;
+        for seed in 1..=64u64 {
+            let lineup = default_lineup();
+            let mut st = MatchState::new(&lineup);
+            st.possession = 0;
+            st.carrier = 9;
+            st.pos[9] = (0.50, 0.50);
+            st.pos[10] = (0.60, 0.50); // 接球者
+            for id in 11..=20usize {
+                st.pos[id] = (0.60, 0.55); // 落点附近有防守者 → 贴防档（p=7.5）
+            }
+            st.ball_pos = st.pos[9];
+            let mut rng = SeededRng::new(seed);
+            let mut events = Vec::new();
+            emit_pass_highlight_inner(
+                &mut st,
+                &mut rng,
+                &mut events,
+                1.0,
+                false,
+                Some(10),
+                &mut observation::BehaviorObservationRecorder::disabled(),
+            );
+            let tally = st.opportunity_tally;
+            assert_eq!(
+                tally.intercept_roll_samples, 1,
+                "seed {}：每次开放比赛传球应恰记 1 个拦截 roll 样本（实 {}）",
+                seed, tally.intercept_roll_samples
+            );
+            let pass = events
+                .iter()
+                .find(|e| e.type_ == EventType::Pass)
+                .unwrap_or_else(|| panic!("seed {}：应产出一条 pass 事件", seed));
+            let intercepted = pass.result.as_deref() == Some("intercepted");
+            assert_eq!(
+                intercepted,
+                tally.intercept_roll_actual == 1,
+                "seed {}：事件分支（intercepted={}）与记账（actual={}）不一致——\
+                 拦截分支与记账接线错位（记账对但分支断开/反接）",
+                seed,
+                intercepted,
+                tally.intercept_roll_actual
+            );
+            if intercepted { hits += 1 } else { misses += 1 }
+        }
+        assert!(
+            hits > 0 && misses > 0,
+            "64 seed 应同时覆盖命中/未命中，实得 hits={} misses={}——覆盖不足则变异会漏网",
+            hits, misses
+        );
     }
 
     /// P32 接线守卫（多 seed 小样本）：真实比赛的记账点必须被命中，桶/分层字段必须活着，

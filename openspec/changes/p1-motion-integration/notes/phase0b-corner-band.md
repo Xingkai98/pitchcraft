@@ -17,7 +17,7 @@
 **禁止引擎向真实量级收敛**，故引擎一旦到 8.285 就红。旧 T10 是旧低体量引擎
 （均值 3.44/场）的 3000 场极值界；相对真实均值 10.27 只有 1.46×。
 
-## 2. 新均值带：`[6.68, 13.86]`（真实拟合，重锚后）
+## 2. 新均值带：`[6.68, 13.86]`（真实锚定；工程宽度待真实分位）
 
 ### 2.1 中心锚（真实侧，不是引擎现状）
 
@@ -81,7 +81,7 @@ cargo test --release --test realism -- --ignored l1_tackle_dilution_and_slot_mix
 ```
 
 实测结果（2026-11-25，本 worktree）：`test l1_tackle_dilution_and_slot_mix ... ok`
-（`1 passed; 0 failed; 16 filtered out`，耗时 **167.83s**）。断言成立 ⇒
+（`1 passed; 0 failed; 16 filtered out`，耗时 **165.12s**）。断言成立 ⇒
 200 场均角球落在 `[6.68,13.86]`、单场 max `≤26`（读数与权威基线一致：均值 **8.285**、max **18**；
 生产代码零 diff，故读数不应变）。若日后重跑为红，先看是否换窗口/换基线，不先改带。
 
@@ -89,19 +89,34 @@ cargo test --release --test realism -- --ignored l1_tackle_dilution_and_slot_mix
 
 `notes/l1-bands.md` 已更新：
 
-- T9：**过时 → 真实拟合（重锚后）**，新带值 `[6.68,13.86]` 与证据见上。
-- T10：**过时 → 护栏（防爆炸）**，新界 `≤26`，注记「护栏，不是真实拟合」。
-- 汇总：真实拟合 11→12 条、护栏 29→30 条、过时 4→2 条（H2/P2 仍未处置）。
+- T9：**过时 → 真实锚定（工程宽度待真实分位）**，新带值 `[6.68,13.86]` 与证据见上；
+  不写作「真实拟合」——宽度是工程宽度，尚非真实分位。
+- T10：**过时 → 护栏（provisional ≤26）**，注记「护栏，不是真实拟合」。
+- 汇总：真实拟合 11 条不变（T9 单列为「真实锚定」1 条）、护栏 29→30 条、过时 4→2 条（H2/P2 仍未处置）。
 - **旧带 4 红中的角球红已按真实锚重锚**；本 change 后 `l1_tackle_dilution_and_slot_mix`
   转绿，剩余 3 红（S3/H2/L3-2）不在本 change 范围。
 
-## 6. 残余风险 / 未同步处（如实记）
+## 6. 规范同步（P0B-H1 修复后）
 
-1. **主 spec 的单场角球上界 Scenario 仍是 `≤15`**：
-   `openspec/specs/match-engine/spec.md` 的「单场角球上界（数量级护栏）」写明 `SHALL ≤15`。
-   本任务范围只允许改测试/notes，故**未改 spec**。⇒ 当前存在「测试 26 / spec 15」的分叉。
-   处置：由后续 change（或本 change 的 spec delta 评审）显式更新该 Scenario 与其实测依据；
-   在此之前，以测试与本节 note 为准，不得把 15 当现行护栏。
-2. 旧记录里的界值 15（`openspec/changes/p104-volume-recalibration/design.md` §D5.3、
-   `.scratch/notes/gate-landmines-2026-10-14.md`）是**历史记录**，保留不动。
-3. 真实逐场分布不可得 ⇒ 带宽是工程宽度；真实分位/真实上尾重定是明确的后续证据债。
+**已补 MODIFIED spec delta，测试/规范不再分叉。**
+`openspec/changes/p1-motion-integration/specs/match-engine/spec.md` 的
+`## MODIFIED Requirements` 新增两条（按主 spec 精确 Requirement 头名复制全部 scenario）：
+
+1. `### Requirement: 射门与抢断的体量带（L1 体积，真实量级）`
+   - 普通射门体量 / 抢断体量 / 体积抬升不引入崩溃：原样复制；
+   - **单场角球上界（数量级护栏）**：`≤15` → **`≤26`**，理由改为 Phase 0 重锚
+     （真实均值 ~10.27、200 场基线 max=18、26 = `ceil(2.5×10.27)` 为 provisional 数量级护栏、
+     非真实分位）；删除旧读数「引擎 3.44 仍远低于真实」。
+2. `### Requirement: 涌现频率带的经验体量守卫`
+   - 出界通道承重守卫：原样复制；
+   - **角球派生带**：旧「实测 3.71 → 1.98」改为新带 **`[6.68,13.86]`**
+     （真实锚 10.27；宽度为工程宽度 ×[0.65,1.35]，待真实逐场分位替换）。
+
+`npx --yes @fission-ai/openspec@1.14.3 validate p1-motion-integration --strict` → **valid**。
+
+## 7. 残余风险 / 历史记录
+
+1. 旧记录里的界值 15（`openspec/changes/p104-volume-recalibration/design.md` §D5.3、
+   `.scratch/notes/gate-landmines-2026-10-14.md`）是**历史记录**，保留不动；
+   现行规范以本 change 的 MODIFIED delta 为准。
+2. 真实逐场分布不可得 ⇒ 带宽是工程宽度；真实分位/真实上尾重定是明确的后续证据债。

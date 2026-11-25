@@ -477,3 +477,67 @@ pass 的 `x2/y2` SHALL 用最终计划点；改落点后 SHALL 重算 `speed = d
 #### Scenario: transition 窗口结束
 - **GIVEN** transition 窗口（4 个 decision 拍）结束后
 - **THEN** 每队回到 attack/defend 阶段（按球位置/持球方），队形目标恢复正常
+
+### Requirement: 射门与抢断的体量带（L1 体积，真实量级）
+
+引擎 SHALL 使普通射门与抢断的**绝对体量**对齐真实联赛量级（多 seed ≥200 聚合）。
+本 requirement 取代先前隐含在 `l1_shot_result_distributions` / `l1_tackle_dilution_and_slot_mix`
+里的**压缩态体量带**（原射门带 `[6,11]`、原单场角球上界 `12`）——那些带的语义是
+「引擎无二次进攻链，射门设计上低于真实」，该前提已被 #104 证伪（射门体量只是一个可调常量）。
+
+**带的推导 SHALL 来自真实侧分布，SHALL NOT 照引擎现状配**（「按现状标定」是本 requirement 要消除的对象）。
+推导口径：真实侧样本按 90 分钟归一、**逐场算再平均**，带 = `mean ± 1.5·sd`。
+
+体量 SHALL 由**既有常量**产生（射门频率 `OPEN_PLAY_SHOT_ENGAGE_SHIFT`、抢断倾向
+`BASE_DEF_TACKLE`、犯规倾向 `BASE_DEF_FOUL`），SHALL NOT 依赖任何事件类型配额或固定节拍；
+抢断的抬升 SHALL 与射门一起做（`volume-compensation.md` §2.4：体积是一组缺口，
+只抬射门会让 shot/tackle 越界）。
+
+#### Scenario: 普通射门体量
+- **GIVEN** 引擎以 200 个 seed × 90 分钟模拟（seeds 401..600）
+- **THEN** 普通射门（非头球）`shot` 事件 / 场 SHALL ∈ **[14, 29]**
+  （推导：StatsBomb Open Data 大五联赛子集 n=170，mean **21.64** / sd **5.03**，`mean ± 1.5·sd` = [14.09, 29.18]）
+- **AND** 引擎当前读数 **17.10** 落在带**下沿**（距下界 3.1）——这是**如实结果**，
+  SHALL NOT 为让它居中而下压带的界
+
+#### Scenario: 抢断体量
+- **GIVEN** 引擎以 200 个 seed × 90 分钟模拟
+- **THEN** `tackle` 事件 / 场 SHALL ∈ **[24, 50]**
+  （推导：同上的大五子集 n=170，`Duel` 中 `type=="Tackle"`，mean **36.90** / sd **8.87**，`mean ± 1.5·sd` = [23.60, 50.21]）
+- **AND** 口径对齐：StatsBomb `Duel/Tackle` 含**成功与失败两态**（`Success In Play`/`Success Out`/`Lost In Play`/`Lost Out`），
+  与引擎 `tackle` 事件（`TACKLE_SUCCESS_RATE=0.5`，两态）**同口径**；
+  WhoScored 的「~30（15-17/队）」是**成功抢断**口径，SHALL NOT 作为本带的依据
+
+#### Scenario: 单场角球上界（数量级护栏）
+- **GIVEN** 引擎以 **200** 个 seed × 90 分钟模拟（seeds 401..600，与 `l1_tackle_dilution_and_slot_mix`
+  的 L1 窗口一致——这是**运行时门的口径**）
+- **THEN** 单场 `detail="corner"` 的 pass 计数 SHALL ≤ **26**
+  （Phase 0 重锚：`ceil(2.5 × 真实均值 10.27) = 26`；200 场基线实测 max = **18**，余量 8）
+- **AND** 26 是 **provisional 数量级护栏**（2.5× 真实均值），SHALL NOT 被当作真实分位/真实上尾；
+  真实逐场分布与真实上尾本仓不可得（StatsBomb 事件未入库），3000 场真实上尾重定仍欠账
+- **AND** 本上界的语义 SHALL 是「不塌缩 / 不爆炸」的**数量级护栏**，SHALL NOT 被当作真实拟合
+- **AND** 旧界 `≤15` 已退役：它定在旧低体量引擎（均值 3.44/场）上，相对真实均值 10.27 仅 1.46×，
+  真实量级的 200 场峰值必然顶破（基线实测 18）
+
+#### Scenario: 体积抬升不引入崩溃
+- **GIVEN** 引擎以 200 个 seed × 90 分钟模拟
+- **THEN** `crashedSeeds` SHALL = 0
+
+### Requirement: 涌现频率带的经验体量守卫
+
+删槽位后事件频率由状态涌现，各类事件的经验体量带 SHALL 按**涌现实测值**重新标定并记录依据（原槽位配额是虚高来源，SHALL NOT 作为频率目标）；带 SHALL 只守「某类事件塌缩/爆炸」，SHALL NOT 退化为配额断言。方向性（而非固定数量）的断言 SHALL 优先。
+
+#### Scenario: 出界通道承重守卫
+- **GIVEN** 引擎以多 seed 模拟 90 分钟比赛
+- **THEN** 场均界外球（`detail="out_sideline"`，由 pass_risk 出界通道产出的界外球重开）SHALL 落在声明带内——该带是出界通道的**承重守卫**（通道失效时界外球由 8.74/场 崩至 ~0.06/场）
+
+#### Scenario: 角球派生带按涌现重标定
+- **GIVEN** 引擎以多 seed 模拟 90 分钟比赛
+- **THEN** `detail="corner"` 的 pass 场均 SHALL ∈ **[6.68, 13.86]**
+  （Phase 0 真实锚定：真实 ~10.27/场，出处 `p104-volume-recalibration/design.md` §D5.3 +
+  `research/2026-08-23-match-realism-testability/report.md` 行 132/24；本带是 D11 #4 的**例外**——
+  按真实锚而非涌现实测值重标定）
+- **AND** 带宽是**工程宽度** `×[0.65,1.35]`（沿用同 requirement 射门/抢断真实拟合带的相对宽度：
+  `10.27×0.65=6.6755→6.68`、`10.27×1.35=13.8645→13.86`），SHALL 在能取得真实逐场分位后
+  以真实分位替换；SHALL NOT 被当作真实分位带
+- **AND** 下沿 6.68 同时是塌缩守卫：出界通道置 0 时角球余 1.33/场，远低于下沿
