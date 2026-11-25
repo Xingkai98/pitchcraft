@@ -23,8 +23,9 @@
 > SHALL 拆成**独立 PR**，每个 PR **行为零变化**并对照 main v11 验证；改门的 PR 单独列证据。
 > 便于区分「门变严/重锚」与「运动导致破带」。
 
-- [ ] 2.1 角球带处置：按 D11 #4 **重锚到真实 ~10.27**，保留单场 max 护栏（不得删红门、不得降级为报告项）；证据落盘 `notes/`
-- [ ] 2.2 p53/p31/p6/p32 改为「显式构造场景 + 条件断言 + 多 seed 置信范围」夹具；保留契约
+- [x] 2.1 角球带处置：按 D11 #4 **重锚到真实 ~10.27**，保留单场 max 护栏（不得删红门、不得降级为报告项）；证据落盘 `notes/`
+- [x] 2.2 p53/p31/p6/p32 改为「显式构造场景 + 条件断言 + 多 seed 置信范围」夹具；保留契约
+- [x] 2.1b **规范同步**（Phase 0-B 审阅 P0B-H1）：`specs/match-engine/spec.md` 补两条 MODIFIED——「射门与抢断的体量带」单场角球上界 `≤26`、「涌现频率带的经验体量守卫」角球派生带 `[6.68,13.86]`；`openspec validate --strict` 通过
 - [x] 2.3 **权威 L1 基线**（H6）：在 main 同配置跑 200 场，落盘 `notes/l1-baseline-main.json`（`source_commit` + `engineFingerprint` + seed 列表 + 每条带读数 + 红清单）；历史「4 红」只作对照，不作权威
 - [ ] 2.4 预注册指标：条件 `turn120` **按 `conditional['0.5'].turnsPerPlayer`（Change 0 原口径：24s/121 帧，`turns/nPlayers`，不除窗长）**；另报 `turnsPerEffectivePair`（0.0000934 口径，不混用）；`staticFrac`、速度分位、加速度尾部、路径效率/回环率、低速转向、残余漂移、ballStatic（viewer 链 caveat）
 - [ ] 2.5 保存改动前 ratchet：`node tools/ratchet.mjs save .../notes/ratchet-before.json`
