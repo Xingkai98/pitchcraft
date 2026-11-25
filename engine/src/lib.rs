@@ -9353,6 +9353,107 @@ mod tests {
         assert!(same_team_dist_m(na, nb) < SAME_TEAM_MIN_DIST_M, "边界场景下纯几何分离不足（已知残留）");
     }
 
+    /// P1 Phase 0 / 2.2：同队间距 solver 的**确定性构造场景**。
+    ///
+    /// 22 人沿 x 排开、相邻同队 pair 间距 2.625m（≥ 阈值），不干扰目标 pair；再把 id 1/2
+    /// （同为 home）放成指定的起点/终点。返回 `(starts, pos)` 供 `separate_same_team_m` 使用。
+    /// ——不依赖任何 seed 恰好产出「两人逼近 <2.2m」的局面。
+    fn spacing_scene(
+        start_1: (f64, f64), end_1: (f64, f64),
+        start_2: (f64, f64), end_2: (f64, f64),
+    ) -> ([(f64, f64); 22], [(f64, f64); 22]) {
+        let mut starts = [(0.5, 0.5); 22];
+        let mut pos = [(0.5, 0.5); 22];
+        for i in 0..22usize {
+            let p = (0.03 + 0.025 * i as f64, 0.85);
+            starts[i] = p;
+            pos[i] = p;
+        }
+        starts[1] = start_1; pos[1] = end_1;
+        starts[2] = start_2; pos[2] = end_2;
+        (starts, pos)
+    }
+
+    #[test]
+    fn p53_constructed_endpoint_contract() {
+        // 端点契约（#53 D3）：同队 1/2 号**终点**相距 1.36m（y 轴 0.02 归一化）< 2.2m。
+        // 直接喂 solver 的输入并断言输出，不依赖整场扫描里恰好出现的重叠。
+        let (starts, mut pos) = spacing_scene(
+            (0.5, 0.40), (0.5, 0.40),
+            (0.5, 0.42), (0.5, 0.42),
+        );
+        let before = same_team_dist_m(pos[1], pos[2]);
+        assert!((before - 1.36).abs() < 1e-9, "构造场景应先违规 1.36m（实 {:.6}m）", before);
+        assert!(before < SAME_TEAM_MIN_DIST_M, "构造场景必须先低于阈值");
+        let sent_off = [false; 22];
+        let frozen = [false; 22];
+        let swept_light = [false; 22];
+        separate_same_team_m(&starts, &mut pos, &sent_off, &frozen, &swept_light);
+        let after = same_team_dist_m(pos[1], pos[2]);
+        assert!(
+            after >= SAME_TEAM_MIN_DIST_M - SAME_TEAM_EPS,
+            "构造的 1.36m 同队 pair 分离后应 ≥ {:.2}m（实 {:.4}m）",
+            SAME_TEAM_MIN_DIST_M, after
+        );
+        // 「扫到无改动即停」契约：已达标的终态再跑一遍不得再推动（幂等）。
+        let mut again = pos;
+        separate_same_team_m(&starts, &mut again, &sent_off, &frozen, &swept_light);
+        assert_eq!(again[1], pos[1], "端点契约：已达标 pair 不应被二次推动");
+        assert_eq!(again[2], pos[2], "端点契约：已达标 pair 不应被二次推动");
+    }
+
+    #[test]
+    fn p53_constructed_sweep_contract() {
+        // 拍内扫掠契约（#53 D2 / viewer 线性插值）：两人本拍**路径对穿**——
+        // 起点相距 52.5m、终点也相距 52.5m（端点都合规），但线性插值在中点重合（0m）。
+        // 只查端点会漏掉「快跑者从队友身边穿过」，故必须断言拍中距离。
+        let (starts, mut pos) = spacing_scene(
+            (0.25, 0.5), (0.75, 0.5),
+            (0.75, 0.5), (0.25, 0.5),
+        );
+        let mid_dist = |s: &[(f64, f64); 22], p: &[(f64, f64); 22]| {
+            let ma = ((s[1].0 + p[1].0) * 0.5, (s[1].1 + p[1].1) * 0.5);
+            let mb = ((s[2].0 + p[2].0) * 0.5, (s[2].1 + p[2].1) * 0.5);
+            same_team_dist_m(ma, mb)
+        };
+        assert!(mid_dist(&starts, &pos) < 1e-9, "构造场景：拍中轨迹应先重合（实 {:.4}m）", mid_dist(&starts, &pos));
+        let sent_off = [false; 22];
+        let frozen = [false; 22];
+        let swept_light = [false; 22];
+        separate_same_team_m(&starts, &mut pos, &sent_off, &frozen, &swept_light);
+        let m = mid_dist(&starts, &pos);
+        assert!(
+            m >= SAME_TEAM_SWEPT_MIN_M - 1e-6,
+            "拍内扫掠后，中点间距应 ≥ 引擎扫掠阈值 {:.2}m（实 {:.4}m）",
+            SAME_TEAM_SWEPT_MIN_M, m
+        );
+        assert!(m > SAME_TEAM_OVERLAP_MIN_M, "中点间距还必须高于 detector 真实门 {:.1}m（实 {:.4}m）", SAME_TEAM_OVERLAP_MIN_M, m);
+        // 「只做侧向推移」契约：沿球场方向（x）的位移 ≤ 1mm，y 向相反侧推开。
+        // （实现沿「拍内最近点方向」推，数值上含 ~1e-5 归一化的 x 分量 ≈ 0.07mm。）
+        let dx_1_m = (pos[1].0 - 0.75).abs() * PITCH_LENGTH_M;
+        let dx_2_m = (pos[2].0 - 0.25).abs() * PITCH_LENGTH_M;
+        assert!(dx_1_m < 1e-3 && dx_2_m < 1e-3,
+            "扫掠只应侧向推移，沿球场方向的位移应 ≤1mm（实 {:.2e}m/{:.2e}m）", dx_1_m, dx_2_m);
+        assert!((pos[1].1 - 0.5) * (pos[2].1 - 0.5) < 0.0, "两条轨迹应向相反侧推离（y：{:.4}/{:.4}）", pos[1].1, pos[2].1);
+    }
+
+    #[test]
+    fn p53_constructed_sweep_start_unresolvable() {
+        // 已知残留契约：**起点**本身已 < 扫掠阈值时本拍无解，solver 不得硬推终点
+        // （否则会把「上一拍已违规」的锅甩给本拍、制造无谓位移）。
+        let (starts, mut pos) = spacing_scene(
+            (0.5, 0.50), (0.75, 0.50),
+            (0.5, 0.51), (0.25, 0.50),
+        );
+        assert!(same_team_dist_m(starts[1], starts[2]) < SAME_TEAM_SWEPT_MIN_M, "构造：起点应先低于扫掠阈值");
+        let sent_off = [false; 22];
+        let frozen = [false; 22];
+        let swept_light = [false; 22];
+        separate_same_team_m(&starts, &mut pos, &sent_off, &frozen, &swept_light);
+        assert_eq!(pos[1], (0.75, 0.50), "起点不可动且已违规 → 本拍无解，终点应原样返回");
+        assert_eq!(pos[2], (0.25, 0.50), "起点不可动且已违规 → 本拍无解，终点应原样返回");
+    }
+
     #[test]
     fn p53_same_team_frozen_participant_separates_mover() {
         // 覆盖「高亮参与者位置冻结、同拍 mover 必须绕开」这一路径：参与者是事件指定终点
@@ -10047,25 +10148,52 @@ mod tests {
 
     #[test]
     fn p6_corner_battle_double_chase() {
-        // 角球落点 battle：发球后松散球 beat（ball loose:true）含攻防双 chase mover
-        let cfg = MatchConfig::default_();
-        for seed in 1..80u64 {
-            let s = simulate(seed, cfg);
-            if let Some(corner) = find_pass_detail(&s, "corner") {
-                let evts = json_events(&s);
-                let idx = evts.iter().position(|e| *e == corner).unwrap();
-                // 角球发球后的松散球 beat：ball loose:true，含 ≥2 个 action=chase mover
-                let loose_beat = evts.iter().skip(idx + 1).find(|e| {
-                    type_of(e) == "beat" && e.contains("\"loose\":true")
-                });
-                if let Some(b) = loose_beat {
-                    let chases = b.matches("\"action\":\"chase\"").count();
-                    assert!(chases >= 2, "角球 battle 松散球应有攻防双追逐（≥2 chase mover）: {}", b);
-                }
-                return;
-            }
+        // P1 Phase 0 / 2.2：**显式构造**角球落点 battle，替换旧的「扫 80 个 seed 找角球」夹具。
+        // 旧写法两处脆弱：(a) 没有角球时 panic；(b) 有角球但没有松散球 beat 时**静默通过**
+        // （断言写在 if let 里）——契约实际上可能从未被检查。
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.possession = 0; // home 攻
+        st.carrier = -1;   // 角球落点无人持球
+        let land = (0.92, 0.50);
+        st.ball_pos = land;
+        // 两队外场先铺开，再放一个「离落点最近」的攻/防 chaser。
+        for id in 1..=10usize { st.pos[id] = (0.30, 0.10); }
+        for id in 11..=20usize { st.pos[id] = (0.70, 0.90); }
+        st.pos[4] = (0.60, 0.50);  // home 离落点最近（33.6m）
+        st.pos[14] = (0.80, 0.55); // away 离落点最近（~13.1m）
+        let mut rng = SeededRng::new(1);
+        start_battle_loose(&mut st, land, (1.0, 0.0));
+        assert_eq!(
+            st.loose.as_ref().unwrap().battle,
+            Some((4, 14)),
+            "角球 battle 应在 loose 启动时固定攻/防双追逐者（各队最近者）"
+        );
+
+        // 契约①：防方 chaser 以 action=chase 追**落点**（不是 close_down / 队形目标），
+        // 且 loose 生命周期内身份固定（不随 tick 漂移）。
+        for step in 0..3 {
+            let t = 1.0 + step as f64 * TICK_SECONDS;
+            let st_before = st.loose.as_ref().unwrap().battle;
+            let mut events = Vec::new();
+            advance_loose(
+                &mut st,
+                &mut rng,
+                &mut events,
+                t,
+                &mut observation::BehaviorObservationRecorder::disabled(),
+            );
+            assert_eq!(st.loose.as_ref().and_then(|l| l.battle), st_before,
+                "第 {} 拍后 battle 双追逐者身份漂移", step);
+            let beat = events.iter().find(|e| e.type_ == EventType::Beat)
+                .unwrap_or_else(|| panic!("第 {} 拍 advance_loose 应产 beat（球未到拾取半径）", step));
+            let json = beat.to_json();
+            let chases = json.matches("\"action\":\"chase\"").count();
+            assert!(chases >= 2, "角球 battle 松散球 beat 应有攻防双追逐（≥2 chase），实得 {}: {}", chases, json);
+            assert!(json.contains("\"id\":14"), "防方固定 chaser id14 应出现在 beat movers 中: {}", json);
         }
-        panic!("没有任何 seed 产出角球发球");
+        // 球还在滚（atk chaser 33.6m 外，3 拍走不到拾取半径）⇒ battle 仍存活。
+        assert!(st.loose.is_some(), "3 拍内不应被拾取（构造距离 33.6m）");
     }
 
     #[test]
@@ -11845,27 +11973,81 @@ mod tests {
         Ok(())
     }
 
-    /// P32（#36）接线守卫 + 逐桶自洽 + 长传加成接线。
+    /// P32（P1 Phase 0 / 2.2 重写）：**构造**拦截概率场景 + 接线守卫。
     ///
-    /// 广窗理由：本测试要判**方向性**接线（长传加成是否抬升 expected）与逐桶自洽，样本量
-    /// 不足时方向断言会空跑、区间会失真。20 seed 时贴防桶仅 ~3-6 样本——不足以判定，
-    /// 故按 grill Q9 的 N≥200 口径扩窗（见下方「200→400」条）；窗口内三桶样本均远超
-    /// `P32_MIN_BUCKET_SAMPLES`（实测值见断言处的样本报告）。运行时间与
-    /// `p29_cooldown_is_local_not_match_wide`（200 seed）同量级。
-    ///
-    /// **p143r-v4 收尾：200 → 400 seed。** 本断言是**二项自洽**（`E[actual] = Σceil(p)/100`
-    /// **恒等**成立——roll 均匀、判据 `roll < width`，故任何偏差都是 RNG 抽样波动、不是接线 bug）。
-    /// 逐桶自洽用 95% CI，**单次波动就可能落在区间外**（5 个检查 ≈ 每轮 ~5% 单桶误报）。把
-    /// `BASE_DEF_TACKLE`/`BASE_DEF_FOUL` 重标定后 RNG 流变了一次抽签，200 seed 下远距桶
-    /// 落在区间外（样本 23666：实际 712 vs 期望均 767、CI [713.7, 820.5]，z≈−2.0）；
-    /// **加倍样本使抽签波动收敛**（400 seed：远距样本 46713、实际 1468 vs 期望均 1510，
-    /// 落回 CI 内），400 seed 复绿。**判据（桶边界、95% CI 公式、`ceil` 量化口径、方向守卫）
-    /// 一律未动**——这是「加大样本量」，不是「放宽阈值」。代价：本测试 +~30s（release）。
-    ///
-    /// 变异绑定：
-    ///   - 删记账 / 换回旧路径 → `intercept_roll_samples` 归零 → 接线守卫红。
-    ///   - 把 expected 改成浮点常量累加（不 ceil）→ 期望下偏 → 桶自洽断言的区间外（系统性下偏）。
-    ///   - 删长传加成常量 → 长传桶 expected 相对基线不再抬升 → 加成接线断言红。
+    /// 旧夹具聚合 400 场全量样本做二项自洽。判据本身是恒等式，但「抽签波动」曾让远距桶落出
+    /// 95% CI，只能靠**加倍样本**（200→400）复绿——RNG 流一改就可能重演，且成本高。现拆两层：
+    ///   1) 确定性恒等（`p32_interception_roll_contract_constructed`）：完整枚举
+    ///      `fail_roll 0..99`，走生产记账 `note_interception_roll`，断言期望 = Σceil(p)、
+    ///      实现率 = ceil(p)/100——条件恒等，与样本量/seed 无关；LONG / VERY_LONG 加成
+    ///      各档的精确宽度也在这里钉死（不再靠分层样本均值）。
+    ///   2) 接线守卫（本测试，8 seed 小样本）：记账点与三桶字段必须被真实命中；自洽只在
+    ///      样本 ≥ `P32_MIN_BUCKET_SAMPLES` 时断言，样本不足时必须显式返回
+    ///      `insufficient_sample`（不静默绿）。
+    #[test]
+    fn p32_interception_roll_contract_constructed() {
+        // 场景矩阵：3 个落点距离档 × 3 个传球长度层。fwd=1.0 = 加成全额（方向缩放上界）。
+        // 期望宽度由生产常量算出（7.5/4.5/2.0 的 ceil + LONG 7 / VERY_LONG 8）。
+        let cases = [
+            (INTERCEPT_D_TIGHT_M, LONG_PASS_M, 8u64),               // 7.5
+            (INTERCEPT_D_TIGHT_M, LONG_PASS_M + 1.0, 15),           // 7.5 + 7
+            (INTERCEPT_D_TIGHT_M, VERY_LONG_PASS_M + 1.0, 23),      // 7.5 + 7 + 8
+            (INTERCEPT_D_MID_M, LONG_PASS_M, 5),                    // 4.5
+            (INTERCEPT_D_MID_M, LONG_PASS_M + 1.0, 12),             // 4.5 + 7
+            (INTERCEPT_D_MID_M, VERY_LONG_PASS_M + 1.0, 20),        // 4.5 + 7 + 8
+            (INTERCEPT_D_MID_M + 1.0, LONG_PASS_M, 2),              // 2.0
+            (INTERCEPT_D_MID_M + 1.0, LONG_PASS_M + 1.0, 9),        // 2.0 + 7
+            (INTERCEPT_D_MID_M + 1.0, VERY_LONG_PASS_M + 1.0, 17),  // 2.0 + 7 + 8
+        ];
+        for (d, meters, want_w) in cases {
+            let p = open_play_interception_p_dir(d, meters, 1.0);
+            let width = interception_roll_width(p);
+            assert_eq!(
+                width, want_w,
+                "d={}m meters={}m：ceil(p) 期望宽度应为 {}（实 {}，p={:.1}）",
+                d, meters, want_w, width, p
+            );
+            let mut t = OpportunityTally::default();
+            for roll in 0..100u64 {
+                t.note_interception_roll(d, meters, p, roll);
+            }
+            let b = interception_distance_bucket(d);
+            assert_eq!(t.intercept_roll_samples, 100, "每格应记 100 个 roll 样本");
+            assert_eq!(t.intercept_bucket_samples[b], 100, "样本应记到正确的距离桶 {}", b);
+            // 完整 roll 域 ⇒ 期望与实现都是确定量（不是抽样估计）。
+            assert_eq!(t.intercept_roll_expected, want_w * 100, "期望拦截数应为 Σceil(p)");
+            assert_eq!(t.intercept_bucket_expected[b], want_w * 100);
+            assert_eq!(t.intercept_roll_actual, want_w, "枚举 0..99 时命中数应恰为 ceil(p)");
+            assert_eq!(t.intercept_bucket_actual[b], want_w);
+            // 分层判据：long = meters > 22；very_long = meters > 35（very ⊆ long）。
+            let is_long = meters > LONG_PASS_M;
+            let is_very = meters > VERY_LONG_PASS_M;
+            assert_eq!(t.intercept_long_samples, if is_long { 100 } else { 0 });
+            assert_eq!(t.intercept_very_long_samples, if is_very { 100 } else { 0 });
+            assert!(
+                t.intercept_very_long_actual <= t.intercept_long_actual,
+                "very-long 必须是 long 的子集"
+            );
+            // 条件自洽：把同一比例放大到充足样本量后，actual 与期望同率 ⇒ 必须 Ok。
+            let n = P32_MIN_BUCKET_SAMPLES * 10;
+            assert!(
+                assert_interception_self_consistent(
+                    "构造", n, want_w * n, want_w * n / 100
+                )
+                .is_ok(),
+                "d={}m meters={}m：与期望同率的实现率应落在 95% CI 内",
+                d, meters
+            );
+            assert_eq!(
+                assert_interception_self_consistent("构造", P32_MIN_BUCKET_SAMPLES - 1, want_w, 0),
+                Err("insufficient_sample"),
+                "样本不足必须显式返回 insufficient_sample（不得静默通过）"
+            );
+        }
+    }
+
+    /// P32 接线守卫（多 seed 小样本）：真实比赛的记账点必须被命中，桶/分层字段必须活着，
+    /// 统计自洽只在样本充足时判（不足走 `insufficient_sample`，不静默绿）。
     #[test]
     fn p32_interception_self_consistency() {
         let mut samples = [0u64; 3];
@@ -11874,60 +12056,34 @@ mod tests {
         let mut total_samples = 0u64;
         let mut total_expected = 0u64;
         let mut total_actual = 0u64;
-        // 「落点距离桶 × 长传档」组合桶：长传侧直接累计，非长传侧 = 同桶减法。
-        // 方向守卫只看**桶内**比较（见下），跨档比较会被「长传者落点更远 → base 更低」的反向
-        // 效应混淆。
-        let mut bucket_long_samples = [0u64; 3];
-        let mut bucket_long_expected = [0u64; 3];
-        let mut bucket_very_long_samples = [0u64; 3];
-        let mut bucket_very_long_expected = [0u64; 3];
-        // 长传/超长档的**实际**拦截数（顶层分层字段，非桶内）——样本稀少（超长仅 ~108），
-        // 不足以判自洽，但用于把「actual ≤ 样本数」及「actual 与 expected 同数量级」钉死，
-        // 防止这两个 tally 字段成为纯粹只写不读的死字段（审阅 P3-3）。
+        let mut long_samples = 0u64;
         let mut long_actual = 0u64;
+        let mut very_long_samples = 0u64;
         let mut very_long_actual = 0u64;
-        for seed in 1..=400u64 {
+        for seed in 1..=8u64 {
             let (st, _events) = run_match(seed, 5400.0);
             let t = st.opportunity_tally;
             for b in 0..3 {
                 samples[b] += t.intercept_bucket_samples[b];
                 expected[b] += t.intercept_bucket_expected[b];
                 actual[b] += t.intercept_bucket_actual[b];
-                bucket_long_samples[b] += t.intercept_bucket_long_samples[b];
-                bucket_long_expected[b] += t.intercept_bucket_long_expected[b];
-                bucket_very_long_samples[b] += t.intercept_bucket_very_long_samples[b];
-                bucket_very_long_expected[b] += t.intercept_bucket_very_long_expected[b];
             }
             total_samples += t.intercept_roll_samples;
             total_expected += t.intercept_roll_expected;
             total_actual += t.intercept_roll_actual;
+            long_samples += t.intercept_long_samples;
             long_actual += t.intercept_long_actual;
+            very_long_samples += t.intercept_very_long_samples;
             very_long_actual += t.intercept_very_long_actual;
         }
 
-        // 1. 接线守卫：记账点必须真实命中（换了路径 / 删了记账 → 归零 → 红）。
+        // 1. 接线：记账点必须真实命中；三桶都要有样本（否则桶边界/判定边界漂移）。
         assert!(total_samples > 0, "拦截 roll 记账样本为 0——记账点未接线（#36 硬门空跑）");
         assert!(total_actual > 0, "拦截 roll 实际命中为 0——拦截分支不可达或未记账");
         for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
             assert!(samples[b] > 0, "{}桶 记账样本为 0——桶边界与判定边界漂移？", name);
         }
-        // 三桶都断言 ≥ 最小样本（不只是主要桶）：否则某个桶跌到 <200 时会走
-        // `assert_interception_self_consistent` 的 `Err` 分支（eprintln 在默认 `cargo test`
-        // 下被捕获、不可见）——逐桶自洽会**静默失效**（审阅 N-2）。钉住三桶样本量，让
-        // 「样本不足」变成硬失败而非静默降级。
-        // 实测 400 seed（本测试窗口）：贴防 35525 / 中距 209515 / 远距 46713，三桶均远超 200。
-        // ⚠️ 旧注释写「实测 200 seed：贴防 23955 / 中距 45536 / 远距 1229（远距桶样本天然
-        // 稀少）」——**已过时且与实测矛盾**：远距桶实测 ~2.4×10⁴（200 seed 时 23666），
-        // 并不稀少；「落点附近都有防守者」的因果也不成立（桶按**防守者到传球的横向距离**分，
-        // 中距桶才是大头）。p143r-v4 收尾按实跑订正。
-        for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
-            assert!(
-                samples[b] >= P32_MIN_BUCKET_SAMPLES,
-                "{}桶样本 {} < {}——逐桶自洽会退化为 insufficient_sample（静默失效）",
-                name, samples[b], P32_MIN_BUCKET_SAMPLES
-            );
-        }
-        // 记账恒等式：分桶样本之和 == 总数（防「只记总数不记桶」的漏记）。
+        // 记账恒等式：分桶样本/预期之和 == 总数（防「只记总数不记桶」的漏记）。
         assert_eq!(
             samples[0] + samples[1] + samples[2], total_samples,
             "分桶样本之和({}) ≠ 拦截 roll 总数({})——分桶漏记",
@@ -11937,126 +12093,37 @@ mod tests {
             expected[0] + expected[1] + expected[2], total_expected,
             "分桶预期之和 ≠ 总预期——分桶量化口径不一致"
         );
-
-        // 2. 逐桶自洽。样本不足的桶本会返回 Err(insufficient_sample)——但上面已**硬断言**
-        //    三桶样本 ≥ P32_MIN_BUCKET_SAMPLES，故此处每个调用**必须** Ok。用 `assert!` 而
-        //    非 eprintln：`insufficient_sample` 就此不可达（不是静默跳过、也不是被测试框架
-        //    捕获的 stderr 噪音——审阅 N-1/N-2）。若将来 seed/profile 变化让某桶跌破下限，
-        //    上一段硬断言会先红并点名该桶，不会走到这里。
-        assert!(
-            assert_interception_self_consistent("全局", total_samples, total_expected, total_actual).is_ok(),
-            "全局样本 {} 充足（分桶硬断言已过）却返回 insufficient_sample——口径不一致",
-            total_samples
-        );
-        for (b, name) in [(0usize, "贴防(≤6m)"), (1, "中距(6-12m)"), (2, "远距(>12m)")] {
-            assert!(
-                assert_interception_self_consistent(name, samples[b], expected[b], actual[b]).is_ok(),
-                "{}桶样本 {} 充足（已硬断言 ≥ {}）却返回 insufficient_sample——口径不一致",
-                name, samples[b], P32_MIN_BUCKET_SAMPLES
-            );
+        // 2. 条件自洽：样本 ≥ 下限必须 Ok；不足必须显式 insufficient_sample（不静默绿）。
+        let mut checked_any = false;
+        for (name, s, e, a) in [
+            ("全局", total_samples, total_expected, total_actual),
+            ("贴防(≤6m)", samples[0], expected[0], actual[0]),
+            ("中距(6-12m)", samples[1], expected[1], actual[1]),
+            ("远距(>12m)", samples[2], expected[2], actual[2]),
+        ] {
+            match assert_interception_self_consistent(name, s, e, a) {
+                Ok(()) => {
+                    assert!(
+                        s >= P32_MIN_BUCKET_SAMPLES,
+                        "{}：样本 {} 低于下限却返回 Ok（口径不一致）", name, s
+                    );
+                    checked_any = true;
+                }
+                Err("insufficient_sample") => {
+                    assert!(
+                        s < P32_MIN_BUCKET_SAMPLES,
+                        "{}：样本 {} 已充足却报 insufficient_sample（静默降级）", name, s
+                    );
+                }
+                Err(other) => panic!("{}：意外错误 {:?}", name, other),
+            }
         }
-
-        // 3. 长传加成常量接线（**逐常量**杀死，防互相遮蔽——变异实测：只分「长传/非长传」
-        //    时删 LONG_PASS_INTERCEPT_BONUS 会被 VERY_LONG_PASS_INTERCEPT_BONUS 遮住而不红）。
-        //
-        // 口径：同一距离桶内 base 档相同，故每层的 `interception_p` 是确定值、`ceil` 后的
-        // 平均宽度也是确定整数。贴防桶（base 7.5）三层：
-        //   非长传 ≤22m      → p = 7.5            → 宽度 8   （恒等，基线）
-        //   长传 22–35m      → p = 7.5 + 7   = 14.5 → 宽度 15
-        //   超长 >35m        → p = 7.5 + 7 + 8 = 22.5 → 宽度 23
-        // 删 `LONG_PASS_INTERCEPT_BONUS` → 「长传」层均值塌回 8 → 与 15 不等 → 红。
-        // 删 `VERY_LONG_PASS_INTERCEPT_BONUS` → 「超长」层均值塌回 15 → 与 23 不等 → 红。
-        // 用**均值 == 确定整数**（而非「>」）比较：既杀常量删除，也杀「加成被错接到别的档」。
-        let base_tight = interception_roll_width(INTERCEPT_P_TIGHT); // 8
-        let expect_long = interception_roll_width(INTERCEPT_P_TIGHT + LONG_PASS_INTERCEPT_BONUS); // 15
-        let expect_very = interception_roll_width(
-            INTERCEPT_P_TIGHT + LONG_PASS_INTERCEPT_BONUS + VERY_LONG_PASS_INTERCEPT_BONUS,
-        ); // 23
-        assert_eq!(base_tight, 8, "贴防基线宽度应为 8（常量接线前提）");
-        assert_eq!(expect_long, 15, "贴防 + 长传加成宽度应为 15（常量接线前提）");
-        assert_eq!(expect_very, 23, "贴防 + 长传 + 超长加成宽度应为 23（常量接线前提）");
-
-        // 贴防桶：非长传（基线）/ 长传非超长（+LONG）/ 超长（+LONG+VERY）三层各自样本充足。
-        let tight_non_long_n = samples[0] - bucket_long_samples[0];
-        let tight_long_only_n = bucket_long_samples[0] - bucket_very_long_samples[0];
-        let tight_very_long_n = bucket_very_long_samples[0];
-        let tight_non_long_w = expected[0] - bucket_long_expected[0];
-        let tight_long_only_w = bucket_long_expected[0] - bucket_very_long_expected[0];
-        let total_very_long_n: u64 = bucket_very_long_samples.iter().sum();
-        let total_very_long_w: u64 = bucket_very_long_expected.iter().sum();
-        assert!(
-            tight_non_long_n >= P32_MIN_BUCKET_SAMPLES && tight_long_only_n >= P32_MIN_BUCKET_SAMPLES,
-            "贴防桶 非长传/长传(22-35m) 样本不足（{} / {}）——LONG 加成接线断言会空跑",
-            tight_non_long_n, tight_long_only_n
-        );
-        let avg = |w: u64, n: u64| w as f64 / n as f64;
-        assert!(
-            (avg(tight_non_long_w, tight_non_long_n) - base_tight as f64).abs() < 1e-9,
-            "贴防桶非长传平均宽度 {:.3} ≠ {}（应为基线，无加成）",
-            avg(tight_non_long_w, tight_non_long_n), base_tight
-        );
-        // 方向化后：长传加成按 `forward_frac` 缩放，桶内宽度 ∈ [base, base+LONG]。
-        // 桶均值做上下界 + 严格下界（删加成会塌回 base）；常量本身的精确值（15/23）由
-        // 纯函数测试 `p32_interception_roll_width_quantizes_by_ceil` 钉死。
-        let long_avg = avg(tight_long_only_w, tight_long_only_n);
-        assert!(
-            long_avg <= expect_long as f64 + 1e-9 && long_avg >= base_tight as f64 - 1e-9,
-            "贴防桶长传(22-35m)平均宽度 {:.3} ∉ [{}, {}]——加成被错加/错接（方向缩放只应减不增）",
-            long_avg, base_tight, expect_long
-        );
-        assert!(
-            long_avg > base_tight as f64 + 1e-9,
-            "贴防桶长传平均宽度 {:.3} 未高于基线 {}——LONG_PASS_INTERCEPT_BONUS 未接线/被删",
-            long_avg, base_tight
-        );
-
-        // 超长档（>35m）样本天然稀少（实测 200 seed 全距离档仅 108 条：贴防 17 / 中距 78 /
-        // 远距 13）——无法在 N≥200 口径下做逐桶精确均值，故用**宽度的下界**杀掉常量删除：
-        // 每个超长样本的宽度 = ceil(base + LONG + VERY) ≥ ceil(INTERCEPT_P_FAR + 7 + 8) = 17。
-        // 删 `VERY_LONG_PASS_INTERCEPT_BONUS` → 每样本宽度 ≤ ceil(base + LONG) ≤ ceil(7.5+7)=15
-        //  < 17 → 总宽度 < 17·n → 红。上界 23（贴防层）杀「加成被错加大」。
-        assert!(
-            total_very_long_n > 0,
-            "超长档(>35m)在 200 seed 内无可达样本——VERY_LONG 加成接线断言空跑（扩 seed 数？）"
-        );
-        // 贴防桶的超长档样本（下界断言的来源桶）单独记账，供诊断：实测仅 17 条。
-        assert!(
-            tight_very_long_n <= total_very_long_n,
-            "贴防桶超长样本 {} > 全距离档超长总数 {}——分桶减法口径错",
-            tight_very_long_n, total_very_long_n
-        );
-        // 方向化后超长档的下界是 base（fwd=0 时无加成）。
-        let base_far = interception_roll_width(INTERCEPT_P_FAR);
-        assert!(
-            total_very_long_w >= base_far * total_very_long_n,
-            "超长档平均宽度 {:.2} < 下界 {}——方向缩放只应减不增，base 被改小/错接",
-            avg(total_very_long_w, total_very_long_n), base_far
-        );
-        // 方向缩放后很纯的「前向」样本不存在（选点偏好横向），精确的 15/23 由纯函数测试
-        // `p32_interception_roll_width_quantizes_by_ceil` 直接断言；此处守住上下界与
-        // 「加成存在」的严格下界（删除 LONG 会使 very-long 均值塌到 base_far）。
-        assert!(
-            avg(total_very_long_w, total_very_long_n) > base_far as f64 + 1e-9,
-            "超长档平均宽度 {:.2} 未高于 base {}——长传加成未接线/全删",
-            avg(total_very_long_w, total_very_long_n), base_far
-        );
-        // 分层 actual 字段的活性（防死字段，审阅 P3-3）：actual 不可能超过样本数；长传/超长
-        // 是嵌套关系（very ⊆ long），故 two actual 也嵌套。这两条把两个字段绑到真实记账。
-        assert!(
-            long_actual <= bucket_long_samples.iter().sum::<u64>(),
-            "长传层 actual({}) 超过长传样本数({})——记账串层",
-            long_actual, bucket_long_samples.iter().sum::<u64>()
-        );
-        assert!(
-            very_long_actual <= long_actual,
-            "超长层 actual({}) > 长传层 actual({})——very-long 不是 long 的子集",
-            very_long_actual, long_actual
-        );
-        assert!(
-            total_very_long_w <= expect_very * total_very_long_n,
-            "超长档平均宽度 {:.2} > 上界 {}——长传加成被错加/常量被改大",
-            avg(total_very_long_w, total_very_long_n), expect_very
-        );
+        assert!(checked_any, "8 seed 里至少全局/主桶应达到样本下限并完成自洽检查");
+        // 3. 分层字段活性（精确宽度由构造用例钉死；这里只守嵌套/上界，不依赖稀有样本数）。
+        assert!(long_samples > 0, "8 场里长传(>22m)样本为 0——长传分层未接线或场景失效");
+        assert!(long_actual <= long_samples, "长传层 actual({}) 超过长传样本数({})——记账串层", long_actual, long_samples);
+        assert!(very_long_samples <= long_samples, "very-long 样本({}) 不是 long 样本({}) 的子集", very_long_samples, long_samples);
+        assert!(very_long_actual <= long_actual, "超长层 actual({}) > 长传层 actual({})——very-long 不是 long 的子集", very_long_actual, long_actual);
     }
 
     /// P32：整数 roll 量化的纯函数钉死（不依赖模拟样本）——`ceil` 语义在全部档位 + cap 边界
@@ -13000,36 +13067,123 @@ mod tests {
         );
     }
 
-    /// P3（修订）：护栏**有效**的证据——一档/二档在真实比赛里可达（不是纸面常量），
-    /// 且二档的「无压久持 → 出球」决策档把停滞**在二档内拉回**（三档是极限储备，
-    /// 正常不应频繁触达——若频繁触达说明出球档未生效）。
+    /// P3（P1 Phase 0 / 2.2 重写）：护栏**有效**的证据。
+    ///
+    /// 旧夹具跑 40 场，断言「停滞恰好达到一档/二档」。那是**事件抽样依赖**：运动层一改善
+    /// （停滞变少）就会假红，即使护栏本身完好。改为**显式构造**：
+    /// 1) 三档可达：把停滞计时置于各档界，走生产接入点 `open_action_opportunity`
+    ///    （真实调用点也走它），断言档位命中与实际应用的 deadline 压缩；
+    /// 2) 拉回：构造「无压久持」状态，二档时自然 deadline 到期必须选出出球，执行后计时归零；
+    /// 3) 多 seed 只保留**有界性**（停滞上限）断言，不再用「是否恰好停滞」作门。
     #[test]
     fn p31_liveness_stages_reachable_and_pulls_back() {
-        let mut reached_1 = false;
-        let mut reached_2 = false;
-        let mut max_seen = 0u32;
-        for seed in 1..=40u64 {
-            let (st, _) = run_match(seed, 5400.0);
-            let ticks = st.opportunity_tally.liveness_max_ticks;
-            max_seen = max_seen.max(ticks);
-            if ticks >= LIVENESS_STAGE_1_TICKS {
-                reached_1 = true;
-            }
-            if ticks >= LIVENESS_STAGE_2_TICKS {
-                reached_2 = true;
+        let lineup = default_lineup();
+        let mut st = MatchState::new(&lineup);
+        st.possession = 0;
+        st.carrier = 9;
+        for id in 0..22usize { st.pos[id] = (0.5, 0.5); }
+        // carrier 在本方半场（离球门远 → 射门推进 hazard 极低）；防守者全在另一端（无压）；
+        // 队友在远端角落（出球空间大 → deadline 放宽，给三档压缩留可观测余量）。
+        st.pos[9] = (0.2, 0.5);
+        for id in 1..=8usize { st.pos[id] = (0.05, 0.10); }
+        st.pos[10] = (0.10, 0.10);
+        for id in 11..=20usize { st.pos[id] = (0.95, 0.50); }
+        st.ball_pos = st.pos[9];
+        st.action_opportunity = None;
+
+        // (1) 三档可达 + deadline 实际压缩。基线 deadline 必须 > MIN，否则压缩不可观测。
+        let base_deadline = action_deadline_for(&st, 9);
+        assert!(
+            base_deadline > MIN_ACTION_DEADLINE_TICKS,
+            "构造场景的基线 deadline {} 应 > 下界 {}（否则压缩不可观测）",
+            base_deadline, MIN_ACTION_DEADLINE_TICKS
+        );
+        let mut last_deadline = base_deadline;
+        for (i, ticks) in [
+            LIVENESS_STAGE_1_TICKS,
+            LIVENESS_STAGE_2_TICKS,
+            LIVENESS_STAGE_3_TICKS,
+        ]
+        .into_iter()
+        .enumerate()
+        {
+            st.ticks_since_meaningful_action = ticks;
+            open_action_opportunity(&mut st, OpportunityTrigger::NaturalDeadline);
+            let tally = st.opportunity_tally;
+            assert_eq!(
+                tally.liveness_stage_hits[i], 1,
+                "第 {} 档（ticks={}）应由生产接入点记录一次，实得 {:?}",
+                i + 1, ticks, tally.liveness_stage_hits
+            );
+            let deadline = st.action_opportunity.as_ref().unwrap().deadline_ticks;
+            assert!(
+                deadline < last_deadline,
+                "第 {} 档应压缩 deadline（{} → {}）",
+                i + 1, last_deadline, deadline
+            );
+            assert!(tally.liveness_deadline_pressure_max > 0, "第 {} 档的实际压缩量应 > 0", i + 1);
+            last_deadline = deadline;
+            assert!(tally.liveness_max_ticks >= ticks, "观测上限应记录到第 {} 档", i + 1);
+        }
+        assert!(
+            last_deadline >= MIN_ACTION_DEADLINE_TICKS,
+            "三档压缩后 deadline {} 仍应受 MIN={} 钳制",
+            last_deadline, MIN_ACTION_DEADLINE_TICKS
+        );
+
+        // (2) 拉回：二档停滞 + 自然 deadline 到期 → 出球；执行后计时归零。
+        st.ticks_since_meaningful_action = LIVENESS_STAGE_2_TICKS;
+        st.action_opportunity = None;
+        let mut rng = SeededRng::new(5);
+        let mut plan = None;
+        let mut ticks_waited = 0u32;
+        for _ in 0..(LIVENESS_STAGE_3_TICKS + 16) {
+            ticks_waited += 1;
+            if let Some(p) = advance_action_opportunity(&mut st, &mut rng) {
+                plan = Some(p);
+                break;
             }
         }
-        assert!(reached_1, "40 场里停滞从未达到一档——护栏无触发机会（常量空转）");
-        assert!(reached_2, "40 场里停滞从未达到二档——「无压久持→出球」档无触发机会");
-        // 拉回有效：全场停滞上限应显著低于「无止境」（实测三档 16 是储备；上限应在二档量级）
-        // 余量秒语义（1 Hz 写死 +8 tick = 8 s）——按拍频换算。
-        let margin_ticks = (8.0 / TICK_SECONDS) as u32;
+        let plan = plan.unwrap_or_else(|| {
+            panic!("停滞二档后 {} 拍内应出现一次自然 deadline 评估", ticks_waited)
+        });
         assert!(
-            max_seen <= LIVENESS_STAGE_3_TICKS + margin_ticks,
-            "停滞上限 {} 远超三档({})+{}s——出球档未把比赛拉回",
-            max_seen,
+            matches!(plan.carrier.action, Some(CarrierAction::Pass { .. })),
+            "停滞二档且无压应选出出球（把比赛拉回），实得 {:?}",
+            plan.carrier.action
+        );
+        let mut events = Vec::new();
+        execute_action_resolution(
+            &mut st,
+            &mut rng,
+            &mut events,
+            1.0,
+            Some(plan),
+            &mut observation::BehaviorObservationRecorder::disabled(),
+        );
+        assert_eq!(st.ticks_since_meaningful_action, 0, "出球执行后停滞计时应归零（护栏完成拉回）");
+
+        // (3) 多 seed 置信范围：只守**有界性**（停滞上限不得无限增长）；可达性已由构造证明。
+        let margin_ticks = (8.0 / TICK_SECONDS) as u32;
+        let mut observed_max = 0u32;
+        let mut observed_hits = [0u64; 3];
+        for seed in 1..=8u64 {
+            let (m, _) = run_match(seed, 5400.0);
+            observed_max = observed_max.max(m.opportunity_tally.liveness_max_ticks);
+            for i in 0..3 {
+                observed_hits[i] += m.opportunity_tally.liveness_stage_hits[i];
+            }
+        }
+        assert!(
+            observed_max <= LIVENESS_STAGE_3_TICKS + margin_ticks,
+            "多 seed 停滞上限 {} 远超三档({})+{}s——出球档未把比赛拉回",
+            observed_max,
             LIVENESS_STAGE_3_TICKS,
             8
+        );
+        println!(
+            "[liveness constructed] 8-seed 观测（仅报告，不作可达性门）：max={} hits={:?}",
+            observed_max, observed_hits
         );
     }
 
